@@ -1,0 +1,505 @@
+// TUI-gateway WebSocket client — JSON-RPC 2.0 over /api/ws?ticket=.
+// Verified against hermes-agent source:
+//   tui_gateway/ws.py            (framing, token coalescing, gateway.ready)
+//   tui_gateway/methods_session.py (session.list/create/resume/history/close/
+//                                  interrupt/redirect/events.since)
+//   tui_gateway/methods_prompt.py  (prompt.submit → {status:"streaming"|"queued"})
+//   tui_gateway/agent_callbacks.py (event names: message.*, tool.*, reasoning.*)
+//   tui_gateway/server_requests.py (server→client asks: id "srq-*", must reply
+//                                  with the same id; advertise via
+//                                  client.capabilities {server_requests:true})
+//
+// Wire shape (both directions):
+//   client→server RPC:  {jsonrpc:"2.0", id:<int>, method, params:{...}}
+//   server→client reply:{jsonrpc:"2.0", id:<same>, result:{...} | error:{code,message,data?}}
+//   server→client event:{jsonrpc:"2.0", method:"event", params:{type, session_id?, ...payload}}
+//   server→client ask:  {jsonrpc:"2.0", id:"srq-...", method, params:{session_id, ...}}
+//     → client replies  {jsonrpc:"2.0", id:"srq-...", result:{...}}
+//     → on timeout/cancel the server sends {method:"event", params:{type:"request.cancel", id, ...}}
+
+export type ConnState = 'idle' | 'connecting' | 'ready' | 'reconnecting' | 'closed' | 'auth-expired';
+
+export interface RpcError {
+  code: number;
+  message: string;
+  data?: any;
+}
+
+export interface SessionSummary {
+  id: string;
+  title: string;
+  preview: string;
+  messageCount: number;
+  source: string;
+  startedAt: number;
+}
+
+export interface HistoryMessage {
+  role: string;
+  content: string;
+  rowId?: number;
+  reasoning?: string;
+  name?: string;
+}
+
+/** Assistant detail sidecars (see _history_to_messages): reasoning arrives on
+ *  the assistant message itself, not as its own role. */
+function reasoningTextOf(m: any): string {
+  const parts: string[] = [];
+  const push = (v: unknown): void => {
+    if (typeof v === 'string') {
+      if (v.trim()) parts.push(v);
+    } else if (Array.isArray(v)) {
+      v.forEach(push);
+    } else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      for (const k of ['text', 'content', 'summary']) {
+        if (typeof o[k] === 'string' && (o[k] as string).trim()) {
+          parts.push(o[k] as string);
+          break;
+        }
+      }
+    }
+  };
+  push(m?.reasoning);
+  push(m?.reasoning_content);
+  push(m?.reasoning_details);
+  const seen = new Set<string>();
+  return parts.filter((p) => (seen.has(p) ? false : (seen.add(p), true))).join('\n').trim();
+}
+
+export interface ServerAsk {
+  rpcId: string; // "srq-..." — reply with this id
+  method: string; // e.g. "clarify", "approval", "sudo", "secret", "vault.unlock_prompt"
+  sessionId?: string;
+  params: Record<string, any>;
+}
+
+export interface GatewayEvents {
+  onState?: (s: ConnState) => void;
+  onToken?: (sessionId: string, delta: string) => void;
+  onReasoning?: (sessionId: string, delta: string) => void;
+  onInterim?: (sessionId: string, text: string) => void;
+  onTool?: (sessionId: string, info: { name?: string; preview?: string; summary?: string; toolId?: string; phase: 'start' | 'progress' | 'generating' | 'complete' }) => void;
+  onComplete?: (sessionId: string, text: string, raw?: any) => void;
+  onNotice?: (sessionId: string, text: string) => void;
+  onSessionInfo?: (info: any) => void;
+  onAsk?: (ask: ServerAsk) => void;
+  onAskCancel?: (rpcId: string) => void;
+  onEvent?: (type: string, params: any) => void;
+}
+
+export interface ConnectOpts {
+  wsUrl: string; // wss?://host:port/api/ws?ticket=... (single-use, ~30s TTL)
+  events: GatewayEvents;
+  /** Mint a fresh ticket + URL before every (re)connect. Required for reconnect. */
+  refreshUrl?: () => Promise<string>;
+  heartbeatMs?: number; // default 15000 (gateway.ping)
+  maxBackoffMs?: number; // default 15000
+}
+
+const PING_MS = 15000;
+
+let nextId = 1;
+
+export class GatewayWs {
+  private ws: WebSocket | null = null;
+  private url: string;
+  private events: GatewayEvents;
+  private refreshUrl?: () => Promise<string>;
+  private heartbeatMs: number;
+  private maxBackoffMs: number;
+  private pending = new Map<number | string, { ok: (r: any) => void; fail: (e: RpcError) => void }>();
+  private state: ConnState = 'idle';
+  private closed = false;
+  private backoff = 1000;
+  private pingTimer: any = null;
+  private reconnectTimer: any = null;
+  private readyResolve: ((v: boolean) => void) | null = null;
+
+  constructor(opts: ConnectOpts) {
+    this.url = opts.wsUrl;
+    this.events = opts.events;
+    this.refreshUrl = opts.refreshUrl;
+    this.heartbeatMs = opts.heartbeatMs ?? PING_MS;
+    this.maxBackoffMs = opts.maxBackoffMs ?? 15000;
+  }
+
+  private setState(s: ConnState) {
+    this.state = s;
+    this.events.onState?.(s);
+  }
+
+  /** Connect and wait for gateway.ready. Resolves true on ready, false if closed first. */
+  connect(): Promise<boolean> {
+    this.closed = false;
+    return new Promise((resolve) => {
+      this.readyResolve = resolve;
+      this.dial();
+    });
+  }
+
+  close() {
+    this.closed = true;
+    this.clearTimers();
+    try {
+      (this.ws as any)?.close?.();
+    } catch {}
+    this.ws = null;
+    this.failAllPending({ code: -32000, message: 'client closed' });
+    this.setState('closed');
+  }
+
+  private clearTimers() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.pingTimer = null;
+    this.reconnectTimer = null;
+  }
+
+  private dial() {
+    if (this.closed) return;
+    this.setState(this.backoff > 1000 ? 'reconnecting' : 'connecting');
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(this.url);
+    } catch {
+      return this.scheduleReconnect();
+    }
+    this.ws = ws;
+
+    ws.onopen = () => {
+      this.backoff = 1000;
+      this.startHeartbeat();
+      // Advertise server-request answering so the backend actually sends
+      // clarify/approval frames instead of dropping them (server_requests.py).
+      this.call('client.capabilities', { server_requests: true }).catch(() => {});
+    };
+
+    ws.onmessage = (ev: any) => {
+      let msg: any;
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
+      this.route(msg);
+    };
+
+    ws.onerror = () => {
+      // onclose follows with the real outcome; nothing to do here.
+    };
+
+    ws.onclose = (ev: any) => {
+      this.clearTimers();
+      if (this.closed) return;
+      // 4401/4403/4408 = credential rejected → refreshing the ticket won't help
+      // without a fresh login.
+      if (ev?.code === 4401 || ev?.code === 4403 || ev?.code === 4408) {
+        this.setState('auth-expired');
+        this.readyResolve?.(false);
+        this.readyResolve = null;
+        return;
+      }
+      this.scheduleReconnect();
+    };
+  }
+
+  private async scheduleReconnect() {
+    if (this.closed) return;
+    this.setState('reconnecting');
+    if (this.refreshUrl) {
+      try {
+        this.url = await this.refreshUrl();
+        this.backoff = 1000;
+      } catch {
+        // Mint failed (cookie expired?) — back off and retry; ultimately
+        // surfaces as auth-expired when the app re-logs-in.
+      }
+    }
+    const wait = Math.min(this.backoff, this.maxBackoffMs);
+    this.backoff = Math.min(this.backoff * 2, this.maxBackoffMs);
+    this.reconnectTimer = setTimeout(() => this.dial(), wait);
+  }
+
+  private startHeartbeat() {
+    this.clearTimers();
+    const beat = () => {
+      this.call('gateway.ping', {}).catch(() => {});
+    };
+    this.pingTimer = setInterval(beat, this.heartbeatMs);
+  }
+
+  private failAllPending(err: RpcError) {
+    for (const [, p] of this.pending) {
+      try {
+        p.fail(err);
+      } catch {}
+    }
+    this.pending.clear();
+  }
+
+  // ── RPC ────────────────────────────────────────────────────────────────
+
+  call(method: string, params: Record<string, any> = {}): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || (this.ws as any).readyState !== 1) {
+        reject({ code: -32000, message: 'not connected' } satisfies RpcError);
+        return;
+      }
+      const id = nextId++;
+      this.pending.set(id, {
+        ok: (r) => resolve(r),
+        fail: (e) => reject(e),
+      });
+      try {
+        this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+      } catch (e) {
+        this.pending.delete(id);
+        reject({ code: -32000, message: String(e) } satisfies RpcError);
+      }
+      // Safety timeout so a lost reply never hangs the UI forever.
+      setTimeout(() => {
+        const p = this.pending.get(id);
+        if (p) {
+          this.pending.delete(id);
+          p.fail({ code: -32000, message: 'RPC timeout' });
+        }
+      }, 120000);
+    });
+  }
+
+  /** Reply to a server→client ask (id "srq-..."). */
+  replyToAsk(rpcId: string, result: Record<string, any>) {
+    try {
+      this.ws?.send(JSON.stringify({ jsonrpc: '2.0', id: rpcId, result }));
+    } catch {}
+  }
+
+  // ── Session methods (thin wrappers; result shapes per methods_session.py) ─
+
+  async listSessions(limit = 100): Promise<SessionSummary[]> {
+    const r = await this.call('session.list', { limit });
+    const rows = r?.sessions ?? [];
+    return rows.map((s: any) => ({
+      id: String(s?.id ?? ''),
+      title: String(s?.title ?? ''),
+      preview: String(s?.preview ?? ''),
+      messageCount: Number(s?.message_count ?? 0),
+      source: String(s?.source ?? ''),
+      startedAt: Number(s?.started_at ?? 0),
+    }));
+  }
+
+  async mostRecent(): Promise<string | null> {
+    try {
+      const r = await this.call('session.most_recent', {});
+      return typeof r?.session_id === 'string' ? r.session_id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async createSession(opts: { title?: string; model?: string; provider?: string; effort?: string } = {}): Promise<{ sessionId: string; storedSessionId: string }> {
+    const r = await this.call('session.create', {
+      ...(opts.title ? { title: opts.title } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.provider ? { provider: opts.provider } : {}),
+      // Backend name is reasoning_effort (low/medium/high/xhigh); parse
+      // failures are ignored server-side, so this never breaks create.
+      ...(opts.effort ? { reasoning_effort: opts.effort.toLowerCase() } : {}),
+    });
+    return { sessionId: String(r?.session_id ?? ''), storedSessionId: String(r?.stored_session_id ?? '') };
+  }
+
+  /** Attach to a live session / reload durable one. Returns live payload. */
+  resume(sessionId: string, omitMessages = false): Promise<any> {
+    return this.call('session.resume', { session_id: sessionId, omit_messages: omitMessages });
+  }
+
+  async history(sessionId: string): Promise<HistoryMessage[]> {
+    const r = await this.call('session.history', { session_id: sessionId });
+    const msgs = r?.messages ?? [];
+    // Server shape is {role, text, ...} (see _history_to_messages); older
+    // payloads used `content`. Prefer text, fall back to content.
+    return msgs.map((m: any) => {
+      // Tool rows are {role:'tool', name, context, args} — no text/content.
+      if (m?.role === 'tool') {
+        const name = typeof m?.name === 'string' ? m.name : '';
+        const ctx = typeof m?.context === 'string' ? m.context : '';
+        return { role: 'tool', content: ctx || name, ...(name ? { name } : {}) };
+      }
+      const text =
+        typeof m?.text === 'string'
+          ? m.text
+          : typeof m?.content === 'string'
+            ? m.content
+            : JSON.stringify(m?.text ?? m?.content ?? '');
+      const reasoning = reasoningTextOf(m);
+      return {
+        role: String(m?.role ?? ''),
+        content: text,
+        ...(typeof m?.row_id === 'number' ? { rowId: m.row_id } : {}),
+        ...(reasoning ? { reasoning } : {}),
+      };
+    });
+  }
+
+  async submit(sessionId: string, text: string, opts: { queued?: boolean } = {}): Promise<'streaming' | 'queued'> {
+    // NOTE: this backend validates params strictly — no model/provider/effort
+    // here (they 400 "Extra inputs are not permitted"). Per-message model
+    // override does not exist; switching is via slash.exec (/model).
+    const r = await this.call('prompt.submit', {
+      session_id: sessionId,
+      text,
+      ...(opts.queued ? { queued: true } : {}),
+    });
+    return r?.status === 'queued' ? 'queued' : 'streaming';
+  }
+
+  interrupt(sessionId: string): Promise<any> {
+    return this.call('session.interrupt', { session_id: sessionId });
+  }
+
+  /** Steer the live turn (correction while generating; backend queues or rewrites). */
+  redirect(sessionId: string, text: string): Promise<any> {
+    return this.call('session.redirect', { session_id: sessionId, text });
+  }
+
+  rename(sessionId: string, title: string): Promise<any> {
+    return this.call('session.title', { session_id: sessionId, title });
+  }
+
+  // ── Model picker ───────────────────────────────────────────────────────
+  // Same payload builder as REST GET /api/model/options (see dashboard.ts).
+
+  async modelOptions(sessionId?: string): Promise<any> {
+    return this.call('model.options', sessionId ? { session_id: sessionId } : {});
+  }
+
+  /**
+   * Session-scoped switch ("this chat") — the /model slash command, WITHOUT
+   * --global so config.yaml is untouched. Goes through slash.exec (the slash
+   * worker runs the switch + mirrors it onto the live agent).
+   * NOTE: command.dispatch is NOT used — this backend answers 5030
+   * "not a quick/plugin/bundle/skill command: model" for it.
+   */
+  switchModel(sessionId: string, model: string, provider?: string): Promise<any> {
+    const arg = provider ? `${model} --provider ${provider}` : model;
+    return this.call('slash.exec', { session_id: sessionId, command: `/model ${arg}` });
+  }
+
+  deleteSession(sessionId: string): Promise<any> {
+    return this.call('session.delete', { session_id: sessionId });
+  }
+
+  closeSession(sessionId: string): Promise<any> {
+    return this.call('session.close', { session_id: sessionId });
+  }
+
+  usage(sessionId: string): Promise<any> {
+    return this.call('session.usage', { session_id: sessionId });
+  }
+
+  // ── Frame routing ──────────────────────────────────────────────────────
+
+  private route(msg: any) {
+    // 1. Reply to our own RPC (has id, no method).
+    if (msg?.id !== undefined && msg?.method === undefined) {
+      const p = this.pending.get(msg.id);
+      if (p) {
+        this.pending.delete(msg.id);
+        if (msg.error) p.fail(msg.error as RpcError);
+        else p.ok(msg.result);
+      }
+      return;
+    }
+    // 2. Server→client ask (has BOTH id "srq-*" and method) — must be answered.
+    if (msg?.id !== undefined && typeof msg?.method === 'string' && String(msg.id).startsWith('srq-')) {
+      this.events.onAsk?.({
+        rpcId: String(msg.id),
+        method: String(msg.method),
+        sessionId: msg?.params?.session_id,
+        params: (msg?.params ?? {}) as Record<string, any>,
+      });
+      return;
+    }
+    // 3. Plain event notification.
+    const method = msg?.method;
+    const params = msg?.params ?? {};
+    if (method === 'event' && typeof params?.type === 'string') {
+      this.routeEvent(String(params.type), params);
+      return;
+    }
+    // Unknown frame — surface for debugging, ignore otherwise.
+  }
+
+  private sidOf(params: any): string {
+    return String(params?.session_id ?? params?.sid ?? '');
+  }
+
+  private routeEvent(type: string, params: any) {
+    const sid = this.sidOf(params);
+    // Server nests event data under params.payload (see _event_frame in
+    // tui_gateway/server.py) — top-level params only carries type/session_id.
+    const body = (params?.payload ?? params ?? {}) as Record<string, any>;
+    const strOf = (v: unknown) => (typeof v === 'string' ? v : '');
+    switch (type) {
+      case 'gateway.ready':
+        this.setState('ready');
+        this.readyResolve?.(true);
+        this.readyResolve = null;
+        break;
+      case 'message.delta': {
+        const t = strOf(body.text);
+        if (t) this.events.onToken?.(sid, t);
+        break;
+      }
+      case 'reasoning.delta':
+      case 'thinking.delta': {
+        const t = strOf(body.text);
+        if (t) this.events.onReasoning?.(sid, t);
+        break;
+      }
+      case 'message.interim': {
+        const t = strOf(body.text);
+        if (t) this.events.onInterim?.(sid, t);
+        break;
+      }
+      case 'message.complete':
+        this.events.onComplete?.(sid, strOf(body.text), body);
+        break;
+      case 'tool.start':
+        this.events.onTool?.(sid, { name: body?.name, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'start' });
+        break;
+      case 'tool.progress':
+        this.events.onTool?.(sid, { name: body?.name, preview: body?.preview, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'progress' });
+        break;
+      case 'tool.generating':
+        this.events.onTool?.(sid, { name: body?.name, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'generating' });
+        break;
+      case 'tool.complete':
+        this.events.onTool?.(sid, {
+          name: body?.name,
+          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
+          summary: strOf(body?.summary) || strOf(body?.preview) || undefined,
+          phase: 'complete',
+        });
+        break;
+      case 'session.info':
+        this.events.onSessionInfo?.(body);
+        break;
+      case 'request.cancel': {
+        const id = String(body?.id ?? params?.id ?? '');
+        if (id) this.events.onAskCancel?.(id);
+        break;
+      }
+      case 'error':
+        this.events.onNotice?.(sid, strOf(body.message) || 'error');
+        break;
+      default:
+        this.events.onEvent?.(type, body);
+        break;
+    }
+  }
+}
