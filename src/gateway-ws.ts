@@ -98,6 +98,15 @@ export interface ConnectOpts {
   maxBackoffMs?: number; // default 15000
 }
 
+/** In-app WS diagnostics — surfaced in the connect error so a failed
+ *  handshake can be told apart (TCP refused vs auth close vs silent server). */
+export interface WsDebug {
+  opens: number;
+  errors: number;
+  closes: Array<{ code?: number; reason?: string }>;
+  lastEvent: string | null;
+}
+
 const PING_MS = 15000;
 
 let nextId = 1;
@@ -116,6 +125,12 @@ export class GatewayWs {
   private pingTimer: any = null;
   private reconnectTimer: any = null;
   private readyResolve: ((v: boolean) => void) | null = null;
+  private dbg: WsDebug = { opens: 0, errors: 0, closes: [], lastEvent: null };
+
+  /** Snapshot of handshake diagnostics for error messages / debugging. */
+  wsDebug(): WsDebug {
+    return { opens: this.dbg.opens, errors: this.dbg.errors, closes: [...this.dbg.closes], lastEvent: this.dbg.lastEvent };
+  }
 
   constructor(opts: ConnectOpts) {
     this.url = opts.wsUrl;
@@ -130,11 +145,21 @@ export class GatewayWs {
     this.events.onState?.(s);
   }
 
-  /** Connect and wait for gateway.ready. Resolves true on ready, false if closed first. */
-  connect(): Promise<boolean> {
+  /** Connect and wait for gateway.ready. Resolves true on ready, false on
+   *  timeout/close/auth-reject so callers never hang forever. */
+  connect(timeoutMs = 15000): Promise<boolean> {
     this.closed = false;
     return new Promise((resolve) => {
-      this.readyResolve = resolve;
+      let done = false;
+      const finish = (v: boolean) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this.readyResolve = null;
+        resolve(v);
+      };
+      this.readyResolve = finish;
+      const timer = setTimeout(() => finish(false), timeoutMs);
       this.dial();
     });
   }
@@ -147,6 +172,9 @@ export class GatewayWs {
     } catch {}
     this.ws = null;
     this.failAllPending({ code: -32000, message: 'client closed' });
+    // Unblock a connect() that is still waiting for gateway.ready.
+    this.readyResolve?.(false);
+    this.readyResolve = null;
     this.setState('closed');
   }
 
@@ -170,6 +198,7 @@ export class GatewayWs {
 
     ws.onopen = () => {
       this.backoff = 1000;
+      this.dbg.opens++;
       this.startHeartbeat();
       // Advertise server-request answering so the backend actually sends
       // clarify/approval frames instead of dropping them (server_requests.py).
@@ -187,11 +216,14 @@ export class GatewayWs {
     };
 
     ws.onerror = () => {
-      // onclose follows with the real outcome; nothing to do here.
+      // onclose follows with the real outcome; count it for diagnostics.
+      this.dbg.errors++;
     };
 
     ws.onclose = (ev: any) => {
       this.clearTimers();
+      this.dbg.closes.push({ code: typeof ev?.code === 'number' ? ev.code : undefined, reason: ev?.reason ? String(ev.reason) : undefined });
+      if (this.dbg.closes.length > 5) this.dbg.closes.shift();
       if (this.closed) return;
       // 4401/4403/4408 = credential rejected → refreshing the ticket won't help
       // without a fresh login.
@@ -440,6 +472,7 @@ export class GatewayWs {
 
   private routeEvent(type: string, params: any) {
     const sid = this.sidOf(params);
+    this.dbg.lastEvent = type;
     // Server nests event data under params.payload (see _event_frame in
     // tui_gateway/server.py) — top-level params only carries type/session_id.
     const body = (params?.payload ?? params ?? {}) as Record<string, any>;

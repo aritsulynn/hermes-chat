@@ -48,7 +48,11 @@ username + password → Connect.
 
 ## Files
 
-- `App.tsx` — login → sessions → chat screens + clarify/approval/secret sheets
+- `app/_layout.tsx` — expo-router `Drawer` root (native header, custom drawer content, bottom-sheet provider, splash gate)
+- `app/login.tsx`, `app/sessions.tsx`, `app/chat.tsx` — routes (auth-guarded, redirect to `/login` when logged out)
+- `src/store.tsx` — global state: connection, gateway WS, sessions, transcript, model picker, ask sheets
+- `src/ui.tsx` — shared UI: Composer, Field, bottom sheets (`@gorhom/bottom-sheet`: Info/Ask/menus), TypingDots, markdown styles
+- `src/models.ts` — message/attachment types + pure helpers
 - `src/dashboard.ts` — REST auth (probe, password-login, ws-ticket, cookie jar)
 - `src/gateway-ws.ts` — WS JSON-RPC client (reconnect + ticket refresh, events)
 - `src/connection.ts` — SecureStore vault (host/username/password/cookie)

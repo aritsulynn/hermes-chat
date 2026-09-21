@@ -24,10 +24,17 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "experiments": {
+      "typedRoutes": true
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-router",
+      "expo-status-bar",
+      "expo-splash-screen"
     ]
   }
 }

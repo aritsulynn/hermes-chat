@@ -24,6 +24,22 @@ export function normalizeBase(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '');
 }
 
+/** fetch with a hard timeout so the UI never hangs forever on an
+ *  unreachable host (wrong WiFi / changed LAN IP / dashboard down).
+ *  RN supports AbortController. */
+async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 15000): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error(`Request timed out (${ms / 1000}s): ${url}`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Parse Set-Cookie response headers into a `name=value; ...` Cookie string. */
 export function mergeCookies(prev: string, setCookieHeaders: string[]): string {
   const jar = new Map<string, string>();
@@ -67,7 +83,7 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
   const base = normalizeBase(baseUrl);
   let res: Response;
   try {
-    res = await fetch(`${base}/api/status`);
+    res = await fetchWithTimeout(`${base}/api/status`, {}, 8000);
   } catch (e) {
     throw new Error(`Unreachable: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -88,11 +104,15 @@ export async function passwordLogin(
   password: string,
 ): Promise<string> {
   const base = normalizeBase(baseUrl);
-  const res = await fetch(`${base}/auth/password-login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: 'basic', username, password, next: '' }),
-  });
+  const res = await fetchWithTimeout(
+    `${base}/auth/password-login`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'basic', username, password, next: '' }),
+    },
+    15000,
+  );
   if (!res.ok) {
     if (res.status === 401) throw new Error('Invalid credentials (401)');
     if (res.status === 429) throw new Error('Too many login attempts — try again shortly (429)');
@@ -107,11 +127,15 @@ export async function passwordLogin(
 /** Step 2: mint a single-use WS ticket (must be consumed within ~30s). */
 export async function mintWsTicket(baseUrl: string, cookie: string): Promise<string> {
   const base = normalizeBase(baseUrl);
-  const res = await fetch(`${base}/api/auth/ws-ticket`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookie },
-    body: '{}',
-  });
+  const res = await fetchWithTimeout(
+    `${base}/api/auth/ws-ticket`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: '{}',
+    },
+    10000,
+  );
   // Cookie may have rotated — caller should merge any Set-Cookie it carries.
   const rotated = mergeCookies(cookie, getSetCookies(res));
   if (!res.ok) {
@@ -131,7 +155,7 @@ export async function mintWsTicket(baseUrl: string, cookie: string): Promise<str
 export async function checkMe(baseUrl: string, cookie: string): Promise<boolean> {
   const base = normalizeBase(baseUrl);
   try {
-    const res = await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } });
+    const res = await fetchWithTimeout(`${base}/api/auth/me`, { headers: { Cookie: cookie } }, 8000);
     return res.ok;
   } catch {
     return false;
@@ -169,7 +193,7 @@ export async function getModelOptions(
   if (opts.refresh) q.set('refresh', 'true');
   if (opts.includeUnconfigured) q.set('include_unconfigured', 'true');
   const qs = q.toString() ? `?${q}` : '';
-  const res = await fetch(`${base}/api/model/options${qs}`, { headers: { Cookie: cookie } });
+  const res = await fetchWithTimeout(`${base}/api/model/options${qs}`, { headers: { Cookie: cookie } }, 15000);
   if (!res.ok) throw new Error(`Model options failed: HTTP ${res.status}`);
   const body = (await res.json()) as any;
   const rows = Array.isArray(body?.providers) ? body.providers : [];
@@ -190,11 +214,15 @@ export async function setMainModel(
   model: string,
 ): Promise<void> {
   const base = normalizeBase(baseUrl);
-  const res = await fetch(`${base}/api/model/set`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookie },
-    body: JSON.stringify({ scope: 'main', provider, model }),
-  });
+  const res = await fetchWithTimeout(
+    `${base}/api/model/set`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ scope: 'main', provider, model }),
+    },
+    15000,
+  );
   if (!res.ok) throw new Error(`Set model failed: HTTP ${res.status}`);
 }
 
@@ -267,9 +295,11 @@ export async function getSessionMessages(
     .map((s) => encodeURIComponent(s))
     .join('/');
   const qs = new URLSearchParams({ order: 'latest', limit: String(limit) });
-  const res = await fetch(`${base}/api/sessions/${path}/messages?${qs}`, {
-    headers: { Cookie: cookie },
-  });
+  const res = await fetchWithTimeout(
+    `${base}/api/sessions/${path}/messages?${qs}`,
+    { headers: { Cookie: cookie } },
+    20000,
+  );
   if (!res.ok) throw new Error(`Session messages failed: HTTP ${res.status}`);
   const body = (await res.json()) as any;
   const rows = Array.isArray(body?.messages) ? body.messages : [];
