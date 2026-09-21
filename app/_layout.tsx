@@ -10,7 +10,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import * as NavigationBar from 'expo-navigation-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 import { Platform, Text, View } from 'react-native';
 import { LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, RefreshCw, Sun } from 'lucide-react-native';
 import { AppProvider, useApp } from '../src/store';
@@ -153,14 +153,14 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
 function ThemedStatusBar() {
   const { theme } = useApp();
   const dark = theme === 'dark';
-  // Android 15 is edge-to-edge: paint the system nav bar to match the theme
-  // (black like YouTube in dark mode) so it never flashes white below the app.
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    void NavigationBar.setBackgroundColorAsync(dark ? '#000000' : '#ffffff').catch(() => {});
-    void NavigationBar.setButtonStyleAsync(dark ? 'light' : 'dark').catch(() => {});
-  }, [dark]);
-  return <StatusBar style={dark ? 'light' : 'auto'} />;
+  // Android 15 is edge-to-edge (transparent system bar over our themed
+  // background); tell the OS which button contrast to use. No-op on iOS/web.
+  return (
+    <>
+      <StatusBar style={dark ? 'light' : 'auto'} />
+      {Platform.OS === 'android' && <NavigationBar style={dark ? 'dark' : 'light'} />}
+    </>
+  );
 }
 
 function ThemedDrawer() {
