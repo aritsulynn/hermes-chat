@@ -181,7 +181,7 @@ export const AskSheet = forwardRef<
                   className="rounded-lg border border-neutral-300 dark:border-neutral-700 p-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
                   value={text}
                   onChangeText={setText}
-                  placeholder="พิมพ์คำตอบ…"
+                  placeholder="Type your answer…"
                   placeholderTextColor={dark ? '#888' : '#9ca3af'}
                   keyboardAppearance={dark ? 'dark' : 'light'}
                   multiline

@@ -636,7 +636,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Stale entry — the session is gone server-side (pruned/deleted).
         // Drop it so the list stops lying.
         setSessions((prev) => prev.filter((x) => x.id !== s.id));
-        setError(`"${s.title || '(untitled)'}" ไม่มีอยู่แล้ว (โดนลบ/prune) — เอาออกจากลิสต์ให้แล้ว`);
+        setError(`"${s.title || '(untitled)'}" no longer exists (deleted/pruned) — removed it from the list`);
       } else {
         setError(msg);
       }
