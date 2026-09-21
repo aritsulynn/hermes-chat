@@ -328,6 +328,10 @@ export interface RestHistoryItem {
   name?: string;
   /** The tool's command / primary arg, joined from the assistant tool_calls. */
   command?: string;
+  /** Durable DB row id (user/assistant rows) — the rewind/edit target. */
+  rowId?: number;
+  /** Authoring time (Unix seconds). */
+  ts?: number;
 }
 
 function jsonText(v: unknown): string {
@@ -440,6 +444,8 @@ export async function getSessionMessages(
         role,
         content,
         ...(reasoning ? { reasoning } : {}),
+        ...(typeof (row as any).id === 'number' ? { rowId: (row as any).id as number } : {}),
+        ...(typeof (row as any).timestamp === 'number' ? { ts: (row as any).timestamp as number } : {}),
       });
     }
   }

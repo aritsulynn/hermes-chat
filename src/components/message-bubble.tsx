@@ -141,6 +141,10 @@ export const MessageBubble = memo(function MessageBubble({
   onToggleExpand,
   copied,
   onCopy,
+  canEdit,
+  canRegenerate,
+  onEdit,
+  onRegenerate,
 }: {
   item: UiMessage;
   bubbleMax: number;
@@ -152,6 +156,12 @@ export const MessageBubble = memo(function MessageBubble({
   /** Boolean, not the copied id: an id prop would re-render every bubble. */
   copied: boolean;
   onCopy: (id: string, text: string) => void;
+  /** Edit & resend (rewind) this user message — only when it has a row id. */
+  canEdit?: boolean;
+  /** Rerun the last turn — only on the last assistant bubble. */
+  canRegenerate?: boolean;
+  onEdit: (id: string) => void;
+  onRegenerate: () => void;
 }) {
   const rules = useMemo(() => makeSelectableRules(dark), [dark]);
   // The streaming bubble changes on every token — see useThrottledText().
@@ -334,17 +344,52 @@ export const MessageBubble = memo(function MessageBubble({
           {item.text}
         </Text>
       )}
-      {copyable && (
-        <Pressable onPress={() => onCopy(item.id, item.text)} className="mt-1 flex-row items-center gap-1 self-end px-0.5 py-0.5" hitSlop={6}>
-          {copied ? (
-            <Check size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
-          ) : (
-            <Copy size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
+      {(copyable || canEdit || canRegenerate) && (
+        <View className="mt-1 flex-row items-center gap-3 self-end">
+          {!!item.ts && (
+            <Text
+              className={
+                item.role === 'user'
+                  ? 'text-[10px] text-white/60'
+                  : 'text-[10px] text-neutral-400 dark:text-neutral-500'
+              }
+            >
+              {new Date(item.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
           )}
-          <Text className={item.role === 'user' ? 'text-[11px] font-semibold text-white/75' : 'text-[11px] font-semibold text-neutral-400'}>
-            {copied ? 'Copied' : 'Copy'}
-          </Text>
-        </Pressable>
+          {copyable && (
+            <Pressable
+              onPress={() => onCopy(item.id, item.text)}
+              className="flex-row items-center gap-1 px-0.5 py-0.5"
+              hitSlop={6}
+            >
+              {copied ? (
+                <Check size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
+              ) : (
+                <Copy size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
+              )}
+              <Text
+                className={
+                  item.role === 'user'
+                    ? 'text-[11px] font-semibold text-white/75'
+                    : 'text-[11px] font-semibold text-neutral-400'
+                }
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Text>
+            </Pressable>
+          )}
+          {canEdit && (
+            <Pressable onPress={() => onEdit(item.id)} className="px-0.5 py-0.5" hitSlop={6}>
+              <Text className="text-[11px] font-semibold text-white/75">Edit</Text>
+            </Pressable>
+          )}
+          {canRegenerate && (
+            <Pressable onPress={onRegenerate} className="px-0.5 py-0.5" hitSlop={6}>
+              <Text className="text-[11px] font-semibold text-neutral-400">Regenerate</Text>
+            </Pressable>
+          )}
+        </View>
       )}
     </View>
   );

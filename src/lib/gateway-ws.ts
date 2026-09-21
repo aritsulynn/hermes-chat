@@ -42,6 +42,8 @@ export interface HistoryMessage {
   name?: string;
   /** Tool command / primary arg (REST history joins it from tool_calls). */
   command?: string;
+  /** Authoring time (Unix seconds). */
+  ts?: number;
 }
 
 /** One `/`-wheel row from `complete.slash` (tui_gateway/contracts/tools_commands.py). */
@@ -423,19 +425,26 @@ export class GatewayWs {
         role: String(m?.role ?? ''),
         content: text,
         ...(typeof m?.row_id === 'number' ? { rowId: m.row_id } : {}),
+        ...(typeof m?.timestamp === 'number' ? { ts: m.timestamp } : {}),
         ...(reasoning ? { reasoning } : {}),
       };
     });
   }
 
-  async submit(sessionId: string, text: string, opts: { queued?: boolean } = {}): Promise<'streaming' | 'queued'> {
+  async submit(sessionId: string, text: string, opts: { queued?: boolean; rewindRowId?: number } = {}): Promise<'streaming' | 'queued'> {
     // NOTE: this backend validates params strictly — no model/provider/effort
     // here (they 400 "Extra inputs are not permitted"). Per-message model
     // override does not exist; switching is via slash.exec (/model).
+    // A rewind/edit/regenerate cut needs BOTH `confirm_truncate` and a durable
+    // target (`truncate_before_row_id`); ordinal-only cuts are refused for
+    // durable sessions.
     const r = await this.call('prompt.submit', {
       session_id: sessionId,
       text,
       ...(opts.queued ? { queued: true } : {}),
+      ...(opts.rewindRowId != null
+        ? { truncate_before_row_id: opts.rewindRowId, confirm_truncate: true }
+        : {}),
     });
     return r?.status === 'queued' ? 'queued' : 'streaming';
   }

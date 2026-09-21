@@ -11,12 +11,16 @@ export interface UiMessage {
   text: string;
   pending?: boolean;
   detail?: string;
+  /** Authoring time (Unix seconds) — shown muted in the action row. */
+  ts?: number;
   /** Full tool RESULT text, formatted for display (utils/toolResult). */
   output?: string;
   /** The tool's command / primary argument, shown above the result. */
   command?: string;
   /** Inline unified diff for a file-editing tool call (see utils/diff). */
   diff?: string;
+  /** Durable DB row id (history rows); the rewind/edit target. */
+  rowId?: number;
   /** Attachments that travelled with this message (thumbnails in the bubble). */
   media?: Attachment[];
 }

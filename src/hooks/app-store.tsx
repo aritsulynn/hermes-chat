@@ -107,6 +107,13 @@ export interface AppStore {
   clearQueue: () => void;
   resumeQueue: () => void;
   sendQueuedNow: (id: string) => void;
+  /** Row id of the message being edited (rewind target), or null. */
+  editingRowId: number | null;
+  /** Put a user message back in the composer for edit & resend. */
+  editMessage: (id: string) => void;
+  cancelEdit: () => void;
+  /** Rerun the last user turn (rewind + resubmit). */
+  regenerate: () => void;
   /** Agent's live todo list (`todo.updated`), for the checklist above the composer. */
   todos: TodoItem[];
   /** Live child agents (polled from `subagent.list` while a turn runs). */
@@ -223,7 +230,13 @@ function historyToItems(hist: HistoryMessage[]): UiMessage[] {
       });
     }
     if ((m.role === 'user' || m.role === 'assistant') && m.content.trim() !== '') {
-      items.push({ id: nid(), role: m.role as 'user' | 'assistant', text: m.content });
+      items.push({
+        id: nid(),
+        role: m.role as 'user' | 'assistant',
+        text: m.content,
+        ...(m.rowId != null ? { rowId: m.rowId } : {}),
+        ...(m.ts != null ? { ts: m.ts } : {}),
+      });
     }
   }
   return items;
@@ -397,6 +410,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** On-demand REST fill (the chat screen calls this when a tool bubble is
    *  expanded before the turn ended / on a backend without live results). */
   const refreshToolResults = useCallback(() => toolRefreshRef.current(), []);
+  // Stamp durable row ids onto live messages (edit/rewind targets) by aligning
+  // the REST transcript tail with the local transcript from the end.
+  const stampRowIdsRef = useRef<() => void>(() => {});
+  stampRowIdsRef.current = () => {
+    const h = latest.current.host;
+    const sk = latest.current.sessionKey;
+    if (!h || !sk) return;
+    void (async () => {
+      try {
+        const items = await getSessionMessages(h, cookie.current, sk);
+        const rest = items.filter(
+          (m) => (m.role === 'user' || m.role === 'assistant') && m.rowId != null && m.content.trim(),
+        );
+        if (!rest.length) return;
+        const fill = new Map<string, number>();
+        let j = rest.length - 1;
+        const ours = messagesRef.current;
+        for (let i = ours.length - 1; i >= 0 && j >= 0; i--) {
+          const m = ours[i];
+          if (m.role !== 'user' && m.role !== 'assistant') continue;
+          while (j >= 0 && !(rest[j].role === m.role && rest[j].content.trim() === m.text.trim())) j--;
+          if (j < 0) break;
+          if (m.rowId == null && rest[j].rowId != null) fill.set(m.id, rest[j].rowId as number);
+          j--;
+        }
+        if (!fill.size) return;
+        setMessages((prev) => prev.map((m) => (fill.has(m.id) ? { ...m, rowId: fill.get(m.id) } : m)));
+      } catch {}
+    })();
+  };
   // Post-reconnect resync: the replay ring had already dropped the gap, so the
   // transcript must be rebuilt from REST rather than trusted piecemeal.
   const resyncRef = useRef<() => void>(() => {});
@@ -713,6 +756,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           // Backfill full tool RESULT content from the REST transcript.
           toolRefreshRef.current();
+          // Stamp durable row ids so the new turn is editable/regenerable.
+          stampRowIdsRef.current();
           // Turn ended — send the next queued prompt, if any.
           drainRef.current();
           // Refresh the status strip's context/token numbers.
@@ -1069,14 +1114,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Shared by send() and the slash dispatches that expand to a prompt (skills,
   // bundles, /bg-style sends).
   const beginTurn = useCallback(
-    async (submitText: string, echo?: { text: string; media?: Attachment[] }) => {
+    async (submitText: string, echo?: { text: string; media?: Attachment[] }, rewindRowId?: number) => {
       const g = gw.current;
       const sid = sessionId;
       if (!g || !sid) return;
+      const submitOpts = rewindRowId != null ? { rewindRowId } : {};
+      // Rewind: the server cuts history at that user row, so drop the matching
+      // local tail first (and re-echo the user line for regenerate, which passes
+      // no explicit echo).
+      if (rewindRowId != null) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.rowId === rewindRowId);
+          return idx >= 0 ? prev.slice(0, idx) : prev;
+        });
+      }
       if (echo) {
         setMessages((prev) => [
           ...prev,
-          { id: nid(), role: 'user' as Role, text: echo.text, ...(echo.media?.length ? { media: echo.media } : {}) },
+          {
+            id: nid(),
+            role: 'user' as Role,
+            text: echo.text,
+            ts: Math.floor(Date.now() / 1000),
+            ...(echo.media?.length ? { media: echo.media } : {}),
+          },
+        ]);
+      } else if (rewindRowId != null) {
+        setMessages((prev) => [
+          ...prev,
+          { id: nid(), role: 'user' as Role, text: submitText, ts: Math.floor(Date.now() / 1000) },
         ]);
       }
       const aid = nid();
@@ -1091,7 +1157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setGenerating(true);
       generatingRef.current = true; // flip now: a drain before the re-render must not double-send
       try {
-        const status = await g.submit(sid, submitText);
+        const status = await g.submit(sid, submitText, submitOpts);
         if (status === 'queued') setToolLine('queued — will run after the live turn…');
       } catch (e: any) {
         let msg = e?.message ?? String(e);
@@ -1103,7 +1169,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const r: any = await g.resume(sessionKey);
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
             setSessionId(liveId);
-            const status = await g.submit(liveId, submitText);
+            const status = await g.submit(liveId, submitText, submitOpts);
             if (status === 'queued') setToolLine('queued — will run after the live turn…');
             return;
           } catch (e2: any) {
@@ -1275,11 +1341,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void sendRef.current?.(next.text);
   };
 
+  // ── Edit / regenerate (rewind) ────────────────────────────────────────────
+  // "Edit & resend" rewinds history to that user row and resubmits the edited
+  // text; "Regenerate" reruns the last user turn. Both need the durable row id
+  // (ordinal-only cuts are refused for durable sessions).
+  const editRowRef = useRef<number | null>(null);
+  const [editingRowId, setEditingRowId] = useState<number | null>(null);
+
+  const editMessage = useCallback(
+    (id: string) => {
+      const m = messagesRef.current.find((x) => x.id === id);
+      if (!m || m.role !== 'user') return;
+      if (m.rowId == null) {
+        stampRowIdsRef.current();
+        setMessages((prev) => [
+          ...prev,
+          { id: nid(), role: 'notice', text: 'Loading the message id — tap Edit again in a moment.' },
+        ]);
+        return;
+      }
+      editRowRef.current = m.rowId;
+      setEditingRowId(m.rowId);
+      setInput(m.text);
+    },
+    [setInput],
+  );
+
+  const cancelEdit = useCallback(() => {
+    editRowRef.current = null;
+    setEditingRowId(null);
+    setInput('');
+  }, [setInput]);
+
+  const regenerate = useCallback(() => {
+    const g = gw.current;
+    if (!g || !sessionId || generatingRef.current) return;
+    const lastUser = [...messagesRef.current]
+      .reverse()
+      .find((m) => m.role === 'user' && m.rowId != null && m.text.trim());
+    if (!lastUser) {
+      setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: 'Nothing to regenerate yet.' }]);
+      stampRowIdsRef.current();
+      return;
+    }
+    void beginTurn(lastUser.text, undefined, lastUser.rowId as number);
+  }, [sessionId, beginTurn]);
+
   const send = useCallback(async (override?: string) => {
     const text = (override ?? input).trim();
     const g = gw.current;
     const files = override === undefined ? attachments : [];
     if ((!text && files.length === 0) || !g || !sessionId) return;
+    // An edit resend rewinds history to that user row first (cleared below).
+    const rewindRowId = editRowRef.current ?? undefined;
+    if (editRowRef.current != null) {
+      editRowRef.current = null;
+      setEditingRowId(null);
+    }
     if (generatingRef.current) {
       // Mid-turn: hold it for the next turn instead of dropping it.
       if (text) enqueueQueued(text);
@@ -1358,7 +1476,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]
       .filter(Boolean)
       .join('\n');
-    await beginTurn(submitText, { text: shownText, media: images });
+    await beginTurn(submitText, { text: shownText, media: images }, rewindRowId);
   }, [input, attachments, sessionId, host, setInput, setAttachments, beginTurn, runSlash, enqueueQueued]);
   sendRef.current = send;
 
@@ -1624,6 +1742,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearQueue,
     resumeQueue,
     sendQueuedNow,
+    editingRowId,
+    editMessage,
+    cancelEdit,
+    regenerate,
     todos,
     subagents,
     refreshToolResults,

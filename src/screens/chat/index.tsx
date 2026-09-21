@@ -108,6 +108,10 @@ export function ChatScreen() {
     clearQueue,
     resumeQueue,
     sendQueuedNow,
+    editingRowId,
+    editMessage,
+    cancelEdit,
+    regenerate,
     todos,
     subagents,
     refreshToolResults,
@@ -282,9 +286,21 @@ export function ChatScreen() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Agent todo checklist above the composer — collapsed to a one-line summary.
   const [todosOpen, setTodosOpen] = useState(false);
+  // True while the list is scrolled up — shows the jump-to-bottom button.
+  const [atBottom, setAtBottom] = useState(true);
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
   const tokenEstimate = messages.reduce((n, m) => n + Math.ceil(m.text.length / 4), 0);
+  // Regenerate targets the last assistant bubble; the rewind target is the last
+  // user row that carries a durable id.
+  const lastAssistantId = useMemo(
+    () => [...messages].reverse().find((m) => m.role === 'assistant')?.id,
+    [messages],
+  );
+  const hasRegenTarget = useMemo(
+    () => messages.some((m) => m.role === 'user' && m.rowId != null && m.text.trim()),
+    [messages],
+  );
   // Kebab menu + in-conversation search.
   const [kebabOpen, setKebabOpen] = useState(false);
   // The dropdown is anchored to the kebab ICON, measured on open — a fixed
@@ -345,6 +361,8 @@ export function ChatScreen() {
     [refreshToolResults],
   );
   const onCopy = useCallback((id: string, text: string) => void copyText(id, text), [copyText]);
+  const onEdit = useCallback((id: string) => editMessage(id), [editMessage]);
+  const onRegenerate = useCallback(() => regenerate(), [regenerate]);
 
   const scrollEnd = useCallback((animated?: unknown) => {
     const anim = animated === false ? false : true;
@@ -718,8 +736,9 @@ export function ChatScreen() {
           }}
           onScroll={(e) => {
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-            stickEnd.current =
-              contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
+            const atEnd = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
+            stickEnd.current = atEnd;
+            setAtBottom((p) => (p === atEnd ? p : atEnd));
           }}
           scrollEventThrottle={16}
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
@@ -737,6 +756,12 @@ export function ChatScreen() {
               onToggleExpand={onToggleExpand}
               copied={copiedId === item.id}
               onCopy={onCopy}
+              canEdit={item.role === 'user' && item.rowId != null && !generating}
+              canRegenerate={
+                !!lastAssistantId && item.id === lastAssistantId && hasRegenTarget && !generating
+              }
+              onEdit={onEdit}
+              onRegenerate={onRegenerate}
             />
           )}
         />
@@ -1028,6 +1053,16 @@ export function ChatScreen() {
             </ScrollView>
           </View>
         )}
+        {editingRowId != null && (
+          <View className="mx-2.5 mb-1 flex-row items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
+            <Text className="flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
+              Editing — resend to rewind and rerun from here
+            </Text>
+            <Pressable onPress={cancelEdit} hitSlop={8} className="shrink-0 rounded px-1.5 py-0.5">
+              <Text className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</Text>
+            </Pressable>
+          </View>
+        )}
         <Composer
           input={input}
           setInput={setInput}
@@ -1050,6 +1085,20 @@ export function ChatScreen() {
           dark={dark}
         />
       </KeyboardAvoidingView>
+      {/* Jump to the newest message (shown once the user scrolls up). */}
+      {!atBottom && (
+        <Pressable
+          testID="scroll-to-bottom"
+          onPress={() => {
+            stickEnd.current = true;
+            scrollEnd();
+          }}
+          className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
+          style={{ bottom: 150, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
+        >
+          <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
+        </Pressable>
+      )}
       <AskSheet
         ref={askRef}
         ask={ask}
