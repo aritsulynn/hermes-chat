@@ -224,16 +224,25 @@ function ThemedDrawer() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AppProvider>
-          <ThemedStatusBar />
-          <SplashGate />
-          <BottomSheetModalProvider>
-            <ThemedDrawer />
-          </BottomSheetModalProvider>
-        </AppProvider>
-      </SafeAreaProvider>
+    <SafeAreaProvider>
+      <AppProvider>
+        <ThemedRoot />
+      </AppProvider>
+    </SafeAreaProvider>
+  );
+}
+
+// Root view painted with the theme color so the Android 15 edge-to-edge
+// system areas (nav bar region) never show the white window background.
+function ThemedRoot() {
+  const { theme } = useApp();
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme === 'dark' ? '#000' : '#fff' }}>
+      <ThemedStatusBar />
+      <SplashGate />
+      <BottomSheetModalProvider>
+        <ThemedDrawer />
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }

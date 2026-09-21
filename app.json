@@ -34,7 +34,8 @@
       "expo-secure-store",
       "expo-router",
       "expo-status-bar",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      ["expo-navigation-bar", { "enforceContrast": false }]
     ]
   }
 }
