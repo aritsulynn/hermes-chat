@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   useWindowDimensions,
@@ -15,13 +16,16 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { Redirect, useNavigation } from 'expo-router';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ChevronDown, ChevronUp, Info, MoreVertical, Search, X } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Check, ChevronRight, FileText, Image as ImageIcon, Info, MoreVertical, Search, X } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
-import { FALLBACK_PROVIDERS } from '../../utils/messages';
+import { EFFORTS, FALLBACK_PROVIDERS } from '../../utils/messages';
 import type { UiMessage } from '../../utils/messages';
 import { AskSheet, Composer, HamburgerBtn, InfoSheet, MessageBubble } from '../../components';
+import type { AnchorMeasure } from '../../components';
 
 export function ChatScreen() {
   const {
@@ -72,8 +76,42 @@ export function ChatScreen() {
 
   // Numeric bubble cap: percent maxWidth resolves too late for Yoga to wrap
   // row-nested markdown (lists) — a pixel value constrains measurement itself.
-  const { width: winW } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
   const bubbleMax = Math.round(winW * 0.85);
+
+  // Screen-level anchored popovers ("+" attach, model picker, thinking effort),
+  // anchored to the composer controls that opened them. Rendered here, not in
+  // the composer, so they can float above the list and still receive taps — on
+  // Android touches outside a parent's bounds are dropped, so a popover inside
+  // the composer wouldn't work.
+  const [popover, setPopover] = useState<
+    { kind: 'effort' | 'attach' | 'model'; x: number; y: number; w: number; h: number } | null
+  >(null);
+  const popoverMeasure = useRef<AnchorMeasure | null>(null);
+  const [modelQuery, setModelQuery] = useState('');
+  const [modelExpanded, setModelExpanded] = useState<Record<string, boolean>>({});
+  const rootRef = useRef<View>(null);
+  const rootWin = useRef({ y: 0, h: 0 });
+
+  const openPopover = useCallback(
+    (kind: 'effort' | 'attach' | 'model', measure: AnchorMeasure) => {
+      popoverMeasure.current = measure;
+      if (kind === 'model') {
+        setModelQuery('');
+        void loadProviders();
+      }
+      measure((a) => setPopover({ kind, ...a }));
+    },
+    [loadProviders],
+  );
+  // Re-anchor after the keyboard slides in/out and lifts the composer.
+  const remeasurePopover = useCallback(() => {
+    popoverMeasure.current?.((a) => setPopover((p) => (p ? { ...p, ...a } : p)));
+  }, []);
+  const closePopover = useCallback(() => {
+    popoverMeasure.current = null;
+    setPopover(null);
+  }, []);
 
   const listRef = useRef<FlatList<UiMessage>>(null);
   // Long-press fired: swallow the onPress that fires on release (else a
@@ -112,18 +150,26 @@ export function ChatScreen() {
   // When the keyboard slides up the list height shrinks but content offset
   // stays — explicitly scroll so the latest message sits above the keyboard,
   // like every normal chat app. Delay covers the keyboard animation (~250ms).
+  // Also re-anchor any open popover, since the composer moves up with the
+  // keyboard (matters for the model search field).
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => {
-      setTimeout(() => scrollEnd(true), 50);
+      setTimeout(() => {
+        scrollEnd(true);
+        remeasurePopover();
+      }, 50);
     });
     const hide = Keyboard.addListener('keyboardDidHide', () => {
-      setTimeout(() => scrollEnd(true), 50);
+      setTimeout(() => {
+        scrollEnd(true);
+        remeasurePopover();
+      }, 50);
     });
     return () => {
       show.remove();
       hide.remove();
     };
-  }, [scrollEnd]);
+  }, [scrollEnd, remeasurePopover]);
 
   // Fetch picker inventory when entering a chat (WS model.options, REST fallback).
   useEffect(() => {
@@ -137,6 +183,41 @@ export function ChatScreen() {
     void send();
     scrollEnd();
   }, [send, scrollEnd]);
+
+  // Attach actions live here (not in the composer) because their UI — the "+"
+  // popover — is rendered at screen level. See pickImage/pickFile callers below.
+  const pickImage = useCallback(async () => {
+    setPopover(null);
+    try {
+      const r = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+      if (!r.canceled && r.assets?.length) {
+        const picked = r.assets.map((a, i) => ({
+          uri: a.uri,
+          name: a.fileName ?? `image-${Date.now()}-${i}.jpg`,
+          mime: a.mimeType,
+        }));
+        setAttachments([...attachments, ...picked]);
+      }
+    } catch {}
+  }, [attachments, setAttachments]);
+
+  const pickFile = useCallback(async () => {
+    setPopover(null);
+    try {
+      const r = await DocumentPicker.getDocumentAsync({ multiple: true });
+      if (!r.canceled && r.assets?.length) {
+        const picked = r.assets.map((a) => ({
+          uri: a.uri,
+          name: a.name ?? 'file',
+          mime: a.mimeType,
+        }));
+        setAttachments([...attachments, ...picked]);
+      }
+    } catch {}
+  }, [attachments, setAttachments]);
 
   // Bottom sheets are programmatic: present/dismiss as store state changes.
   // NEVER dismiss a modal that was never presented: gorhom's dismiss() on a
@@ -261,8 +342,51 @@ export function ChatScreen() {
     );
   }
 
+  // Popover geometry: anchor above the tapped control (window → root coords).
+  const popW = popover
+    ? popover.kind === 'model'
+      ? Math.min(winW - 24, 340)
+      : popover.kind === 'attach'
+        ? 184
+        : 168
+    : 0;
+  const popRootH = rootWin.current.h || Math.max(0, winH - rootWin.current.y);
+  const popMaxH = popover?.kind === 'model' ? Math.round(popRootH * 0.55) : undefined;
+  const popRelY = popover ? popover.y - rootWin.current.y : 0;
+  const popBottom = popover ? Math.max(8, popRootH - popRelY + 6) : 0;
+  const popLeft = popover ? Math.max(8, Math.min(popover.x, winW - popW - 8)) : 0;
+
+  // Model picker list (search + provider accordions), moved out of the old
+  // composer bottom sheet so it can render in the screen-level popover.
+  const modelProviders = providers ?? FALLBACK_PROVIDERS;
+  const mq = modelQuery.trim().toLowerCase();
+  const modelVisibleProviders = modelProviders
+    .map((p) => {
+      const list = p.models ?? [];
+      const models = mq
+        ? list.filter(
+            (mm) =>
+              mm.toLowerCase().includes(mq) ||
+              p.name.toLowerCase().includes(mq) ||
+              p.slug.toLowerCase().includes(mq),
+          )
+        : list;
+      return { ...p, models };
+    })
+    .filter((p) => (mq ? p.models.length > 0 : true));
+
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View
+      ref={rootRef}
+      onLayout={() =>
+        rootRef.current?.measureInWindow((_x, y, _w, h) => {
+          rootWin.current = { y, h };
+          // Keyboard resize moves the composer; keep the popover glued to it.
+          remeasurePopover();
+        })
+      }
+      style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}
+    >
       {/* No 'bottom' edge here: Composer already pads with insets.bottom
           itself when the keyboard is closed, and KeyboardAvoidingView lifts
           it when open. Keeping 'bottom' would double the gap above the
@@ -394,14 +518,10 @@ export function ChatScreen() {
           scrollEnd={scrollEnd}
           model={model}
           modelProvider={modelProvider}
-          providers={providers ?? FALLBACK_PROVIDERS}
-          providersLoading={providersLoading}
-          providersError={providersError}
-          onOpenModelPicker={() => void loadProviders()}
-          onPickModel={(slug, mid) => void pickModel(slug, mid)}
-          onPickGlobal={(slug, mid) => void setGlobalModel(slug, mid)}
+          onOpenModelPicker={(m) => openPopover('model', m)}
           effort={effort}
-          setEffort={setEffort}
+          onOpenEffortPicker={(m) => openPopover('effort', m)}
+          onOpenAttachPicker={(m) => openPopover('attach', m)}
           attachments={attachments}
           setAttachments={setAttachments}
         />
@@ -429,6 +549,203 @@ export function ChatScreen() {
         tokenEstimate={tokenEstimate}
         onRename={(t) => void renameSession(t)}
       />
+
+      {/* Screen-level anchored popovers: "+" attach, model picker, thinking
+          effort. Rendered here (not in the composer) so they float above the
+          list and still receive taps — Android drops touches outside a
+          parent's bounds. */}
+      {popover && (
+        <>
+          <Pressable
+            testID="popover-backdrop"
+            style={{ position: 'absolute', inset: 0, zIndex: 60 }}
+            onPress={closePopover}
+          />
+          <View
+            testID="anchor-popover"
+            className="absolute z-[70] rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
+            style={{
+              width: popW,
+              left: popLeft,
+              bottom: popBottom,
+              maxHeight: popMaxH,
+              elevation: 16,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: dark ? 0.5 : 0.18,
+              shadowRadius: 10,
+            }}
+          >
+            {popover.kind === 'effort' && (
+              <>
+                <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Thinking effort
+                </Text>
+                {EFFORTS.map((e) => {
+                  const on = e === effort;
+                  return (
+                    <Pressable
+                      key={e}
+                      testID={`effort-option-${e.toLowerCase()}`}
+                      onPress={() => {
+                        setEffort(e);
+                        closePopover();
+                      }}
+                      className={`flex-row items-center gap-2 rounded-lg px-2.5 py-2 ${
+                        on
+                          ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20'
+                          : 'active:bg-neutral-100 dark:active:bg-neutral-800'
+                      }`}
+                    >
+                      <Text
+                        className={`flex-1 text-[14px] ${
+                          on
+                            ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                            : 'text-neutral-900 dark:text-neutral-100'
+                        }`}
+                      >
+                        {e}
+                      </Text>
+                      {on && <Check size={15} color="#1a73e8" />}
+                    </Pressable>
+                  );
+                })}
+              </>
+            )}
+
+            {popover.kind === 'attach' && (
+              <>
+                <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Attach
+                </Text>
+                <Pressable
+                  testID="attach-photo"
+                  onPress={() => void pickImage()}
+                  className="flex-row items-center gap-2.5 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                >
+                  <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
+                  <Text className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</Text>
+                </Pressable>
+                <Pressable
+                  testID="attach-file"
+                  onPress={() => void pickFile()}
+                  className="flex-row items-center gap-2.5 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                >
+                  <FileText size={17} color={dark ? '#ccc' : '#444'} />
+                  <Text className="text-[14px] text-neutral-900 dark:text-neutral-100">File</Text>
+                </Pressable>
+              </>
+            )}
+
+            {popover.kind === 'model' && (
+              <>
+                <Text className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Switch model (this chat)
+                </Text>
+                <View className="px-1.5 pb-1.5">
+                  <TextInput
+                    className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                    value={modelQuery}
+                    onChangeText={setModelQuery}
+                    placeholder="Search models…"
+                    placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                    keyboardAppearance={dark ? 'dark' : 'light'}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                {providersLoading && (
+                  <Text className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</Text>
+                )}
+                {!!providersError && (
+                  <Text className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]">{providersError}</Text>
+                )}
+                <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+                  {modelVisibleProviders.map((p) => {
+                    const count = p.models?.length ?? p.totalModels;
+                    const open = mq ? true : (modelExpanded[p.slug] ?? false);
+                    return (
+                      <View key={p.slug || p.name}>
+                        <Pressable
+                          onPress={() =>
+                            setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))
+                          }
+                          className="flex-row items-center gap-2 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                        >
+                          <Text
+                            className="flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100"
+                            numberOfLines={1}
+                          >
+                            {p.name}
+                          </Text>
+                          <Text className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                            {count} model{count === 1 ? '' : 's'}
+                          </Text>
+                          {open ? (
+                            <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
+                          ) : (
+                            <ChevronRight size={15} color={dark ? '#a3a3a3' : '#666'} />
+                          )}
+                        </Pressable>
+                        {open &&
+                          (p.models ?? []).map((mm) => {
+                            const on = mm === model && p.slug === modelProvider;
+                            return (
+                              <View
+                                key={mm}
+                                className={`flex-row items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
+                                  on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
+                                }`}
+                              >
+                                <Pressable
+                                  onPress={() => {
+                                    void pickModel(p.slug, mm);
+                                    closePopover();
+                                  }}
+                                  className="flex-1"
+                                >
+                                  <Text
+                                    className={`text-[14px] ${
+                                      on
+                                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                                        : 'text-neutral-950 dark:text-neutral-100'
+                                    }`}
+                                    numberOfLines={1}
+                                  >
+                                    {on ? '● ' : '○ '}
+                                    {mm}
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  onPress={() => {
+                                    void setGlobalModel(p.slug, mm);
+                                    closePopover();
+                                  }}
+                                  className="rounded-lg border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+                                  hitSlop={8}
+                                >
+                                  <Text className="text-[13px] dark:text-neutral-100">Global</Text>
+                                </Pressable>
+                              </View>
+                            );
+                          })}
+                        {open && !p.models && (
+                          <Text className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                            list unavailable — pull to refresh on server
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                  {modelVisibleProviders.length === 0 && !providersLoading && (
+                    <Text className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</Text>
+                  )}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </>
+      )}
     </SafeAreaView>
     </View>
   );
