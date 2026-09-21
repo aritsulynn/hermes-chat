@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -293,9 +292,12 @@ export function ChatScreen() {
   // Height of the floating bottom dock (panels + composer) — the list reserves
   // this much padding so the last message can scroll above it.
   const [dockH, setDockH] = useState(0);
-  // Keyboard height — the absolute dock must be lifted by hand (see the
-  // KeyboardAvoidingView note below).
-  const [kbH, setKbH] = useState(0);
+  // Keyboard height — the absolute dock must be lifted by hand, and the list
+  // owns its own bottom space (see the layout note below). Measured as the
+  // OVERLAP between the keyboard top and the window, so it stays correct whether
+  // or not the platform also resizes the window for the keyboard.
+  const [kbTop, setKbTop] = useState<number | null>(null);
+  const kbH = kbTop == null ? 0 : Math.max(0, Math.round(winH - kbTop));
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
   const tokenEstimate = messages.reduce((n, m) => n + Math.ceil(m.text.length / 4), 0);
@@ -387,16 +389,15 @@ export function ChatScreen() {
   // keyboard (matters for the model search field).
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e: any) => {
-      // The absolute dock can't ride KeyboardAvoidingView's padding, so track the
-      // keyboard height and lift it explicitly.
-      setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0)));
+      const y = typeof e?.endCoordinates?.screenY === 'number' ? e.endCoordinates.screenY : null;
+      setKbTop(y);
       setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
       }, 50);
     });
     const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
-      setKbH(0);
+      setKbTop(null);
       setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
@@ -407,6 +408,12 @@ export function ChatScreen() {
       hide.remove();
     };
   }, [scrollEnd, remeasurePopover]);
+
+  // Keyboard/dock resize: keep the newest message in view (the absolute dock
+  // no longer rides KeyboardAvoidingView, so the list owns its own bottom space).
+  useEffect(() => {
+    if (stickEnd.current) scrollEnd(true);
+  }, [kbH, dockH, scrollEnd]);
 
   // Fetch picker inventory when entering a chat (WS model.options, REST fallback).
   useEffect(() => {
@@ -704,11 +711,11 @@ export function ChatScreen() {
         </>
       )}
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior="padding"
-        keyboardVerticalOffset={insets.top + (Platform.OS === 'android' ? 52 : 44)}
-      >
+      {/* Plain View, not KeyboardAvoidingView: the composer dock is absolutely
+          positioned (so the transcript shows behind it), and an absolute child
+          ignores the view's padding — the keyboard is handled explicitly above
+          via kbH (dock bottom + list padding). */}
+      <View className="flex-1">
         {searchOpen && (
           <View className="flex-row items-center gap-1.5 border-b border-neutral-100 px-2.5 py-1.5 dark:border-neutral-800">
             <Search size={16} color={dark ? '#a3a3a3' : '#666'} />
@@ -751,7 +758,7 @@ export function ChatScreen() {
           data={messages}
           keyExtractor={(m) => m.id}
           className="flex-1"
-          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH }}
+          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }}
           onContentSizeChange={() => {
             if (stickEnd.current) scrollEnd();
           }}
@@ -767,7 +774,7 @@ export function ChatScreen() {
           }}
           scrollEventThrottle={16}
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          automaticallyAdjustKeyboardInsets={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           renderItem={({ item }) => (
@@ -1118,7 +1125,7 @@ export function ChatScreen() {
           dark={dark}
         />
         </View>
-      </KeyboardAvoidingView>
+      </View>
       {/* Jump to the newest message (shown once the user scrolls up). */}
       {!atBottom && (
         <Pressable
