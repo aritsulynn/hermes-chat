@@ -57,6 +57,7 @@ export function ChatScreen() {
     redirectLive,
     renameSession,
     setGlobalModel,
+    newSession,
     openInfo,
     loadProviders,
     pickModel,
