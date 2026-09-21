@@ -125,7 +125,7 @@ export const Composer = memo(function Composer({
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
   return (
     <View className="px-2.5 pt-2" style={{ paddingBottom: webKb > 0 ? webKb + 10 : kbOpen ? 10 : Math.max(insets.bottom, 10) }}>
-      <View className="gap-1.5 rounded-2xl bg-[#f4f4f6] dark:bg-[#212121] px-2.5 pb-2 pt-2">
+      <View className="gap-1.5 rounded-2xl border border-neutral-300 px-2.5 pb-2 pt-2 dark:border-neutral-700">
         {generating && (
           <Text className="px-1.5 text-xs text-amber-700 dark:text-amber-400">
             live — Queue holds · Steer ↪ corrects · ■ stops
