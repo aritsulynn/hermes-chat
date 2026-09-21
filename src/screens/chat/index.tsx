@@ -758,7 +758,11 @@ export function ChatScreen() {
           data={messages}
           keyExtractor={(m) => m.id}
           className="flex-1"
-          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }}
+          // Closed: the list runs behind the floating dock (padding makes room).
+          // Open: the list ends above the dock so the messages stay visible while
+          // typing (the dock is lifted by kbH).
+          style={{ marginBottom: kbH > 0 ? kbH + dockH : 0 }}
+          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: kbH > 0 ? 12 : 12 + dockH }}
           onContentSizeChange={() => {
             if (stickEnd.current) scrollEnd();
           }}
