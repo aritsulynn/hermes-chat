@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, Text, TextInput, View } from 'react-native';
 import { Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
-import { useApp } from '../store';
+import { useApp } from '../hooks/app-store';
 
 // One shared drawer hamburger so every screen looks and behaves the same.
 export function HamburgerBtn() {

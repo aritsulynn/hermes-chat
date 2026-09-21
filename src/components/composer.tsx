@@ -16,11 +16,11 @@ import {
   Square,
   X,
 } from 'lucide-react-native';
-import { EFFORTS } from '../models';
-import type { Attachment } from '../models';
-import { useApp } from '../store';
+import { EFFORTS } from '../utils/messages';
+import type { Attachment } from '../utils/messages';
+import { useApp } from '../hooks/app-store';
 import { RecordingPresets, requestRecordingPermissionsAsync, useAudioRecorder } from 'expo-audio';
-import type { ModelProviderOption } from '../dashboard';
+import type { ModelProviderOption } from '../lib/dashboard';
 import { renderBackdrop } from './sheets';
 
 export function Composer({

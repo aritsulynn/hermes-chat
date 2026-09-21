@@ -1,6 +1,6 @@
 // Root layout — expo-router Drawer (https://docs.expo.dev/router/advanced/drawer/).
 // Native drawer items (DrawerItemList/DrawerItem) instead of handmade buttons.
-import '../global.css';
+import '../../global.css';
 import { useEffect } from 'react';
 import { Drawer, DrawerContentScrollView, DrawerItem } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
@@ -13,9 +13,9 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import { Platform, Text, View } from 'react-native';
 import { LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, RefreshCw, Sun } from 'lucide-react-native';
-import { AppProvider, useApp } from '../src/store';
-import { BUILD_ID } from '../src/build';
-import type { ConnState } from '../src/gateway-ws';
+import { AppProvider, useApp } from '../hooks/app-store';
+import { BUILD_ID } from '../build';
+import type { ConnState } from '../lib/gateway-ws';
 
 // Hold the native splash until the silent reconnect finishes (booting).
 SplashScreen.preventAutoHideAsync().catch(() => {});

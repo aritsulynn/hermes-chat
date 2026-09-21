@@ -6,12 +6,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Fingerprint } from 'lucide-react-native';
 import * as LocalAuth from 'expo-local-authentication';
-import { useApp } from '../src/store';
-import { Field } from '../src/ui';
-import { BUILD_ID } from '../src/build';
-import { getPassword } from '../src/connection';
+import { useApp } from '../../hooks/app-store';
+import { Field } from '../../components';
+import { BUILD_ID } from '../../build';
+import { getPassword } from '../../lib/connection';
 
-export default function LoginScreen() {
+export function LoginScreen() {
   const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login, theme } =
     useApp();
   const [bioAvailable, setBioAvailable] = useState(false);

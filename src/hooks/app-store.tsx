@@ -18,15 +18,15 @@ import {
   probeStatus,
   setMainModel,
   toWsUrl,
-} from './dashboard';
-import type { ModelProviderOption } from './dashboard';
-import { clearCookie, getCookie, getPassword, getTheme, loadConnection, saveCookie, saveHost, savePassword, saveTheme } from './connection';
-import type { Theme } from './connection';
-import { GatewayWs } from './gateway-ws';
-import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from './gateway-ws';
-import { cleanThinking, errMsg, nid } from './models';
-import type { Attachment, UiMessage } from './models';
-import type { Role } from './models';
+} from '../lib/dashboard';
+import type { ModelProviderOption } from '../lib/dashboard';
+import { clearCookie, getCookie, getPassword, getTheme, loadConnection, saveCookie, saveHost, savePassword, saveTheme } from '../lib/connection';
+import type { Theme } from '../lib/connection';
+import { GatewayWs } from '../lib/gateway-ws';
+import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
+import { cleanThinking, errMsg, nid } from '../utils/messages';
+import type { Attachment, UiMessage } from '../utils/messages';
+import type { Role } from '../utils/messages';
 
 export interface AppStore {
   booting: boolean;

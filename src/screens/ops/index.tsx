@@ -6,15 +6,15 @@ import { Redirect, useNavigation } from 'expo-router';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useApp } from '../src/store';
-import { errMsg } from '../src/models';
-import { HamburgerBtn } from '../src/ui';
+import { useApp } from '../../hooks/app-store';
+import { errMsg } from '../../utils/messages';
+import { HamburgerBtn } from '../../components';
 
 type Tab = 'cron' | 'kanban' | 'logs' | 'usage' | 'files';
 
 const TABS: Tab[] = ['cron', 'kanban', 'logs', 'usage', 'files'];
 
-export default function OpsScreen() {
+export function OpsScreen() {
   const { booting, authed, opsGet, opsMut, theme } = useApp();
   const dark = theme === 'dark';
   const navigation = useNavigation();

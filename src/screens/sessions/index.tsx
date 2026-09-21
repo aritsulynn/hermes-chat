@@ -17,10 +17,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { History, Pencil, Plus, Trash2 } from 'lucide-react-native';
-import { useApp } from '../src/store';
-import { HamburgerBtn } from '../src/ui';
+import { useApp } from '../../hooks/app-store';
+import { HamburgerBtn } from '../../components';
 
-export default function SessionsScreen() {
+export function SessionsScreen() {
   const {
     booting,
     authed,

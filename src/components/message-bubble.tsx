@@ -2,8 +2,8 @@ import type * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { Brain, Check, Cog, Copy } from 'lucide-react-native';
-import { cleanThinking, flattenLists } from '../models';
-import type { UiMessage } from '../models';
+import { cleanThinking, flattenLists } from '../utils/messages';
+import type { UiMessage } from '../utils/messages';
 import { TypingDots } from './bits';
 import { mdAi, mdAiDark, mdUser, selectableRules } from './markdown';
 

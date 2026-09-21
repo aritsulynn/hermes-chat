@@ -19,12 +19,12 @@ import { StatusBar } from 'expo-status-bar';
 import { Redirect, useNavigation } from 'expo-router';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { ChevronDown, ChevronUp, Info, MoreVertical, Search, X } from 'lucide-react-native';
-import { useApp } from '../src/store';
-import { FALLBACK_PROVIDERS } from '../src/models';
-import type { UiMessage } from '../src/models';
-import { AskSheet, Composer, HamburgerBtn, InfoSheet, MessageBubble } from '../src/ui';
+import { useApp } from '../../hooks/app-store';
+import { FALLBACK_PROVIDERS } from '../../utils/messages';
+import type { UiMessage } from '../../utils/messages';
+import { AskSheet, Composer, HamburgerBtn, InfoSheet, MessageBubble } from '../../components';
 
-export default function ChatScreen() {
+export function ChatScreen() {
   const {
     booting,
     authed,

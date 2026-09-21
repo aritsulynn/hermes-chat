@@ -7,9 +7,9 @@ import {
   BottomSheetView,
 } from '@gorhom/bottom-sheet';
 import { Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react-native';
-import { parseClarify } from '../models';
-import { useApp } from '../store';
-import type { GatewayWs, ServerAsk } from '../gateway-ws';
+import { parseClarify } from '../utils/messages';
+import { useApp } from '../hooks/app-store';
+import type { GatewayWs, ServerAsk } from '../lib/gateway-ws';
 
 export const renderBackdrop = (props: any) => (
   <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} />

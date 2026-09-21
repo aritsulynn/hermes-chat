@@ -1,5 +1,5 @@
 export * from './markdown';
 export * from './sheets';
-export * from './Composer';
+export * from './composer';
 export * from './bits';
-export * from './MessageBubble';
+export * from './message-bubble';
