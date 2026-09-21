@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { AppProvider, useApp } from '../hooks/app-store';
+import { FilePreviewHost } from '../components';
 
 // Hold the native splash until the silent reconnect finishes (booting).
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -109,7 +110,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
               placeholder="Search chats…"
               placeholderTextColor={dark ? '#888' : '#9ca3af'}
               autoFocus
-              className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+              className="flex-1 rounded-lg border border-neutral-300 px-3 py-2.5 text-[16px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
             />
             <Pressable
               onPress={() => {
@@ -124,7 +125,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           </View>
         ) : (
           <View className="flex-row items-center px-4 pt-2">
-            <Text className="flex-1 text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
+            <Text className="flex-1 text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
             <Pressable onPress={() => setSearchOpen(true)} hitSlop={10} className="p-2">
               <Search size={20} color={dimColor} />
             </Pressable>
@@ -141,15 +142,15 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
               close();
               void newSession();
             }}
-            className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
+            className="flex-row items-center gap-3 rounded-xl px-3 py-3"
             style={({ pressed }) => [
               (isNewChat || pressed) ? { backgroundColor: rowBg } : undefined,
               { opacity: busy ? 0.5 : 1 },
             ]}
           >
-            <SquarePen size={18} color={isNewChat ? '#1a73e8' : dimColor} />
+            <SquarePen size={20} color={isNewChat ? '#1a73e8' : dimColor} />
             <Text
-              className={`text-[15px] ${
+              className={`text-[17px] ${
                 isNewChat
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                   : 'text-neutral-950 dark:text-neutral-100'
@@ -168,14 +169,14 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                   close();
                   props.navigation.navigate(item.name);
                 }}
-                className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
+                className="flex-row items-center gap-3 rounded-xl px-3 py-3"
                 style={({ pressed }) => [
                   (active || pressed) ? { backgroundColor: rowBg } : undefined,
                 ]}
               >
-                <Icon size={18} color={active ? '#1a73e8' : dimColor} />
+                <Icon size={20} color={active ? '#1a73e8' : dimColor} />
                 <Text
-                  className={`text-[15px] ${
+                  className={`text-[17px] ${
                     active
                       ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                       : 'text-neutral-950 dark:text-neutral-100'
@@ -190,7 +191,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           {/* Meatball (More) Button under Files */}
           <Pressable
             onPress={() => setShowMoreMenu(!showMoreMenu)}
-            className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
+            className="flex-row items-center gap-3 rounded-xl px-3 py-3"
             style={({ pressed }) => [
               (showMoreMenu || isMoreActive || pressed)
                 ? { backgroundColor: rowBg }
@@ -198,11 +199,11 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             ]}
           >
             <Ellipsis
-              size={18}
+              size={20}
               color={(showMoreMenu || isMoreActive) ? '#1a73e8' : dimColor}
             />
             <Text
-              className={`text-[15px] ${
+              className={`text-[17px] ${
                 (showMoreMenu || isMoreActive)
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                   : 'text-neutral-950 dark:text-neutral-100'
@@ -225,12 +226,12 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                       close();
                       props.navigation.navigate(item.name);
                     }}
-                    className="flex-row items-center gap-2.5 rounded-xl px-3 py-2"
+                    className="flex-row items-center gap-3 rounded-xl px-3 py-2.5"
                     style={active ? { backgroundColor: rowBg } : undefined}
                   >
-                    <Icon size={16} color={active ? '#1a73e8' : dimColor} />
+                    <Icon size={18} color={active ? '#1a73e8' : dimColor} />
                     <Text
-                      className={`text-sm ${
+                      className={`text-[15px] ${
                         active
                           ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                           : 'text-neutral-800 dark:text-neutral-200'
@@ -245,11 +246,11 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           )}
         </View>
         <View className="px-3 pt-3">
-          <Text className="px-3 pb-1 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+          <Text className="px-3 pb-1 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
             {ql ? `Results (${visible.length})` : 'Recents'}
           </Text>
           {visible.length === 0 && (
-            <Text className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+            <Text className="px-3 py-2 text-[15px] text-neutral-500 dark:text-neutral-400">
               {ql ? 'No matches' : 'No sessions yet'}
             </Text>
           )}
@@ -262,7 +263,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                   close();
                   void openSession(s);
                 }}
-                className="rounded-xl px-3 py-2.5"
+                className="rounded-xl px-3 py-3"
                 style={({ pressed }) => [
                   (active || pressed) ? { backgroundColor: rowBg } : undefined,
                 ]}
@@ -270,7 +271,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 <Text
                   numberOfLines={1}
                   ellipsizeMode="tail"
-                  className="text-[15px] text-neutral-950 dark:text-neutral-100"
+                  className="text-[16px] text-neutral-950 dark:text-neutral-100"
                 >
                   {s.title || '(untitled)'}
                 </Text>
@@ -292,21 +293,21 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           onPress={() => setShowUserMenu(!showUserMenu)}
           className="flex-row items-center gap-3 px-4 py-4 active:opacity-75"
         >
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-[#1a73e8]">
-            <Text className="text-base font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</Text>
+          <View className="h-11 w-11 items-center justify-center rounded-full bg-[#1a73e8]">
+            <Text className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</Text>
           </View>
           <View className="flex-1">
             <Text
               numberOfLines={1}
               ellipsizeMode="tail"
-              className="text-[15px] font-semibold text-neutral-950 dark:text-neutral-100"
+              className="text-[16px] font-semibold text-neutral-950 dark:text-neutral-100"
             >
               {username || 'Hermes'}
             </Text>
-            <Text className="text-xs text-neutral-500 dark:text-neutral-400">{host || ''}</Text>
+            <Text className="text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</Text>
           </View>
           <ChevronRight
-            size={16}
+            size={18}
             color={dimColor}
             style={{ transform: [{ rotate: showUserMenu ? '-90deg' : '0deg' }] }}
           />
@@ -326,7 +327,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           <View
             className="absolute left-3 right-3 z-50 rounded-2xl border border-neutral-200 bg-white p-1.5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
             style={{
-              bottom: Math.max(insets.bottom, 8) + 66,
+              bottom: Math.max(insets.bottom, 8) + 72,
               shadowColor: '#000',
               shadowOffset: { width: 0, height: -4 },
               shadowOpacity: dark ? 0.5 : 0.15,
@@ -346,15 +347,15 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                     close();
                     props.navigation.navigate(item.name);
                   }}
-                  className={`flex-row items-center gap-3 rounded-xl px-3.5 py-2.5 ${
+                  className={`flex-row items-center gap-3 rounded-xl px-3.5 py-3 ${
                     active
                       ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20'
                       : 'active:bg-neutral-100 dark:active:bg-neutral-800'
                   }`}
                 >
-                  <Icon size={17} color={active ? '#1a73e8' : dark ? '#ccc' : '#444'} />
+                  <Icon size={19} color={active ? '#1a73e8' : dark ? '#ccc' : '#444'} />
                   <Text
-                    className={`text-sm font-medium ${
+                    className={`text-[15px] font-medium ${
                       active
                         ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
                         : 'text-neutral-900 dark:text-neutral-100'
@@ -374,10 +375,10 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 close();
                 props.navigation.navigate('settings');
               }}
-              className="flex-row items-center gap-3 rounded-xl px-3.5 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+              className="flex-row items-center gap-3 rounded-xl px-3.5 py-3 active:bg-neutral-100 dark:active:bg-neutral-800"
             >
-              <Settings size={17} color={dark ? '#ccc' : '#444'} />
-              <Text className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+              <Settings size={19} color={dark ? '#ccc' : '#444'} />
+              <Text className="text-[15px] font-medium text-neutral-900 dark:text-neutral-100">
                 Settings
               </Text>
             </Pressable>
@@ -390,10 +391,10 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 close();
                 void logout();
               }}
-              className="flex-row items-center gap-3 rounded-xl px-3.5 py-2.5 active:bg-red-50 dark:active:bg-red-950/40"
+              className="flex-row items-center gap-3 rounded-xl px-3.5 py-3 active:bg-red-50 dark:active:bg-red-950/40"
             >
-              <LogOut size={17} color="#dc2626" />
-              <Text className="text-sm font-medium text-red-600 dark:text-red-400">
+              <LogOut size={19} color="#dc2626" />
+              <Text className="text-[15px] font-medium text-red-600 dark:text-red-400">
                 Log Out
               </Text>
             </Pressable>
@@ -558,6 +559,9 @@ function ThemedRoot() {
         <SplashGate />
         <BottomSheetModalProvider>
           <ThemedDrawer />
+          {/* File links inside markdown preview through this host (a Modal
+              can't live inside the <Text> the markdown pipeline builds). */}
+          <FilePreviewHost />
         </BottomSheetModalProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -1,7 +1,18 @@
-import { StyleSheet, Text } from 'react-native';
+import { Linking, StyleSheet, Text } from 'react-native';
+import { ChatImage, FileChip } from './media';
+
+// Plain text out of a markdown AST node (link labels are inline children).
+function astText(node: any): string {
+  if (!node) return '';
+  if (typeof node.content === 'string') return node.content;
+  if (Array.isArray(node.children)) return node.children.map(astText).join('');
+  return '';
+}
 
 // Leaf text nodes render selectable so long-press selects partial text.
-export const selectableRules = {
+// A factory (not a constant) because the media rules need the active theme —
+// markdown has no styles channel for `dark`.
+export const makeSelectableRules = (dark: boolean) => ({
   text: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
     <Text key={node.key} selectable style={[inheritedStyles, styles.text]}>
       {node.content}
@@ -37,7 +48,35 @@ export const selectableRules = {
       </Text>
     );
   },
-};
+  // Images: the library default (FitImage) can't carry our cookie and has no
+  // viewer — see media.tsx for the resolution rules.
+  image: (node: any) => {
+    const src = String(node?.attributes?.src ?? '');
+    if (!src) return null;
+    // markdown-it keeps alt text in the children, not in `attributes.alt`.
+    const alt = (String(node?.attributes?.alt ?? '') || astText(node)).trim() || undefined;
+    return <ChatImage key={node.key} src={src} alt={alt} dark={dark} />;
+  },
+  // Web links keep the normal look; anything pointing at a file on the server
+  // becomes a chip that previews it in-app (the browser has no session cookie).
+  link: (node: any, children: any, _parent: any, styles: any) => {
+    const href = String(node?.attributes?.href ?? '');
+    if (/^(https?|mailto|tel):/i.test(href)) {
+      return (
+        <Text
+          key={node.key}
+          style={styles.link}
+          onPress={() => void Linking.openURL(href).catch(() => {})}
+        >
+          {children}
+        </Text>
+      );
+    }
+    if (!href) return <Text key={node.key}>{children}</Text>;
+    const label = astText(node).trim() || href;
+    return <FileChip key={node.key} href={href} label={label} textStyle={styles.link} />;
+  },
+});
 
 export const mdAi = StyleSheet.create({
   body: { fontSize: 15, lineHeight: 21, color: '#111' },

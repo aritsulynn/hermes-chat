@@ -43,7 +43,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../hooks/app-store';
-import { errMsg } from '../../utils/messages';
+import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
 
 export interface ManagedFileEntry {
@@ -143,34 +143,6 @@ function getFileCategory(name: string, mime?: string | null): {
     return { icon: FileText, color: '#6366f1', bgColor: '#6366f118', isImage: false, isText: true };
   }
   return { icon: File, color: '#6b7280', bgColor: '#6b728018', isImage: false, isText: false };
-}
-
-function base64ToUtf8(base64: string): string {
-  try {
-    if (typeof atob === 'function') {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return new TextDecoder('utf-8').decode(bytes);
-    }
-  } catch {}
-  return '';
-}
-
-function utf8ToBase64(text: string): string {
-  try {
-    if (typeof btoa === 'function') {
-      const bytes = new TextEncoder().encode(text);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return btoa(binary);
-    }
-  } catch {}
-  return '';
 }
 
 function joinPath(dir: string, name: string): string {

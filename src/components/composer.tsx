@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Keyboard, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -11,7 +11,7 @@ import {
 } from 'lucide-react-native';
 
 import type { Attachment } from '../utils/messages';
-import { useApp } from '../hooks/app-store';
+import { reasoningLabel } from '../utils/reasoning';
 
 // How a control reports its position for a screen-level popover. The popover
 // lives in the chat screen (not here) so it can float above the list and still
@@ -24,45 +24,75 @@ const measurer = (ref: { current: View | null }): AnchorMeasure => (cb) => {
   ref.current?.measureInWindow((x, y, w, h) => cb({ x, y, w, h }));
 };
 
-export function Composer({
+// memo(): every streamed token re-renders the chat screen. Without this the
+// focused TextInput re-renders ~30×/s, which on Android is enough to drop the
+// keyboard mid-sentence. All props must therefore be referentially stable —
+// see the useCallback'd handlers in ChatScreen and send() in the store.
+export const Composer = memo(function Composer({
   input,
   setInput,
   send,
   stop,
   onRedirect,
+  onQueue,
   generating,
   scrollEnd,
   model,
   modelProvider,
   onOpenModelPicker,
   effort,
+  effortWire,
+  showEffort,
   onOpenEffortPicker,
   onOpenAttachPicker,
   attachments,
   setAttachments,
+  dark,
 }: {
   input: string;
   setInput: (v: string) => void;
   send: () => void;
   stop: () => void;
   onRedirect: (text: string) => void;
+  /** Hold the draft for the next turn while one is running. */
+  onQueue: (text: string) => void;
   generating: boolean;
   scrollEnd: () => void;
   model: string;
   modelProvider: string;
   onOpenModelPicker: (measure: AnchorMeasure) => void;
   effort: string;
+  /** Wire level the route actually sends (clamp display, e.g. Ultra→Max). */
+  effortWire?: string;
+  /** Hidden when the current model reports no reasoning support. */
+  showEffort: boolean;
   onOpenEffortPicker: (measure: AnchorMeasure) => void;
   onOpenAttachPicker: (measure: AnchorMeasure) => void;
   attachments: Attachment[];
   setAttachments: (v: Attachment[]) => void;
+  /** Theme comes in as a prop — a store subscription here would defeat memo(). */
+  dark: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const { theme } = useApp();
-  const dark = theme === 'dark';
+  const inputRef = useRef<TextInput>(null);
   const plusRef = useRef<View>(null);
   const modelRef = useRef<View>(null);
   const effortRef = useRef<View>(null);
+
+  // Web only: while a turn streams, something outside the composer (a portal
+  // teardown, a DOM rebuild) can drop focus out of the text field mid-draft —
+  // the user has to click back in. If nothing else claimed focus, take it back.
+  // A deliberate click on a button/link/other input leaves THAT element
+  // focused, so this never fights the user.
+  const handleBlur = useCallback(() => {
+    if (Platform.OS !== 'web' || !generating) return;
+    requestAnimationFrame(() => {
+      const node = inputRef.current;
+      const active = (globalThis as any).document?.activeElement as Element | null | undefined;
+      if (!node || (active && active !== (globalThis as any).document?.body)) return;
+      node.focus();
+    });
+  }, [generating]);
   const [kbOpen, setKbOpen] = useState(false);
   // Mobile browsers don't resize the layout for the virtual keyboard and
   // KeyboardAvoidingView is a no-op on web — track the visual viewport
@@ -94,7 +124,9 @@ export function Composer({
     <View className="border-t border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black px-2.5 pt-2" style={{ paddingBottom: webKb > 0 ? webKb + 10 : kbOpen ? 10 : Math.max(insets.bottom, 10) }}>
       <View className="gap-1.5 rounded-2xl bg-[#f4f4f6] dark:bg-[#212121] px-2.5 pb-2 pt-2">
         {generating && (
-          <Text className="px-1.5 text-xs text-amber-700 dark:text-amber-400">● live — type then hit Steer ↪ to take the wheel</Text>
+          <Text className="px-1.5 text-xs text-amber-700 dark:text-amber-400">
+            live — Queue holds · Steer ↪ corrects · ■ stops
+          </Text>
         )}
         {attachments.length > 0 && (
           <View className="flex-row flex-wrap gap-1.5">
@@ -123,32 +155,32 @@ export function Composer({
           </View>
         )}
         <TextInput
+          ref={inputRef}
           className="max-h-[180px] min-h-[64px] px-1.5 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={input}
           onChangeText={setInput}
-          placeholder={generating ? 'Type to steer the running turn…' : 'Type a message…'}
+          placeholder={generating ? 'Type to steer the running turn' : 'Type a message'}
           placeholderTextColor={dark ? '#888' : '#9ca3af'}
           keyboardAppearance={dark ? 'dark' : 'light'}
           multiline
           textAlignVertical="top"
           editable
-          returnKeyType="send"
-          blurOnSubmit={false}
-          submitBehavior="blurAndSubmit"
+          returnKeyType="default"
+          // Enter inserts a line break. "blurAndSubmit" used to fire on every
+          // Return: a multi-line draft was sent (or steered) mid-typing and the
+          // keyboard closed under the user. Send/Steer are explicit buttons now.
+          submitBehavior="newline"
           onFocus={() => setTimeout(() => scrollEnd(), 100)}
-          onSubmitEditing={() => {
-            if (generating) {
-              if (input.trim()) onRedirect(input);
-            } else {
-              send();
-            }
-          }}
+          onBlur={handleBlur}
         />
-        <View className="flex-row items-center gap-2">
+        {/* The model chip is the only shrinkable item: without it the row (plus
+            + chip + effort + Steer + stop/send) is wider than a phone screen and
+            spills past the right edge. */}
+        <View className="flex-row items-center gap-1.5">
           <Pressable
             ref={plusRef}
             onPress={() => onOpenAttachPicker(measurer(plusRef))}
-            className="h-8 w-8 items-center justify-center rounded-full"
+            className="h-8 w-8 shrink-0 items-center justify-center rounded-full"
             hitSlop={8}
           >
             <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
@@ -156,7 +188,7 @@ export function Composer({
           <Pressable
             ref={modelRef}
             onPress={() => onOpenModelPicker(measurer(modelRef))}
-            className="max-w-[170px] rounded-lg bg-[#e8e8ec] dark:bg-[#272727] px-2 py-1.5"
+            className="min-w-0 max-w-[170px] shrink rounded-lg bg-[#e8e8ec] px-2 py-1.5 dark:bg-[#272727]"
             hitSlop={8}
           >
             <View className="flex-row items-center gap-0.5">
@@ -166,35 +198,48 @@ export function Composer({
               <ChevronDown size={14} color={dark ? '#d4d4d4' : '#333'} />
             </View>
           </Pressable>
-          <Pressable
-            ref={effortRef}
-            onPress={() => onOpenEffortPicker(measurer(effortRef))}
-            className="rounded-lg px-2 py-1.5"
-            hitSlop={8}
-          >
-            <Text className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">{effort}</Text>
-          </Pressable>
+          {showEffort && (
+            <Pressable
+              ref={effortRef}
+              onPress={() => onOpenEffortPicker(measurer(effortRef))}
+              className="shrink-0 rounded-lg px-2 py-1.5"
+              hitSlop={8}
+            >
+              <Text className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
+                {reasoningLabel(effort, effortWire)}
+              </Text>
+            </Pressable>
+          )}
           <View className="flex-1" />
           {generating ? (
             <>
+              {!!input.trim() && !attachments.length && (
+                <Pressable
+                  onPress={() => onQueue(input)}
+                  className="shrink-0 items-center rounded-lg bg-[#1a73e8] px-2 py-1.5"
+                  hitSlop={8}
+                >
+                  <Text className="text-[13px] font-semibold text-white">Queue</Text>
+                </Pressable>
+              )}
               {!!input.trim() && (
                 <Pressable
                   onPress={() => onRedirect(input)}
-                  className="mr-1.5 items-center rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5"
+                  className="shrink-0 items-center rounded-lg border border-neutral-300 px-2 py-1.5 dark:border-neutral-700"
                   hitSlop={8}
                 >
-                  <Text className="dark:text-neutral-100">Steer ↪</Text>
+                  <Text className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</Text>
                 </Pressable>
               )}
               <Pressable
                 onPress={stop}
-                className="h-10 w-10 items-center justify-center rounded-full bg-[#c5221f]"
+                className="h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#c5221f]"
               >
                 <Square size={14} color="#fff" fill="#fff" />
               </Pressable>
             </>
           ) : (
-            <Pressable onPress={send} className={`h-10 w-10 items-center justify-center rounded-full bg-[#1a73e8] ${!canSend ? 'opacity-40' : ''}`} disabled={!canSend}>
+            <Pressable onPress={send} className={`h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1a73e8] ${!canSend ? 'opacity-40' : ''}`} disabled={!canSend}>
               <ArrowUp size={20} color="#fff" />
             </Pressable>
           )}
@@ -202,4 +247,4 @@ export function Composer({
       </View>
     </View>
   );
-}
+});

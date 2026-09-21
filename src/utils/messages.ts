@@ -3,7 +3,7 @@
 // the global store and the shared UI components all use one definition.
 import type { ModelProviderOption } from '../lib/dashboard';
 
-export type Role = 'user' | 'assistant' | 'notice' | 'interim' | 'thinking' | 'tool';
+export type Role = 'user' | 'assistant' | 'notice' | 'interim' | 'thinking' | 'tool' | 'summary';
 
 export interface UiMessage {
   id: string;
@@ -11,6 +11,14 @@ export interface UiMessage {
   text: string;
   pending?: boolean;
   detail?: string;
+  /** Full tool RESULT text, formatted for display (utils/toolResult). */
+  output?: string;
+  /** The tool's command / primary argument, shown above the result. */
+  command?: string;
+  /** Inline unified diff for a file-editing tool call (see utils/diff). */
+  diff?: string;
+  /** Attachments that travelled with this message (thumbnails in the bubble). */
+  media?: Attachment[];
 }
 
 export interface Attachment {
@@ -19,8 +27,119 @@ export interface Attachment {
   mime?: string;
 }
 
+/** A prompt held back while the agent is mid-turn (client-side queue; drained at
+ *  turn end — see the store's queue panel). */
+export interface QueuedPrompt {
+  id: string;
+  text: string;
+}
+
+/** One row of the agent's live todo list (`todo.updated` /
+ *  `session.todo_state`). Field names are read defensively: the backend passes
+ *  the TodoStore snapshot through unchanged. */
+export interface TodoItem {
+  content?: string;
+  text?: string;
+  title?: string;
+  status?: string;
+  activeForm?: string;
+}
+
+/** Normalise a todo snapshot; returns [] for malformed/empty payloads. */
+export function normalizeTodos(payload: unknown): TodoItem[] {
+  const rows = (payload as any)?.todos;
+  return Array.isArray(rows) ? rows.filter((r) => r && typeof r === 'object') : [];
+}
+
+export const todoLabel = (t: TodoItem): string => t.content || t.text || t.title || t.activeForm || '';
+export const todoDone = (t: TodoItem): boolean => /^(completed|done|complete)$/i.test((t.status || '').trim());
+export const todoActive = (t: TodoItem): boolean => /^(in_progress|active|running|doing)$/i.test((t.status || '').trim());
+
+/** One live child agent from `subagent.list` (`SubagentSnapshot`). */
+export interface SubagentRow {
+  subagent_id: string;
+  goal?: string | null;
+  status?: string | null;
+  tool_count?: number | null;
+  last_tool?: string | null;
+  model?: string | null;
+}
+
+export function normalizeSubagents(payload: unknown): SubagentRow[] {
+  const rows = (payload as any)?.subagents;
+  return Array.isArray(rows)
+    ? rows.filter((r) => r && typeof r === 'object' && typeof r.subagent_id === 'string')
+    : [];
+}
+
+/** Terminal statuses — a finished child no longer needs the live roster. */
+export const subagentDone = (s: SubagentRow): boolean =>
+  /^(completed|failed|error|timeout|interrupted)$/i.test((s.status || '').trim());
+
+// ── base64 ⇄ utf8 ────────────────────────────────────────────────────────────
+// Hermes ships atob/btoa + Text{En,De}coder; guard anyway so a stripped runtime
+// degrades to an empty string instead of throwing inside render.
+
+export function base64ToUtf8(base64: string): string {
+  try {
+    if (typeof atob === 'function') {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(bytes);
+    }
+  } catch {}
+  return '';
+}
+
+export function utf8ToBase64(text: string): string {
+  try {
+    if (typeof btoa === 'function') {
+      const bytes = new TextEncoder().encode(text);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      return btoa(binary);
+    }
+  } catch {}
+  return '';
+}
+
 let seq = 0;
 export const nid = () => `m${Date.now()}-${seq++}`;
+
+// ── Slash commands ───────────────────────────────────────────────────────────
+// A slash COMMAND invocation: `/` at position 0, a bare name, then whitespace or
+// end. `/usr/local` (a second slash) and `run /clean` (not at 0) are prose.
+// Mirrors apps/shared/src/slash.ts so every Hermes surface agrees on the shape.
+
+export const SLASH_COMMAND_RE = /^\/[^\s/]+(?:\s|$)/;
+export const isSlashCommand = (text: string): boolean => SLASH_COMMAND_RE.test(text);
+
+/** The `/token` a completion request is for (null when the line isn't a lone command). */
+export const slashToken = (text: string): string | null =>
+  /^\/[^\s]*$/.test(text) ? text : null;
+
+/** Trailing `@reference` token under the composer caret (start-of-line or after
+ *  whitespace — `foo@bar` is an email, not a reference). Mirrors the TUI/desktop
+ *  trigger; `@` alone opens the root hint list. */
+export function atToken(text: string): { token: string; start: number } | null {
+  const m = /(?:^|\s)(@[^\s@]*)$/.exec(text);
+  if (!m) return null;
+  const token = m[1];
+  return { token, start: m.index + m[0].length - token.length };
+}
+
+/** Split `/name arg…` the way the backend does — name lower-cased, no slash. */
+export function parseSlashCommand(command: string): { name: string; arg: string } {
+  const m = /^(\S+)([\s\S]*)$/.exec(command.replace(/^\/+/, ''));
+  return m ? { name: m[1].toLowerCase(), arg: m[2].trim() } : { name: '', arg: '' };
+}
+
+// Commands that act on the local terminal/client rather than the session are
+// curated centrally in ./slash-commands (ported from the desktop registry).
+
+export const slashName = (text: string): string =>
+  (text.replace(/^\/+/, '').split(/\s/, 1)[0] || '').toLowerCase();
 
 // Error values from fetch/WS can be non-Error objects — never render raw.
 export function errMsg(e: unknown): string {
@@ -80,6 +199,139 @@ export function parseClarify(ask: { params: Record<string, any> }): { single: bo
   };
 }
 
+// ── MEDIA: delivery tags ─────────────────────────────────────────────────────
+// The agent's attachment contract: a reply carries `MEDIA:<path>` (optionally
+// quoted or markdown-emphasised) and the platform layer uploads the file. The
+// WS + REST transports this app uses hand the tag over verbatim, so we turn it
+// into markdown the chat can render: an inline image for image types, a link
+// (→ file chip) for everything else. Mirrors the desktop app's
+// `renderMediaTags()` and the Python `MEDIA_DELIVERY_EXTS` list so all three
+// surfaces agree on the syntax.
+
+const MEDIA_DELIVERY_EXTS = [
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'svg',
+  'mp4', 'mov', 'avi', 'mkv', 'webm', '3gp',
+  'mp3', 'm2a', 'wav', 'ogg', 'opus', 'm4a', 'flac',
+  'pdf', 'docx', 'doc', 'odt', 'rtf', 'txt', 'md', 'epub',
+  'xlsx', 'xls', 'ods', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml',
+  'kmz', 'kml', 'geojson', 'gpx',
+  'pptx', 'ppt', 'odp', 'key',
+  'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'apk', 'ipa',
+  'html', 'htm',
+];
+
+// Longest-first so a short ext never matches as a prefix of a longer one.
+const MEDIA_EXT_ALT = [...MEDIA_DELIVERY_EXTS].sort((a, b) => b.length - a.length).join('|');
+
+// Unquoted path: anchored on `~/`, `/` or `X:\`, interior spaces allowed, ends
+// on a known extension (#96657 — "Morten - Nobly Kickoff.docx" is one path).
+const MEDIA_PATH_ANCHORED =
+  `(?:~/|/|[A-Za-z]:[/\\\\])\\S+?(?:[^\\S\\n]+\\S+?)*?\\.(?:${MEDIA_EXT_ALT})(?=[\\s\`"'*_,;:)\\]}]|MEDIA:|$)`;
+
+const MEDIA_LINE_RE = new RegExp(
+  `(^|\\n)[\\t ]*[\`"']?MEDIA:\\s*(\`[^\`\\n]+\`|"[^"\\n]+"|'[^'\\n]+'|${MEDIA_PATH_ANCHORED}|\\S+)[\`"']?[\\t ]*(\\n|$)`,
+  'g',
+);
+const MEDIA_TAG_RE = new RegExp(
+  `[\`"']?MEDIA:\\s*(\`[^\`\\n]+\`|"[^"\\n]+"|'[^'\\n]+'|${MEDIA_PATH_ANCHORED}|\\S+)[\`"']?`,
+  'g',
+);
+
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'svg']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', '3gp']);
+const AUDIO_EXTS = new Set(['mp3', 'm2a', 'wav', 'ogg', 'opus', 'm4a', 'flac']);
+// Extensions <Image> can actually draw — the rest become file chips.
+const INLINE_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
+
+export const mediaExt = (p: string) => (p.split(/[?#]/, 1)[0].split('.').pop() ?? '').toLowerCase();
+export const isInlineImagePath = (p: string) => INLINE_IMAGE_EXTS.has(mediaExt(p));
+
+export function mediaKind(p: string): 'image' | 'video' | 'audio' | 'file' {
+  const ext = mediaExt(p);
+  if (IMAGE_EXTS.has(ext)) return 'image';
+  if (VIDEO_EXTS.has(ext)) return 'video';
+  if (AUDIO_EXTS.has(ext)) return 'audio';
+  return 'file';
+}
+
+export const mediaName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() || p;
+
+function unquoteMediaPath(value: string): string {
+  const t = value.trim();
+  const q = t[0];
+  return q && q === t[t.length - 1] && ['"', "'", '`'].includes(q) ? t.slice(1, -1) : t;
+}
+
+// `#media:<encoded path>` — the href the media rules in components/media.tsx
+// recognise. Encoding keeps spaces, quotes and parentheses out of the markdown
+// destination, which markdown-it would otherwise mangle.
+export const mediaHref = (p: string) => `#media:${encodeURIComponent(p)}`;
+export const mediaPathFromHref = (href: string) =>
+  href.startsWith('#media:') ? decodeURIComponent(href.slice(7)) : null;
+
+function mediaLink(value: string): string {
+  const path = unquoteMediaPath(value);
+  const kind = mediaKind(path);
+  const label = `${kind[0].toUpperCase()}${kind.slice(1)}: ${mediaName(path)}`;
+  // Images render inline in the bubble; everything else becomes a file chip.
+  return isInlineImagePath(path) ? `![${label}](${mediaHref(path)})` : `[${label}](${mediaHref(path)})`;
+}
+
+// Bare path the `tui`-flavoured platform prompt tells the agent to write:
+// "deliver a file by stating its absolute path or URL in plain text". Mirrors
+// the server's extract_local_files() (same anchors, same extension list) except
+// that the app cannot stat the file — a wrong guess degrades to a small chip.
+const BARE_PATH_SRC = `(?:~/|/|[A-Za-z]:[/\\\\])(?:[\\w.\\-]+[/\\\\])*[\\w.\\-]+\\.(?:${MEDIA_EXT_ALT})`;
+// Not preceded by a URL/relative-path/word character or an open paren (a
+// markdown destination — that link already handles itself).
+const BARE_PATH_RE = new RegExp(`(?<![/:\\w.(])${BARE_PATH_SRC}\\b`, 'gi');
+const BARE_PATH_EXACT_RE = new RegExp(`^${BARE_PATH_SRC}$`);
+
+/** Apply `fn` to every slice of `text` outside `mask` matches (code fences…). */
+function mapOutside(text: string, mask: RegExp, fn: (chunk: string) => string): string {
+  let out = '';
+  let last = 0;
+  for (const m of text.matchAll(mask)) {
+    out += fn(text.slice(last, m.index)) + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + fn(text.slice(last));
+}
+
+const FENCED_CODE = /```[\s\S]*?```|~~~[\s\S]*?~~~/g;
+const INLINE_CODE = /`([^`\n]*)`/g;
+
+// A code span whose entire content is one deliverable path (`` `/tmp/shot.png` ``)
+// becomes the file itself — models routinely quote paths for readability.
+function replaceBarePaths(chunk: string): string {
+  const spans = chunk.replace(INLINE_CODE, (whole, inner: string) => {
+    const p = inner.trim();
+    return BARE_PATH_EXACT_RE.test(p) ? mediaLink(p) : whole;
+  });
+  return spans.replace(BARE_PATH_RE, (m) => mediaLink(m));
+}
+
+/**
+ * Rewrite the agent's file-delivery syntax into renderable markdown:
+ * `MEDIA:<path>` tags (the platform contract) plus bare absolute paths (what
+ * the terminal-style prompt asks for). No-op when there is nothing to rewrite.
+ */
+export function renderMediaTags(text: string): string {
+  if (!text) return text;
+  let out = text;
+  if (out.includes('MEDIA:')) {
+    // Code fences AND inline spans are skipped: the server masks them too, so a
+    // documented example tag stays literal instead of becoming an image.
+    out = mapOutside(out, new RegExp(`${FENCED_CODE.source}|${INLINE_CODE.source}`, 'g'), (chunk) =>
+      chunk
+        .replace(MEDIA_LINE_RE, (_m, lead: string, value: string, trailer: string) => `${lead}${mediaLink(value)}${trailer}`)
+        .replace(MEDIA_TAG_RE, (_m, value: string) => mediaLink(value)),
+    );
+  }
+  // Fenced blocks stay literal (code samples); inline spans may be paths.
+  return mapOutside(out, FENCED_CODE, replaceBarePaths);
+}
+
 // ── Markdown preprocessing ───────────────────────────────────────────────────
 
 // Reasoning streams often open with a one-line activity status like
@@ -122,5 +374,3 @@ export const FALLBACK_PROVIDERS: ModelProviderOption[] = [
     totalModels: 4,
   },
 ];
-
-export const EFFORTS = ['Low', 'Medium', 'High', 'Xhigh'];

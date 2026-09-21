@@ -13,6 +13,7 @@
 // RN fetch/XHR has no shared cookie jar on all platforms the way OkHttp does,
 // so this module keeps `Cookie` headers explicitly and passes them per request.
 import { Platform } from 'react-native';
+import { formatToolCommand } from '../utils/toolResult';
 
 export type AuthMode = 'basic' | 'token' | 'unreachable';
 
@@ -213,6 +214,9 @@ export interface ModelProviderOption {
   models: string[] | null;
   totalModels: number;
   authenticated?: boolean;
+  /** Per-model capability rows (`hermes_cli/inventory.py::_apply_capabilities`) —
+   *  `{model: {fast, reasoning, can_disable_reasoning?}}`. Missing on old gateways. */
+  capabilities?: Record<string, { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean | null }> | null;
 }
 
 export async function getModelOptions(
@@ -236,6 +240,7 @@ export async function getModelOptions(
     models: Array.isArray(p?.models) ? p.models.map(String) : null,
     totalModels: Number(p?.total_models ?? (Array.isArray(p?.models) ? p.models.length : 0)),
     ...(typeof p?.authenticated === 'boolean' ? { authenticated: p.authenticated } : {}),
+    ...(p?.capabilities && typeof p.capabilities === 'object' ? { capabilities: p.capabilities } : {}),
   }));
 }
 
@@ -321,6 +326,8 @@ export interface RestHistoryItem {
   content: string;
   reasoning?: string;
   name?: string;
+  /** The tool's command / primary arg, joined from the assistant tool_calls. */
+  command?: string;
 }
 
 function jsonText(v: unknown): string {
@@ -381,23 +388,50 @@ export async function getSessionMessages(
   const qs = new URLSearchParams({ order: 'latest', limit: String(limit) });
   const res = await fetchWithTimeout(
     `${base}/api/sessions/${path}/messages?${qs}`,
-    { headers: { Cookie: cookie } },
+    cookie ? { headers: { Cookie: cookie } } : {},
     20000,
   );
   if (!res.ok) throw new Error(`Session messages failed: HTTP ${res.status}`);
   const body = (await res.json()) as any;
   const rows = Array.isArray(body?.messages) ? body.messages : [];
   const items: RestHistoryItem[] = [];
+  // Assistant tool_calls carry the args; join them to the tool row by id so the
+  // bubble can show the command above its result (history has no other copy).
+  const toolArgs = new Map<string, unknown>();
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
     const role = String(row.role ?? '');
+    if (role === 'assistant' && Array.isArray((row as any).tool_calls)) {
+      for (const tc of (row as any).tool_calls) {
+        const id = typeof tc?.id === 'string' ? tc.id : '';
+        if (!id) continue;
+        const fn = (tc?.function ?? {}) as any;
+        let a: unknown = fn?.arguments;
+        if (typeof a === 'string') {
+          try {
+            a = JSON.parse(a);
+          } catch {
+            a = { command: a };
+          }
+        }
+        toolArgs.set(id, a);
+      }
+    }
     if (row.display_kind === 'hidden') continue;
     const content = jsonText(row.content);
     // Model-switch / personality markers persist as role=user "[System: …]" rows.
     if (role === 'user' && content.replace(/^\s+/, '').startsWith('[System:')) continue;
     if (role === 'tool') {
       if (!content.trim()) continue;
-      items.push({ role: 'tool', content, name: 'Tool' });
+      const command =
+        formatToolCommand(toolArgs.get(String((row as any).tool_call_id ?? ''))) ||
+        (typeof (row as any).context === 'string' ? (row as any).context : '');
+      items.push({
+        role: 'tool',
+        content,
+        name: String((row as any).name ?? (row as any).tool_name ?? 'Tool'),
+        ...(command ? { command } : {}),
+      });
       continue;
     }
     const reasoning = restReasoning(row);

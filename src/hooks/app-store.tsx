@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from 'react';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import { readAsStringAsync } from 'expo-file-system/legacy';
 import { useColorScheme as useNWColorScheme } from 'nativewind';
 import {
   checkMe,
@@ -24,8 +25,23 @@ import { clearCookie, getCookie, getPassword, getTheme, loadConnection, saveCook
 import type { Theme } from '../lib/connection';
 import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
-import { cleanThinking, errMsg, nid } from '../utils/messages';
-import type { Attachment, UiMessage } from '../utils/messages';
+import { changedFilesFromDiff, inlineDiffFromDetail } from '../utils/diff';
+import { formatToolCommand, formatToolResult } from '../utils/toolResult';
+import {
+  cleanThinking,
+  errMsg,
+  isSlashCommand,
+  nid,
+  parseSlashCommand,
+} from '../utils/messages';
+import {
+  rememberCommandsCatalog,
+  slashBlockedMessage,
+  slashMobileAction,
+  slashMobileHint,
+} from '../utils/slash-commands';
+import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
+import { normalizeSubagents, normalizeTodos } from '../utils/messages';
 import type { Role } from '../utils/messages';
 
 export interface AppStore {
@@ -51,6 +67,8 @@ export interface AppStore {
   modelProvider: string;
   effort: string;
   setEffort: (v: string) => void;
+  /** Apply a thinking-effort level to the live session (and the next create). */
+  applyEffort: (level: string) => Promise<void>;
   providers: ModelProviderOption[] | null;
   providersLoading: boolean;
   providersError: string | null;
@@ -77,6 +95,22 @@ export interface AppStore {
   openInfo: () => Promise<void>;
   getGw: () => GatewayWs | null;
   loadProviders: () => Promise<void>;
+  loadCommandsCatalog: () => Promise<void>;
+  /** Prompts typed mid-turn, drained one per turn end. */
+  queued: QueuedPrompt[];
+  /** True after an explicit Stop — the queue waits for Resume/re-queue. */
+  queueParked: boolean;
+  enqueueQueued: (text: string) => void;
+  removeQueued: (id: string) => void;
+  clearQueue: () => void;
+  resumeQueue: () => void;
+  sendQueuedNow: (id: string) => void;
+  /** Agent's live todo list (`todo.updated`), for the checklist above the composer. */
+  todos: TodoItem[];
+  /** Live child agents (polled from `subagent.list` while a turn runs). */
+  subagents: SubagentRow[];
+  /** Re-fetch tool results from the REST transcript (fills expanded tool bubbles). */
+  refreshToolResults: () => void;
   pickModel: (providerSlug: string, modelId: string) => Promise<void>;
   copyText: (id: string, text: string) => Promise<void>;
   answerValue: (value: string) => void;
@@ -93,6 +127,8 @@ export interface AppStore {
   jumpToRecent: () => Promise<void>;
   opsGet: (path: string) => Promise<any>;
   opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>;
+  /** Session cookie — media components need it to load authed URLs. */
+  getCookie: () => string;
 }
 
 const AppContext = createContext<AppStore | null>(null);
@@ -100,6 +136,70 @@ const AppContext = createContext<AppStore | null>(null);
 // Rejecting timeout so a wedged server can never trap the UI on a spinner.
 function withTimeout<T>(p: Promise<T>, ms: number, what = 'timed out'): Promise<T> {
   return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(what)), ms))]);
+}
+
+// ── Attachment upload ───────────────────────────────────────────────────────
+// prompt.submit is text-only, so bytes ride the dashboard files API (the same
+// route the Files tab uses) and the agent is handed a path it can open.
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // raw; JSON base64 is ~4/3 bigger
+
+const isImageAttachment = (a: Attachment) =>
+  (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp)$/i.test(a.name);
+
+async function blobToBase64(uri: string): Promise<string> {
+  const blob = await (await fetch(uri)).blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.onload = () => {
+      const s = String(reader.result ?? '');
+      const comma = s.indexOf(',');
+      resolve(comma >= 0 ? s.slice(comma + 1) : '');
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function attachmentBytes(a: Attachment): Promise<string> {
+  try {
+    // file:// (or content://) URI straight off the picker.
+    return await readAsStringAsync(a.uri, { encoding: 'base64' });
+  } catch {
+    return blobToBase64(a.uri); // blob: URIs (web)
+  }
+}
+
+async function uploadAttachments(
+  files: Attachment[],
+  host: string,
+  cookie: string,
+): Promise<{ name: string; path: string; image: boolean }[]> {
+  const out: { name: string; path: string; image: boolean }[] = [];
+  for (const f of files) {
+    const name = f.name.replace(/[\\/]/g, '_') || `upload-${Date.now()}`;
+    const image = isImageAttachment(f);
+    const b64 = await attachmentBytes(f);
+    if (!b64) throw new Error(`${name}: could not read the file`);
+    if (b64.length > MAX_UPLOAD_BYTES * 1.4) throw new Error(`${name}: too large (10 MB max)`);
+    const data_url = `data:${f.mime || 'application/octet-stream'};base64,${b64}`;
+    const put = (path: string) =>
+      dashboardOpsMut(host, cookie, '/api/files/upload', 'POST', { path, data_url, overwrite: true });
+    try {
+      const r: any = await put(`~/${name}`);
+      out.push({ name, path: typeof r?.path === 'string' && r.path ? r.path : `~/${name}`, image });
+    } catch (first) {
+      // Some builds reject the `~` shorthand for writes — resolve the managed
+      // root and retry once before giving up.
+      const home: any = await dashboardOpsGet(host, cookie, '/api/files?path=~').catch(() => null);
+      const root = typeof home?.path === 'string' ? home.path.replace(/\/+$/, '') : '';
+      if (!root) throw first;
+      const target = `${root}/${name}`;
+      const r: any = await put(target);
+      out.push({ name, path: typeof r?.path === 'string' && r.path ? r.path : target, image });
+    }
+  }
+  return out;
 }
 
 export function useApp(): AppStore {
@@ -131,8 +231,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [providers, setProviders] = useState<ModelProviderOption[] | null>(null);
   const [providersLoading, setProvidersLoading] = useState(false);
   const [providersError, setProvidersError] = useState<string | null>(null);
+  // `commands.catalog` dispositions live in ./slash-commands (module cache); this
+  // counter only forces a re-render once the live table lands so the wheel re-filters.
+  const [, setCatalogVersion] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [generating, setGenerating] = useState(false);
+  // Client-side prompt queue (text-only) — prompts typed while the agent is
+  // mid-turn, drained one per turn end. `queueParked` is set by an explicit
+  // Stop and lifted by queueing again / Resume (desktop parity).
+  const [queued, setQueued] = useState<QueuedPrompt[]>([]);
+  const [queueParked, setQueueParked] = useState(false);
+  // The agent's live todo list (`todo.updated`), shown above the composer.
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  // Live child agents (polled from `subagent.list` while a turn runs).
+  const [subagents, setSubagents] = useState<SubagentRow[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   // Monotonic open requests — a boolean edge can get stuck `true` (e.g. a
@@ -164,38 +276,126 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const gw = useRef<GatewayWs | null>(null);
   const cookie = useRef<string>('');
+  const uploading = useRef(false); // send() re-entrancy guard while bytes go up
   const liveAid = useRef<string | null>(null);
   const liveThinkAid = useRef<string | null>(null);
   const liveTools = useRef<Map<string, string>>(new Map());
   const liveToolAid = useRef<string | null>(null);
   const liveTurnTools = useRef<string[]>([]); // tool bubbles minted this turn, in order
+  const liveTurnDiffs = useRef<string[]>([]); // inline diffs seen this turn (for the end-of-turn summary)
+  // Queue plumbing reads the freshest values from inside the once-created WS
+  // event handlers (onComplete drains the queue before React re-renders).
+  const generatingRef = useRef(false);
+  const queueParkedRef = useRef(false);
+  const queuedRef = useRef<QueuedPrompt[]>([]);
+  const sendRef = useRef<((text?: string) => Promise<void>) | null>(null);
+  const drainRef = useRef<() => void>(() => {});
+  // Live transcript, for handlers frozen in openWs (tool backfill name-checking).
+  const messagesRef = useRef<UiMessage[]>([]);
+  generatingRef.current = generating;
+  queueParkedRef.current = queueParked;
+  queuedRef.current = queued;
+  messagesRef.current = messages;
   // Latest host/sessionKey for callbacks frozen in openWs (created once).
   const latest = useRef({ host, sessionKey });
   latest.current = { host, sessionKey };
-  // Post-turn tool-detail fill (REST full transcript merged into live bubbles).
-  const toolRefreshRef = useRef<(ids: string[]) => void>(() => {});
-  toolRefreshRef.current = (ids: string[]) => {
-    if (ids.length === 0) return;
+  // Tool RESULT fill from the REST transcript. The gateway's history projection
+  // deliberately omits tool results (`name` + 80-char `context` + `args` only —
+  // tui_gateway/session_history.py::_history_to_messages), and the live
+  // `tool.complete` may predate the `result` field, so filling from REST is the
+  // dependable path. Name-aware tail alignment keeps a shifted transcript from
+  // pasting another call's result.
+  const toolRefreshRef = useRef<() => void>(() => {});
+  const toolRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  toolRefreshRef.current = () => {
     const h = latest.current.host;
     const sk = latest.current.sessionKey;
     const ck = cookie.current;
-    if (!h || !sk || !ck) return;
+    // Web: the jar is empty (Set-Cookie is unreadable) but the browser cookie
+    // still rides along via credentials:'include', so only host+key are required.
+    if (!h || !sk) return;
     void (async () => {
       try {
         const items = await getSessionMessages(h, ck, sk);
-        const tools = items.filter((m) => m.role === 'tool' && m.content.trim());
-        if (tools.length === 0) return;
-        const off = Math.max(0, tools.length - ids.length);
-        const fill = new Map<string, string>();
-        ids.forEach((id, i) => {
-          const src = tools[off + i];
-          if (src) fill.set(id, src.content);
-        });
+        const restTools = items.filter((m) => m.role === 'tool' && m.content.trim());
+        const liveTools = messagesRef.current.filter((m) => m.role === 'tool');
+        if (restTools.length === 0 || liveTools.length === 0) return;
+        const fill = new Map<string, { output?: string; diff?: string; command?: string }>();
+        const used = new Set<number>();
+        let r = Math.max(0, restTools.length - liveTools.length);
+        for (const live of liveTools) {
+          if (live.output && live.diff && live.command) continue; // already complete
+          const want = live.text;
+          let j = -1;
+          for (let k = r; k < restTools.length && k < r + 4; k++) {
+            if (!used.has(k) && want && restTools[k].name === want) {
+              j = k;
+              break;
+            }
+          }
+          if (j === -1 && r < restTools.length && !used.has(r)) j = r;
+          if (j === -1) continue;
+          used.add(j);
+          r = Math.max(r, j + 1);
+          const output = formatToolResult(restTools[j].content) || undefined;
+          const diff = inlineDiffFromDetail(restTools[j].content) || undefined;
+          const command = restTools[j].command || undefined;
+          if (output || diff || command) {
+            fill.set(live.id, {
+              ...(output ? { output } : {}),
+              ...(diff ? { diff } : {}),
+              ...(command && !live.command ? { command } : {}),
+            });
+          }
+        }
         if (fill.size === 0) return;
-        setMessages((prev) => prev.map((m) => (fill.has(m.id) ? { ...m, detail: fill.get(m.id) } : m)));
+        setMessages((prev) =>
+          prev.map((m) => {
+            const f = fill.get(m.id);
+            return f ? { ...m, ...f } : m;
+          }),
+        );
       } catch {}
     })();
   };
+  // Debounced refresh after each tool.complete so a live turn fills in results
+  // (and diffs) without waiting for the whole turn to end.
+  const scheduleToolRefresh = () => {
+    if (toolRefreshTimer.current) clearTimeout(toolRefreshTimer.current);
+    toolRefreshTimer.current = setTimeout(() => toolRefreshRef.current(), 700);
+  };
+  /** On-demand REST fill (the chat screen calls this when a tool bubble is
+   *  expanded before the turn ended / on a backend without live results). */
+  const refreshToolResults = useCallback(() => toolRefreshRef.current(), []);
+  // Refresh the composer status strip at each turn end (session.info isn't
+  // guaranteed to carry usage every turn); session.usage answers the live numbers.
+  const usageRefreshRef = useRef<() => void>(() => {});
+  usageRefreshRef.current = () => {
+    const g = gw.current;
+    const sid = sessionId;
+    if (!g || !sid) return;
+    void g.usage(sid).then(setUsageInfo).catch(() => {});
+  };
+  // Live subagent roster — polled while a turn runs (subagent.list is scoped to
+  // this session). Cheap: the RPC returns a small snapshot.
+  useEffect(() => {
+    const g = gw.current;
+    if (!generating || !sessionId || !g) return;
+    let live = true;
+    const tick = () => {
+      g.subagents(sessionId)
+        .then((r) => {
+          if (live) setSubagents(normalizeSubagents(r));
+        })
+        .catch(() => {});
+    };
+    tick();
+    const t = setInterval(tick, 3500);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [generating, sessionId]);
   // Per-session composer drafts — switching rooms no longer wipes typing.
   const draftsRef = useRef<Map<string, string>>(new Map());
   const draftKeyRef = useRef<string>('__none__');
@@ -213,7 +413,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // openSession is defined below connect — indirect through a ref so the
   // connect callback (created first) never hits the TDZ.
   const openSessionRef = useRef<(s: SessionSummary) => Promise<void>>(async () => {});
-
+  // Same reason as openSessionRef: send() must stay referentially stable for
+  // Composer's memo(), so the mobile-local slash actions (/new, /stop, /title)
+  // reach the latest handlers through refs instead of the deps array.
+  const newSessionRef = useRef<() => Promise<void>>(async () => {});
+  const stopRef = useRef<() => void>(() => {});
+  const renameSessionRef = useRef<(t: string) => Promise<void>>(async () => {});
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -343,21 +548,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const mid = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
             if (mid) {
               const detail = info.summary || undefined;
+              // Keep the diff the gateway rendered for a file edit (it survives
+              // the summary line) so the tool bubble can show it inline.
+              const diff = info.inlineDiff || undefined;
+              if (diff) liveTurnDiffs.current.push(diff);
+              // And the RESULT itself — that's the body the expanded bubble shows.
+              const output = info.result !== undefined ? formatToolResult(info.result) || undefined : undefined;
+              const command = formatToolCommand(info.args) || info.context || undefined;
               setMessages((prev) =>
-                prev.map((m) => (m.id === mid ? { ...m, pending: false, ...(detail ? { detail } : {}) } : m)),
+                prev.map((m) =>
+                  m.id === mid
+                    ? {
+                        ...m,
+                        pending: false,
+                        ...(detail ? { detail } : {}),
+                        ...(diff ? { diff } : {}),
+                        ...(output ? { output } : {}),
+                        ...(command && !m.command ? { command } : {}),
+                      }
+                    : m,
+                ),
               );
               if (info.toolId) liveTools.current.delete(info.toolId);
               if (liveToolAid.current === mid) liveToolAid.current = null;
+              // Fill the result/diff from REST shortly after (covers backends whose
+              // tool.complete predates the `result` field).
+              scheduleToolRefresh();
             }
             return;
           }
           setToolLine(info.name ? `⚙ ${info.name}…` : '⚙ running tool…');
+          // The command/primary arg rides `args` on tool.start (full) or `context`
+          // (80-char preview) as a fallback.
+          const command = formatToolCommand(info.args) || info.context || undefined;
           const existing = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
           if (existing) {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === existing
-                  ? { ...m, text: info.name || m.text, detail: info.preview || m.detail }
+                  ? {
+                      ...m,
+                      text: info.name || m.text,
+                      detail: info.preview || m.detail,
+                      ...(command && !m.command ? { command } : {}),
+                    }
                   : m,
               ),
             );
@@ -374,6 +608,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             text: info.name || 'tool',
             pending: true,
             ...(info.preview ? { detail: info.preview } : {}),
+            ...(command ? { command } : {}),
           };
           setMessages((prev) => {
             const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
@@ -385,9 +620,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const aid = liveAid.current;
           liveAid.current = null;
           liveThinkAid.current = null;
-          const turnTools = liveTurnTools.current;
           liveTurnTools.current = [];
           setGenerating(false);
+          // onComplete runs before React re-renders, so flip the ref too or the
+          // drain below would see a stale "generating" and bail.
+          generatingRef.current = false;
           setToolLine(null);
           if (aid) {
             setMessages((prev) =>
@@ -396,13 +633,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
           } else if (text) {
             setMessages((prev) => [...prev, { id: nid(), role: 'assistant', text }]);
           }
+          // End-of-turn file summary: fold every inline diff this turn produced.
+          const turnDiffs = liveTurnDiffs.current;
+          liveTurnDiffs.current = [];
+          if (turnDiffs.length) {
+            const files = new Map<string, { added: number; removed: number }>();
+            for (const d of turnDiffs) {
+              for (const f of changedFilesFromDiff(d)) {
+                const cur = files.get(f.path) ?? { added: 0, removed: 0 };
+                cur.added += f.added;
+                cur.removed += f.removed;
+                files.set(f.path, cur);
+              }
+            }
+            if (files.size) {
+              let added = 0;
+              let removed = 0;
+              for (const v of files.values()) {
+                added += v.added;
+                removed += v.removed;
+              }
+              const n = files.size;
+              const names = [...files.keys()].map((p) => p.split('/').pop() || p);
+              const tail = names.length <= 3 ? ` · ${names.join(', ')}` : '';
+              setMessages((prev) => [
+                ...prev,
+                { id: nid(), role: 'summary', text: `${n} file${n === 1 ? '' : 's'} · +${added} −${removed}${tail}` },
+              ]);
+            }
+          }
           // Backfill full tool RESULT content from the REST transcript.
-          toolRefreshRef.current(turnTools);
+          toolRefreshRef.current();
+          // Turn ended — send the next queued prompt, if any.
+          drainRef.current();
+          // Refresh the status strip's context/token numbers.
+          usageRefreshRef.current();
         },
         onNotice: (_sid, text) => {
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
         },
         onSessionInfo: (info) => setSessionInfo(info),
+        onTodo: (_sid, payload) => setTodos(normalizeTodos(payload)),
         onAsk: (a) => setAsk(a),
         onAskCancel: (rpcId) => {
           setAsk((cur) => (cur?.rpcId === rpcId ? null : cur));
@@ -445,6 +716,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             models: Array.isArray(p?.models) ? p.models.map(String) : null,
             totalModels: Number(p?.total_models ?? (Array.isArray(p?.models) ? p.models.length : 0)),
             ...(typeof p?.authenticated === 'boolean' ? { authenticated: p.authenticated } : {}),
+            ...(p?.capabilities && typeof p.capabilities === 'object' ? { capabilities: p.capabilities } : {}),
           })),
         );
         return;
@@ -460,6 +732,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setProvidersLoading(false);
     }
   }, [host, sessionId]);
+
+  // ── Slash command catalog ──────────────────────────────────────────────
+  // `commands.catalog` is the live authority for each command's `desktop=`
+  // disposition (offered / terminal-only / picker-owned) and the alias map, so
+  // the "/" wheel curates itself from the backend with no code change. Failure
+  // is fine — ./slash-commands keeps the shipped registry as the cold fallback.
+
+  const loadCommandsCatalog = useCallback(async () => {
+    const g = gw.current;
+    if (!g) return;
+    try {
+      rememberCommandsCatalog(await g.commandsCatalog(sessionId ?? undefined));
+      setCatalogVersion((v) => v + 1);
+    } catch {
+      // Older backend without commands.catalog — keep the static registry.
+    }
+  }, [sessionId]);
 
   // Session-scoped switch ("this chat") — /model WITHOUT --global.
 
@@ -482,6 +771,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Switch failed${code}: ${msg}${hint}` }]);
       } finally {
         setToolLine(null);
+      }
+    },
+    [sessionId],
+  );
+
+  // Composer thinking-effort pick: applies to the LIVE session via `config.set`
+  // (session-scoped, mirrors onto the running agent) and to the next new session
+  // through createSession's reasoning_effort. Falling back to the slash worker
+  // only reaches config.yaml, so it's the legacy path.
+  const applyEffort = useCallback(
+    async (level: string) => {
+      const v = level.trim().toLowerCase();
+      if (!v) return;
+      setEffort(v);
+      const g = gw.current;
+      const sid = sessionId;
+      if (!g || !sid) return; // no live session yet — used at the next create
+      try {
+        await g.configSet('reasoning', v, sid);
+      } catch {
+        try {
+          await g.slashExec(sid, `/reasoning ${v}`);
+        } catch (e2: any) {
+          setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `reasoning: ${errMsg(e2)}` }]);
+        }
       }
     },
     [sessionId],
@@ -591,11 +905,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // the returned session_id, NOT the stored id (server keeps two id spaces).
       const r: any = await g.resume(s.id);
       const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : s.id;
+      // Resume carries the session's todo snapshot; restore the checklist.
+      setTodos(normalizeTodos(r?.todo_state));
       // Full transcript via REST first (tool RESULT content + reasoning) —
       // WS session.history is only a compact projection. Stored id, not live.
       let hist: HistoryMessage[];
       try {
-        hist = cookie.current ? await getSessionMessages(host, cookie.current, s.id) : [];
+        // Gate on the cookie ONLY as a fallback signal: on web the jar is empty
+        // (JS can't read Set-Cookie) while the browser cookie still authenticates
+        // via `credentials: 'include'`, so always try REST.
+        hist = await getSessionMessages(host, cookie.current, s.id);
       } catch {
         hist = [];
       }
@@ -621,7 +940,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             id: nid(),
             role: 'tool',
             text: label,
-            ...(m.name && m.content && m.content !== m.name ? { detail: m.content } : {}),
+            ...(m.content.trim() ? { output: formatToolResult(m.content) } : {}),
+            ...(m.command ? { command: m.command } : {}),
           });
         }
         if ((m.role === 'user' || m.role === 'assistant') && m.content.trim() !== '') {
@@ -629,6 +949,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
       setMessages(items);
+      queuedRef.current = [];
+      setQueued([]);
+      setQueueParked(false);
+      setTodos([]);
+      setSubagents([]);
       router.push('/chat');
     } catch (e) {
       const msg = errMsg(e);
@@ -661,6 +986,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionId(sid);
       setSessionTitle('');
       setMessages([]);
+      queuedRef.current = [];
+      setQueued([]);
+      setQueueParked(false);
+      setTodos([]);
+      setSubagents([]);
       draftKeyRef.current = storedSessionId || sid;
       setInputRaw(draftsRef.current.get(draftKeyRef.current) ?? '');
       setAttachments([]);
@@ -675,72 +1005,319 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBusy(false);
     }
   };
+  newSessionRef.current = newSession;
 
   // ── Chat ─────────────────────────────────────────────────────────────────
   // Scrolling lives in the chat screen (it owns the FlatList ref); send()
   // only queues state — the screen scrolls after calling it.
 
-  const send = async () => {
-    const text = input.trim();
-    const g = gw.current;
-    const files = attachments;
-    if ((!text && files.length === 0) || !g || !sessionId || generating) return;
-    setInput('');
-    setAttachments([]);
-    const shownText = files.length
-      ? [...files.map((f) => `📎 ${f.name}`), text].filter(Boolean).join('\n')
-      : text;
-    // Gateway has no binary upload yet — send filenames as markers so the
-    // agent sees what was attached. Real file bytes wire up when the server
-    // documents an upload route.
-    const submitText = files.length
-      ? [...files.map((f) => `[attached file: ${f.name}]`), text].filter(Boolean).join('\n')
-      : text;
-    setMessages((prev) => [...prev, { id: nid(), role: 'user', text: shownText }]);
-    const aid = nid();
-    liveAid.current = aid;
-    liveThinkAid.current = null; // fresh turn → fresh thinking bubble
-    liveTools.current.clear();
-    liveToolAid.current = null;
-    liveTurnTools.current = [];
-    setMessages((prev) => [...prev, { id: aid, role: 'assistant', text: '', pending: true }]);
-    setGenerating(true);
-    try {
-      const status = await g.submit(sessionId, submitText);
-      if (status === 'queued') setToolLine('queued — will run after the live turn…');
-    } catch (e: any) {
-      let msg = e?.message ?? String(e);
-      let code = e?.code;
-      // Live runtime expired server-side (orphan-reaped / evicted / idle TTL) —
-      // resume the STORED session for a fresh live id and retry once.
-      if ((code === 4001 || /not.?found/i.test(msg)) && sessionKey) {
-        try {
-          const r: any = await g.resume(sessionKey);
-          const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
-          setSessionId(liveId);
-          const status = await g.submit(liveId, submitText);
-          if (status === 'queued') setToolLine('queued — will run after the live turn…');
-          return;
-        } catch (e2: any) {
-          msg = e2?.message ?? String(e2);
-          code = e2?.code;
+  // useCallback so Composer's memo() holds between streamed tokens (the deps
+  // only move when the user actually types, attaches or a turn starts/ends).
+
+  // Start an agent turn: echo the user line (when this call owns it), pin the
+  // pending assistant bubble, submit, and recover from an expired live runtime.
+  // Shared by send() and the slash dispatches that expand to a prompt (skills,
+  // bundles, /bg-style sends).
+  const beginTurn = useCallback(
+    async (submitText: string, echo?: { text: string; media?: Attachment[] }) => {
+      const g = gw.current;
+      const sid = sessionId;
+      if (!g || !sid) return;
+      if (echo) {
+        setMessages((prev) => [
+          ...prev,
+          { id: nid(), role: 'user' as Role, text: echo.text, ...(echo.media?.length ? { media: echo.media } : {}) },
+        ]);
+      }
+      const aid = nid();
+      liveAid.current = aid;
+      liveThinkAid.current = null; // fresh turn → fresh thinking bubble
+      liveTools.current.clear();
+      liveToolAid.current = null;
+      liveTurnTools.current = [];
+      liveTurnDiffs.current = [];
+      setSubagents([]);
+      setMessages((prev) => [...prev, { id: aid, role: 'assistant', text: '', pending: true }]);
+      setGenerating(true);
+      generatingRef.current = true; // flip now: a drain before the re-render must not double-send
+      try {
+        const status = await g.submit(sid, submitText);
+        if (status === 'queued') setToolLine('queued — will run after the live turn…');
+      } catch (e: any) {
+        let msg = e?.message ?? String(e);
+        let code = e?.code;
+        // Live runtime expired server-side (orphan-reaped / evicted / idle TTL) —
+        // resume the STORED session for a fresh live id and retry once.
+        if ((code === 4001 || /not.?found/i.test(msg)) && sessionKey) {
+          try {
+            const r: any = await g.resume(sessionKey);
+            const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
+            setSessionId(liveId);
+            const status = await g.submit(liveId, submitText);
+            if (status === 'queued') setToolLine('queued — will run after the live turn…');
+            return;
+          } catch (e2: any) {
+            msg = e2?.message ?? String(e2);
+            code = e2?.code;
+          }
         }
+        liveAid.current = null;
+        setGenerating(false);
+        generatingRef.current = false;
+        if (code === 4009) {
+          setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Session busy (${msg}). Stop the live turn and resend.` }]);
+        } else {
+          setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Send failed: ${msg}` }]);
+        }
+        setMessages((prev) => prev.filter((m) => m.id !== aid));
       }
-      liveAid.current = null;
-      setGenerating(false);
-      if (code === 4009) {
-        // Session busy — ask the user to stop the live turn first.
-        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Session busy (${msg}). Stop the live turn and resend.` }]);
-      } else {
-        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Send failed: ${msg}` }]);
+    },
+    [sessionId, sessionKey, setSessionId],
+  );
+
+  // Run a slash command server-side: slash.exec first (live shortcuts + worker),
+  // falling back to command.dispatch for skill/quick/bundle commands (4018). The
+  // worker result is either plain output text or a dispatch directive, handled
+  // the way the desktop/TUI clients do (skills/bundles submit a prompt, /undo
+  // drops text back into the composer).
+  const runSlash = useCallback(
+    async (raw: string) => {
+      const g = gw.current;
+      const sid = sessionId;
+      const full = raw.trim();
+      if (!g || !sid || generating || !full) return;
+      setMessages((prev) => [...prev, { id: nid(), role: 'user', text: full }]);
+      const show = (text: string) =>
+        setMessages((prev) => [...prev, { id: nid(), role: 'assistant', text }]);
+      const fail = (text: string) =>
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
+
+      // slash.exec refuses skill/quick/bundle commands with 4018 — reroute those
+      // through command.dispatch, whose result is the structured directive.
+      const exec = async (command: string): Promise<any> => {
+        try {
+          const r: any = await g.slashExec(sid, command);
+          if (r && typeof r === 'object' && typeof r.type === 'string') return r;
+          const out = typeof r?.output === 'string' ? r.output.trim() : '';
+          const warn = typeof r?.warning === 'string' ? r.warning.trim() : '';
+          show([warn, out || '(no output)'].filter(Boolean).join('\n\n'));
+          return null;
+        } catch (e: any) {
+          if (e?.code === 4018 || e?.code === 4011) {
+            const { name, arg } = parseSlashCommand(command);
+            return g.commandDispatch(sid, name, arg);
+          }
+          throw e;
+        }
+      };
+
+      const handle = async (d: any): Promise<void> => {
+        if (!d) return;
+        switch (d.type) {
+          case 'exec':
+          case 'plugin':
+            show((typeof d.output === 'string' && d.output.trim()) || '(no output)');
+            return;
+          case 'alias': {
+            const target = typeof d.target === 'string' ? d.target.trim() : '';
+            if (!target) return;
+            const { arg } = parseSlashCommand(full);
+            const next = `/${target.replace(/^\/+/, '')}${arg ? ` ${arg}` : ''}`;
+            const nested = await exec(next);
+            if (nested) await handle(nested);
+            return;
+          }
+          case 'skill':
+          case 'send': {
+            const message = typeof d.message === 'string' ? d.message : '';
+            if (!message.trim()) {
+              fail('command returned an empty message');
+              return;
+            }
+            // runSlash already echoed the typed command, so no second user bubble.
+            await beginTurn(message);
+            return;
+          }
+          case 'prefill':
+            if (typeof d.message === 'string') {
+              setInput(d.message);
+              if (d.notice) show(String(d.notice));
+            }
+            return;
+          default:
+            fail('command returned an unexpected response');
+        }
+      };
+
+      const { name } = parseSlashCommand(full);
+      setToolLine(`running /${name || 'command'}…`);
+      let d: any = null;
+      try {
+        d = await exec(full);
+      } catch (e: any) {
+        setToolLine(null);
+        fail(`/${name || 'command'}: ${errMsg(e)}`);
+        return;
       }
-      setMessages((prev) => prev.filter((m) => m.id !== aid));
-    }
+      setToolLine(null);
+      if (d) await handle(d);
+    },
+    [sessionId, generating, beginTurn, setInput],
+  );
+
+  // ── Prompt queue ─────────────────────────────────────────────────────────
+  // Prompts typed while a turn is running are held here (client-side) and drained
+  // one per turn end — see drainRef / onComplete. An explicit Stop parks the
+  // queue until the user queues again or taps Resume (desktop parity).
+  //
+  // The ref is authoritative (mutated synchronously) and state mirrors it: two
+  // drains firing before a re-render must not both pick up the same head.
+  const setQueue = useCallback((update: (prev: QueuedPrompt[]) => QueuedPrompt[]) => {
+    queuedRef.current = update(queuedRef.current);
+    setQueued(queuedRef.current);
+  }, []);
+
+  const enqueueQueued = useCallback(
+    (text: string) => {
+      const t = text.trim();
+      if (!t) return;
+      setQueueParked(false); // queueing lifts a park
+      setQueue((prev) => [...prev, { id: nid(), text: t }]);
+      // Idle (parked/unparked) → start immediately; mid-turn → waits for onComplete.
+      queueMicrotask(() => drainRef.current());
+    },
+    [setQueue],
+  );
+  const removeQueued = useCallback((id: string) => setQueue((prev) => prev.filter((q) => q.id !== id)), [setQueue]);
+  const clearQueue = useCallback(() => {
+    setQueue(() => []);
+    setQueueParked(false);
+  }, [setQueue]);
+  const resumeQueue = useCallback(() => {
+    setQueueParked(false);
+    drainRef.current();
+  }, []);
+  const sendQueuedNow = useCallback(
+    (id: string) => {
+      setQueueParked(false);
+      if (generatingRef.current) {
+        // Busy — move it to the front; the drain picks it up at turn end.
+        setQueue((prev) => {
+          const item = prev.find((q) => q.id === id);
+          return item ? [item, ...prev.filter((q) => q.id !== id)] : prev;
+        });
+        return;
+      }
+      const item = queuedRef.current.find((q) => q.id === id);
+      if (!item) return;
+      setQueue((prev) => prev.filter((q) => q.id !== id));
+      void sendRef.current?.(item.text);
+    },
+    [setQueue],
+  );
+  // Fresh closure each render so the once-created onComplete handler always
+  // drains against current queue/generating state.
+  drainRef.current = () => {
+    if (queueParkedRef.current || generatingRef.current) return;
+    const next = queuedRef.current[0];
+    if (!next) return;
+    setQueue((prev) => prev.filter((q) => q.id !== next.id));
+    void sendRef.current?.(next.text);
   };
+
+  const send = useCallback(async (override?: string) => {
+    const text = (override ?? input).trim();
+    const g = gw.current;
+    const files = override === undefined ? attachments : [];
+    if ((!text && files.length === 0) || !g || !sessionId) return;
+    if (generatingRef.current) {
+      // Mid-turn: hold it for the next turn instead of dropping it.
+      if (text) enqueueQueued(text);
+      if (override === undefined) setInput('');
+      return;
+    }
+
+    // A leading `/command` runs server-side instead of going to the model:
+    // prompt.submit does NOT dispatch slash commands (parity with the TUI's
+    // slash fallthrough). Attachments keep the normal prompt path.
+    if (!files.length && isSlashCommand(text)) {
+      if (override === undefined) setInput('');
+      // 1) Commands this app owns (a remote /new would mint a session id we
+      //    never adopt; /title and /stop map to existing mobile controls).
+      const action = slashMobileAction(text);
+      if (action === 'new') {
+        void newSessionRef.current();
+      } else if (action === 'title') {
+        const t = parseSlashCommand(text).arg;
+        if (t) void renameSessionRef.current(t);
+        else setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: 'Usage: /title <name>' }]);
+      } else if (action === 'stop') {
+        stopRef.current();
+      } else {
+        // 2) Curated like the desktop registry: terminal/messaging/settings-only
+        //    commands get the reason instead of a doomed slash.exec round-trip.
+        const blocked = slashBlockedMessage(text);
+        // 3) Offered, but a mobile control owns the surface (model chip, drawer).
+        const hint = slashMobileHint(text);
+        if (blocked) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: blocked }]);
+        else if (hint) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: hint }]);
+        else await runSlash(text);
+      }
+      // A queued slash command doesn't start a turn, so drain the next one here.
+      drainRef.current();
+      return;
+    }
+
+    // Bytes go up BEFORE the prompt: prompt.submit is text-only, so attachments
+    // travel through the dashboard files API (the route the Files tab already
+    // uses) and the agent is handed the server path to read. A failed upload
+    // aborts the send and leaves the input + chips in place to retry.
+    let sent: { name: string; path: string; image: boolean }[] = [];
+    if (files.length) {
+      // Uploads take seconds — a second tap mid-flight would send the file and
+      // the prompt twice.
+      if (uploading.current) return;
+      uploading.current = true;
+      setToolLine(`uploading ${files.length} file${files.length === 1 ? '' : 's'}…`);
+      try {
+        sent = await uploadAttachments(files, host, cookie.current);
+      } catch (e) {
+        setToolLine(null);
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Upload failed: ${errMsg(e)}` }]);
+        return;
+      } finally {
+        uploading.current = false;
+      }
+      setToolLine(null);
+    }
+
+    // Only a user-initiated send clears the composer — a queue drain must not
+    // wipe a draft the user is typing while the turn finishes.
+    if (override === undefined) {
+      setInput('');
+      setAttachments([]);
+    }
+    const images = files.filter(isImageAttachment);
+    // Images show as thumbnails in the bubble; other files keep their name line.
+    const shownText = [...files.filter((f) => !isImageAttachment(f)).map((f) => `📎 ${f.name}`), text]
+      .filter(Boolean)
+      .join('\n');
+    const submitText = [
+      ...sent.map((s) => `[attached ${s.image ? 'image' : 'file'}: ${s.path}]`),
+      text,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    await beginTurn(submitText, { text: shownText, media: images });
+  }, [input, attachments, sessionId, host, setInput, setAttachments, beginTurn, runSlash, enqueueQueued]);
+  sendRef.current = send;
 
   const stop = useCallback(() => {
     if (sessionId) gw.current?.interrupt(sessionId).catch(() => {});
+    // An explicit halt parks the queue until the user queues again / taps Resume.
+    setQueueParked(true);
   }, [sessionId]);
+  stopRef.current = stop;
 
   // ── Session details ────────────────────────────────────────────────────
 
@@ -798,6 +1375,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [sessionId, sessionKey],
   );
+  renameSessionRef.current = renameSession;
 
   const deleteSessionById = useCallback(
     async (storedId: string) => {
@@ -841,14 +1419,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const g = gw.current;
       const t = text.trim();
       if (!g || !sessionId || !t) return;
-      setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `↪ steered: ${t.slice(0, 120)}` }]);
+      setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `↪ steer: ${t.slice(0, 120)}` }]);
       try {
-        await g.redirect(sessionId, t);
-      } catch (e) {
+        const r: any = await g.redirect(sessionId, t);
+        // The turn was already past its steerable point, so the server keeps
+        // the text as the next user turn instead of dropping it.
+        if (r?.status === 'queued') {
+          setMessages((prev) => [
+            ...prev,
+            { id: nid(), role: 'notice', text: '↪ too late to steer this turn — queued as the next message' },
+          ]);
+        }
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        // Live runtime expired server-side — same recovery as send().
+        if ((e?.code === 4001 || /not.?found/i.test(msg)) && sessionKey) {
+          try {
+            const r: any = await g.resume(sessionKey);
+            const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
+            setSessionId(liveId);
+            await g.redirect(liveId, t);
+            return;
+          } catch (e2) {
+            setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Steer failed: ${errMsg(e2)}` }]);
+            return;
+          }
+        }
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Steer failed: ${errMsg(e)}` }]);
       }
     },
-    [sessionId],
+    [sessionId, sessionKey],
   );
 
   const setGlobalModel = useCallback(
@@ -907,6 +1507,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [sessions, refreshSessions]);
 
   const getGw = useCallback(() => gw.current, []);
+  const getCookie = useCallback(() => cookie.current, []);
 
   const opsGet = useCallback(async (path: string) => dashboardOpsGet(host, cookie.current, path), [host]);
   const opsMut = useCallback(
@@ -938,6 +1539,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     modelProvider,
     effort,
     setEffort,
+    applyEffort,
     providers,
     providersLoading,
     providersError,
@@ -963,6 +1565,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     stop,
     openInfo,
     loadProviders,
+    loadCommandsCatalog,
+    queued,
+    queueParked,
+    enqueueQueued,
+    removeQueued,
+    clearQueue,
+    resumeQueue,
+    sendQueuedNow,
+    todos,
+    subagents,
+    refreshToolResults,
     pickModel,
     copyText,
     answerValue,
@@ -980,6 +1593,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     opsGet,
     opsMut,
     getGw,
+    getCookie,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

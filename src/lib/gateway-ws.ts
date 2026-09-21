@@ -40,6 +40,41 @@ export interface HistoryMessage {
   rowId?: number;
   reasoning?: string;
   name?: string;
+  /** Tool command / primary arg (REST history joins it from tool_calls). */
+  command?: string;
+}
+
+/** One `/`-wheel row from `complete.slash` (tui_gateway/contracts/tools_commands.py). */
+export interface SlashCompletionItem {
+  /** Replacement token, usually `/name` (may carry a trailing space). */
+  text: string;
+  /** Human label; the server defaults it to `text`. */
+  display: string;
+  /** One-line description. */
+  meta: string;
+  /** 'command' | 'skill' on slash completions. */
+  kind?: string;
+}
+
+/** A `complete.*` payload: rows plus the column the accepted row replaces from. */
+export interface SlashCompletionsResult {
+  items: SlashCompletionItem[];
+  replaceFrom: number;
+}
+
+/** Normalise a `complete.*` result's `items` rows (same shape for slash + path). */
+function completionItems(r: any): SlashCompletionItem[] {
+  const rows = Array.isArray(r?.items) ? r.items : [];
+  return rows
+    .map(
+      (it: any): SlashCompletionItem => ({
+        text: typeof it?.text === 'string' ? it.text : '',
+        display: typeof it?.display === 'string' ? it.display : '',
+        meta: typeof it?.meta === 'string' ? it.meta : '',
+        ...(typeof it?.kind === 'string' ? { kind: it.kind } : {}),
+      }),
+    )
+    .filter((it: SlashCompletionItem) => it.text.trim().length > 0);
 }
 
 /** Assistant detail sidecars (see _history_to_messages): reasoning arrives on
@@ -80,10 +115,12 @@ export interface GatewayEvents {
   onToken?: (sessionId: string, delta: string) => void;
   onReasoning?: (sessionId: string, delta: string) => void;
   onInterim?: (sessionId: string, text: string) => void;
-  onTool?: (sessionId: string, info: { name?: string; preview?: string; summary?: string; toolId?: string; phase: 'start' | 'progress' | 'generating' | 'complete' }) => void;
+  onTool?: (sessionId: string, info: { name?: string; preview?: string; summary?: string; inlineDiff?: string; result?: unknown; args?: unknown; context?: string; toolId?: string; phase: 'start' | 'progress' | 'generating' | 'complete' }) => void;
   onComplete?: (sessionId: string, text: string, raw?: any) => void;
   onNotice?: (sessionId: string, text: string) => void;
   onSessionInfo?: (info: any) => void;
+  /** Agent todo snapshot (`{todos, revision}`) — `todo.updated`. */
+  onTodo?: (sessionId: string, payload: any) => void;
   onAsk?: (ask: ServerAsk) => void;
   onAskCancel?: (rpcId: string) => void;
   onEvent?: (type: string, params: any) => void;
@@ -429,6 +466,75 @@ export class GatewayWs {
     return this.call('session.close', { session_id: sessionId });
   }
 
+  // ── Slash commands + @ references ──────────────────────────────────────
+  // `complete.slash` backs the composer's "/" command wheel; `complete.path`
+  // backs `@` references (files, folders, URLs, profiles, plugin providers).
+  // Both return the same row shape (tui_gateway/methods_complete.py), so the
+  // client renders them verbatim.
+
+  async slashCompletions(text: string, sessionId?: string): Promise<SlashCompletionsResult> {
+    const r = await this.call('complete.slash', {
+      text,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+    return { items: completionItems(r), replaceFrom: typeof r?.replace_from === 'number' ? r.replace_from : 1 };
+  }
+
+  /** `@…` completions for the word under the composer caret (the whole token,
+   *  e.g. `@`, `@src/ap`, `@file:src/`). */
+  async pathCompletions(word: string, sessionId?: string): Promise<SlashCompletionsResult> {
+    const r = await this.call('complete.path', {
+      word,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+    return { items: completionItems(r), replaceFrom: 0 };
+  }
+
+  /** Run one slash command (live shortcut or the session's slash worker). The
+   *  result is plain `{output}` text or a `command.dispatch` directive (`{type}`). */
+  slashExec(sessionId: string, command: string): Promise<any> {
+    return this.call('slash.exec', { session_id: sessionId, command });
+  }
+
+  /** Structured fallback for skill / quick / bundle / alias commands that the
+   *  slash worker refuses (4018) — see command.dispatch. */
+  commandDispatch(sessionId: string, name: string, arg = ''): Promise<any> {
+    return this.call('command.dispatch', {
+      name: name.replace(/^\/+/, ''),
+      arg,
+      session_id: sessionId,
+    });
+  }
+
+  /** Categorized slash catalog: per-command `desktop=` disposition (which surface
+   *  owns it) plus alias mapping. This is the live authority behind
+   *  ./slash-commands — the pasted registry is only the offline fallback. */
+  commandsCatalog(sessionId?: string): Promise<any> {
+    return this.call('commands.catalog', sessionId ? { session_id: sessionId } : {});
+  }
+
+  /** Set a display/session config key — `/reasoning <level>` is
+   *  `config.set {key:'reasoning', value:<level>}` (session-scoped unless
+   *  `scope:'global'`; the slash worker only reaches config.yaml and leaves the
+   *  live agent's reasoning untouched — see desktop's reasoning-slash.ts). */
+  configSet(key: string, value: string, sessionId?: string, scope?: 'global' | 'session'): Promise<any> {
+    return this.call('config.set', {
+      key,
+      value,
+      ...(sessionId ? { session_id: sessionId } : {}),
+      ...(scope ? { scope } : {}),
+    });
+  }
+
+  configGet(key: string, sessionId?: string): Promise<any> {
+    return this.call('config.get', { key, ...(sessionId ? { session_id: sessionId } : {}) });
+  }
+
+  /** Live child agents owned by this session (`subagent.list`). */
+  subagents(sessionId: string): Promise<any> {
+    return this.call('subagent.list', { session_id: sessionId });
+  }
+
   usage(sessionId: string): Promise<any> {
     return this.call('session.usage', { session_id: sessionId });
   }
@@ -503,7 +609,7 @@ export class GatewayWs {
         this.events.onComplete?.(sid, strOf(body.text), body);
         break;
       case 'tool.start':
-        this.events.onTool?.(sid, { name: body?.name, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'start' });
+        this.events.onTool?.(sid, { name: body?.name, args: body?.args, context: body?.context, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'start' });
         break;
       case 'tool.progress':
         this.events.onTool?.(sid, { name: body?.name, preview: body?.preview, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'progress' });
@@ -516,11 +622,17 @@ export class GatewayWs {
           name: body?.name,
           toolId: strOf(body?.tool_id ?? body?.id) || undefined,
           summary: strOf(body?.summary) || strOf(body?.preview) || undefined,
+          inlineDiff: strOf(body?.inline_diff) || undefined,
+          result: body?.result,
+          args: body?.args,
           phase: 'complete',
         });
         break;
       case 'session.info':
         this.events.onSessionInfo?.(body);
+        break;
+      case 'todo.updated':
+        this.events.onTodo?.(sid, body);
         break;
       case 'request.cancel': {
         const id = String(body?.id ?? params?.id ?? '');

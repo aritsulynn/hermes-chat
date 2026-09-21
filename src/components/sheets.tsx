@@ -1,10 +1,9 @@
 import { forwardRef, useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
   BottomSheetScrollView,
-  BottomSheetView,
 } from '@gorhom/bottom-sheet';
 import { Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react-native';
 import { parseClarify } from '../utils/messages';
@@ -113,13 +112,16 @@ export const AskSheet = forwardRef<
 >(function AskSheet({ ask, onValue, onApproval, onDismiss, gw }, ref) {
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Record<string, string[]>>({});
-  const snapPoints = useMemo(() => ['50%', '85%'], []);
+  // Which button was tapped — keeps the sheet from answering twice.
+  const [sent, setSent] = useState<string | null>(null);
+  const snapPoints = useMemo(() => ['60%', '90%'], []);
   const { theme } = useApp();
   const dark = theme === 'dark';
 
   useEffect(() => {
     setText('');
     setPicked({});
+    setSent(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ask?.rpcId]);
 
@@ -198,26 +200,80 @@ export const AskSheet = forwardRef<
       );
     }
 
-    // Dangerous-command approval — choice comes from the payload's own list.
+    // Dangerous-command approval — choice list comes from the payload, labels
+    // are ours: the raw wire values ("once"/"session"/"always"/"deny") read as
+    // gibberish in a pill, and "deny" was styled in the allow colour.
     if (m === 'approval') {
-      const choices: string[] = Array.isArray(ask.params.choices) && ask.params.choices.length > 0
+      const raw: string[] = Array.isArray(ask.params.choices) && ask.params.choices.length > 0
         ? ask.params.choices.map(String)
         : ['once', 'deny'];
+      const CHOICE: Record<string, { label: string; hint: string }> = {
+        once: { label: 'Allow once', hint: 'Just this command' },
+        session: { label: 'Allow for this session', hint: 'Until the chat ends' },
+        always: { label: 'Always allow', hint: 'Saved to the allow-list' },
+        deny: { label: 'Deny', hint: 'The agent stops here' },
+      };
+      const order = ['once', 'session', 'always', 'deny'];
+      const choices = [...raw].sort((a, b) => order.indexOf(a) - order.indexOf(b));
       const cmd = ask.params.command ? String(ask.params.command) : '';
+      // Payload keys per tools/approval.py: command + description (+ flags).
+      const description = ask.params.description ? String(ask.params.description) : '';
+      const answer = (c: string) => {
+        if (sent) return;
+        setSent(c);
+        onApproval(c);
+      };
       return (
         <>
           <View className="flex-row items-center gap-2">
-            <TriangleAlert size={18} color={dark ? '#f5f5f5' : '#111'} />
-            <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Allow command?</Text>
+            <TriangleAlert size={18} color="#d97706" />
+            <Text className="flex-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">
+              Allow this command?
+            </Text>
           </View>
-          {!!cmd && <Text className="rounded-lg bg-[#f4f4f6] dark:bg-[#212121] p-2 font-mono text-[13px] text-neutral-950 dark:text-neutral-100">{cmd}</Text>}
-          {!!ask.params.preview && <Text className="text-sm text-neutral-700 dark:text-neutral-200">{String(ask.params.preview)}</Text>}
-          <View className="flex-row flex-wrap gap-2">
-            {choices.map((c) => (
-              <Pressable key={c} onPress={() => onApproval(c)} className={`rounded-full border px-3 py-[7px] ${c === 'deny' ? 'border-[#c5221f]' : 'border-[#1a73e8]'}`}>
-                <Text className="text-sm text-[#1a73e8] dark:text-[#7aa7ff]">{c}</Text>
-              </Pressable>
-            ))}
+          {!!description && (
+            <Text className="text-sm text-neutral-700 dark:text-neutral-200">{description}</Text>
+          )}
+          {!!cmd && (
+            // Long commands must scroll inside their own box, not push the
+            // buttons off the bottom of the sheet.
+            <ScrollView
+              className="max-h-[150px] rounded-lg bg-[#f4f4f6] dark:bg-[#212121]"
+              contentContainerStyle={{ padding: 8 }}
+              nestedScrollEnabled
+            >
+              <Text selectable className="font-mono text-[13px] leading-[18px] text-neutral-950 dark:text-neutral-100">
+                {cmd}
+              </Text>
+            </ScrollView>
+          )}
+          <View className="gap-2 pt-1">
+            {choices.map((c) => {
+              const deny = c === 'deny';
+              const meta = CHOICE[c] ?? { label: c, hint: '' };
+              const busy = sent !== null;
+              return (
+                <Pressable
+                  key={c}
+                  disabled={busy}
+                  onPress={() => answer(c)}
+                  className={`rounded-xl px-4 py-2.5 ${deny ? 'border border-[#c5221f] dark:border-[#ff7b72]' : 'bg-[#1a73e8]'} ${busy ? 'opacity-50' : ''}`}
+                >
+                  <Text
+                    className={`text-center text-[15px] font-semibold ${deny ? 'text-[#c5221f] dark:text-[#ff7b72]' : 'text-white'}`}
+                  >
+                    {meta.label}
+                  </Text>
+                  {!!meta.hint && (
+                    <Text
+                      className={`mt-0.5 text-center text-[12px] ${deny ? 'text-[#c5221f] dark:text-[#ff7b72]' : 'text-white/75'}`}
+                    >
+                      {meta.hint}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
         </>
       );
@@ -281,9 +337,20 @@ export const AskSheet = forwardRef<
       backgroundStyle={{ backgroundColor: dark ? '#000' : '#fff' }}
       handleIndicatorStyle={{ backgroundColor: dark ? '#525252' : '#d4d4d4' }}
       enablePanDownToClose={false}
+      // Lifts the sheet with the keyboard so the sudo/secret input and the
+      // approval buttons never sit underneath it.
+      keyboardBehavior="interactive"
       onDismiss={onDismiss}
     >
-      <BottomSheetView className="bg-white dark:bg-black p-4 gap-2.5">{renderBody()}</BottomSheetView>
+      {/* Scrollable body: a long command or a batch of clarify questions must
+          not push the answer buttons past the bottom edge. */}
+      <BottomSheetScrollView
+        className="bg-white dark:bg-black"
+        contentContainerStyle={{ padding: 16, gap: 10 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {renderBody()}
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 });
