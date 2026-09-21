@@ -293,6 +293,9 @@ export function ChatScreen() {
   // Height of the floating bottom dock (panels + composer) — the list reserves
   // this much padding so the last message can scroll above it.
   const [dockH, setDockH] = useState(0);
+  // Keyboard height — the absolute dock must be lifted by hand (see the
+  // KeyboardAvoidingView note below).
+  const [kbH, setKbH] = useState(0);
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
   const tokenEstimate = messages.reduce((n, m) => n + Math.ceil(m.text.length / 4), 0);
@@ -383,13 +386,17 @@ export function ChatScreen() {
   // Also re-anchor any open popover, since the composer moves up with the
   // keyboard (matters for the model search field).
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e: any) => {
+      // The absolute dock can't ride KeyboardAvoidingView's padding, so track the
+      // keyboard height and lift it explicitly.
+      setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0)));
       setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
       }, 50);
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => {
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
+      setKbH(0);
       setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
@@ -786,7 +793,8 @@ export function ChatScreen() {
         {/* Floating bottom dock — transparent, so the transcript shows behind the
             composer instead of a solid background band. */}
         <View
-          className="absolute bottom-0 left-0 right-0"
+          className="absolute left-0 right-0"
+          style={{ bottom: kbH }}
           onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
         >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
