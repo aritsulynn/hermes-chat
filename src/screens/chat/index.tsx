@@ -284,6 +284,9 @@ export function ChatScreen() {
   // Content-size growth (stream tokens, expand thinking) auto-scrolls only
   // then — expanding an old bubble mid-list no longer yanks to the bottom.
   const stickEnd = useRef(true);
+  // True briefly while the keyboard/dock padding changes — suppresses the
+  // content-size auto-scroll so opening the keyboard doesn't shift the transcript.
+  const kbResizeRef = useRef(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Agent todo checklist above the composer — collapsed to a one-line summary.
   const [todosOpen, setTodosOpen] = useState(false);
@@ -405,11 +408,17 @@ export function ChatScreen() {
     };
   }, [scrollEnd, remeasurePopover]);
 
-  // Keyboard/dock resize: keep the newest message in view (the absolute dock
-  // no longer rides KeyboardAvoidingView, so the list owns its own bottom space).
+  // Keyboard/dock resize does NOT auto-scroll: other chat apps leave the
+  // transcript where it is and let the user scroll down to the newest message
+  // (the list's bottom padding reserves room for the dock + keyboard).
   useEffect(() => {
-    if (stickEnd.current) scrollEnd(true);
-  }, [kbH, dockH, scrollEnd]);
+    if (kbH === 0 && dockH === 0) return;
+    kbResizeRef.current = true;
+    const t = setTimeout(() => {
+      kbResizeRef.current = false;
+    }, 450);
+    return () => clearTimeout(t);
+  }, [kbH, dockH]);
 
   // Fetch picker inventory when entering a chat (WS model.options, REST fallback).
   useEffect(() => {
@@ -754,13 +763,9 @@ export function ChatScreen() {
           data={messages}
           keyExtractor={(m) => m.id}
           className="flex-1"
-          // Closed: the list runs behind the floating dock (padding makes room).
-          // Open: the list ends above the dock so the messages stay visible while
-          // typing (the dock is lifted by kbH).
-          style={{ marginBottom: kbH > 0 ? kbH + dockH : 0 }}
-          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: kbH > 0 ? 12 : 12 + dockH }}
+          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }}
           onContentSizeChange={() => {
-            if (stickEnd.current) scrollEnd();
+            if (stickEnd.current && !kbResizeRef.current) scrollEnd();
           }}
           onLayout={() => {
             // Only follow the tail when the user is already at the bottom — a
@@ -1112,7 +1117,6 @@ export function ChatScreen() {
           onQueue={onQueue}
           onPasteLarge={pasteLarge}
           generating={generating}
-          scrollEnd={scrollEnd}
           model={model}
           modelProvider={modelProvider}
           onOpenModelPicker={openModelPicker}
