@@ -290,6 +290,9 @@ export function ChatScreen() {
   const [todosOpen, setTodosOpen] = useState(false);
   // True while the list is scrolled up — shows the jump-to-bottom button.
   const [atBottom, setAtBottom] = useState(true);
+  // Height of the floating bottom dock (panels + composer) — the list reserves
+  // this much padding so the last message can scroll above it.
+  const [dockH, setDockH] = useState(0);
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
   const tokenEstimate = messages.reduce((n, m) => n + Math.ceil(m.text.length / 4), 0);
@@ -741,7 +744,7 @@ export function ChatScreen() {
           data={messages}
           keyExtractor={(m) => m.id}
           className="flex-1"
-          contentContainerStyle={{ padding: 12, gap: 8 }}
+          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH }}
           onContentSizeChange={() => {
             if (stickEnd.current) scrollEnd();
           }}
@@ -780,6 +783,12 @@ export function ChatScreen() {
             />
           )}
         />
+        {/* Floating bottom dock — transparent, so the transcript shows behind the
+            composer instead of a solid background band. */}
+        <View
+          className="absolute bottom-0 left-0 right-0"
+          onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
+        >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
         {usage && (
@@ -1100,6 +1109,7 @@ export function ChatScreen() {
           setAttachments={setAttachments}
           dark={dark}
         />
+        </View>
       </KeyboardAvoidingView>
       {/* Jump to the newest message (shown once the user scrolls up). */}
       {!atBottom && (
