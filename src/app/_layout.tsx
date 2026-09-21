@@ -40,6 +40,10 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
     authed, username, host, busy, sessionId, sessions,
     newSession, openSession, refreshSessions, logout, theme, toggleTheme,
   } = useApp();
+  // Hooks FIRST — no early return above this line (authed flips at
+  // login; returning early before hooks breaks hook order).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [q, setQ] = useState('');
   // Keep Recents fresh every time the drawer opens (replaces the old
   // manual Refresh item).
   useEffect(() => {
@@ -53,8 +57,6 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const onChat = pathname === '/chat';
   const onOps = pathname === '/ops';
   // Inline filter replaces the removed /sessions page (drawer is the list now).
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [q, setQ] = useState('');
   const ql = q.trim().toLowerCase();
   const visible = (ql
     ? sessions.filter((s) => (s.title || '').toLowerCase().includes(ql))
