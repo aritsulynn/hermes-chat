@@ -2,7 +2,7 @@
 // Native drawer items (DrawerItemList/DrawerItem) instead of handmade buttons.
 import '../../global.css';
 import { useEffect } from 'react';
-import { Drawer, DrawerContentScrollView, DrawerItem } from 'expo-router/drawer';
+import { Drawer, DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { usePathname } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,11 +11,10 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
-import { Platform, Text, View } from 'react-native';
-import { LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, RefreshCw, Sun } from 'lucide-react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
+import { LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, Search, SquarePen, Sun, X } from 'lucide-react-native';
 import { AppProvider, useApp } from '../hooks/app-store';
 import { BUILD_ID } from '../build';
-import type { ConnState } from '../lib/gateway-ws';
 
 // Hold the native splash until the silent reconnect finishes (booting).
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -28,124 +27,157 @@ function SplashGate() {
   return null;
 }
 
-function connLabel(conn: ConnState): string {
-  return conn === 'ready'
-    ? 'Connected'
-    : conn === 'connecting' || conn === 'reconnecting'
-      ? 'Connecting…'
-      : conn === 'auth-expired'
-        ? 'Session expired'
-        : 'Offline';
-}
-
 // Module-level icon helper — used both in drawer content and screen options.
 const drawerIcon = (C: any) => ({ color, size }: any) => <C size={size} color={color} />;
 
-// Custom drawer content — identity header + nav items (Chat is home,
-// History lists past sessions, Ops opens the ops screens) + action
-// items (theme switch / Refresh / Logout).
+// Custom drawer content, ChatGPT-style: New chat button, Recents list
+// (opens straight into chat), History/Ops links, user footer with
+// theme switch + logout.
 function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
-  const { authed, conn, host, username, busy, sessionId, newSession, refreshSessions, logout, theme, toggleTheme } = useApp();
+  const drawerOpen = useDrawerStatus() === 'open';
+  const {
+    authed, username, host, busy, sessionId, sessions,
+    newSession, openSession, refreshSessions, logout, theme, toggleTheme,
+  } = useApp();
+  // Keep Recents fresh every time the drawer opens (replaces the old
+  // manual Refresh item).
+  useEffect(() => {
+    if (drawerOpen) void refreshSessions();
+  }, [drawerOpen, refreshSessions]);
   if (!authed) return null;
   const dark = theme === 'dark';
-  const labelColor = dark ? '#f5f5f5' : '#111';
+  const dimColor = dark ? '#a3a3a3' : '#555';
+  const rowBg = dark ? '#272727' : '#e8e8ec';
   const close = () => props.navigation.closeDrawer();
-  const onSessions = pathname === '/sessions';
   const onChat = pathname === '/chat';
   const onOps = pathname === '/ops';
-  const icon = drawerIcon;
+  const recents = sessions.slice(0, 8);
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={{ flex: 1 }}>
-      <View className="px-4 pt-2">
-        <Text className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
-        {!!username && (
-          <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1} ellipsizeMode="tail">
-            {username}@{host}
-          </Text>
-        )}
-        <Text className="mb-1 mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{connLabel(conn)}</Text>
+      <View className="flex-row items-center px-4 pt-2">
+        <Text className="flex-1 text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
+        <Pressable
+          onPress={() => {
+            close();
+            props.navigation.navigate('sessions');
+          }}
+          hitSlop={10}
+          className="p-2"
+        >
+          <Search size={20} color={dimColor} />
+        </Pressable>
+        <Pressable onPress={close} hitSlop={10} className="p-2">
+          <X size={20} color={dimColor} />
+        </Pressable>
       </View>
-      <View className="px-2">
-        <DrawerItem
-          label="Chat"
-          icon={icon(MessageSquare)}
-          focused={onChat}
-          activeTintColor="#1a73e8"
-          inactiveTintColor={labelColor}
-          labelStyle={{ color: onChat ? '#1a73e8' : labelColor }}
+      <View className="px-3 pt-2">
+        <Pressable
+          disabled={busy}
           onPress={() => {
             if (busy) return;
             close();
-            // Chat is home: return to the open session, or start a fresh
-            // one when there is none.
-            if (sessionId) props.navigation.navigate('chat');
-            else void newSession();
+            void newSession();
           }}
-        />
-        <DrawerItem
-          label="History"
-          icon={icon(LayoutList)}
-          focused={onSessions}
-          activeTintColor="#1a73e8"
-          inactiveTintColor={labelColor}
-          labelStyle={{ color: onSessions ? '#1a73e8' : labelColor }}
+          className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
+          style={{ backgroundColor: rowBg, opacity: busy ? 0.5 : 1 }}
+        >
+          <SquarePen size={18} color={labelColor} />
+          <Text className="text-[15px] font-semibold text-neutral-950 dark:text-neutral-100">New chat</Text>
+        </Pressable>
+      </View>
+      <View className="px-3 pt-3">
+        <Text className="px-3 pb-1 text-xs font-semibold text-neutral-500 dark:text-neutral-400">Recents</Text>
+        {recents.length === 0 && (
+          <Text className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">No sessions yet</Text>
+        )}
+        {recents.map((s) => {
+          const active = onChat && s.id === sessionId;
+          return (
+            <Pressable
+              key={s.id}
+              onPress={() => {
+                close();
+                void openSession(s);
+              }}
+              className="rounded-xl px-3 py-2.5"
+              style={active ? { backgroundColor: rowBg } : undefined}
+            >
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                className="text-[15px] text-neutral-950 dark:text-neutral-100"
+              >
+                {s.title || '(untitled)'}
+              </Text>
+            </Pressable>
+          );
+        })}
+        <Pressable
           onPress={() => {
             close();
             props.navigation.navigate('sessions');
             void refreshSessions();
           }}
-        />
-        <DrawerItem
-          label="Ops"
-          icon={icon(LayoutGrid)}
-          focused={onOps}
-          activeTintColor="#1a73e8"
-          inactiveTintColor={labelColor}
-          labelStyle={{ color: onOps ? '#1a73e8' : labelColor }}
+          className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
+        >
+          <LayoutList size={18} color={dimColor} />
+          <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">View all history</Text>
+        </Pressable>
+      </View>
+      <View className="flex-1" />
+      <View className="px-3">
+        <Pressable
           onPress={() => {
             close();
             props.navigation.navigate('ops');
           }}
-        />
+          className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
+          style={onOps ? { backgroundColor: rowBg } : undefined}
+        >
+          <LayoutGrid size={18} color={onOps ? '#1a73e8' : dimColor} />
+          <Text
+            className={`text-[15px] ${onOps ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'}`}
+          >
+            Ops
+          </Text>
+        </Pressable>
       </View>
-      <View className="px-2">
-        <DrawerItem
-          label={dark ? 'Light mode' : 'Dark mode'}
-          icon={icon(dark ? Sun : Moon)}
-          inactiveTintColor={labelColor}
-          labelStyle={{ color: labelColor }}
-          onPress={() => {
-            toggleTheme();
-          }}
-        />
-        {onSessions && (
-          <DrawerItem
-            label="Refresh sessions"
-            icon={icon(RefreshCw)}
-            inactiveTintColor={labelColor}
-            labelStyle={{ color: labelColor }}
-            onPress={() => {
-              close();
-              void refreshSessions();
-            }}
-          />
-        )}
-      </View>
-      <View className="px-2 pb-3">
-        <DrawerItem
-          label="Logout"
-          icon={icon(LogOut)}
-          inactiveTintColor="#c5221f"
+      <View className="flex-row items-center gap-2 px-4 py-3">
+        <View className="h-8 w-8 items-center justify-center rounded-full bg-[#1a73e8]">
+          <Text className="text-sm font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</Text>
+        </View>
+        <View className="flex-1">
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            className="text-sm font-semibold text-neutral-950 dark:text-neutral-100"
+          >
+            {username || 'Hermes'}
+          </Text>
+          {!!host && (
+            <Text numberOfLines={1} ellipsizeMode="tail" className="text-xs text-neutral-500 dark:text-neutral-400">
+              {host}
+            </Text>
+          )}
+        </View>
+        <Pressable onPress={() => toggleTheme()} hitSlop={10} className="p-2">
+          {dark ? <Sun size={18} color={dimColor} /> : <Moon size={18} color={dimColor} />}
+        </Pressable>
+        <Pressable
           onPress={() => {
             close();
             void logout();
           }}
-        />
-        <Text className="mt-2 text-center text-[10px] text-neutral-400">
-          build {BUILD_ID}
-        </Text>
+          hitSlop={10}
+          className="p-2"
+        >
+          <LogOut size={18} color="#c5221f" />
+        </Pressable>
       </View>
+      <Text className="pb-3 text-center text-[10px] text-neutral-400">
+        build {BUILD_ID}
+      </Text>
     </DrawerContentScrollView>
   );
 }
