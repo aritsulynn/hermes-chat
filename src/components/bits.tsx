@@ -11,6 +11,8 @@ export function HamburgerBtn() {
   return (
     <Pressable
       testID="hamburger-btn"
+      accessibilityRole="button"
+      accessibilityLabel="Open navigation menu"
       onPress={() => {
         // Drop the keyboard first so the drawer isn't stuck behind it while
         // the user was mid-message.

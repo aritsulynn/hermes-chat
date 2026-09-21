@@ -96,6 +96,8 @@ export interface AppStore {
   stop: () => void;
   openInfo: () => Promise<void>;
   getGw: () => GatewayWs | null;
+  /** Connection + WS diagnostics snapshot (Settings → Diagnostics). */
+  diagnostics: () => Record<string, unknown>;
   loadProviders: () => Promise<void>;
   loadCommandsCatalog: () => Promise<void>;
   /** Prompts typed mid-turn, drained one per turn end. */
@@ -1755,6 +1757,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [sessions, refreshSessions]);
 
   const getGw = useCallback(() => gw.current, []);
+  const diagnostics = useCallback(
+    () => ({
+      conn,
+      host,
+      sessionId,
+      sessionKey,
+      model,
+      provider: modelProvider,
+      effort,
+      queued: queued.length,
+      ws: gw.current?.wsDebug() ?? null,
+    }),
+    [conn, host, sessionId, sessionKey, model, modelProvider, effort, queued.length],
+  );
   const getCookie = useCallback(() => cookie.current, []);
 
   const opsGet = useCallback(async (path: string) => dashboardOpsGet(host, cookie.current, path), [host]);
@@ -1849,6 +1865,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     opsGet,
     opsMut,
     getGw,
+    diagnostics,
     getCookie,
   };
 

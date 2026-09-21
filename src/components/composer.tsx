@@ -159,6 +159,7 @@ export const Composer = memo(function Composer({
         )}
         <TextInput
           ref={inputRef}
+          accessibilityLabel="Message"
           className="max-h-[180px] min-h-[64px] px-1.5 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={input}
           onChangeText={(t) => {
@@ -191,6 +192,8 @@ export const Composer = memo(function Composer({
         <View className="flex-row items-center gap-1.5">
           <Pressable
             ref={plusRef}
+            accessibilityRole="button"
+            accessibilityLabel="Attach"
             onPress={() => onOpenAttachPicker(measurer(plusRef))}
             className="h-8 w-8 shrink-0 items-center justify-center rounded-full"
             hitSlop={8}
@@ -245,13 +248,15 @@ export const Composer = memo(function Composer({
               )}
               <Pressable
                 onPress={stop}
+                accessibilityRole="button"
+                accessibilityLabel="Stop"
                 className="h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#c5221f]"
               >
                 <Square size={14} color="#fff" fill="#fff" />
               </Pressable>
             </>
           ) : (
-            <Pressable onPress={send} className={`h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1a73e8] ${!canSend ? 'opacity-40' : ''}`} disabled={!canSend}>
+            <Pressable onPress={send} accessibilityRole="button" accessibilityLabel="Send" className={`h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1a73e8] ${!canSend ? 'opacity-40' : ''}`} disabled={!canSend}>
               <ArrowUp size={20} color="#fff" />
             </Pressable>
           )}

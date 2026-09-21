@@ -259,6 +259,8 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             return (
               <Pressable
                 key={s.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Open chat ${s.title || '(untitled)'}`}
                 onPress={() => {
                   close();
                   void openSession(s);

@@ -534,6 +534,8 @@ export function ChatScreen() {
         ? () => (
             <Pressable
               testID="kebab-btn"
+              accessibilityRole="button"
+              accessibilityLabel="Chat menu"
               onPress={() => setKebabOpen((v) => !v)}
               className="justify-center px-4 py-2"
               hitSlop={12}

@@ -23,13 +23,15 @@ import {
 import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components';
 import { BUILD_ID } from '../../build';
+import * as Clipboard from 'expo-clipboard';
 
 export function SettingsScreen() {
-  const { authed, username, host, conn, theme, setTheme, logout, sessionInfo, applyApprovalMode } = useApp();
+  const { authed, username, host, conn, theme, setTheme, logout, sessionInfo, applyApprovalMode, diagnostics } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   const isReady = conn === 'ready';
   const isConnecting = conn === 'connecting' || conn === 'reconnecting';
+  const diag = diagnostics() as any;
   const approvalMode = typeof sessionInfo?.approval_mode === 'string' ? sessionInfo.approval_mode : '';
   const mcpServers: any[] = Array.isArray(sessionInfo?.mcp_servers) ? sessionInfo.mcp_servers : [];
   const APPROVALS: { value: 'manual' | 'smart' | 'off'; label: string; hint: string }[] = [
@@ -97,6 +99,8 @@ export function SettingsScreen() {
             <View className="flex-row gap-3">
               {/* Light Theme Card */}
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Light theme"
                 onPress={() => setTheme('light')}
                 className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                   theme === 'light'
@@ -124,6 +128,8 @@ export function SettingsScreen() {
 
               {/* Dark Theme Card */}
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dark theme"
                 onPress={() => setTheme('dark')}
                 className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                   theme === 'dark'
@@ -327,6 +333,24 @@ export function SettingsScreen() {
                 {BUILD_ID}
               </Text>
             </View>
+            <View className="flex-row items-center justify-between py-1 border-t border-neutral-200 dark:border-neutral-800">
+              <Text className="text-xs text-neutral-600 dark:text-neutral-300">Last event</Text>
+              <Text className="text-xs font-mono text-neutral-500 dark:text-neutral-400">
+                {String(diag?.ws?.lastEvent ?? '—')}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Copy diagnostics"
+              onPress={() =>
+                void Clipboard.setStringAsync(JSON.stringify(diag, null, 2)).catch(() => {})
+              }
+              className="mt-2 items-center rounded-xl border border-neutral-300 py-2.5 active:bg-neutral-100 dark:border-neutral-700 dark:active:bg-neutral-800"
+            >
+              <Text className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-200">
+                Copy diagnostics
+              </Text>
+            </Pressable>
           </View>
         </View>
 
