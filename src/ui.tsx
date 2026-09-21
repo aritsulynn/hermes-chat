@@ -1,10 +1,10 @@
 // Shared UI bits — Composer, Field, bottom sheets (via @gorhom/bottom-sheet),
-// TypingDots, markdown rules/styles and the global StyleSheet.
+// TypingDots, markdown rules/styles (layout uses NativeWind className).
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Image,
   Keyboard,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -30,15 +30,20 @@ import {
   Info,
   KeyRound,
   Lock,
+  Menu as MenuIcon,
   MessageSquare,
+  Mic,
   Paperclip,
   Plus,
   Square,
   TriangleAlert,
   X,
 } from 'lucide-react-native';
+import { useNavigation } from 'expo-router';
 import { EFFORTS, parseClarify } from './models';
 import type { Attachment } from './models';
+import { useApp } from './store';
+import { RecordingPresets, requestRecordingPermissionsAsync, useAudioRecorder } from 'expo-audio';
 import type { ModelProviderOption } from './dashboard';
 import type { GatewayWs, ServerAsk } from './gateway-ws';
 
@@ -55,9 +60,9 @@ const renderStaticBackdrop = (props: any) => (
 function InfoRow({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue} numberOfLines={3}>
+    <View className="flex-row gap-2 py-1">
+      <Text className="w-[72px] text-[13px] text-neutral-500">{label}</Text>
+      <Text className="flex-1 text-sm text-neutral-950 dark:text-neutral-100" numberOfLines={3}>
         {value}
       </Text>
     </View>
@@ -74,9 +79,15 @@ export const InfoSheet = forwardRef<
     info: any;
     usage: any;
     usageLoading: boolean;
+    onRename: (title: string) => void;
+    tokenEstimate: number;
   }
->(function InfoSheet({ onClose, title, model, provider, info, usage, usageLoading }, ref) {
+>(function InfoSheet({ onClose, title, model, provider, info, usage, usageLoading, onRename, tokenEstimate }, ref) {
   const snapPoints = useMemo(() => ['60%', '90%'], []);
+  const { theme } = useApp();
+  const dark = theme === 'dark';
+  const [draft, setDraft] = useState(title);
+  useEffect(() => setDraft(title), [title]);
   return (
     <BottomSheetModal
       ref={ref}
@@ -85,22 +96,35 @@ export const InfoSheet = forwardRef<
       backdropComponent={renderBackdrop}
       onDismiss={onClose}
     >
-      <BottomSheetScrollView contentContainerStyle={styles.sheet}>
-        <View style={styles.sheetHead}>
-          <Text style={styles.sheetTitle}>Session info</Text>
+      <BottomSheetScrollView contentContainerStyle={{ padding: 16, gap: 10 }}>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Session info</Text>
         </View>
         <InfoRow label="Title" value={title} />
+        <View className="flex-row items-center gap-2">
+          <TextInput
+            className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-sm text-neutral-950 dark:text-neutral-100"
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Rename session…"
+            autoCapitalize="none"
+          />
+          <Pressable onPress={() => draft.trim() && onRename(draft.trim())} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5">
+            <Text className="dark:text-neutral-100">Save</Text>
+          </Pressable>
+        </View>
+        <InfoRow label="~Tokens" value={tokenEstimate > 0 ? `≈ ${tokenEstimate.toLocaleString()}` : undefined} />
         <InfoRow label="Model" value={typeof info?.model === 'string' && info.model ? info.model : model} />
         <InfoRow
           label="Provider"
           value={typeof info?.provider === 'string' && info.provider ? info.provider : provider || undefined}
         />
         <InfoRow label="CWD" value={typeof info?.cwd === 'string' ? info.cwd : undefined} />
-        <Text style={styles.sheetSub}>Usage</Text>
+        <Text className="mt-1 text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage</Text>
         {usageLoading ? (
-          <Text style={styles.sub}>loading…</Text>
+          <Text className="mb-4 text-sm text-neutral-500">loading…</Text>
         ) : (
-          <Text style={styles.code}>{usage ? JSON.stringify(usage, null, 2) : '—'}</Text>
+          <Text className="rounded-lg bg-[#f4f4f6] dark:bg-[#212121] p-2 font-mono text-[13px] text-neutral-950 dark:text-neutral-100">{usage ? JSON.stringify(usage, null, 2) : '—'}</Text>
         )}
       </BottomSheetScrollView>
     </BottomSheetModal>
@@ -122,6 +146,8 @@ export const AskSheet = forwardRef<
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const snapPoints = useMemo(() => ['50%', '85%'], []);
+  const { theme } = useApp();
+  const dark = theme === 'dark';
 
   useEffect(() => {
     setText('');
@@ -165,26 +191,26 @@ export const AskSheet = forwardRef<
       };
       return (
         <>
-          <View style={styles.titleRow}>
-            <MessageSquare size={18} color="#111" />
-            <Text style={styles.sheetTitle}>Clarify</Text>
+          <View className="flex-row items-center gap-2">
+            <MessageSquare size={18} color={dark ? '#f5f5f5' : '#111'} />
+            <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Clarify</Text>
           </View>
           {questions.map((q) => (
-            <View key={q.qid} style={styles.qBlock}>
-              {!!q.question && <Text style={styles.qText}>{q.question}</Text>}
-              <View style={styles.chips}>
+            <View key={q.qid} className="gap-1.5">
+              {!!q.question && <Text className="text-sm text-neutral-700 dark:text-neutral-200">{q.question}</Text>}
+              <View className="flex-row flex-wrap gap-2">
                 {q.choices.map((c) => {
                   const on = (picked[q.qid] ?? []).includes(c);
                   return (
-                    <Pressable key={c} onPress={() => toggle(q.qid, c, q.multiSelect)} style={[styles.chip, on && styles.chipOn]}>
-                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{c}</Text>
+                    <Pressable key={c} onPress={() => toggle(q.qid, c, q.multiSelect)} className={`rounded-full border border-[#1a73e8] px-3 py-[7px] ${on ? 'bg-[#1a73e8]' : ''}`}>
+                      <Text className={`text-sm ${on ? 'text-white' : 'text-[#1a73e8]'}`}>{c}</Text>
                     </Pressable>
                   );
                 })}
               </View>
               {q.choices.length === 0 && (
                 <TextInput
-                  style={styles.sheetInput}
+                  className="rounded-lg border border-neutral-300 dark:border-neutral-700 p-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
                   value={text}
                   onChangeText={setText}
                   placeholder="พิมพ์คำตอบ…"
@@ -193,9 +219,9 @@ export const AskSheet = forwardRef<
               )}
             </View>
           ))}
-          <View style={styles.sheetRow}>
-            <Pressable onPress={submitAll} style={styles.primary}>
-              <Text style={styles.primaryText}>Send answer</Text>
+          <View className="flex-row items-center justify-end gap-2.5">
+            <Pressable onPress={submitAll} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
+              <Text className="text-[15px] font-semibold text-white">Send answer</Text>
             </Pressable>
           </View>
         </>
@@ -210,16 +236,16 @@ export const AskSheet = forwardRef<
       const cmd = ask.params.command ? String(ask.params.command) : '';
       return (
         <>
-          <View style={styles.titleRow}>
-            <TriangleAlert size={18} color="#111" />
-            <Text style={styles.sheetTitle}>Allow command?</Text>
+          <View className="flex-row items-center gap-2">
+            <TriangleAlert size={18} color={dark ? '#f5f5f5' : '#111'} />
+            <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Allow command?</Text>
           </View>
-          {!!cmd && <Text style={styles.code}>{cmd}</Text>}
-          {!!ask.params.preview && <Text style={styles.qText}>{String(ask.params.preview)}</Text>}
-          <View style={styles.chips}>
+          {!!cmd && <Text className="rounded-lg bg-[#f4f4f6] dark:bg-[#212121] p-2 font-mono text-[13px] text-neutral-950 dark:text-neutral-100">{cmd}</Text>}
+          {!!ask.params.preview && <Text className="text-sm text-neutral-700 dark:text-neutral-200">{String(ask.params.preview)}</Text>}
+          <View className="flex-row flex-wrap gap-2">
             {choices.map((c) => (
-              <Pressable key={c} onPress={() => onApproval(c)} style={[styles.chip, c === 'deny' && styles.chipDeny]}>
-                <Text style={styles.chipText}>{c}</Text>
+              <Pressable key={c} onPress={() => onApproval(c)} className={`rounded-full border px-3 py-[7px] ${c === 'deny' ? 'border-[#c5221f]' : 'border-[#1a73e8]'}`}>
+                <Text className="text-sm text-[#1a73e8]">{c}</Text>
               </Pressable>
             ))}
           </View>
@@ -230,11 +256,11 @@ export const AskSheet = forwardRef<
     // Sudo / secret / vault / GUI reads — single masked string under "value".
     const sheetIcon =
       m === 'sudo' ? (
-        <KeyRound size={18} color="#111" />
+        <KeyRound size={18} color={dark ? '#f5f5f5' : '#111'} />
       ) : m === 'secret' || m.startsWith('vault.') ? (
-        <Lock size={18} color="#111" />
+        <Lock size={18} color={dark ? '#f5f5f5' : '#111'} />
       ) : (
-        <Info size={18} color="#111" />
+        <Info size={18} color={dark ? '#f5f5f5' : '#111'} />
       );
     const label =
       m === 'sudo'
@@ -246,25 +272,25 @@ export const AskSheet = forwardRef<
             : `${m}`;
     return (
       <>
-        <View style={styles.titleRow}>
+        <View className="flex-row items-center gap-2">
           {sheetIcon}
-          <Text style={styles.sheetTitle}>{label}</Text>
+          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">{label}</Text>
         </View>
-        {!!ask.params.command && <Text style={styles.code}>{String(ask.params.command)}</Text>}
+        {!!ask.params.command && <Text className="rounded-lg bg-[#f4f4f6] dark:bg-[#212121] p-2 font-mono text-[13px] text-neutral-950 dark:text-neutral-100">{String(ask.params.command)}</Text>}
         <TextInput
-          style={styles.sheetInput}
+          className="rounded-lg border border-neutral-300 dark:border-neutral-700 p-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={text}
           onChangeText={setText}
           placeholder="…"
           secureTextEntry
           autoFocus
         />
-        <View style={styles.sheetRow}>
-          <Pressable onPress={() => onValue('')} style={styles.smallBtn}>
-            <Text>Skip</Text>
+        <View className="flex-row items-center justify-end gap-2.5">
+          <Pressable onPress={() => onValue('')} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5">
+            <Text className="dark:text-neutral-100">Skip</Text>
           </Pressable>
-          <Pressable onPress={() => onValue(text)} style={styles.primary}>
-            <Text style={styles.primaryText}>Send</Text>
+          <Pressable onPress={() => onValue(text)} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
+            <Text className="text-[15px] font-semibold text-white">Send</Text>
           </Pressable>
         </View>
       </>
@@ -283,18 +309,35 @@ export const AskSheet = forwardRef<
       enablePanDownToClose={false}
       onDismiss={onDismiss}
     >
-      <BottomSheetView style={styles.sheet}>{renderBody()}</BottomSheetView>
+      <BottomSheetView className="bg-white dark:bg-black p-4 gap-2.5">{renderBody()}</BottomSheetView>
     </BottomSheetModal>
   );
 });
 
 // ── Bits ─────────────────────────────────────────────────────────────────────
 
+// One shared drawer hamburger so every screen looks and behaves the same.
+export function HamburgerBtn() {
+  const { theme } = useApp();
+  const navigation = useNavigation();
+  return (
+    <Pressable
+      testID="hamburger-btn"
+      onPress={() => (navigation as any).openDrawer?.()}
+      className="justify-center px-2 py-2"
+      hitSlop={12}
+    >
+      <MenuIcon size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
+    </Pressable>
+  );
+}
+
 export function Composer({
   input,
   setInput,
   send,
   stop,
+  onRedirect,
   generating,
   scrollEnd,
   model,
@@ -304,6 +347,7 @@ export function Composer({
   providersError,
   onOpenModelPicker,
   onPickModel,
+  onPickGlobal,
   effort,
   setEffort,
   attachments,
@@ -313,6 +357,7 @@ export function Composer({
   setInput: (v: string) => void;
   send: () => void;
   stop: () => void;
+  onRedirect: (text: string) => void;
   generating: boolean;
   scrollEnd: () => void;
   model: string;
@@ -322,16 +367,20 @@ export function Composer({
   providersError: string | null;
   onOpenModelPicker: () => void;
   onPickModel: (providerSlug: string, modelId: string) => void;
+  onPickGlobal: (providerSlug: string, modelId: string) => void;
   effort: string;
   setEffort: (v: string) => void;
   attachments: Attachment[];
   setAttachments: (v: Attachment[]) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useApp();
+  const dark = theme === 'dark';
   const [menu, setMenu] = useState<null | 'plus' | 'model' | 'effort'>(null);
   const [kbOpen, setKbOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [recording, setRecording] = useState(false);
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKbOpen(true));
     const hide = Keyboard.addListener('keyboardDidHide', () => setKbOpen(false));
@@ -362,6 +411,31 @@ export function Composer({
     }
   }, [menu]);
   const canSend = !!input.trim() || attachments.length > 0;
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
+  const toggleRecord = async () => {
+    try {
+      if (recorder.isRecording) {
+        await recorder.stop();
+        const uri = recorder.uri;
+        setRecording(false);
+        if (uri) {
+          setAttachments([
+            ...attachments,
+            { uri, name: `voice-${Date.now()}.m4a`, mime: 'audio/m4a' },
+          ]);
+        }
+        return;
+      }
+      const perm = await requestRecordingPermissionsAsync();
+      if (!perm.granted) return;
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setRecording(true);
+    } catch {
+      setRecording(false);
+    }
+  };
 
   const pickImage = async () => {
     setMenu(null);
@@ -408,60 +482,95 @@ export function Composer({
     })
     .filter((p) => (q ? p.models.length > 0 : true));
   return (
-    <View style={[styles.composerWrap, { paddingBottom: kbOpen ? 10 : Math.max(insets.bottom, 10) }]}>
-      <View style={styles.composerCard}>
+    <View className="border-t border-neutral-200 dark:border-neutral-700 bg-white dark:bg-black px-2.5 pt-2" style={{ paddingBottom: kbOpen ? 10 : Math.max(insets.bottom, 10) }}>
+      <View className="gap-1.5 rounded-2xl bg-[#f4f4f6] dark:bg-[#212121] px-2.5 pb-2 pt-2">
+        {generating && (
+          <Text className="px-1.5 text-xs text-amber-700">● live — พิมพ์แล้วกด Steer ↪ เพื่อหักพวงมาลัย</Text>
+        )}
         {attachments.length > 0 && (
-          <View style={styles.attachRow}>
-            {attachments.map((a) => (
-              <Pressable
-                key={a.uri + a.name}
-                onPress={() => setAttachments(attachments.filter((x) => x.uri !== a.uri))}
-                style={styles.attachChip}
-              >
-                <Paperclip size={12} color="#1a73e8" />
-                <Text style={styles.attachText} numberOfLines={1}>
-                  {a.name}
-                </Text>
-                <X size={12} color="#1a73e8" />
-              </Pressable>
-            ))}
+          <View className="flex-row flex-wrap gap-1.5">
+            {attachments.map((a) => {
+              const isImg =
+                (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(a.name);
+              return (
+                <Pressable
+                  key={a.uri + a.name}
+                  onPress={() => setAttachments(attachments.filter((x) => x.uri !== a.uri))}
+                  className="max-w-[220px] flex-row items-center gap-1 rounded-xl bg-[#e8eef7] dark:bg-[#272727] px-2 py-1"
+                >
+                  {isImg ? (
+                    // eslint-disable-next-line jsx-a11y/alt-text
+                    <Image source={{ uri: a.uri }} className="h-7 w-7 rounded-md bg-[#d7e3f7]" />
+                  ) : (
+                    <Paperclip size={12} color="#1a73e8" />
+                  )}
+                  <Text className="shrink text-xs text-[#1a73e8] dark:text-[#7aa7ff]" numberOfLines={1}>
+                    {a.name}
+                  </Text>
+                  <X size={12} color="#1a73e8" />
+                </Pressable>
+              );
+            })}
           </View>
         )}
         <TextInput
-          style={styles.composerInput}
+          className="max-h-[120px] px-1.5 py-1.5 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={input}
           onChangeText={setInput}
-          placeholder="พิมพ์ข้อความ…"
+          placeholder={generating ? 'พิมพ์เพื่อ steer เทิร์นที่กำลังรัน…' : 'พิมพ์ข้อความ…'}
           multiline
-          editable={!generating}
+          editable
           returnKeyType="send"
           blurOnSubmit={false}
           submitBehavior="blurAndSubmit"
           onFocus={() => setTimeout(() => scrollEnd(), 100)}
-          onSubmitEditing={send}
+          onSubmitEditing={() => {
+            if (generating) {
+              if (input.trim()) onRedirect(input);
+            } else {
+              send();
+            }
+          }}
         />
-        <View style={styles.toolbar}>
-          <Pressable onPress={() => setMenu('plus')} style={styles.toolBtn} hitSlop={8}>
-            <Plus size={20} color="#555" />
+        <View className="flex-row items-center gap-2">
+          <Pressable onPress={() => setMenu('plus')} className="h-8 w-8 items-center justify-center rounded-full" hitSlop={8}>
+            <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
           </Pressable>
-          <Pressable onPress={() => setMenu('model')} style={styles.modelBtn} hitSlop={8}>
-            <View style={styles.modelBtnInner}>
-              <Text style={styles.modelBtnText} numberOfLines={1}>
+          <Pressable onPress={() => void toggleRecord()} className="h-8 w-8 items-center justify-center rounded-full" hitSlop={8}>
+            <Mic size={20} color={recording ? '#c5221f' : '#555'} />
+          </Pressable>
+          <Pressable onPress={() => setMenu('model')} className="max-w-[170px] rounded-lg bg-[#e8e8ec] dark:bg-[#272727] px-2 py-1.5" hitSlop={8}>
+            <View className="flex-row items-center gap-0.5">
+              <Text className="shrink text-[13px] font-semibold text-neutral-700 dark:text-neutral-200" numberOfLines={1}>
                 {modelLabel}
               </Text>
-              <ChevronDown size={14} color="#333" />
+              <ChevronDown size={14} color={dark ? '#d4d4d4' : '#333'} />
             </View>
           </Pressable>
-          <Pressable onPress={() => setMenu('effort')} style={styles.effortBtn} hitSlop={8}>
-            <Text style={styles.effortText}>{effort}</Text>
+          <Pressable onPress={() => setMenu('effort')} className="rounded-lg px-2 py-1.5" hitSlop={8}>
+            <Text className="text-[13px] font-semibold text-neutral-500">{effort}</Text>
           </Pressable>
-          <View style={styles.flex} />
+          <View className="flex-1" />
           {generating ? (
-            <Pressable onPress={stop} style={[styles.send, styles.stop]}>
-              <Square size={14} color="#fff" fill="#fff" />
-            </Pressable>
+            <>
+              {!!input.trim() && (
+                <Pressable
+                  onPress={() => onRedirect(input)}
+                  className="mr-1.5 items-center rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5"
+                  hitSlop={8}
+                >
+                  <Text className="dark:text-neutral-100">Steer ↪</Text>
+                </Pressable>
+              )}
+              <Pressable
+                onPress={stop}
+                className="h-10 w-10 items-center justify-center rounded-full bg-[#c5221f]"
+              >
+                <Square size={14} color="#fff" fill="#fff" />
+              </Pressable>
+            </>
           ) : (
-            <Pressable onPress={send} style={[styles.send, !canSend && styles.disabled]} disabled={!canSend}>
+            <Pressable onPress={send} className={`h-10 w-10 items-center justify-center rounded-full bg-[#1a73e8] ${!canSend ? 'opacity-40' : ''}`} disabled={!canSend}>
               <ArrowUp size={20} color="#fff" />
             </Pressable>
           )}
@@ -477,35 +586,35 @@ export function Composer({
           setMenu(null);
         }}
       >
-        <BottomSheetScrollView contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
+        <BottomSheetScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
             {menu === 'plus' && (
               <>
-                <Text style={styles.sheetTitle}>แนบ</Text>
-                <Pressable onPress={pickImage} style={[styles.menuItem, styles.titleRow]}>
-                  <ImageIcon size={18} color="#111" />
-                  <Text style={styles.menuText}>รูปภาพ</Text>
+                <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">แนบ</Text>
+                <Pressable onPress={pickImage} className="flex-row items-center gap-2 border-b border-[#f0f0f2] dark:border-neutral-800 py-3">
+                  <ImageIcon size={18} color={dark ? '#f5f5f5' : '#111'} />
+                  <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">รูปภาพ</Text>
                 </Pressable>
-                <Pressable onPress={pickFile} style={[styles.menuItem, styles.titleRow]}>
-                  <FileText size={18} color="#111" />
-                  <Text style={styles.menuText}>ไฟล์</Text>
+                <Pressable onPress={pickFile} className="flex-row items-center gap-2 border-b border-[#f0f0f2] dark:border-neutral-800 py-3">
+                  <FileText size={18} color={dark ? '#f5f5f5' : '#111'} />
+                  <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">ไฟล์</Text>
                 </Pressable>
               </>
             )}
             {menu === 'model' && (
               <>
-                <View style={styles.sheetHead}>
-                  <Text style={styles.sheetTitle}>Switch model (this chat)</Text>
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Switch model (this chat)</Text>
                 </View>
                 <TextInput
-                  style={styles.searchInput}
+                  className="rounded-xl border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-sm text-neutral-950 dark:text-neutral-100"
                   value={query}
                   onChangeText={setQuery}
                   placeholder="Search models and providers…"
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
-                {providersLoading && <Text style={styles.sub}>loading models…</Text>}
-                {!!providersError && <Text style={styles.err}>{providersError}</Text>}
+                {providersLoading && <Text className="mb-4 text-sm text-neutral-500">loading models…</Text>}
+                {!!providersError && <Text className="mt-2.5 text-[#c5221f]">{providersError}</Text>}
                 {visibleProviders.map((p) => {
                   const count = p.models?.length ?? p.totalModels;
                   const open = q ? true : (expanded[p.slug] ?? false);
@@ -513,51 +622,62 @@ export function Composer({
                     <View key={p.slug || p.name}>
                       <Pressable
                         onPress={() => setExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))}
-                        style={styles.provRow}
+                        className="flex-row items-center gap-2 border-b border-[#f0f0f2] dark:border-neutral-800 py-3"
                       >
-                        <Text style={styles.provName}>{p.name}</Text>
-                        <Text style={styles.provCount}>
+                        <Text className="flex-1 text-[15px] font-bold text-neutral-950 dark:text-neutral-100">{p.name}</Text>
+                        <Text className="text-[13px] text-neutral-500">
                           {count} model{count === 1 ? '' : 's'}
                         </Text>
                         {open ? (
-                          <ChevronDown size={16} color="#666" />
+                          <ChevronDown size={16} color={dark ? '#a3a3a3' : '#666'} />
                         ) : (
-                          <ChevronRight size={16} color="#666" />
+                          <ChevronRight size={16} color={dark ? '#a3a3a3' : '#666'} />
                         )}
                       </Pressable>
                       {open &&
                         (p.models ?? []).map((mm) => {
                           const on = mm === model && p.slug === modelProvider;
                           return (
-                            <Pressable
-                              key={mm}
-                              onPress={() => {
-                                onPickModel(p.slug, mm);
-                                setMenu(null);
-                              }}
-                              style={[styles.modelRow, on && styles.menuItemOn]}
-                            >
-                              <Text style={[styles.menuText, on && styles.menuTextOn]} numberOfLines={1}>
-                                {on ? '● ' : '○ '}{mm}
-                              </Text>
-                            </Pressable>
+                            <View key={mm} className={`flex-row items-center gap-2 border-b border-[#f5f5f7] dark:border-neutral-800 py-2.5 pl-4 ${on ? 'bg-[#f4f8ff]' : ''}`}>
+                              <Pressable
+                                onPress={() => {
+                                  onPickModel(p.slug, mm);
+                                  setMenu(null);
+                                }}
+                                className="flex-1"
+                              >
+                                <Text className={`text-[15px] ${on ? 'font-bold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'}`} numberOfLines={1}>
+                                  {on ? '● ' : '○ '}{mm}
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                onPress={() => {
+                                  onPickGlobal(p.slug, mm);
+                                  setMenu(null);
+                                }}
+                                className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5"
+                                hitSlop={8}
+                              >
+                                <Text className="dark:text-neutral-100">Global</Text>
+                              </Pressable>
+                            </View>
                           );
                         })}
                       {open && !p.models && (
-                        <Text style={styles.sub}>list unavailable — pull to refresh on server</Text>
+                        <Text className="mb-4 text-sm text-neutral-500">list unavailable — pull to refresh on server</Text>
                       )}
                     </View>
                   );
                 })}
                 {visibleProviders.length === 0 && !providersLoading && (
-                  <Text style={styles.sub}>no matches</Text>
+                  <Text className="mb-4 text-sm text-neutral-500">no matches</Text>
                 )}
               </>
             )}
             {menu === 'effort' && (
               <>
-                <Text style={styles.sheetTitle}>Thinking effort</Text>
-                <View style={styles.effortRow}>
+                <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Thinking effort</Text>
+                <View className="flex-row gap-1.5">
                   {EFFORTS.map((e) => (
                     <Pressable
                       key={e}
@@ -565,9 +685,9 @@ export function Composer({
                         setEffort(e);
                         setMenu(null);
                       }}
-                      style={[styles.effortSeg, e === effort && styles.effortSegOn]}
+                      className={`flex-1 items-center rounded-[10px] border py-2.5 ${e === effort ? 'border-[#1a73e8] bg-[#1a73e8]' : 'border-neutral-300 dark:border-neutral-700'}`}
                     >
-                      <Text style={[styles.effortSegText, e === effort && styles.effortSegTextOn]}>{e}</Text>
+                      <Text className={`text-[13px] font-semibold ${e === effort ? 'text-white' : 'text-neutral-700 dark:text-neutral-200'}`}>{e}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -593,12 +713,14 @@ export function Field({
   secure?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
+  const { theme } = useApp();
+  const dark = theme === 'dark';
   if (!secure) {
     return (
-      <View style={styles.field}>
-        <Text style={styles.label}>{label}</Text>
+      <View className="mb-2.5">
+        <Text className="mb-0.5 text-xs text-neutral-500">{label}</Text>
         <TextInput
-          style={styles.fieldInput}
+          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={value}
           onChangeText={onChange}
           placeholder={placeholder}
@@ -609,19 +731,19 @@ export function Field({
     );
   }
   return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.passWrap}>
+    <View className="mb-2.5">
+      <Text className="mb-0.5 text-xs text-neutral-500">{label}</Text>
+      <View className="flex-row items-center rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black pr-1">
         <TextInput
-          style={[styles.fieldInput, styles.passInput]}
+          className="flex-1 px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={value}
           onChangeText={onChange}
           secureTextEntry={!visible}
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <Pressable onPress={() => setVisible((v) => !v)} style={styles.eyeBtn} hitSlop={8}>
-          <Text style={styles.eyeText}>{visible ? 'Hide' : 'Show'}</Text>
+        <Pressable onPress={() => setVisible((v) => !v)} className="px-2.5 py-2" hitSlop={8}>
+          <Text className="text-sm font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">{visible ? 'Hide' : 'Show'}</Text>
         </Pressable>
       </View>
     </View>
@@ -632,6 +754,8 @@ export function TypingDots({ dim }: { dim?: boolean }) {
   const d1 = useRef(new Animated.Value(0)).current;
   const d2 = useRef(new Animated.Value(0)).current;
   const d3 = useRef(new Animated.Value(0)).current;
+  const { theme } = useApp();
+  const dark = theme === 'dark';
   useEffect(() => {
     const pulse = (d: Animated.Value, delay: number) =>
       Animated.loop(
@@ -645,196 +769,19 @@ export function TypingDots({ dim }: { dim?: boolean }) {
     loops.forEach((l) => l.start());
     return () => loops.forEach((l) => l.stop());
   }, [d1, d2, d3]);
-  const color = dim ? '#bbb' : '#999';
+  const color = dim ? (dark ? '#888' : '#bbb') : (dark ? '#aaa' : '#999');
   return (
-    <View style={styles.typingRow}>
+    <View className="flex-row items-center gap-[5px] px-0.5 py-1.5">
       {[d1, d2, d3].map((d, i) => (
         <Animated.View
           key={i}
-          style={[
-            styles.typingDot,
-            { backgroundColor: color, opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) },
-          ]}
+          className="h-[7px] w-[7px] rounded-full"
+          style={{ backgroundColor: color, opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }}
         />
       ))}
     </View>
   );
 }
-
-export const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
-  flex: { flex: 1 },
-  boot: { justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loginWrap: { flex: 1, justifyContent: 'center', padding: 24, gap: 4 },
-  appTitle: { fontSize: 32, fontWeight: '800' },
-  sub: { color: '#666', marginBottom: 16 },
-  field: { marginBottom: 10 },
-  label: { fontSize: 12, color: '#666', marginBottom: 2 },
-  fieldInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    fontSize: 15,
-    backgroundColor: '#fff',
-  },
-  passWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    paddingRight: 4,
-  },
-  passInput: { flex: 1, borderWidth: 0 },
-  eyeBtn: { paddingHorizontal: 10, paddingVertical: 9 },
-  eyeText: { fontSize: 14, fontWeight: '600', color: '#1a73e8' },
-  primary: {
-    backgroundColor: '#1a73e8',
-    borderRadius: 8,
-    paddingVertical: 11,
-    paddingHorizontal: 18,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  primaryText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  disabled: { opacity: 0.4 },
-  err: { color: '#c5221f', marginTop: 10 },
-  hint: { color: '#999', fontSize: 12, marginTop: 12, textAlign: 'center' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bubbleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
-  bubbleText: { flexShrink: 1 },
-  smallBtn: { paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#ddd', borderRadius: 8 },
-  backBtn: { paddingHorizontal: 8, paddingVertical: 8, justifyContent: 'center' },
-  drawerTitle: { fontSize: 22, fontWeight: '800' },
-  drawerSub: { fontSize: 12, color: '#666', marginTop: 2 },
-  drawerConn: { fontSize: 12, color: '#666', marginTop: 2, marginBottom: 4 },
-  pad: { padding: 14 },
-  listPad: { padding: 12, gap: 8 },
-  sessCard: { borderWidth: 1, borderColor: '#e3e3e6', borderRadius: 12, padding: 12 },
-  sessRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  sessTitle: { fontWeight: '600', fontSize: 15 },
-  sessMeta: { color: '#888', fontSize: 12, marginTop: 2 },
-  sessPrev: { color: '#555', fontSize: 13, marginTop: 4 },
-  bubble: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
-  user: { alignSelf: 'flex-end', backgroundColor: '#1a73e8' },
-  ai: { alignSelf: 'flex-start', backgroundColor: '#f0f0f2' },
-  interim: { alignSelf: 'flex-start', backgroundColor: '#fff8e1', borderWidth: 1, borderColor: '#f0e0a0' },
-  notice: { alignSelf: 'center', backgroundColor: '#fdecea' },
-  msg: { fontSize: 15, lineHeight: 21, color: '#111' },
-  userMsg: { color: '#fff' },
-  think: { alignSelf: 'flex-start', backgroundColor: '#f7f7f9', borderWidth: 1, borderColor: '#e2e2e6' },
-  thinkMsg: { fontSize: 13, lineHeight: 18, color: '#777' },
-  toolBubble: { alignSelf: 'flex-start', backgroundColor: '#eef3fd', borderWidth: 1, borderColor: '#d3e1f8' },
-  toolMsg: { fontSize: 13, lineHeight: 18, color: '#3b5bdb' },
-  typingRow: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 2 },
-  typingDot: { width: 7, height: 7, borderRadius: 3.5 },
-  tool: { fontSize: 12, color: '#666', paddingHorizontal: 14, paddingBottom: 4 },
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: 10,
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    fontSize: 15,
-    maxHeight: 120,
-  },
-  composerWrap: {
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    backgroundColor: '#fff',
-  },
-  composerCard: {
-    backgroundColor: '#f4f4f6',
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 8,
-    gap: 6,
-  },
-  composerInput: {
-    fontSize: 15,
-    maxHeight: 120,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    color: '#111',
-  },
-  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  toolBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modelBtn: { maxWidth: 170, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: '#e8e8ec' },
-  modelBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  modelBtnText: { fontSize: 13, color: '#333', fontWeight: '600', flexShrink: 1 },
-  effortBtn: { paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8 },
-  effortText: { fontSize: 13, color: '#666', fontWeight: '600' },
-  attachRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  attachChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#e8eef7', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, maxWidth: 220 },
-  attachText: { fontSize: 12, color: '#1a73e8', flexShrink: 1 },
-  infoRow: { flexDirection: 'row', gap: 8, paddingVertical: 3 },
-  infoLabel: { width: 72, fontSize: 13, color: '#888' },
-  infoValue: { flex: 1, fontSize: 14, color: '#111' },
-  menuItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f2' },
-  menuItemOn: { backgroundColor: '#f4f8ff' },
-  menuText: { fontSize: 15, color: '#111' },
-  menuTextOn: { color: '#1a73e8', fontWeight: '700' },
-  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  searchInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14 },
-  provRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f2' },
-  provName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#111' },
-  provCount: { fontSize: 13, color: '#666' },
-  modelRow: { paddingVertical: 10, paddingLeft: 16, borderBottomWidth: 1, borderBottomColor: '#f5f5f7' },
-  effortRow: { flexDirection: 'row', gap: 6 },
-  effortSeg: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  effortSegOn: { backgroundColor: '#1a73e8', borderColor: '#1a73e8' },
-  effortSegText: { fontSize: 13, color: '#333', fontWeight: '600' },
-  effortSegTextOn: { color: '#fff' },
-  copyBtn: { alignSelf: 'flex-end', marginTop: 4, paddingHorizontal: 2, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  copyText: { fontSize: 11, fontWeight: '600' },
-  copyTextUser: { color: 'rgba(255,255,255,.75)' },
-  copyTextAi: { color: '#999' },
-  send: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1a73e8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stop: { backgroundColor: '#c5221f' },
-  sheet: { backgroundColor: '#fff', padding: 16, gap: 10 },
-  sheetTitle: { fontSize: 17, fontWeight: '700' },
-  sheetSub: { fontSize: 14, fontWeight: '700', marginTop: 4 },
-  sheetRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, alignItems: 'center' },
-  sheetInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 15 },
-  qBlock: { gap: 6 },
-  qText: { fontSize: 14, color: '#333' },
-  code: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 13, backgroundColor: '#f4f4f6', padding: 8, borderRadius: 8 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: '#1a73e8', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
-  chipOn: { backgroundColor: '#1a73e8' },
-  chipText: { color: '#1a73e8', fontSize: 14 },
-  chipTextOn: { color: '#fff' },
-  chipDeny: { borderColor: '#c5221f' },
-});
 
 // ── Markdown (assistant = dark on light, user = white on blue) ──────────────
 
@@ -898,6 +845,29 @@ export const mdAi = StyleSheet.create({
   th: { padding: 6, fontWeight: '700' },
   td: { padding: 6 },
   tr: { borderBottomWidth: 1, borderColor: '#eee' },
+});
+
+export const mdAiDark = StyleSheet.create({
+  body: { fontSize: 15, lineHeight: 21, color: '#e8e8ea' },
+  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: '#e8e8ea' },
+  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: '#e8e8ea' },
+  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: '#e8e8ea' },
+  paragraph: { marginVertical: 4 },
+  link: { color: '#7aa7ff' },
+  blockquote: { backgroundColor: '#232a3a', borderLeftWidth: 3, borderLeftColor: '#7aa7ff', paddingHorizontal: 8, paddingVertical: 4 },
+  code_inline: { backgroundColor: '#2b2b31', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#e8e8ea' },
+  fence: { backgroundColor: '#212121', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  code_block: { backgroundColor: '#212121', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  list_item: { flexDirection: 'row', marginVertical: 2 },
+  bullet_list_content: { flex: 1 },
+  ordered_list_content: { flex: 1 },
+  hr: { backgroundColor: '#333', height: 1, marginVertical: 8 },
+  table: { borderWidth: 1, borderColor: '#333', borderRadius: 6 },
+  th: { padding: 6, fontWeight: '700' },
+  td: { padding: 6 },
+  tr: { borderBottomWidth: 1, borderColor: '#222' },
 });
 
 export const mdUser = StyleSheet.create({

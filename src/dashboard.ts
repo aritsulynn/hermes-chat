@@ -12,6 +12,7 @@
 //
 // RN fetch/XHR has no shared cookie jar on all platforms the way OkHttp does,
 // so this module keeps `Cookie` headers explicitly and passes them per request.
+import { Platform } from 'react-native';
 
 export type AuthMode = 'basic' | 'token' | 'unreachable';
 
@@ -26,12 +27,16 @@ export function normalizeBase(baseUrl: string): string {
 
 /** fetch with a hard timeout so the UI never hangs forever on an
  *  unreachable host (wrong WiFi / changed LAN IP / dashboard down).
- *  RN supports AbortController. */
+ *  RN supports AbortController. `credentials: include` lets the session
+ *  cookie flow on web once the dashboard CORS-allows our origin
+ *  (no-op for same-origin and native). */
 async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 15000): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
+    // no-store: a cached /api/status hit would fake a passing probe while
+    // the network is actually down, sending POSTs into a raw TypeError.
+    return await fetch(url, { credentials: 'include', cache: 'no-store', ...init, signal: ctrl.signal });
   } catch (e: any) {
     if (e?.name === 'AbortError') throw new Error(`Request timed out (${ms / 1000}s): ${url}`);
     throw e;
@@ -85,6 +90,20 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
   try {
     res = await fetchWithTimeout(`${base}/api/status`, {}, 8000);
   } catch (e) {
+    // Browsers hide the reason (CORS vs TCP) behind TypeError. A no-cors
+    // probe distinguishes them: opaque response = reachable but CORS-blocked.
+    if (Platform.OS === 'web') {
+      try {
+        const probe = await fetchWithTimeout(`${base}/api/status`, { mode: 'no-cors' } as RequestInit, 8000);
+        if ((probe as any)?.type === 'opaque') {
+          throw new Error(
+            'Dashboard reachable but the browser blocked the request (CORS) — allow this origin on the dashboard, or use the Expo Go native app instead',
+          );
+        }
+      } catch (e2) {
+        if (e2 instanceof Error && /CORS/.test(e2.message)) throw e2;
+      }
+    }
     throw new Error(`Unreachable: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (!res.ok) throw new Error(`Dashboard probe failed: HTTP ${res.status}`);
@@ -104,15 +123,20 @@ export async function passwordLogin(
   password: string,
 ): Promise<string> {
   const base = normalizeBase(baseUrl);
-  const res = await fetchWithTimeout(
-    `${base}/auth/password-login`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'basic', username, password, next: '' }),
-    },
-    15000,
-  );
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${base}/auth/password-login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'basic', username, password, next: '' }),
+      },
+      15000,
+    );
+  } catch (e) {
+    throw new Error(`Login request failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
   if (!res.ok) {
     if (res.status === 401) throw new Error('Invalid credentials (401)');
     if (res.status === 429) throw new Error('Too many login attempts — try again shortly (429)');
@@ -120,22 +144,30 @@ export async function passwordLogin(
     throw new Error(`Login failed: HTTP ${res.status}`);
   }
   const cookies = mergeCookies('', getSetCookies(res));
-  if (!cookies) throw new Error('Login ok but no session cookie was set');
+  // Web browsers hide Set-Cookie from JS (forbidden header) but store it in
+  // the built-in jar — subsequent credentials:include requests carry it
+  // automatically. Only native needs the explicit cookie string.
+  if (!cookies && Platform.OS !== 'web') throw new Error('Login ok but no session cookie was set');
   return cookies;
 }
 
 /** Step 2: mint a single-use WS ticket (must be consumed within ~30s). */
 export async function mintWsTicket(baseUrl: string, cookie: string): Promise<string> {
   const base = normalizeBase(baseUrl);
-  const res = await fetchWithTimeout(
-    `${base}/api/auth/ws-ticket`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: cookie },
-      body: '{}',
-    },
-    10000,
-  );
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${base}/api/auth/ws-ticket`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: '{}',
+      },
+      10000,
+    );
+  } catch (e) {
+    throw new Error(`Ticket request failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
   // Cookie may have rotated — caller should merge any Set-Cookie it carries.
   const rotated = mergeCookies(cookie, getSetCookies(res));
   if (!res.ok) {
@@ -168,7 +200,7 @@ export function toWsUrl(baseUrl: string, ticket: string): string {
   return `${ws}/api/ws?ticket=${encodeURIComponent(ticket)}`;
 }
 
-// ── Model picker ────────────
+// ── Model picker ─────────────────────────────────────────────────────────
 // GET /api/model/options → {providers:[{slug,name,is_current,models,total_models,...}]}
 // POST /api/model/set {scope:"main",provider,model} — global default.
 // NOTE: "this chat" switching goes through WS command.dispatch (/model),
@@ -226,7 +258,59 @@ export async function setMainModel(
   if (!res.ok) throw new Error(`Set model failed: HTTP ${res.status}`);
 }
 
-// ── Full transcript ─────────
+// ── Generic authed REST helper (ops screens) ─────────────────────────────
+// Cookie auth, NO Authorization header (dashboard 401s it in gated mode).
+
+export async function apiGet(baseUrl: string, cookie: string, path: string): Promise<any> {
+  const base = normalizeBase(baseUrl);
+  const res = await fetchWithTimeout(`${base}${path}`, { headers: { Cookie: cookie } }, 20000);
+  if (!res.ok) throw new Error(`GET ${path} → HTTP ${res.status}`);
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function apiMut(
+  baseUrl: string,
+  cookie: string,
+  path: string,
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  body?: unknown,
+): Promise<any> {
+  const base = normalizeBase(baseUrl);
+  const res = await fetchWithTimeout(
+    `${base}${path}`,
+    {
+      method,
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+    20000,
+  );
+  if (!res.ok) {
+    let detail = '';
+    try {
+      detail = JSON.stringify(await res.json()).slice(0, 200);
+    } catch {}
+    throw new Error(`${method} ${path} → HTTP ${res.status}${detail ? ` ${detail}` : ''}`);
+  }
+  try {
+    const t = await res.text();
+    return t ? JSON.parse(t) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Ops endpoints (route shapes per the hermes-agent dashboard API;
+// all best-effort — screens degrade to an error line).
+
+export const opsGet = apiGet;
+export const opsMut = apiMut;
+
+// ── Full transcript ──────────────────────────────────────────────────────
 // GET /api/sessions/{id}/messages → full rows incl. tool RESULT content +
 // reasoning sidecars. WS session.history is only a compact projection —
 // this is what the native app renders (Tool cards with full JSON).

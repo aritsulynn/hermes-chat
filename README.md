@@ -31,7 +31,7 @@ No API-server key needed — it uses the same basic_auth login as the web UI.
   `command.dispatch {name:"model", arg:"<model> --provider <slug>",
   session_id}` (no `--global`, config untouched); global default =
   `POST /api/model/set {scope:"main",provider,model}`.
-- REST with the cookie: NO `Authorization` header (dashboard 401s it in
+- REST with the cookie: NO `Authorization` header (the dashboard 401s it in
   gated mode — verified live against this project's own backend).
 
 ## Run

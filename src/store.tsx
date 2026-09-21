@@ -6,17 +6,22 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from 'react';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import { useColorScheme as useNWColorScheme } from 'nativewind';
 import {
   checkMe,
   getModelOptions,
   getSessionMessages,
   mintWsTicket,
+  opsGet as dashboardOpsGet,
+  opsMut as dashboardOpsMut,
   passwordLogin,
   probeStatus,
+  setMainModel,
   toWsUrl,
 } from './dashboard';
 import type { ModelProviderOption } from './dashboard';
-import { clearCookie, getCookie, getPassword, loadConnection, saveCookie, saveHost, savePassword } from './connection';
+import { clearCookie, getCookie, getPassword, getTheme, loadConnection, saveCookie, saveHost, savePassword, saveTheme } from './connection';
+import type { Theme } from './connection';
 import { GatewayWs } from './gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from './gateway-ws';
 import { cleanThinking, errMsg, nid } from './models';
@@ -64,7 +69,7 @@ export interface AppStore {
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
-  refreshSessions: () => Promise<void>;
+  refreshSessions: () => Promise<SessionSummary[]>;
   openSession: (s: SessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
   goSessions: () => void;
@@ -78,9 +83,25 @@ export interface AppStore {
   answerValue: (value: string) => void;
   answerApproval: (choice: string) => void;
   dismissAsk: () => void;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  toggleTheme: () => void;
+  renameSession: (title: string) => Promise<void>;
+  deleteSessionById: (storedId: string) => Promise<void>;
+  closeCurrent: () => Promise<void>;
+  redirectLive: (text: string) => Promise<void>;
+  setGlobalModel: (providerSlug: string, modelId: string) => Promise<void>;
+  jumpToRecent: () => Promise<void>;
+  opsGet: (path: string) => Promise<any>;
+  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>;
 }
 
 const AppContext = createContext<AppStore | null>(null);
+
+// Rejecting timeout so a wedged server can never trap the UI on a spinner.
+function withTimeout<T>(p: Promise<T>, ms: number, what = 'timed out'): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(what)), ms))]);
+}
 
 export function useApp(): AppStore {
   const v = useContext(AppContext);
@@ -104,7 +125,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
   const [sessionTitle, setSessionTitle] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([]);
-  const [input, setInput] = useState('');
+  const [inputRaw, setInputRaw] = useState('');
   const [model, setModel] = useState('Muse Spark 1.3 Free');
   const [modelProvider, setModelProvider] = useState('');
   const [effort, setEffort] = useState('Xhigh');
@@ -125,6 +146,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const copyTimer = useRef<any>(null);
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [ask, setAsk] = useState<ServerAsk | null>(null);
+  const [theme, setThemeState] = useState<Theme>('light');
+  const { setColorScheme } = useNWColorScheme();
+
+  const setTheme = useCallback(
+    (t: Theme) => {
+      setThemeState(t);
+      try {
+        setColorScheme(t);
+      } catch {}
+      void saveTheme(t);
+    },
+    [setColorScheme],
+  );
+  const toggleTheme = useCallback(() => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  }, [theme, setTheme]);
 
   const gw = useRef<GatewayWs | null>(null);
   const cookie = useRef<string>('');
@@ -160,12 +197,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch {}
     })();
   };
-  // Long-press fired: swallow the onPress that fires on release (else a
-  // long-press on thinking/tool bubbles toggles them instead of selecting).
-  // Kept here (not in chat) so the flag survives chat unmounts mid-turn.
+  // Per-session composer drafts — switching rooms no longer wipes typing.
+  const draftsRef = useRef<Map<string, string>>(new Map());
+  const draftKeyRef = useRef<string>('__none__');
+  useEffect(() => {
+    draftKeyRef.current = sessionKey ?? sessionId ?? '__none__';
+  }, [sessionKey, sessionId]);
+  const setInput = useCallback((v: string) => {
+    draftsRef.current.set(draftKeyRef.current, v);
+    setInputRaw(v);
+  }, []);
+  const input = inputRaw;
   const [booting, setBooting] = useState(true);
   // Stable handle for the boot-time silent reconnect (connect is defined below).
   const connectRef = useRef<(h: string, user: string, pw: string) => Promise<void>>(async () => {});
+  // openSession is defined below connect — indirect through a ref so the
+  // connect callback (created first) never hits the TDZ.
+  const openSessionRef = useRef<(s: SessionSummary) => Promise<void>>(async () => {});
 
   useEffect(() => {
     let cancelled = false;
@@ -179,9 +227,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const savedPw = await getPassword().catch(() => null);
         if (cancelled) return;
         if (savedPw) setPassword(savedPw);
+        // Restore theme before first paint if possible.
+        const savedTheme = await getTheme().catch(() => null);
+        if (cancelled) return;
+        if (savedTheme) {
+          setThemeState(savedTheme);
+          try {
+            setColorScheme(savedTheme);
+          } catch {}
+        }
         // Silent reconnect — restore the session without asking login again.
+        // Hard ceiling: even a totally wedged connect must release the boot
+        // gate so the user gets the login form instead of a dead spinner.
         if (c.hasCookie && c.username) {
-          await connectRef.current(c.host, c.username, savedPw ?? '');
+          try {
+            await withTimeout(connectRef.current(c.host, c.username, savedPw ?? ''), 90000, 'connect timed out');
+          } catch (e) {
+            setError(errMsg(e));
+          }
         }
       } catch {
         // Fall through to the login screen (connect already set the error).
@@ -350,13 +413,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return ws;
   }, []);
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (): Promise<SessionSummary[]> => {
     const g = gw.current;
-    if (!g) return;
+    if (!g) return [];
     try {
-      setSessions(await g.listSessions(100));
+      const s = await g.listSessions(100);
+      setSessions(s);
+      return s;
     } catch (e) {
       setError(errMsg(e));
+      return [];
     }
   }, []);
 
@@ -451,9 +517,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         await saveHost(h, user);
         if (rememberPw && pw) await savePassword(pw);
-        await refreshSessions();
+        // Bounded waits — a wedged dashboard must never trap boot on a
+        // spinner: list/open each get a ceiling, then we land on chat.
+        let list: SessionSummary[] = [];
+        try {
+          list = await withTimeout(refreshSessions(), 30000);
+        } catch {
+          list = [];
+        }
         setAuthed(true);
-        router.replace('/sessions');
+        if (list.length > 0) {
+          try {
+            await withTimeout(openSessionRef.current(list[0]), 25000);
+          } catch {
+            router.replace('/chat');
+          }
+          return;
+        }
+        router.replace('/chat');
       } catch (e) {
         setError(errMsg(e));
       } finally {
@@ -478,6 +559,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     gw.current = null;
     cookie.current = '';
     liveThinkAid.current = null;
+    draftsRef.current.clear();
+    setInputRaw('');
     await clearCookie();
     setAuthed(false);
     setSessionId(null);
@@ -520,6 +603,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (hist.length === 0) hist = await g.history(liveId);
       setSessionKey(s.id);
       setSessionId(liveId);
+      draftKeyRef.current = s.id;
+      setInputRaw(draftsRef.current.get(s.id) ?? '');
       setAttachments([]);
       setSessionInfo(null);
       setUsageInfo(null);
@@ -560,6 +645,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setOpeningId(null);
     }
   };
+  openSessionRef.current = openSession;
 
   const newSession = async () => {
     const g = gw.current;
@@ -576,6 +662,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionId(sid);
       setSessionTitle('(new session)');
       setMessages([]);
+      draftKeyRef.current = storedSessionId || sid;
+      setInputRaw(draftsRef.current.get(draftKeyRef.current) ?? '');
       setAttachments([]);
       setSessionInfo(null);
       setUsageInfo(null);
@@ -699,7 +787,139 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const dismissAsk = useCallback(() => setAsk(null), []);
 
+  // ── Session management / steering / model defaults ─────────────────────
+
+  const renameSession = useCallback(
+    async (title: string) => {
+      const g = gw.current;
+      const sid = sessionId ?? sessionKey;
+      const t = title.trim();
+      if (!g || !sid || !t) return;
+      await g.rename(sid, t);
+      setSessionTitle(t);
+      if (sessionKey) {
+        const sk = sessionKey;
+        setSessions((prev) => prev.map((s) => (s.id === sk ? { ...s, title: t } : s)));
+      }
+    },
+    [sessionId, sessionKey],
+  );
+
+  const deleteSessionById = useCallback(
+    async (storedId: string) => {
+      const g = gw.current;
+      if (!g) return;
+      try {
+        await g.deleteSession(storedId);
+      } catch {
+        // Fall back to close when the backend has no delete route.
+        try {
+          await g.closeSession(storedId);
+        } catch (e) {
+          setError(errMsg(e));
+          return;
+        }
+      }
+      setSessions((prev) => prev.filter((s) => s.id !== storedId));
+      draftsRef.current.delete(storedId);
+      if (sessionKey === storedId) {
+        setSessionKey(null);
+        setSessionId(null);
+        setSessionTitle('');
+        setMessages([]);
+        setInputRaw('');
+        setSessionInfo(null);
+        setUsageInfo(null);
+        router.replace('/chat');
+      }
+    },
+    [sessionKey],
+  );
+
+  const closeCurrent = useCallback(async () => {
+    const g = gw.current;
+    if (!g || !sessionId) return;
+    await g.closeSession(sessionId);
+  }, [sessionId]);
+
+  const redirectLive = useCallback(
+    async (text: string) => {
+      const g = gw.current;
+      const t = text.trim();
+      if (!g || !sessionId || !t) return;
+      setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `↪ steered: ${t.slice(0, 120)}` }]);
+      try {
+        await g.redirect(sessionId, t);
+      } catch (e) {
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Steer failed: ${errMsg(e)}` }]);
+      }
+    },
+    [sessionId],
+  );
+
+  const setGlobalModel = useCallback(
+    async (providerSlug: string, modelId: string) => {
+      setModelProvider(providerSlug);
+      setModel(modelId);
+      if (!host || !cookie.current) return;
+      setToolLine('setting global default…');
+      try {
+        await setMainModel(host, cookie.current, providerSlug, modelId);
+        setMessages((prev) => [
+          ...prev,
+          { id: nid(), role: 'notice', text: `Global default → ${providerSlug ? `${providerSlug}:` : ''}${modelId}` },
+        ]);
+      } catch (e) {
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Global set failed: ${errMsg(e)}` }]);
+      } finally {
+        setToolLine(null);
+      }
+    },
+    [host],
+  );
+
+  const jumpToRecent = useCallback(async () => {
+    const g = gw.current;
+    if (!g) return;
+    setBusy(true);
+    try {
+      const recentId = await g.mostRecent();
+      if (!recentId) {
+        await refreshSessions();
+        return;
+      }
+      const known = sessions.find((s) => s.id === recentId);
+      if (known) {
+        await openSession(known);
+        return;
+      }
+      await refreshSessions();
+      // List may use a different id space — resume directly as fallback.
+      try {
+        const r: any = await g.resume(recentId);
+        const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : recentId;
+        setSessionKey(recentId);
+        setSessionId(liveId);
+        setSessionTitle('(recent session)');
+        setMessages([]);
+        router.push('/chat');
+      } catch (e) {
+        setError(errMsg(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, refreshSessions]);
+
   const getGw = useCallback(() => gw.current, []);
+
+  const opsGet = useCallback(async (path: string) => dashboardOpsGet(host, cookie.current, path), [host]);
+  const opsMut = useCallback(
+    async (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) =>
+      dashboardOpsMut(host, cookie.current, path, method, body),
+    [host],
+  );
 
   const value: AppStore = {
     booting,
@@ -755,6 +975,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     answerValue,
     answerApproval,
     dismissAsk,
+    theme,
+    setTheme,
+    toggleTheme,
+    renameSession,
+    deleteSessionById,
+    closeCurrent,
+    redirectLive,
+    setGlobalModel,
+    jumpToRecent,
+    opsGet,
+    opsMut,
     getGw,
   };
 

@@ -1,7 +1,8 @@
 // Root layout — expo-router Drawer (https://docs.expo.dev/router/advanced/drawer/).
 // Native drawer items (DrawerItemList/DrawerItem) instead of handmade buttons.
+import '../global.css';
 import { useEffect } from 'react';
-import { Drawer, DrawerContentScrollView, DrawerItem, DrawerItemList } from 'expo-router/drawer';
+import { Drawer, DrawerContentScrollView, DrawerItem } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { usePathname } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -10,9 +11,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Text, View } from 'react-native';
-import { Info, LayoutList, LogOut, MessageSquare, Plus, RefreshCw } from 'lucide-react-native';
+import { Info, LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, RefreshCw, Sun } from 'lucide-react-native';
 import { AppProvider, useApp } from '../src/store';
-import { styles } from '../src/ui';
 import { BUILD_ID } from '../src/build';
 import type { ConnState } from '../src/gateway-ws';
 
@@ -40,43 +40,90 @@ function connLabel(conn: ConnState): string {
 // Module-level icon helper — used both in drawer content and screen options.
 const drawerIcon = (C: any) => ({ color, size }: any) => <C size={size} color={color} />;
 
-// Custom drawer content — identity header + the standard DrawerItemList
-// (Sessions / Chat come from Drawer.Screen options below, with native
-// active highlight) + action items (New / Refresh / Logout).
+// Custom drawer content — identity header + nav items (Chat creates a fresh
+// session, History lists past sessions, Ops opens the ops screens) + action
+// items (Refresh / Session info / Logout).
 function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
-  const { authed, conn, host, username, busy, newSession, refreshSessions, logout, openInfo } = useApp();
+  const { authed, conn, host, username, busy, sessionId, newSession, refreshSessions, logout, openInfo, theme, toggleTheme } = useApp();
   if (!authed) return null;
+  const dark = theme === 'dark';
+  const labelColor = dark ? '#f5f5f5' : '#111';
   const close = () => props.navigation.closeDrawer();
   const onSessions = pathname === '/sessions';
   const onChat = pathname === '/chat';
+  const onOps = pathname === '/ops';
   const icon = drawerIcon;
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Text style={styles.drawerTitle}>Hermes</Text>
+      <View className="px-4 pt-2">
+        <Text className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
         {!!username && (
-          <Text style={styles.drawerSub} numberOfLines={1} ellipsizeMode="tail">
+          <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1} ellipsizeMode="tail">
             {username}@{host}
           </Text>
         )}
-        <Text style={styles.drawerConn}>{connLabel(conn)}</Text>
+        <Text className="mb-1 mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{connLabel(conn)}</Text>
       </View>
-      <DrawerItemList {...props} />
-      <View style={{ paddingHorizontal: 8 }}>
+      <View className="px-2">
         <DrawerItem
-          label="New session"
-          icon={icon(Plus)}
+          label="Chat"
+          icon={icon(MessageSquare)}
+          focused={onChat}
+          activeTintColor="#1a73e8"
+          inactiveTintColor={labelColor}
+          labelStyle={{ color: onChat ? '#1a73e8' : labelColor }}
           onPress={() => {
             if (busy) return;
             close();
-            void newSession();
+            // Chat is home: return to the open session, or start a fresh
+            // one when there is none.
+            if (sessionId) props.navigation.navigate('chat');
+            else void newSession();
+          }}
+        />
+        <DrawerItem
+          label="History"
+          icon={icon(LayoutList)}
+          focused={onSessions}
+          activeTintColor="#1a73e8"
+          inactiveTintColor={labelColor}
+          labelStyle={{ color: onSessions ? '#1a73e8' : labelColor }}
+          onPress={() => {
+            close();
+            props.navigation.navigate('sessions');
+            void refreshSessions();
+          }}
+        />
+        <DrawerItem
+          label="Ops"
+          icon={icon(LayoutGrid)}
+          focused={onOps}
+          activeTintColor="#1a73e8"
+          inactiveTintColor={labelColor}
+          labelStyle={{ color: onOps ? '#1a73e8' : labelColor }}
+          onPress={() => {
+            close();
+            props.navigation.navigate('ops');
+          }}
+        />
+      </View>
+      <View className="px-2">
+        <DrawerItem
+          label={dark ? 'Light mode' : 'Dark mode'}
+          icon={icon(dark ? Sun : Moon)}
+          inactiveTintColor={labelColor}
+          labelStyle={{ color: labelColor }}
+          onPress={() => {
+            toggleTheme();
           }}
         />
         {onSessions && (
           <DrawerItem
             label="Refresh sessions"
             icon={icon(RefreshCw)}
+            inactiveTintColor={labelColor}
+            labelStyle={{ color: labelColor }}
             onPress={() => {
               close();
               void refreshSessions();
@@ -87,6 +134,8 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           <DrawerItem
             label="Session info"
             icon={icon(Info)}
+            inactiveTintColor={labelColor}
+            labelStyle={{ color: labelColor }}
             onPress={() => {
               close();
               void openInfo();
@@ -94,8 +143,8 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           />
         )}
       </View>
-      <View style={styles.flex} />
-      <View style={{ paddingHorizontal: 8, paddingBottom: 12 }}>
+      <View className="flex-1" />
+      <View className="px-2 pb-3">
         <DrawerItem
           label="Logout"
           icon={icon(LogOut)}
@@ -105,11 +154,75 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             void logout();
           }}
         />
-        <Text style={{ fontSize: 10, color: '#999', textAlign: 'center', marginTop: 8 }}>
+        <Text className="mt-2 text-center text-[10px] text-neutral-400">
           build {BUILD_ID}
         </Text>
       </View>
     </DrawerContentScrollView>
+  );
+}
+
+function ThemedStatusBar() {
+  const { theme } = useApp();
+  return <StatusBar style={theme === 'dark' ? 'light' : 'auto'} />;
+}
+
+function ThemedDrawer() {
+  const { theme } = useApp();
+  const dark = theme === 'dark';
+  const bg = dark ? '#000' : '#fff';
+  const fg = dark ? '#f5f5f5' : '#111';
+  return (
+    <Drawer
+      initialRouteName="login"
+      drawerContent={(p) => <HermesDrawerContent {...p} />}
+      screenOptions={{
+        swipeEnabled: true,
+        drawerActiveTintColor: '#1a73e8',
+        headerStyle: { backgroundColor: bg },
+        headerTintColor: fg,
+        headerTitleStyle: { color: fg },
+        drawerStyle: { backgroundColor: bg },
+      }}
+    >
+      <Drawer.Screen
+        name="login"
+        options={{ headerShown: false, drawerItemStyle: { display: 'none' }, swipeEnabled: false, title: 'Login' }}
+      />
+      <Drawer.Screen
+        name="index"
+        options={{ headerShown: false, drawerItemStyle: { display: 'none' }, swipeEnabled: false, title: 'Index' }}
+      />
+      <Drawer.Screen
+        name="chat"
+        options={{
+          // Title + header buttons are set live from chat.tsx
+          // (session title, hamburger, kebab) via navigation.setOptions.
+          headerShown: true,
+          title: 'Chat',
+          drawerLabel: 'Chat',
+          drawerIcon: drawerIcon(MessageSquare),
+        }}
+      />
+      <Drawer.Screen
+        name="sessions"
+        options={{
+          headerShown: true,
+          title: 'History',
+          drawerLabel: 'History',
+          drawerIcon: drawerIcon(LayoutList),
+        }}
+      />
+      <Drawer.Screen
+        name="ops"
+        options={{
+          headerShown: true,
+          title: 'Ops',
+          drawerLabel: 'Ops (cron/kanban/logs)',
+          drawerIcon: drawerIcon(LayoutGrid),
+        }}
+      />
+    </Drawer>
   );
 }
 
@@ -118,42 +231,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AppProvider>
-          <StatusBar style="auto" />
+          <ThemedStatusBar />
           <SplashGate />
           <BottomSheetModalProvider>
-          <Drawer
-            initialRouteName="login"
-            drawerContent={(p) => <HermesDrawerContent {...p} />}
-            screenOptions={{
-              swipeEnabled: true,
-              drawerActiveTintColor: '#1a73e8',
-            }}
-          >
-            <Drawer.Screen
-              name="login"
-              options={{ headerShown: false, drawerItemStyle: { display: 'none' }, swipeEnabled: false, title: 'Login' }}
-            />
-            <Drawer.Screen
-              name="sessions"
-              options={{
-                headerShown: true,
-                title: 'Sessions',
-                drawerLabel: 'All sessions',
-                drawerIcon: drawerIcon(LayoutList),
-              }}
-            />
-            <Drawer.Screen
-              name="chat"
-              options={{
-                // Title + header buttons are set live from chat.tsx
-                // (session title, back, info) via navigation.setOptions.
-                headerShown: true,
-                title: 'Chat',
-                drawerLabel: 'Current chat',
-                drawerIcon: drawerIcon(MessageSquare),
-              }}
-            />
-          </Drawer>
+            <ThemedDrawer />
           </BottomSheetModalProvider>
         </AppProvider>
       </SafeAreaProvider>
