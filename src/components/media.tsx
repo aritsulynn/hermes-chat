@@ -21,17 +21,20 @@ import {
   Image,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 import type { StyleProp, TextStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, ImageOff, X } from 'lucide-react-native';
+import { ChevronRight, ImageOff, Share2, X } from 'lucide-react-native';
 import { useApp } from '../hooks/app-store';
 import { base64ToUtf8, mediaPathFromHref } from '../utils/messages';
+import { writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
 
 const REMOTE = /^(https?:|data:|blob:)/i;
 // Routes the dashboard serves itself (cookie auth) — no files read needed.
@@ -92,6 +95,42 @@ const imageSource = (uri: string, cookie: string) => ({
   uri,
   ...(cookie && !/^data:/i.test(uri) ? { headers: { Cookie: cookie } } : {}),
 });
+
+/** Share or download a resolved media URI. Remote/relative sources share the URL;
+ *  an embedded data URL is written to a cache file first; web uses the Web Share
+ *  API, falling back to an <a download>. */
+async function shareUri(uri: string, name?: string): Promise<void> {
+  try {
+    if (Platform.OS === 'web') {
+      const nav: any = (globalThis as any).navigator;
+      if (nav?.share) {
+        await nav.share({ url: uri });
+        return;
+      }
+      const a = (globalThis as any).document?.createElement('a');
+      if (a) {
+        a.href = uri;
+        a.download = name || 'hermes-download';
+        a.rel = 'noopener';
+        a.click();
+      }
+      return;
+    }
+    if (/^data:/i.test(uri)) {
+      const m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(uri);
+      const mime = m?.[1] || 'application/octet-stream';
+      const isB64 = !!m?.[2];
+      const data = m?.[3] ?? '';
+      const ext = (mime.split('/')[1] || 'bin').split('+')[0];
+      const path = `${cacheDirectory ?? ''}hermes-${Date.now()}.${ext}`;
+      if (isB64) await writeAsStringAsync(path, data, { encoding: 'base64' });
+      else await writeAsStringAsync(path, decodeURIComponent(data));
+      await Share.share({ url: path });
+      return;
+    }
+    await Share.share({ url: uri, message: uri });
+  } catch {}
+}
 
 // Resolve a markdown image src into something <Image> can actually load.
 function useResolvedImage(src: string) {
@@ -293,6 +332,20 @@ function FilePreviewModal({
         >
           <X size={20} color="#fff" />
         </Pressable>
+        {(preview.kind === 'image' || preview.kind === 'text') && (
+          <Pressable
+            onPress={() => {
+              if (preview.kind === 'image') void shareUri(preview.uri, preview.caption);
+              else if (preview.kind === 'text') void Share.share({ message: preview.text }).catch(() => {});
+            }}
+            hitSlop={12}
+            className="absolute left-3 flex-row items-center gap-1.5 rounded-full bg-white/15 px-3 py-2"
+            style={{ top: insets.top + 8 }}
+          >
+            <Share2 size={16} color="#fff" />
+            <Text className="text-[12px] font-semibold text-white">Share</Text>
+          </Pressable>
+        )}
         <Text className="pt-2 text-center text-[11px] text-white/30">tap to close</Text>
       </View>
     </Modal>

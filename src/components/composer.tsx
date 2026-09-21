@@ -35,6 +35,7 @@ export const Composer = memo(function Composer({
   stop,
   onRedirect,
   onQueue,
+  onPasteLarge,
   generating,
   scrollEnd,
   model,
@@ -56,6 +57,8 @@ export const Composer = memo(function Composer({
   onRedirect: (text: string) => void;
   /** Hold the draft for the next turn while one is running. */
   onQueue: (text: string) => void;
+  /** Spill a large paste to a server file instead of inlining it. */
+  onPasteLarge: (text: string) => void;
   generating: boolean;
   scrollEnd: () => void;
   model: string;
@@ -158,7 +161,16 @@ export const Composer = memo(function Composer({
           ref={inputRef}
           className="max-h-[180px] min-h-[64px] px-1.5 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={input}
-          onChangeText={setInput}
+          onChangeText={(t) => {
+            // A big paste (multi-line wall) is spilled to a server file so it
+            // doesn't bloat the prompt; the placeholder names the file the agent
+            // can read.
+            if (t.length - input.length > 1500) {
+              onPasteLarge(t);
+              return;
+            }
+            setInput(t);
+          }}
           placeholder={generating ? 'Type to steer the running turn' : 'Type a message'}
           placeholderTextColor={dark ? '#888' : '#9ca3af'}
           keyboardAppearance={dark ? 'dark' : 'light'}

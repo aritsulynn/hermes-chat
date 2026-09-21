@@ -114,6 +114,8 @@ export interface AppStore {
   cancelEdit: () => void;
   /** Rerun the last user turn (rewind + resubmit). */
   regenerate: () => void;
+  /** Spill a large paste to a server file and insert its placeholder. */
+  pasteLarge: (text: string) => void;
   /** Agent's live todo list (`todo.updated`), for the checklist above the composer. */
   todos: TodoItem[];
   /** Live child agents (polled from `subagent.list` while a turn runs). */
@@ -1387,6 +1389,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void beginTurn(lastUser.text, undefined, lastUser.rowId as number);
   }, [sessionId, beginTurn]);
 
+  // Large-paste handling: spill to a server file (paste.collapse) and keep the
+  // placeholder inline so a wall of text doesn't bloat the prompt.
+  const pasteLarge = useCallback(
+    async (text: string) => {
+      const g = gw.current;
+      if (!g) {
+        setInput(text);
+        return;
+      }
+      try {
+        const r = await g.pasteCollapse(text);
+        setInput(r?.placeholder || text);
+      } catch {
+        setInput(text);
+      }
+    },
+    [setInput],
+  );
+
   const send = useCallback(async (override?: string) => {
     const text = (override ?? input).trim();
     const g = gw.current;
@@ -1746,6 +1767,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     editMessage,
     cancelEdit,
     regenerate,
+    pasteLarge,
     todos,
     subagents,
     refreshToolResults,

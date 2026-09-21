@@ -112,6 +112,7 @@ export function ChatScreen() {
     editMessage,
     cancelEdit,
     regenerate,
+    pasteLarge,
     todos,
     subagents,
     refreshToolResults,
@@ -1070,6 +1071,7 @@ export function ChatScreen() {
           stop={stop}
           onRedirect={onRedirect}
           onQueue={onQueue}
+          onPasteLarge={pasteLarge}
           generating={generating}
           scrollEnd={scrollEnd}
           model={model}

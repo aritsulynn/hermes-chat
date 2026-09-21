@@ -558,6 +558,11 @@ export class GatewayWs {
     return this.call('subagent.list', { session_id: sessionId });
   }
 
+  /** Spill a large paste to a file on the server, returning its inline placeholder. */
+  pasteCollapse(text: string): Promise<{ placeholder: string; path: string; lines: number }> {
+    return this.call('paste.collapse', { text });
+  }
+
   usage(sessionId: string): Promise<any> {
     return this.call('session.usage', { session_id: sessionId });
   }
