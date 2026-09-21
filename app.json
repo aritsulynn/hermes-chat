@@ -13,7 +13,6 @@
       "bundleIdentifier": "com.lynn.hermesmobile"
     },
     "android": {
-      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0e0e12",
         "foregroundImage": "./assets/android-icon-foreground.png",

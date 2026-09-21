@@ -263,7 +263,11 @@ export function ChatScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
+      {/* No 'bottom' edge here: Composer already pads with insets.bottom
+          itself when the keyboard is closed, and KeyboardAvoidingView lifts
+          it when open. Keeping 'bottom' would double the gap above the
+          gesture bar (and float the composer above the keyboard). */}
+      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
 
       {/* Kebab dropdown — absolute overlay, no Modal, no new Android window */}

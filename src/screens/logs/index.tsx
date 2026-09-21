@@ -157,7 +157,8 @@ export function LogsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
-    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
+    {/* No 'bottom' edge: the list content already pads insets.bottom + 48. */}
+    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
       <StatusBar style="auto" />
 
       {/* Header */}

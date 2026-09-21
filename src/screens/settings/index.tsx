@@ -51,7 +51,10 @@ export function SettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
-    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
+    {/* No 'bottom' edge: the only bottom padding lives in the ScrollView
+        content (insets.bottom + 24). Keeping 'bottom' doubles the gap
+        above the gesture bar on edge-to-edge Android. */}
+    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
       <StatusBar style="auto" />
 
       {/* Header */}

@@ -433,6 +433,10 @@ function ThemedDrawer() {
         headerTintColor: fg,
         headerTitleStyle: { color: fg },
         drawerStyle: { backgroundColor: bg },
+        // Force the navigator's scene container to the theme color so the
+        // Android 15 edge-to-edge nav-bar region never shows the default
+        // white window background in gesture mode.
+        sceneStyle: { backgroundColor: bg },
       }}
     >
       <Drawer.Screen

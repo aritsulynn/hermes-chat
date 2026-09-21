@@ -457,7 +457,8 @@ export function FilesScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
-    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
+    {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
+    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
       <StatusBar style="auto" />
 
       {/* Header Bar */}
