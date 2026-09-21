@@ -72,7 +72,6 @@ export interface AppStore {
   refreshSessions: () => Promise<SessionSummary[]>;
   openSession: (s: SessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
-  goSessions: () => void;
   send: () => Promise<void>;
   stop: () => void;
   openInfo: () => Promise<void>;
@@ -677,11 +676,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const goSessions = useCallback(() => {
-    void refreshSessions();
-    router.navigate('/sessions');
-  }, [refreshSessions]);
-
   // ── Chat ─────────────────────────────────────────────────────────────────
   // Scrolling lives in the chat screen (it owns the FlatList ref); send()
   // only queues state — the screen scrolls after calling it.
@@ -965,7 +959,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshSessions,
     openSession,
     newSession,
-    goSessions,
     send,
     stop,
     openInfo,

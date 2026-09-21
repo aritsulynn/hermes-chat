@@ -1,5 +1,5 @@
 // Chat route — transcript + composer (was the 'chat' screen in App.tsx).
-// Header back goes to /sessions; the native Drawer replaces NavDrawer/EdgeSwipe.
+// Header back opens the drawer; the native Drawer replaces NavDrawer/EdgeSwipe.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -57,7 +57,6 @@ export function ChatScreen() {
     redirectLive,
     renameSession,
     setGlobalModel,
-    goSessions,
     openInfo,
     loadProviders,
     pickModel,
@@ -249,9 +248,9 @@ export function ChatScreen() {
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
         <StatusBar style="auto" />
         <View className="flex-1 items-center justify-center p-6">
-          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — pick one from the list.</Text>
-          <Pressable onPress={goSessions} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
-            <Text className="text-[15px] font-semibold text-white">‹ History</Text>
+          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</Text>
+          <Pressable onPress={() => void newSession()} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
+            <Text className="text-[15px] font-semibold text-white">+ New chat</Text>
           </Pressable>
         </View>
       </SafeAreaView>

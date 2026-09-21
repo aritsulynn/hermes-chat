@@ -1,7 +1,7 @@
 // Root layout — expo-router Drawer (https://docs.expo.dev/router/advanced/drawer/).
 // Native drawer items (DrawerItemList/DrawerItem) instead of handmade buttons.
 import '../../global.css';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Drawer, DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { usePathname } from 'expo-router';
@@ -11,8 +11,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
-import { Platform, Pressable, Text, View } from 'react-native';
-import { LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, Search, SquarePen, Sun, X } from 'lucide-react-native';
+import { Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { LayoutGrid, LogOut, MessageSquare, Moon, Search, SquarePen, Sun, X } from 'lucide-react-native';
 import { AppProvider, useApp } from '../hooks/app-store';
 import { BUILD_ID } from '../build';
 
@@ -52,25 +52,48 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const close = () => props.navigation.closeDrawer();
   const onChat = pathname === '/chat';
   const onOps = pathname === '/ops';
-  const recents = sessions.slice(0, 8);
+  // Inline filter replaces the removed /sessions page (drawer is the list now).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ql = q.trim().toLowerCase();
+  const visible = (ql
+    ? sessions.filter((s) => (s.title || '').toLowerCase().includes(ql))
+    : sessions
+  ).slice(0, 50);
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={{ flex: 1 }}>
-      <View className="flex-row items-center px-4 pt-2">
-        <Text className="flex-1 text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
-        <Pressable
-          onPress={() => {
-            close();
-            props.navigation.navigate('sessions');
-          }}
-          hitSlop={10}
-          className="p-2"
-        >
-          <Search size={20} color={dimColor} />
-        </Pressable>
-        <Pressable onPress={close} hitSlop={10} className="p-2">
-          <X size={20} color={dimColor} />
-        </Pressable>
-      </View>
+      {searchOpen ? (
+        <View className="flex-row items-center gap-1 px-4 pt-2">
+          <TextInput
+            value={q}
+            onChangeText={setQ}
+            placeholder="Search chats…"
+            placeholderTextColor={dark ? '#888' : '#9ca3af'}
+            autoFocus
+            className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+          />
+          <Pressable
+            onPress={() => {
+              setSearchOpen(false);
+              setQ('');
+            }}
+            hitSlop={10}
+            className="p-2"
+          >
+            <X size={20} color={dimColor} />
+          </Pressable>
+        </View>
+      ) : (
+        <View className="flex-row items-center px-4 pt-2">
+          <Text className="flex-1 text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
+          <Pressable onPress={() => setSearchOpen(true)} hitSlop={10} className="p-2">
+            <Search size={20} color={dimColor} />
+          </Pressable>
+          <Pressable onPress={close} hitSlop={10} className="p-2">
+            <X size={20} color={dimColor} />
+          </Pressable>
+        </View>
+      )}
       <View className="px-3 pt-2">
         <Pressable
           disabled={busy}
@@ -87,11 +110,15 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
         </Pressable>
       </View>
       <View className="px-3 pt-3">
-        <Text className="px-3 pb-1 text-xs font-semibold text-neutral-500 dark:text-neutral-400">Recents</Text>
-        {recents.length === 0 && (
-          <Text className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">No sessions yet</Text>
+        <Text className="px-3 pb-1 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+          {ql ? `Results (${visible.length})` : 'Recents'}
+        </Text>
+        {visible.length === 0 && (
+          <Text className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+            {ql ? 'No matches' : 'No sessions yet'}
+          </Text>
         )}
-        {recents.map((s) => {
+        {visible.map((s) => {
           const active = onChat && s.id === sessionId;
           return (
             <Pressable
@@ -113,17 +140,6 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             </Pressable>
           );
         })}
-        <Pressable
-          onPress={() => {
-            close();
-            props.navigation.navigate('sessions');
-            void refreshSessions();
-          }}
-          className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
-        >
-          <LayoutList size={18} color={dimColor} />
-          <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">View all history</Text>
-        </Pressable>
       </View>
       <View className="flex-1" />
       <View className="px-3">
@@ -231,15 +247,6 @@ function ThemedDrawer() {
           title: 'Chat',
           drawerLabel: 'Chat',
           drawerIcon: drawerIcon(MessageSquare),
-        }}
-      />
-      <Drawer.Screen
-        name="sessions"
-        options={{
-          headerShown: true,
-          title: 'History',
-          drawerLabel: 'History',
-          drawerIcon: drawerIcon(LayoutList),
         }}
       />
       <Drawer.Screen
