@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, TextInput, View } from 'react-native';
+import { Animated, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
 import { useApp } from '../hooks/app-store';
@@ -11,7 +11,12 @@ export function HamburgerBtn() {
   return (
     <Pressable
       testID="hamburger-btn"
-      onPress={() => (navigation as any).openDrawer?.()}
+      onPress={() => {
+        // Drop the keyboard first so the drawer isn't stuck behind it while
+        // the user was mid-message.
+        Keyboard.dismiss();
+        (navigation as any).openDrawer?.();
+      }}
       className="justify-center px-2 py-2"
       hitSlop={12}
     >
