@@ -125,9 +125,9 @@ export const Composer = memo(function Composer({
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
   return (
     <View className="px-2.5 pt-2" style={{ paddingBottom: webKb > 0 ? webKb + 10 : kbOpen ? 10 : Math.max(insets.bottom, 10) }}>
-      <View className="gap-1.5 rounded-2xl border border-neutral-300 px-2.5 pb-2 pt-2 dark:border-neutral-700">
+      <View className="gap-1.5 rounded-2xl border border-neutral-200/80 bg-white/70 px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-white/[0.06]">
         {generating && (
-          <Text className="px-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <Text className="px-1.5 text-xs text-neutral-500 dark:text-neutral-400">
             live — Queue holds · Steer ↪ corrects · ■ stops
           </Text>
         )}
@@ -172,8 +172,10 @@ export const Composer = memo(function Composer({
             }
             setInput(t);
           }}
-          placeholder={generating ? 'Type to steer the running turn' : 'Type a message'}
-          placeholderTextColor={dark ? '#888' : '#9ca3af'}
+          placeholder={
+            generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…'
+          }
+          placeholderTextColor={dark ? '#8a8a8a' : '#9ca3af'}
           keyboardAppearance={dark ? 'dark' : 'light'}
           multiline
           textAlignVertical="top"
@@ -203,14 +205,14 @@ export const Composer = memo(function Composer({
           <Pressable
             ref={modelRef}
             onPress={() => onOpenModelPicker(measurer(modelRef))}
-            className="min-w-0 max-w-[170px] shrink rounded-lg bg-[#e8e8ec] px-2 py-1.5 dark:bg-[#272727]"
+            className="min-w-0 max-w-[170px] shrink flex-row items-center gap-1 rounded-lg px-1.5 py-1.5 active:bg-black/5 dark:active:bg-white/10"
             hitSlop={8}
           >
             <View className="flex-row items-center gap-0.5">
               <Text className="shrink text-[13px] font-semibold text-neutral-700 dark:text-neutral-200" numberOfLines={1}>
                 {modelLabel}
               </Text>
-              <ChevronDown size={14} color={dark ? '#d4d4d4' : '#333'} />
+              <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
             </View>
           </Pressable>
           {showEffort && (
@@ -231,10 +233,10 @@ export const Composer = memo(function Composer({
               {!!input.trim() && !attachments.length && (
                 <Pressable
                   onPress={() => onQueue(input)}
-                  className="shrink-0 items-center rounded-lg bg-[#1a73e8] px-2 py-1.5"
+                  className="shrink-0 items-center rounded-lg bg-neutral-200 px-2.5 py-1.5 dark:bg-neutral-700"
                   hitSlop={8}
                 >
-                  <Text className="text-[13px] font-semibold text-white">Queue</Text>
+                  <Text className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</Text>
                 </Pressable>
               )}
               {!!input.trim() && (
@@ -250,14 +252,20 @@ export const Composer = memo(function Composer({
                 onPress={stop}
                 accessibilityRole="button"
                 accessibilityLabel="Stop"
-                className="h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#c5221f]"
+                className="h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#c5221f]"
               >
-                <Square size={14} color="#fff" fill="#fff" />
+                <Square size={13} color="#fff" fill="#fff" />
               </Pressable>
             </>
           ) : (
-            <Pressable onPress={send} accessibilityRole="button" accessibilityLabel="Send" className={`h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1a73e8] ${!canSend ? 'opacity-40' : ''}`} disabled={!canSend}>
-              <ArrowUp size={20} color="#fff" />
+            <Pressable
+              onPress={send}
+              accessibilityRole="button"
+              accessibilityLabel="Send"
+              className={`h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-200 dark:bg-neutral-200 ${!canSend ? 'opacity-40' : ''}`}
+              disabled={!canSend}
+            >
+              <ArrowUp size={19} color="#1c1c1c" />
             </Pressable>
           )}
         </View>
