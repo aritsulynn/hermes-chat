@@ -82,7 +82,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
           style={{ backgroundColor: rowBg, opacity: busy ? 0.5 : 1 }}
         >
-          <SquarePen size={18} color={labelColor} />
+          <SquarePen size={18} color={dark ? '#f5f5f5' : '#111'} />
           <Text className="text-[15px] font-semibold text-neutral-950 dark:text-neutral-100">New chat</Text>
         </Pressable>
       </View>
