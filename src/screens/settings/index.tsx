@@ -3,6 +3,7 @@ import {
   Alert,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -26,7 +27,7 @@ import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
 
 export function SettingsScreen() {
-  const { authed, username, host, conn, theme, setTheme, logout, sessionInfo, applyApprovalMode, diagnostics } = useApp();
+  const { authed, username, host, conn, theme, setTheme, logout, sessionInfo, applyApprovalMode, diagnostics, notificationsEnabled, setNotifications } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   const isReady = conn === 'ready';
@@ -309,6 +310,34 @@ export function SettingsScreen() {
                 ))}
               </>
             )}
+          </View>
+        </View>
+
+        {/* Notifications Section */}
+        <View className="mb-6">
+          <View className="flex-row items-center gap-2 mb-2">
+            <Info size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
+            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              Notifications
+            </Text>
+          </View>
+          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <View className="flex-row items-center gap-3">
+              <View className="min-w-0 flex-1">
+                <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                  Background alerts
+                </Text>
+                <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                  Notify when a turn finishes or the agent needs input (approval, clarify), while the
+                  app is in the background.
+                </Text>
+              </View>
+              <Switch
+                accessibilityLabel="Background notifications"
+                value={notificationsEnabled}
+                onValueChange={(v) => void setNotifications(v)}
+              />
+            </View>
           </View>
         </View>
 

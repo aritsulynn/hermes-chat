@@ -27,6 +27,16 @@ export async function getLastSession(): Promise<string | null> {
   return get(K_LAST_SESSION);
 }
 
+const K_NOTIFY = 'hermes.ui.notify';
+
+export async function saveNotifyEnabled(on: boolean): Promise<void> {
+  await set(K_NOTIFY, on ? '1' : '0');
+}
+
+export async function getNotifyEnabled(): Promise<boolean> {
+  return (await get(K_NOTIFY)) === '1';
+}
+
 export interface Connection {
   host: string; // e.g. http://192.168.1.8:9119
   username: string;

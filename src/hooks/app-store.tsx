@@ -21,8 +21,9 @@ import {
   toWsUrl,
 } from '../lib/dashboard';
 import type { ModelProviderOption } from '../lib/dashboard';
-import { clearCookie, getCookie, getLastSession, getPassword, getTheme, loadConnection, saveCookie, saveHost, saveLastSession, savePassword, saveTheme } from '../lib/connection';
+import { clearCookie, getCookie, getLastSession, getNotifyEnabled, getPassword, getTheme, loadConnection, saveCookie, saveHost, saveLastSession, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
 import type { Theme } from '../lib/connection';
+import { pushNotification, requestNotifyPermission } from '../lib/notifications';
 import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
 import { changedFilesFromDiff, inlineDiffFromDetail } from '../utils/diff';
@@ -122,6 +123,9 @@ export interface AppStore {
   applyApprovalMode: (mode: 'manual' | 'smart' | 'off') => Promise<void>;
   /** Fork the current session into a copy and open it. */
   branchSession: () => Promise<void>;
+  /** Local notifications (turn complete / asks while backgrounded). */
+  notificationsEnabled: boolean;
+  setNotifications: (on: boolean) => Promise<void>;
   /** Agent's live todo list (`todo.updated`), for the checklist above the composer. */
   todos: TodoItem[];
   /** Live child agents (polled from `subagent.list` while a turn runs). */
@@ -306,6 +310,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [ask, setAsk] = useState<ServerAsk | null>(null);
   const [theme, setThemeState] = useState<Theme>('light');
+  // Local notifications (turn complete / server asks while backgrounded).
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
   const { setColorScheme } = useNWColorScheme();
 
   const setTheme = useCallback(
@@ -343,10 +349,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const drainRef = useRef<() => void>(() => {});
   // Live transcript, for handlers frozen in openWs (tool backfill name-checking).
   const messagesRef = useRef<UiMessage[]>([]);
+  const notifyRef = useRef(false);
   generatingRef.current = generating;
   queueParkedRef.current = queueParked;
   queuedRef.current = queued;
   messagesRef.current = messages;
+  notifyRef.current = notifyEnabled;
   // Latest host/sessionKey for callbacks frozen in openWs (created once).
   const latest = useRef({ host, sessionKey });
   latest.current = { host, sessionKey };
@@ -538,6 +546,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setColorScheme(savedTheme);
           } catch {}
         }
+        // Restore the local-notifications preference.
+        const savedNotify = await getNotifyEnabled().catch(() => false);
+        if (!cancelled) setNotifyEnabled(savedNotify);
         // Silent reconnect — restore the session without asking login again.
         // Hard ceiling: even a totally wedged connect must release the boot
         // gate so the user gets the login form instead of a dead spinner.
@@ -770,6 +781,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           drainRef.current();
           // Refresh the status strip's context/token numbers.
           usageRefreshRef.current();
+          if (notifyRef.current) {
+            void pushNotification('Hermes finished', (text || '').trim().slice(0, 160) || 'Turn complete');
+          }
         },
         onNotice: (_sid, text) => {
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
@@ -780,7 +794,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // Only the session on screen shares our transcript state.
           if (sid === sessionIdRef.current) resyncRef.current();
         },
-        onAsk: (a) => setAsk(a),
+        onAsk: (a) => {
+          setAsk(a);
+          if (notifyRef.current) {
+            const what =
+              a.method === 'approval'
+                ? 'Command approval needed'
+                : a.method === 'clarify'
+                  ? 'A question needs your answer'
+                  : a.method === 'sudo'
+                    ? 'Sudo password required'
+                    : a.method === 'secret'
+                      ? 'A secret is required'
+                      : a.method.startsWith('vault.')
+                        ? 'Vault unlock required'
+                        : 'Hermes needs input';
+            void pushNotification('Hermes', what);
+          }
+        },
         onAskCancel: (rpcId) => {
           setAsk((cur) => (cur?.rpcId === rpcId ? null : cur));
         },
@@ -935,6 +966,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [sessionId],
   );
+
+  // Local notifications: request permission on enable (web needs the gesture).
+  const setNotifications = useCallback(async (on: boolean) => {
+    if (!on) {
+      setNotifyEnabled(false);
+      await saveNotifyEnabled(false);
+      return;
+    }
+    const ok = await requestNotifyPermission();
+    setNotifyEnabled(ok);
+    await saveNotifyEnabled(ok);
+  }, []);
 
   const connect = useCallback(
     async (h: string, user: string, pw: string) => {
@@ -1845,6 +1888,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     pasteLarge,
     applyApprovalMode,
     branchSession,
+    notificationsEnabled: notifyEnabled,
+    setNotifications,
     todos,
     subagents,
     refreshToolResults,
