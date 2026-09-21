@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Web only: kill the browser's default focus outline on text fields
+   (react-native-web renders TextInput as input/textarea). Borders
+   from classNames already signal focus. */
+input:focus,
+textarea:focus {
+  outline: none;
+}

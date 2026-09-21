@@ -176,6 +176,7 @@ function ThemedDrawer() {
         swipeEnabled: true,
         drawerActiveTintColor: '#1a73e8',
         headerStyle: { backgroundColor: bg },
+        headerShadowVisible: false,
         headerTintColor: fg,
         headerTitleStyle: { color: fg },
         drawerStyle: { backgroundColor: bg },
