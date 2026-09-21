@@ -69,6 +69,8 @@ export interface AppStore {
   setEffort: (v: string) => void;
   /** Apply a thinking-effort level to the live session (and the next create). */
   applyEffort: (level: string) => Promise<void>;
+  /** Toggle fast mode on the live session. */
+  applyFast: (on: boolean) => Promise<void>;
   providers: ModelProviderOption[] | null;
   providersLoading: boolean;
   providersError: string | null;
@@ -202,6 +204,31 @@ async function uploadAttachments(
   return out;
 }
 
+/** Turn a REST/WS history transcript into transcript items — shared by opening a
+ *  session and by the post-reconnect resync. */
+function historyToItems(hist: HistoryMessage[]): UiMessage[] {
+  const items: UiMessage[] = [];
+  for (const m of hist) {
+    if (m.role === 'assistant' && m.reasoning?.trim()) {
+      items.push({ id: nid(), role: 'thinking', text: cleanThinking(m.reasoning) });
+    }
+    if (m.role === 'tool' && (m.content.trim() || m.name)) {
+      const label = m.name || m.content;
+      items.push({
+        id: nid(),
+        role: 'tool',
+        text: label,
+        ...(m.content.trim() ? { output: formatToolResult(m.content) } : {}),
+        ...(m.command ? { command: m.command } : {}),
+      });
+    }
+    if ((m.role === 'user' || m.role === 'assistant') && m.content.trim() !== '') {
+      items.push({ id: nid(), role: m.role as 'user' | 'assistant', text: m.content });
+    }
+  }
+  return items;
+}
+
 export function useApp(): AppStore {
   const v = useContext(AppContext);
   if (!v) throw new Error('useApp must be used inside AppProvider');
@@ -283,6 +310,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const liveToolAid = useRef<string | null>(null);
   const liveTurnTools = useRef<string[]>([]); // tool bubbles minted this turn, in order
   const liveTurnDiffs = useRef<string[]>([]); // inline diffs seen this turn (for the end-of-turn summary)
+  // Live runtime session id for callbacks frozen in openWs (reconnect replay).
+  const sessionIdRef = useRef<string | null>(null);
+  sessionIdRef.current = sessionId;
   // Queue plumbing reads the freshest values from inside the once-created WS
   // event handlers (onComplete drains the queue before React re-renders).
   const generatingRef = useRef(false);
@@ -367,6 +397,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** On-demand REST fill (the chat screen calls this when a tool bubble is
    *  expanded before the turn ended / on a backend without live results). */
   const refreshToolResults = useCallback(() => toolRefreshRef.current(), []);
+  // Post-reconnect resync: the replay ring had already dropped the gap, so the
+  // transcript must be rebuilt from REST rather than trusted piecemeal.
+  const resyncRef = useRef<() => void>(() => {});
+  resyncRef.current = () => {
+    const h = latest.current.host;
+    const sk = latest.current.sessionKey;
+    if (!h || !sk) return;
+    void (async () => {
+      try {
+        const hist = await getSessionMessages(h, cookie.current, sk);
+        if (hist.length) {
+          setMessages(historyToItems(hist));
+          setToolLine(null);
+        }
+      } catch {}
+    })();
+  };
   // Refresh the composer status strip at each turn end (session.info isn't
   // guaranteed to carry usage every turn); session.usage answers the live numbers.
   const usageRefreshRef = useRef<() => void>(() => {});
@@ -505,6 +552,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const t = await mintWsTicket(h, cookie.current);
         return toWsUrl(h, t);
       },
+      // Replay missed events only for the session the app is showing.
+      replaySessions: () => (sessionIdRef.current ? [sessionIdRef.current] : []),
       events: {
         onState: (s) => setConn(s),
         onToken: (_sid, delta) => {
@@ -674,6 +723,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         },
         onSessionInfo: (info) => setSessionInfo(info),
         onTodo: (_sid, payload) => setTodos(normalizeTodos(payload)),
+        onReplayTruncated: (sid) => {
+          // Only the session on screen shares our transcript state.
+          if (sid === sessionIdRef.current) resyncRef.current();
+        },
         onAsk: (a) => setAsk(a),
         onAskCancel: (rpcId) => {
           setAsk((cur) => (cur?.rpcId === rpcId ? null : cur));
@@ -796,6 +849,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } catch (e2: any) {
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `reasoning: ${errMsg(e2)}` }]);
         }
+      }
+    },
+    [sessionId],
+  );
+
+  // Fast mode (`/fast`) — session-scoped, same config.set path as reasoning.
+  const applyFast = useCallback(
+    async (on: boolean) => {
+      const g = gw.current;
+      const sid = sessionId;
+      if (!g || !sid) return;
+      try {
+        await g.configSet('fast', on ? 'fast' : 'normal', sid);
+      } catch (e: any) {
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `fast: ${errMsg(e)}` }]);
       }
     },
     [sessionId],
@@ -929,25 +997,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionTitle(s.title || '');
       // Reasoning rides on the assistant message (sidecar, not its own role) —
       // restore it as a thinking bubble above its answer, like the live view.
-      const items: UiMessage[] = [];
-      for (const m of hist) {
-        if (m.role === 'assistant' && m.reasoning?.trim()) {
-          items.push({ id: nid(), role: 'thinking', text: cleanThinking(m.reasoning) });
-        }
-        if (m.role === 'tool' && (m.content.trim() || m.name)) {
-          const label = m.name || m.content;
-          items.push({
-            id: nid(),
-            role: 'tool',
-            text: label,
-            ...(m.content.trim() ? { output: formatToolResult(m.content) } : {}),
-            ...(m.command ? { command: m.command } : {}),
-          });
-        }
-        if ((m.role === 'user' || m.role === 'assistant') && m.content.trim() !== '') {
-          items.push({ id: nid(), role: m.role as 'user' | 'assistant', text: m.content });
-        }
-      }
+      const items = historyToItems(hist);
       setMessages(items);
       queuedRef.current = [];
       setQueued([]);
@@ -1540,6 +1590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     effort,
     setEffort,
     applyEffort,
+    applyFast,
     providers,
     providersLoading,
     providersError,

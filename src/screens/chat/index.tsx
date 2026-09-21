@@ -35,6 +35,7 @@ import {
 } from '../../utils/messages';
 import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '../../utils/reasoning';
 import { compactNumber } from '../../utils/format';
+import { fuzzyScoreMulti } from '../../utils/fuzzy';
 import { contextTone, readUsage } from '../../utils/usage';
 import { isSlashSuggestion } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
@@ -78,6 +79,7 @@ export function ChatScreen() {
     providersError,
     effort,
     applyEffort,
+    applyFast,
     attachments,
     setAttachments,
     generating,
@@ -584,17 +586,20 @@ export function ChatScreen() {
   const modelVisibleProviders = modelProviders
     .map((p) => {
       const list = p.models ?? [];
-      const models = mq
-        ? list.filter(
-            (mm) =>
-              mm.toLowerCase().includes(mq) ||
-              p.name.toLowerCase().includes(mq) ||
-              p.slug.toLowerCase().includes(mq),
-          )
-        : list;
+      if (!mq) return { ...p, models: list };
+      // Provider-name hit keeps its whole list; otherwise rank models fuzzily
+      // (`son4` → claude-sonnet-4) instead of a plain substring filter.
+      const providerHit =
+        fuzzyScoreMulti(p.name, mq) !== null || fuzzyScoreMulti(p.slug || '', mq) !== null;
+      if (providerHit) return { ...p, models: list };
+      const models = list
+        .map((mm) => ({ mm, s: fuzzyScoreMulti(mm, mq)?.score }))
+        .filter((x): x is { mm: string; s: number } => x.s !== undefined)
+        .sort((a, b) => b.s - a.s)
+        .map((x) => x.mm);
       return { ...p, models };
     })
-    .filter((p) => (mq ? p.models.length > 0 : true));
+    .filter((p) => (mq ? (p.models?.length ?? 0) > 0 : true));
 
   return (
     <View
@@ -1129,6 +1134,27 @@ export function ChatScreen() {
                     </Pressable>
                   );
                 })}
+                {/* Fast mode — separate from reasoning (`config.set fast`). */}
+                <View className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+                <Pressable
+                  testID="fast-toggle"
+                  onPress={() => {
+                    void applyFast(!(sessionInfo?.fast === true));
+                    closePopover();
+                  }}
+                  className="flex-row items-center gap-2 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                >
+                  <Text
+                    className={`flex-1 text-[14px] ${
+                      sessionInfo?.fast === true
+                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                        : 'text-neutral-900 dark:text-neutral-100'
+                    }`}
+                  >
+                    Fast mode
+                  </Text>
+                  {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
+                </Pressable>
               </>
             )}
 

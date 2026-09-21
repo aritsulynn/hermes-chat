@@ -121,6 +121,9 @@ export interface GatewayEvents {
   onSessionInfo?: (info: any) => void;
   /** Agent todo snapshot (`{todos, revision}`) — `todo.updated`. */
   onTodo?: (sessionId: string, payload: any) => void;
+  /** After a reconnect, the replay ring had already dropped the gap — callers
+   *  should reload the transcript instead of trusting the partial replay. */
+  onReplayTruncated?: (sessionId: string) => void;
   onAsk?: (ask: ServerAsk) => void;
   onAskCancel?: (rpcId: string) => void;
   onEvent?: (type: string, params: any) => void;
@@ -131,6 +134,9 @@ export interface ConnectOpts {
   events: GatewayEvents;
   /** Mint a fresh ticket + URL before every (re)connect. Required for reconnect. */
   refreshUrl?: () => Promise<string>;
+  /** Sessions whose missed events should be replayed after a reconnect (the
+   *  app shows one session, so replaying others would corrupt its state). */
+  replaySessions?: () => string[];
   heartbeatMs?: number; // default 15000 (gateway.ping)
   maxBackoffMs?: number; // default 15000
 }
@@ -153,6 +159,7 @@ export class GatewayWs {
   private url: string;
   private events: GatewayEvents;
   private refreshUrl?: () => Promise<string>;
+  private replaySessions?: () => string[];
   private heartbeatMs: number;
   private maxBackoffMs: number;
   private pending = new Map<number | string, { ok: (r: any) => void; fail: (e: RpcError) => void }>();
@@ -163,6 +170,12 @@ export class GatewayWs {
   private reconnectTimer: any = null;
   private readyResolve: ((v: boolean) => void) | null = null;
   private dbg: WsDebug = { opens: 0, errors: 0, closes: [], lastEvent: null };
+  // Reconnect replay: highest seq seen per session, the backend's process epoch,
+  // and the live-frame hold used while a replay fetch is in flight.
+  private lastSeq = new Map<string, number>();
+  private replayEpoch: string | null = null;
+  private replaying = false;
+  private replayHold: Array<{ type: string; params: any }> | null = null;
 
   /** Snapshot of handshake diagnostics for error messages / debugging. */
   wsDebug(): WsDebug {
@@ -173,6 +186,7 @@ export class GatewayWs {
     this.url = opts.wsUrl;
     this.events = opts.events;
     this.refreshUrl = opts.refreshUrl;
+    this.replaySessions = opts.replaySessions;
     this.heartbeatMs = opts.heartbeatMs ?? PING_MS;
     this.maxBackoffMs = opts.maxBackoffMs ?? 15000;
   }
@@ -310,7 +324,7 @@ export class GatewayWs {
 
   // ── RPC ────────────────────────────────────────────────────────────────
 
-  call(method: string, params: Record<string, any> = {}): Promise<any> {
+  call(method: string, params: Record<string, any> = {}, timeoutMs = 120000): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.ws || (this.ws as any).readyState !== 1) {
         reject({ code: -32000, message: 'not connected' } satisfies RpcError);
@@ -334,7 +348,7 @@ export class GatewayWs {
           this.pending.delete(id);
           p.fail({ code: -32000, message: 'RPC timeout' });
         }
-      }, 120000);
+      }, timeoutMs);
     });
   }
 
@@ -576,19 +590,114 @@ export class GatewayWs {
     return String(params?.session_id ?? params?.sid ?? '');
   }
 
+  /**
+   * After a reconnect, pull the events missed while the socket was down
+   * (`session.events.since`) and re-dispatch them, then flush any live frames
+   * that arrived (and were parked) while the fetch was in flight. Only the
+   * sessions the caller names are replayed — the app renders one session, so
+   * replaying another would corrupt its transcript.
+   */
+  private async replayMissed(): Promise<void> {
+    if (this.replaying) return;
+    const named = this.replaySessions?.() ?? [];
+    const targets = named.filter((s) => !!s && this.lastSeq.has(s));
+    if (targets.length === 0) return;
+    this.replaying = true;
+    this.replayHold = [];
+    try {
+      for (const sid of targets) {
+        const lastSeen = this.lastSeq.get(sid) ?? 0;
+        let r: any = null;
+        try {
+          r = await this.call('session.events.since', { session_id: sid, last_seen: lastSeen }, 20000);
+        } catch {
+          continue;
+        }
+        const events = Array.isArray(r?.events) ? r.events : [];
+        for (const ev of events) {
+          const t = typeof ev?.type === 'string' ? ev.type : '';
+          if (!t) continue;
+          const evSid = typeof ev?.session_id === 'string' && ev.session_id ? ev.session_id : sid;
+          const seq = typeof ev?.seq === 'number' ? ev.seq : undefined;
+          if (seq !== undefined) {
+            if (seq <= (this.lastSeq.get(evSid) ?? 0)) continue;
+            this.lastSeq.set(evSid, seq);
+          }
+          this.dispatch(t, evSid, (ev?.payload ?? {}) as Record<string, any>);
+        }
+        if (r?.truncated) this.events.onReplayTruncated?.(sid);
+        // Server→client asks still waiting on this session ride the answer, not
+        // the event ring (see json-rpc-channel deliverOpenRequests).
+        if (Array.isArray(r?.open_requests)) {
+          for (const req of r.open_requests) {
+            const id = String(req?.id ?? '');
+            const method = String(req?.method ?? '');
+            if (!id || !method) continue;
+            const params = (req?.params ?? {}) as Record<string, any>;
+            this.events.onAsk?.({
+              rpcId: id,
+              method,
+              sessionId: params?.session_id ?? sid,
+              params,
+            });
+          }
+        }
+      }
+    } finally {
+      const held = this.replayHold ?? [];
+      this.replayHold = null;
+      this.replaying = false;
+      for (const h of held) {
+        const seq = typeof h.params?.seq === 'number' ? h.params.seq : undefined;
+        const hsid = this.sidOf(h.params);
+        if (seq !== undefined && seq <= (this.lastSeq.get(hsid) ?? 0)) continue;
+        if (seq !== undefined) this.lastSeq.set(hsid, seq);
+        this.dispatch(h.type, hsid, (h.params?.payload ?? h.params ?? {}) as Record<string, any>);
+      }
+    }
+  }
+
   private routeEvent(type: string, params: any) {
     const sid = this.sidOf(params);
-    this.dbg.lastEvent = type;
+    const seq = typeof params?.seq === 'number' ? params.seq : undefined;
+    // gateway.ready is per-connection handshake, never a replayed event — always
+    // deliver it, or a reconnect could be dedup-skipped and never go 'ready'.
+    if (type !== 'gateway.ready' && seq !== undefined) {
+      // During a replay fetch, park live seq'd frames: dispatching them now would
+      // double-deliver (the replay carries the same seq) or advance the watermark
+      // past the gap we're filling.
+      if (this.replaying) {
+        this.replayHold?.push({ type, params });
+        return;
+      }
+      const seen = this.lastSeq.get(sid) ?? 0;
+      if (seq <= seen) return; // replayed / duplicate
+      this.lastSeq.set(sid, seq);
+    }
     // Server nests event data under params.payload (see _event_frame in
     // tui_gateway/server.py) — top-level params only carries type/session_id.
-    const body = (params?.payload ?? params ?? {}) as Record<string, any>;
+    this.dispatch(type, sid, (params?.payload ?? params ?? {}) as Record<string, any>);
+  }
+
+  /** Fan one event out to the registered callbacks (live or replayed). */
+  private dispatch(type: string, sid: string, body: Record<string, any>) {
+    this.dbg.lastEvent = type;
     const strOf = (v: unknown) => (typeof v === 'string' ? v : '');
     switch (type) {
-      case 'gateway.ready':
+      case 'gateway.ready': {
+        // The backend stamps a per-process `replay_epoch`; when it changes the
+        // seq numbering reset, so our watermarks are meaningless — drop them.
+        const epoch = strOf(body?.replay_epoch);
+        if (epoch) {
+          if (this.replayEpoch && epoch !== this.replayEpoch) this.lastSeq.clear();
+          this.replayEpoch = epoch;
+        }
         this.setState('ready');
         this.readyResolve?.(true);
         this.readyResolve = null;
+        void this.replayMissed();
         break;
+      }
       case 'message.delta': {
         const t = strOf(body.text);
         if (t) this.events.onToken?.(sid, t);
@@ -635,7 +744,7 @@ export class GatewayWs {
         this.events.onTodo?.(sid, body);
         break;
       case 'request.cancel': {
-        const id = String(body?.id ?? params?.id ?? '');
+        const id = String(body?.id ?? '');
         if (id) this.events.onAskCancel?.(id);
         break;
       }
