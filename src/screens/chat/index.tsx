@@ -6,7 +6,6 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   Text,
@@ -210,7 +209,7 @@ export function ChatScreen() {
   const insets = useSafeAreaInsets();
   useEffect(() => {
     navigation.setOptions({
-      title: sessionId ? sessionTitle || 'Chat' : 'No session',
+      title: sessionId ? (sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : '') : '',
       headerStyle: {
         backgroundColor: dark ? '#000' : '#fff',
         ...(Platform.OS === 'android' ? { height: insets.top + 52 } : null),
@@ -235,66 +234,83 @@ export function ChatScreen() {
 
   if (booting) {
     return (
-      <SafeAreaView className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black" edges={['top', 'left', 'right', 'bottom']}>
-        <StatusBar style="auto" />
-        <ActivityIndicator size="large" />
-        <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
-      </SafeAreaView>
+      <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+        <SafeAreaView className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black" edges={['top', 'left', 'right', 'bottom']}>
+          <StatusBar style="auto" />
+          <ActivityIndicator size="large" />
+          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
+        </SafeAreaView>
+      </View>
     );
   }
   if (!authed) return <Redirect href="/login" />;
 
   if (!sessionId) {
     return (
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
-        <StatusBar style="auto" />
-        <View className="flex-1 items-center justify-center p-6">
-          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</Text>
-          <Pressable onPress={() => void newSession()} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
-            <Text className="text-[15px] font-semibold text-white">+ New chat</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+      <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+        <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
+          <StatusBar style="auto" />
+          <View className="flex-1 items-center justify-center p-6">
+            <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</Text>
+            <Pressable onPress={() => void newSession()} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
+              <Text className="text-[15px] font-semibold text-white">+ New chat</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
-      <StatusBar style="auto" />
+    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
+        <StatusBar style="auto" />
+
+      {/* Kebab dropdown — absolute overlay, no Modal, no new Android window */}
+      {kebabOpen && (
+        <>
+          <Pressable
+            style={{ position: 'absolute', inset: 0, zIndex: 40 }}
+            onPress={() => setKebabOpen(false)}
+          />
+          <View
+            className="absolute right-2 w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
+            // Content area already starts below the native header, so anchor
+            // just under it. (top: insets.top + 52 double-counts the header
+            // and drops the menu mid-screen.)
+            style={{ top: 8, zIndex: 50, elevation: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8 }}
+          >
+            <Pressable
+              testID="menu-search"
+              onPress={() => {
+                setKebabOpen(false);
+                setSearchOpen(true);
+              }}
+              className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              <Search size={17} color={headerIcon} />
+              <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Search</Text>
+            </Pressable>
+            <Pressable
+              testID="menu-info"
+              onPress={() => {
+                setKebabOpen(false);
+                void openInfo();
+              }}
+              className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              <Info size={17} color={headerIcon} />
+              <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Session info</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        behavior="padding"
+        keyboardVerticalOffset={insets.top + (Platform.OS === 'android' ? 52 : 44)}
       >
-        {/* Kebab menu: search + session info */}
-        <Modal visible={kebabOpen} transparent animationType="fade" onRequestClose={() => setKebabOpen(false)}>
-          <Pressable className="flex-1" onPress={() => setKebabOpen(false)}>
-            <View className="absolute right-2 top-14 w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]">
-              <Pressable
-                testID="menu-search"
-                onPress={() => {
-                  setKebabOpen(false);
-                  setSearchOpen(true);
-                }}
-                className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5"
-              >
-                <Search size={17} color={headerIcon} />
-                <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Search</Text>
-              </Pressable>
-              <Pressable
-                testID="menu-info"
-                onPress={() => {
-                  setKebabOpen(false);
-                  void openInfo();
-                }}
-                className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5"
-              >
-                <Info size={17} color={headerIcon} />
-                <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Session info</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Modal>
         {searchOpen && (
           <View className="flex-row items-center gap-1.5 border-b border-neutral-100 px-2.5 py-1.5 dark:border-neutral-800">
             <Search size={16} color={dark ? '#a3a3a3' : '#666'} />
@@ -410,5 +426,6 @@ export function ChatScreen() {
         onRename={(t) => void renameSession(t)}
       />
     </SafeAreaView>
+    </View>
   );
 }
