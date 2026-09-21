@@ -25,11 +25,18 @@ import { HamburgerBtn } from '../../components';
 import { BUILD_ID } from '../../build';
 
 export function SettingsScreen() {
-  const { authed, username, host, conn, theme, setTheme, logout } = useApp();
+  const { authed, username, host, conn, theme, setTheme, logout, sessionInfo, applyApprovalMode } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   const isReady = conn === 'ready';
   const isConnecting = conn === 'connecting' || conn === 'reconnecting';
+  const approvalMode = typeof sessionInfo?.approval_mode === 'string' ? sessionInfo.approval_mode : '';
+  const mcpServers: any[] = Array.isArray(sessionInfo?.mcp_servers) ? sessionInfo.mcp_servers : [];
+  const APPROVALS: { value: 'manual' | 'smart' | 'off'; label: string; hint: string }[] = [
+    { value: 'manual', label: 'Manual', hint: 'Ask before every dangerous command' },
+    { value: 'smart', label: 'Smart', hint: 'Model decides when to ask' },
+    { value: 'off', label: 'Off (YOLO)', hint: 'Never ask — run everything' },
+  ];
 
   const handleLogout = useCallback(() => {
     Alert.alert(
@@ -209,6 +216,93 @@ export function SettingsScreen() {
                 </Text>
               </View>
             </View>
+          </View>
+        </View>
+
+        {/* Agent / runtime Section */}
+        <View className="mb-6">
+          <View className="flex-row items-center gap-2 mb-2">
+            <Shield size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
+            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              Agent
+            </Text>
+          </View>
+          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <Text className="mb-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              Dangerous-command approvals
+            </Text>
+            <Text className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+              How the agent handles shell commands flagged as risky
+            </Text>
+            <View className="gap-2">
+              {APPROVALS.map((a) => {
+                const on = approvalMode === a.value;
+                return (
+                  <Pressable
+                    key={a.value}
+                    testID={`approval-${a.value}`}
+                    onPress={() => void applyApprovalMode(a.value)}
+                    className={`flex-row items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
+                      on
+                        ? 'border-[#1a73e8] bg-blue-50/70 dark:bg-blue-950/40'
+                        : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                    }`}
+                  >
+                    <View className="min-w-0 flex-1">
+                      <Text
+                        className={`text-sm font-semibold ${
+                          on ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-800 dark:text-neutral-200'
+                        }`}
+                      >
+                        {a.label}
+                      </Text>
+                      <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">{a.hint}</Text>
+                    </View>
+                    {on && <Check size={15} color={dark ? '#7aa7ff' : '#1a73e8'} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View className="my-3 h-[1px] bg-neutral-200 dark:bg-neutral-800" />
+            {[
+              ['Profile', typeof sessionInfo?.profile_name === 'string' ? sessionInfo.profile_name : ''],
+              ['Model', typeof sessionInfo?.model === 'string' ? sessionInfo.model : ''],
+              ['Provider', typeof sessionInfo?.provider === 'string' ? sessionInfo.provider : ''],
+              ['Working dir', typeof sessionInfo?.cwd === 'string' ? sessionInfo.cwd : ''],
+            ].map(([label, value]) =>
+              value ? (
+                <View key={label} className="flex-row items-center justify-between gap-3 py-1">
+                  <Text className="text-xs text-neutral-600 dark:text-neutral-300">{label}</Text>
+                  <Text
+                    className="shrink text-xs font-mono font-medium text-neutral-900 dark:text-neutral-100"
+                    numberOfLines={1}
+                  >
+                    {value}
+                  </Text>
+                </View>
+              ) : null,
+            )}
+
+            {mcpServers.length > 0 && (
+              <>
+                <View className="my-2 h-[1px] bg-neutral-200 dark:bg-neutral-800" />
+                <Text className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  MCP servers
+                </Text>
+                {mcpServers.map((s, i) => (
+                  <View key={`${s?.name ?? i}`} className="flex-row items-center justify-between py-1">
+                    <Text className="text-xs text-neutral-600 dark:text-neutral-300" numberOfLines={1}>
+                      {String(s?.name ?? 'server')}
+                    </Text>
+                    <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                      {String(s?.status ?? '')}
+                      {typeof s?.tool_count === 'number' ? ` · ${s.tool_count} tools` : ''}
+                    </Text>
+                  </View>
+                ))}
+              </>
+            )}
           </View>
         </View>
 

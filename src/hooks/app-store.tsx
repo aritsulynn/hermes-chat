@@ -116,6 +116,8 @@ export interface AppStore {
   regenerate: () => void;
   /** Spill a large paste to a server file and insert its placeholder. */
   pasteLarge: (text: string) => void;
+  /** Set the persistent dangerous-command approval mode. */
+  applyApprovalMode: (mode: 'manual' | 'smart' | 'off') => Promise<void>;
   /** Agent's live todo list (`todo.updated`), for the checklist above the composer. */
   todos: TodoItem[];
   /** Live child agents (polled from `subagent.list` while a turn runs). */
@@ -911,6 +913,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await g.configSet('fast', on ? 'fast' : 'normal', sid);
       } catch (e: any) {
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `fast: ${errMsg(e)}` }]);
+      }
+    },
+    [sessionId],
+  );
+
+  // Persistent dangerous-command approval mode (manual | smart | off).
+  const applyApprovalMode = useCallback(
+    async (mode: 'manual' | 'smart' | 'off') => {
+      const g = gw.current;
+      if (!g) return;
+      try {
+        await g.configSet('approvals.mode', mode, sessionId ?? undefined);
+      } catch (e: any) {
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `approvals: ${errMsg(e)}` }]);
       }
     },
     [sessionId],
@@ -1768,6 +1784,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     cancelEdit,
     regenerate,
     pasteLarge,
+    applyApprovalMode,
     todos,
     subagents,
     refreshToolResults,
