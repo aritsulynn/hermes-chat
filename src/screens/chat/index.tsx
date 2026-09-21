@@ -763,8 +763,9 @@ export function ChatScreen() {
             if (stickEnd.current) scrollEnd();
           }}
           onLayout={() => {
-            stickEnd.current = true;
-            scrollEnd(false);
+            // Only follow the tail when the user is already at the bottom — a
+            // resize (keyboard/dock) must not yank a reading user to the end.
+            if (stickEnd.current) scrollEnd(false);
           }}
           onScroll={(e) => {
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;

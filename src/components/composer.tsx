@@ -185,7 +185,11 @@ export const Composer = memo(function Composer({
           // Return: a multi-line draft was sent (or steered) mid-typing and the
           // keyboard closed under the user. Send/Steer are explicit buttons now.
           submitBehavior="newline"
-          onFocus={() => setTimeout(() => scrollEnd(), 100)}
+          onFocus={() => {
+            // Don't yank a user who scrolled up back to the newest message just
+            // because they tapped the composer.
+            if (stickEnd.current) setTimeout(() => scrollEnd(), 100);
+          }}
           onBlur={handleBlur}
         />
         {/* The model chip is the only shrinkable item: without it the row (plus
