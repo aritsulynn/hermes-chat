@@ -21,7 +21,7 @@ import {
   toWsUrl,
 } from '../lib/dashboard';
 import type { ModelProviderOption } from '../lib/dashboard';
-import { clearCookie, getCookie, getPassword, getTheme, loadConnection, saveCookie, saveHost, savePassword, saveTheme } from '../lib/connection';
+import { clearCookie, getCookie, getLastSession, getPassword, getTheme, loadConnection, saveCookie, saveHost, saveLastSession, savePassword, saveTheme } from '../lib/connection';
 import type { Theme } from '../lib/connection';
 import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
@@ -973,8 +973,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         setAuthed(true);
         if (list.length > 0) {
+          // Restore the chat the user was last viewing, else the most recent.
+          let target = list[0];
           try {
-            await withTimeout(openSessionRef.current(list[0]), 25000);
+            const saved = await getLastSession();
+            const found = saved ? list.find((s) => s.id === saved) : undefined;
+            if (found) target = found;
+          } catch {}
+          try {
+            await withTimeout(openSessionRef.current(target), 25000);
           } catch {
             router.replace('/chat');
           }
@@ -1053,6 +1060,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (hist.length === 0) hist = await g.history(liveId);
       setSessionKey(s.id);
+      void saveLastSession(s.id);
       setSessionId(liveId);
       draftKeyRef.current = s.id;
       setInputRaw(draftsRef.current.get(s.id) ?? '');
@@ -1098,6 +1106,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(effort ? { effort } : {}),
       });
       setSessionKey(storedSessionId || sid);
+      void saveLastSession(storedSessionId || sid);
       setSessionId(sid);
       setSessionTitle('');
       setMessages([]);
@@ -1140,6 +1149,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(typeof m?.name === 'string' ? { name: m.name } : {}),
       }));
       setSessionKey(String(r?.stored_session_id || liveId));
+      void saveLastSession(String(r?.stored_session_id || liveId));
       setSessionId(liveId);
       setSessionTitle(String(r?.title ?? ''));
       setMessages(historyToItems(hist));

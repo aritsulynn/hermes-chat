@@ -16,6 +16,16 @@ const K_USERNAME = 'hermes.conn.username';
 const K_PASSWORD = 'hermes.conn.password';
 const K_COOKIE = 'hermes.conn.cookie';
 const K_THEME = 'hermes.ui.theme';
+const K_LAST_SESSION = 'hermes.ui.lastSession';
+
+/** Remember the session the user was viewing (restored on the next boot). */
+export async function saveLastSession(id: string): Promise<void> {
+  if (id) await set(K_LAST_SESSION, id);
+}
+
+export async function getLastSession(): Promise<string | null> {
+  return get(K_LAST_SESSION);
+}
 
 export interface Connection {
   host: string; // e.g. http://192.168.1.8:9119
