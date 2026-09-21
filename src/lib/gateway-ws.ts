@@ -485,6 +485,11 @@ export class GatewayWs {
     return this.call('session.delete', { session_id: sessionId });
   }
 
+  /** Fork the current session into an independent copy (`session.branch`). */
+  branchSession(sessionId: string, name?: string): Promise<any> {
+    return this.call('session.branch', { session_id: sessionId, ...(name ? { name } : {}) });
+  }
+
   closeSession(sessionId: string): Promise<any> {
     return this.call('session.close', { session_id: sessionId });
   }

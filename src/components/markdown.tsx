@@ -1,4 +1,5 @@
-import { Linking, StyleSheet, Text } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { ChatImage, FileChip } from './media';
 
 // Plain text out of a markdown AST node (link labels are inline children).
@@ -42,10 +43,31 @@ export const makeSelectableRules = (dark: boolean) => ({
     if (typeof node.content === 'string' && node.content.charAt(node.content.length - 1) === '\n') {
       content = node.content.substring(0, node.content.length - 1);
     }
+    const lang = String(node?.info ?? node?.sourceInfo ?? '').trim() || 'code';
     return (
-      <Text key={node.key} selectable style={[inheritedStyles, styles.fence]}>
-        {content}
-      </Text>
+      <View key={node.key} style={{ marginVertical: 4 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 8,
+            marginBottom: 2,
+          }}
+        >
+          <Text style={{ fontSize: 11, color: dark ? '#9aa0a6' : '#8a8a8a' }}>{lang}</Text>
+          <Pressable
+            onPress={() => void Clipboard.setStringAsync(String(content))}
+            hitSlop={8}
+            style={{ paddingHorizontal: 4, paddingVertical: 2 }}
+          >
+            <Text style={{ fontSize: 11, fontWeight: '600', color: dark ? '#7aa7ff' : '#1a73e8' }}>Copy</Text>
+          </Pressable>
+        </View>
+        <Text selectable style={[inheritedStyles, styles.fence]}>
+          {content}
+        </Text>
+      </View>
     );
   },
   // Images: the library default (FitImage) can't carry our cookie and has no

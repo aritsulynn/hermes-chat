@@ -118,6 +118,8 @@ export interface AppStore {
   pasteLarge: (text: string) => void;
   /** Set the persistent dangerous-command approval mode. */
   applyApprovalMode: (mode: 'manual' | 'smart' | 'off') => Promise<void>;
+  /** Fork the current session into a copy and open it. */
+  branchSession: () => Promise<void>;
   /** Agent's live todo list (`todo.updated`), for the checklist above the composer. */
   todos: TodoItem[];
   /** Live child agents (polled from `subagent.list` while a turn runs). */
@@ -1120,6 +1122,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   newSessionRef.current = newSession;
 
+  // Fork the current chat into an independent copy (session.branch) and open it.
+  const branchSession = useCallback(async () => {
+    const g = gw.current;
+    const sid = sessionId;
+    if (!g || !sid) return;
+    try {
+      const r: any = await g.branchSession(sid);
+      const liveId = String(r?.session_id ?? '');
+      if (!liveId) return;
+      const hist: HistoryMessage[] = (Array.isArray(r?.messages) ? r.messages : []).map((m: any) => ({
+        role: String(m?.role ?? ''),
+        content: String(m?.text ?? m?.content ?? ''),
+        ...(typeof m?.row_id === 'number' ? { rowId: m.row_id } : {}),
+        ...(typeof m?.timestamp === 'number' ? { ts: m.timestamp } : {}),
+        ...(m?.reasoning ? { reasoning: String(m.reasoning) } : {}),
+        ...(typeof m?.name === 'string' ? { name: m.name } : {}),
+      }));
+      setSessionKey(String(r?.stored_session_id || liveId));
+      setSessionId(liveId);
+      setSessionTitle(String(r?.title ?? ''));
+      setMessages(historyToItems(hist));
+      queuedRef.current = [];
+      setQueued([]);
+      setTodos([]);
+      setSubagents([]);
+      router.push('/chat');
+    } catch (e: any) {
+      setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
+    }
+  }, [sessionId]);
+
   // ── Chat ─────────────────────────────────────────────────────────────────
   // Scrolling lives in the chat screen (it owns the FlatList ref); send()
   // only queues state — the screen scrolls after calling it.
@@ -1785,6 +1818,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     regenerate,
     pasteLarge,
     applyApprovalMode,
+    branchSession,
     todos,
     subagents,
     refreshToolResults,

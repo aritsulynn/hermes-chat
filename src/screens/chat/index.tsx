@@ -113,6 +113,7 @@ export function ChatScreen() {
     cancelEdit,
     regenerate,
     pasteLarge,
+    branchSession,
     todos,
     subagents,
     refreshToolResults,
@@ -675,6 +676,17 @@ export function ChatScreen() {
             >
               <Info size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Session info</Text>
+            </Pressable>
+            <Pressable
+              testID="menu-branch"
+              onPress={() => {
+                setKebabOpen(false);
+                void branchSession();
+              }}
+              className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              <FileText size={17} color={headerIcon} />
+              <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Branch chat</Text>
             </Pressable>
           </View>
         </>

@@ -12,7 +12,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
-import { Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import {
   Activity,
   ChevronRight,
@@ -63,7 +63,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const drawerOpen = useDrawerStatus() === 'open';
   const {
     authed, username, host, busy, sessionId, sessions, messages,
-    newSession, openSession, refreshSessions, logout, theme,
+    newSession, openSession, refreshSessions, logout, theme, deleteSessionById,
   } = useApp();
   // Hooks FIRST — no early return above this line (authed flips at
   // login; returning early before hooks breaks hook order).
@@ -263,6 +263,24 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                   close();
                   void openSession(s);
                 }}
+                onLongPress={() => {
+                  Alert.alert(
+                    'Delete chat',
+                    `Delete "${s.title || '(untitled)'}"? This can't be undone.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          void deleteSessionById(s.id).then(() => refreshSessions());
+                        },
+                      },
+                    ],
+                    { cancelable: true },
+                  );
+                }}
+                delayLongPress={400}
                 className="rounded-xl px-3 py-3"
                 style={({ pressed }) => [
                   (active || pressed) ? { backgroundColor: rowBg } : undefined,
