@@ -782,7 +782,7 @@ export function ChatScreen() {
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           automaticallyAdjustKeyboardInsets={false}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+          keyboardDismissMode="none"
           renderItem={({ item }) => (
             <MessageBubble
               item={item}
