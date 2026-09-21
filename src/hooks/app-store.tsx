@@ -607,7 +607,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAttachments([]);
       setSessionInfo(null);
       setUsageInfo(null);
-      setSessionTitle(s.title || '(untitled)');
+      setSessionTitle(s.title || '');
       // Reasoning rides on the assistant message (sidecar, not its own role) —
       // restore it as a thinking bubble above its answer, like the live view.
       const items: UiMessage[] = [];
@@ -659,7 +659,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       setSessionKey(storedSessionId || sid);
       setSessionId(sid);
-      setSessionTitle('(new session)');
+      setSessionTitle('');
       setMessages([]);
       draftKeyRef.current = storedSessionId || sid;
       setInputRaw(draftsRef.current.get(draftKeyRef.current) ?? '');
@@ -894,7 +894,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : recentId;
         setSessionKey(recentId);
         setSessionId(liveId);
-        setSessionTitle('(recent session)');
+        setSessionTitle('');
         setMessages([]);
         router.push('/chat');
       } catch (e) {
