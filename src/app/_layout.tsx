@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
+import * as SystemUI from 'expo-system-ui';
 import { Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import {
   Activity,
@@ -408,10 +409,14 @@ function ThemedStatusBar() {
   const { theme } = useApp();
   const dark = theme === 'dark';
   // Android 15 is edge-to-edge: tell the OS which button contrast to use.
+  // NOTE: `style` names the *button* colour, not the bar: 'light' = lighter
+  // buttons (for a dark bar), 'dark' = darker buttons (for a light bar).
+  // (See expo-navigation-bar's own `auto`: light scheme -> 'dark'.)
+  // Only affects the 3-button nav bar; gesture nav ignores it entirely.
   return (
     <>
       <StatusBar style={dark ? 'light' : 'auto'} />
-      {Platform.OS === 'android' && <NavigationBar style={dark ? 'dark' : 'light'} />}
+      {Platform.OS === 'android' && <NavigationBar style={dark ? 'light' : 'dark'} />}
     </>
   );
 }
@@ -538,6 +543,14 @@ export default function RootLayout() {
 function ThemedRoot() {
   const { theme } = useApp();
   const bg = theme === 'dark' ? '#000' : '#fff';
+  // Paint the Android *window* background (DecorView), not just the React
+  // root. On edge-to-edge Android the gesture-nav region sits outside the
+  // React tree, so a themed window background is what stops the default white
+  // `windowBackground` from showing as a strip under the gesture pill.
+  // No-op-ish elsewhere (sets the iOS root view colour too).
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(bg).catch(() => {});
+  }, [bg]);
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: bg }}>
       <SafeAreaProvider style={{ backgroundColor: bg }}>
