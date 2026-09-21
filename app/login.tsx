@@ -43,7 +43,7 @@ export default function LoginScreen() {
       <SafeAreaView className="flex-1 bg-white dark:bg-black items-center justify-center gap-3" edges={['top', 'left', 'right', 'bottom']}>
         <StatusBar style="auto" />
         <ActivityIndicator size="large" />
-        <Text className="mb-4 text-sm text-neutral-500">connecting…</Text>
+        <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
       </SafeAreaView>
     );
   }
@@ -59,7 +59,7 @@ export default function LoginScreen() {
       >
         <View className="flex-1 justify-center gap-1 p-6">
           <Text className="text-[32px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
-          <Text className="mb-4 text-sm text-neutral-500">connect to your dashboard</Text>
+          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connect to your dashboard</Text>
           <Field label="Host" value={host} onChange={setHost} />
           <Field label="Username" value={username} onChange={setUsername} />
           <Field label="Password" value={password} onChange={setPassword} secure />
@@ -74,11 +74,11 @@ export default function LoginScreen() {
             <Pressable onPress={() => void bioLogin()} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5" disabled={busy}>
               <View className="flex-row items-center gap-2">
                 <Fingerprint size={16} color="#1a73e8" />
-                <Text className="font-semibold text-[#1a73e8]">Unlock with biometrics</Text>
+                <Text className="font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Unlock with biometrics</Text>
               </View>
             </Pressable>
           )}
-          {error && <Text className="mt-2.5 text-[#c5221f]">{error}</Text>}
+          {error && <Text className="mt-2.5 text-[#c5221f] dark:text-[#ff7b72]">{error}</Text>}
           <Text className="mt-3 text-center text-xs text-neutral-400">Trusted LAN / VPN only — plain HTTP.</Text>
           {Platform.OS === 'web' && (
             <Text className="mt-1 text-center text-xs text-neutral-400">

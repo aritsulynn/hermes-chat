@@ -11,7 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Text, View } from 'react-native';
-import { Info, LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, RefreshCw, Sun } from 'lucide-react-native';
+import { LayoutGrid, LayoutList, LogOut, MessageSquare, Moon, RefreshCw, Sun } from 'lucide-react-native';
 import { AppProvider, useApp } from '../src/store';
 import { BUILD_ID } from '../src/build';
 import type { ConnState } from '../src/gateway-ws';
@@ -40,12 +40,12 @@ function connLabel(conn: ConnState): string {
 // Module-level icon helper — used both in drawer content and screen options.
 const drawerIcon = (C: any) => ({ color, size }: any) => <C size={size} color={color} />;
 
-// Custom drawer content — identity header + nav items (Chat creates a fresh
-// session, History lists past sessions, Ops opens the ops screens) + action
-// items (Refresh / Session info / Logout).
+// Custom drawer content — identity header + nav items (Chat is home,
+// History lists past sessions, Ops opens the ops screens) + action
+// items (theme switch / Refresh / Logout).
 function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
-  const { authed, conn, host, username, busy, sessionId, newSession, refreshSessions, logout, openInfo, theme, toggleTheme } = useApp();
+  const { authed, conn, host, username, busy, sessionId, newSession, refreshSessions, logout, theme, toggleTheme } = useApp();
   if (!authed) return null;
   const dark = theme === 'dark';
   const labelColor = dark ? '#f5f5f5' : '#111';
@@ -130,20 +130,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             }}
           />
         )}
-        {onChat && (
-          <DrawerItem
-            label="Session info"
-            icon={icon(Info)}
-            inactiveTintColor={labelColor}
-            labelStyle={{ color: labelColor }}
-            onPress={() => {
-              close();
-              void openInfo();
-            }}
-          />
-        )}
       </View>
-      <View className="flex-1" />
       <View className="px-2 pb-3">
         <DrawerItem
           label="Logout"

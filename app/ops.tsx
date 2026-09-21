@@ -146,6 +146,8 @@ export default function OpsScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="/path"
+            placeholderTextColor={dark ? '#888' : '#9ca3af'}
+            keyboardAppearance={dark ? 'dark' : 'light'}
             onSubmitEditing={() => void load()}
           />
           <Pressable onPress={() => void load()} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5">
@@ -153,7 +155,7 @@ export default function OpsScreen() {
           </Pressable>
         </View>
       )}
-      {error && <Text className="mt-2.5 p-3.5 text-[#c5221f]">{error}</Text>}
+      {error && <Text className="mt-2.5 p-3.5 text-[#c5221f] dark:text-[#ff7b72]">{error}</Text>}
       <ScrollView
         contentContainerStyle={{ padding: 12, gap: 8 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} />}
@@ -161,7 +163,7 @@ export default function OpsScreen() {
         {loading && <ActivityIndicator />}
         {tab === 'cron' && !loading && (
           <>
-            {cronJobs.length === 0 && <Text className="mb-4 text-sm text-neutral-500">no cron jobs</Text>}
+            {cronJobs.length === 0 && <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">no cron jobs</Text>}
             {cronJobs.map((j: any) => {
               const id = String(j?.id ?? j?.name ?? Math.random());
               return (
@@ -169,7 +171,7 @@ export default function OpsScreen() {
                   <Text className="text-[15px] font-semibold text-neutral-950 dark:text-neutral-100" numberOfLines={1}>
                     {String(j?.name ?? j?.id ?? '(job)')}
                   </Text>
-                  <Text className="mt-0.5 text-xs text-neutral-500" numberOfLines={2}>
+                  <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={2}>
                     {String(j?.schedule ?? j?.state ?? '')} · {String(j?.prompt ?? '').slice(0, 120)}
                   </Text>
                   <View className="mt-2 flex-row gap-1.5">
@@ -183,7 +185,7 @@ export default function OpsScreen() {
                       <Text className="dark:text-neutral-100">Resume</Text>
                     </Pressable>
                     <Pressable onPress={() => void cronDelete(id)} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5">
-                      <Text className="text-[#c5221f]">Delete</Text>
+                      <Text className="text-[#c5221f] dark:text-[#ff7b72]">Delete</Text>
                     </Pressable>
                   </View>
                 </View>

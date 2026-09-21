@@ -16,14 +16,13 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import Markdown from 'react-native-markdown-display';
 import { Redirect, useNavigation } from 'expo-router';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { Brain, Check, ChevronDown, ChevronUp, Cog, Copy, Info, MoreVertical, Search, X } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Info, MoreVertical, Search, X } from 'lucide-react-native';
 import { useApp } from '../src/store';
-import { FALLBACK_PROVIDERS, cleanThinking, flattenLists } from '../src/models';
+import { FALLBACK_PROVIDERS } from '../src/models';
 import type { UiMessage } from '../src/models';
-import { AskSheet, Composer, HamburgerBtn, InfoSheet, TypingDots, mdAi, mdAiDark, mdUser, selectableRules } from '../src/ui';
+import { AskSheet, Composer, HamburgerBtn, InfoSheet, MessageBubble } from '../src/ui';
 
 export default function ChatScreen() {
   const {
@@ -239,7 +238,7 @@ export default function ChatScreen() {
       <SafeAreaView className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black" edges={['top', 'left', 'right', 'bottom']}>
         <StatusBar style="auto" />
         <ActivityIndicator size="large" />
-        <Text className="mb-4 text-sm text-neutral-500">connecting…</Text>
+        <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
       </SafeAreaView>
     );
   }
@@ -250,7 +249,7 @@ export default function ChatScreen() {
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
         <StatusBar style="auto" />
         <View className="flex-1 items-center justify-center p-6">
-          <Text className="mb-4 text-sm text-neutral-500">No active session — pick one from the list.</Text>
+          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — pick one from the list.</Text>
           <Pressable onPress={goSessions} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
             <Text className="text-[15px] font-semibold text-white">‹ History</Text>
           </Pressable>
@@ -264,7 +263,7 @@ export default function ChatScreen() {
       <StatusBar style="auto" />
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
         {/* Kebab menu: search + session info */}
@@ -304,13 +303,15 @@ export default function ChatScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search in conversation…"
+              placeholderTextColor={dark ? '#888' : '#9ca3af'}
               autoCapitalize="none"
               autoCorrect={false}
               autoFocus
+              keyboardAppearance={dark ? 'dark' : 'light'}
               returnKeyType="search"
               onSubmitEditing={() => jumpToMatch(matchIdx)}
             />
-            <Text className="text-xs text-neutral-500">
+            <Text className="text-xs text-neutral-500 dark:text-neutral-400">
               {sq ? `${matchIndices.length ? matchIdx + 1 : 0}/${matchIndices.length}` : ''}
             </Text>
             <Pressable onPress={() => jumpToMatch(matchIdx - 1)} className="p-1" hitSlop={8} disabled={!matchIndices.length}>
@@ -354,114 +355,12 @@ export default function ChatScreen() {
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          renderItem={({ item }) => {
-            const think = item.role === 'thinking';
-            const typing = !think && item.pending && !item.text;
-            const markdown =
-              !think && item.role !== 'notice' && item.role !== 'interim' && item.role !== 'tool';
-            const copyable = (item.role === 'user' || item.role === 'assistant') && !!item.text && !item.pending;
-            const matched = searchOpen && !!sq && item.text.toLowerCase().includes(sq);
-            return (
-              <View
-                className={`rounded-[14px] px-3 py-2 ${
-                  item.role === 'user'
-                    ? 'self-end bg-[#1a73e8]'
-                    : think
-                      ? 'self-start border border-[#e2e2e6] bg-[#f7f7f9] dark:border-neutral-700 dark:bg-[#212121]'
-                      : item.role === 'interim'
-                        ? 'self-start border border-[#f0e0a0] bg-[#fff8e1] dark:border-[#6b5a1e] dark:bg-[#3a2f10]'
-                        : item.role === 'notice'
-                          ? 'self-center bg-[#fdecea] dark:bg-[#3d2020]'
-                          : item.role === 'tool'
-                            ? 'self-start border border-[#d3e1f8] bg-[#eef3fd] dark:border-neutral-700 dark:bg-[#272727]'
-                            : 'self-start bg-[#f0f0f2] dark:bg-[#272727]'
-                }${matched ? ' border-2 border-[#1a73e8]' : ''}`}
-                style={{ maxWidth: bubbleMax }}
-              >
-                {typing ? (
-                  <TypingDots />
-                ) : think ? (
-                  item.text ? (
-                    <Pressable
-                      onPress={() => {
-                        if (longFired.current) {
-                          longFired.current = false;
-                          return;
-                        }
-                        setExpanded((p) => ({ ...p, [item.id]: !p[item.id] }));
-                      }}
-                      onLongPress={() => {
-                        longFired.current = true;
-                      }}
-                    >
-                      <View className="flex-row items-start gap-1.5">
-                        <Brain size={14} color={dark ? '#999' : '#777'} />
-                        <Text
-                          selectable={!!expanded[item.id]}
-                          className="shrink text-[13px] leading-[18px] text-neutral-500"
-                          numberOfLines={expanded[item.id] ? undefined : 1}
-                        >
-                          {cleanThinking(item.text)}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  ) : (
-                    <TypingDots dim />
-                  )
-                ) : item.role === 'tool' ? (
-                  <Pressable
-                    onPress={() => {
-                      if (longFired.current) {
-                        longFired.current = false;
-                        return;
-                      }
-                      setExpanded((p) => ({ ...p, [item.id]: !p[item.id] }));
-                    }}
-                    onLongPress={() => {
-                      longFired.current = true;
-                    }}
-                  >
-                    <View className="flex-row items-start gap-1.5">
-                      {item.pending ? (
-                        <Cog size={14} color={dark ? '#8fa8ff' : '#3b5bdb'} />
-                      ) : (
-                        <Check size={14} color={dark ? '#8fa8ff' : '#3b5bdb'} />
-                      )}
-                      <Text
-                        selectable={!!expanded[item.id]}
-                        className="shrink text-[13px] leading-[18px] text-[#3b5bdb] dark:text-[#8fa8ff]"
-                        numberOfLines={expanded[item.id] ? undefined : 2}
-                      >
-                        {item.text}
-                        {item.detail && expanded[item.id] ? `\n${item.detail}` : ''}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ) : markdown ? (
-                  <Markdown rules={selectableRules} style={item.role === 'user' ? mdUser : dark ? mdAiDark : mdAi}>{flattenLists(item.text)}</Markdown>
-                ) : (
-                  <Text selectable className={item.role === 'user' ? 'text-[15px] leading-[21px] text-white' : 'text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100'}>
-                    {item.text}
-                  </Text>
-                )}
-                {copyable && (
-                  <Pressable onPress={() => void copyText(item.id, item.text)} className="mt-1 flex-row items-center gap-1 self-end px-0.5 py-0.5" hitSlop={6}>
-                    {copiedId === item.id ? (
-                      <Check size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
-                    ) : (
-                      <Copy size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
-                    )}
-                    <Text className={item.role === 'user' ? 'text-[11px] font-semibold text-white/75' : 'text-[11px] font-semibold text-neutral-400'}>
-                      {copiedId === item.id ? 'Copied' : 'Copy'}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            );
-          }}
+          renderItem={({ item }) => (
+            <MessageBubble item={item} bubbleMax={bubbleMax} dark={dark} expanded={!!expanded[item.id]} highlight={searchOpen && !!sq && item.text.toLowerCase().includes(sq)} longFired={longFired} onToggleExpand={(id) => setExpanded((p) => ({...p, [id]: !p[id]}))} copiedId={copiedId} onCopy={(id, text) => void copyText(id, text)} />
+          )}
         />
         {!!toolLine && (
-          <Text className="px-3.5 pb-1 text-xs text-neutral-500" numberOfLines={1}>
+          <Text className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
             {toolLine}
           </Text>
         )}

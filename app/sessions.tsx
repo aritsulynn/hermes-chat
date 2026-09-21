@@ -62,7 +62,7 @@ export default function SessionsScreen() {
       <SafeAreaView className="flex-1 bg-white dark:bg-black items-center justify-center gap-3" edges={['top', 'left', 'right', 'bottom']}>
         <StatusBar style="auto" />
         <ActivityIndicator size="large" />
-        <Text className="mb-4 text-sm text-neutral-500">connecting…</Text>
+        <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
       </SafeAreaView>
     );
   }
@@ -110,13 +110,15 @@ export default function SessionsScreen() {
   return (
     <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
       <StatusBar style="auto" />
-      {error && <Text className="p-3.5 text-[#c5221f]">{error}</Text>}
+      {error && <Text className="p-3.5 text-[#c5221f] dark:text-[#ff7b72]">{error}</Text>}
       <View className="flex-row gap-2 p-3.5 pb-1">
         <TextInput
           className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-sm text-neutral-950 dark:text-neutral-100"
           value={query}
           onChangeText={setQuery}
           placeholder={`Search ${sessions.length} sessions…`}
+          placeholderTextColor={dark ? '#888' : '#9ca3af'}
+          keyboardAppearance={dark ? 'dark' : 'light'}
           autoCapitalize="none"
           autoCorrect={false}
         />
@@ -132,7 +134,7 @@ export default function SessionsScreen() {
         keyExtractor={(s) => s.id}
         contentContainerStyle={{ padding: 12, gap: 8 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
-        ListEmptyComponent={<Text className="mb-4 p-3.5 text-sm text-neutral-500">{q ? 'no matches' : 'no sessions yet'}</Text>}
+        ListEmptyComponent={<Text className="mb-4 p-3.5 text-sm text-neutral-500 dark:text-neutral-400">{q ? 'no matches' : 'no sessions yet'}</Text>}
         renderItem={({ item }) => {
           const opening = openingId === item.id;
           const renaming = renamingId === item.id;
@@ -151,14 +153,16 @@ export default function SessionsScreen() {
                       onChangeText={setRenameText}
                       autoFocus
                       onSubmitEditing={() => void submitRename(item.id)}
+                      keyboardAppearance={dark ? 'dark' : 'light'}
                       placeholder="New title…"
+                      placeholderTextColor={dark ? '#888' : '#9ca3af'}
                     />
                   ) : (
                     <Text className="text-[15px] font-semibold text-neutral-950 dark:text-neutral-100" numberOfLines={1}>
                       {item.title || '(untitled)'}
                     </Text>
                   )}
-                  <Text className="mt-0.5 text-xs text-neutral-500" numberOfLines={1}>
+                  <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
                     {item.source} · {item.messageCount} msgs
                   </Text>
                   {!!item.preview && (
@@ -197,7 +201,7 @@ export default function SessionsScreen() {
                     <Pressable onPress={() => confirmDelete(item.id, item.title)} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5" hitSlop={8}>
                       <View className="flex-row items-center gap-2">
                         <Trash2 size={13} color="#c5221f" />
-                        <Text className="text-[#c5221f]">Delete</Text>
+                        <Text className="text-[#c5221f] dark:text-[#ff7b72]">Delete</Text>
                       </View>
                     </Pressable>
                   </>
