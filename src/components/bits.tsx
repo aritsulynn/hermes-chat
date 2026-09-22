@@ -1,8 +1,74 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import { Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
 import { useApp } from '../hooks/app-store';
+
+// Circular context-window ring for the chat header — sits left of the kebab,
+// taps into Session info for the exact numbers.
+export function CtxRing({
+  pct,
+  tone,
+  dark,
+  onPress,
+}: {
+  pct: number;
+  tone: 'ok' | 'warn' | 'hot';
+  dark: boolean;
+  onPress: () => void;
+}) {
+  const size = 24;
+  const stroke = 3;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  const color =
+    tone === 'hot'
+      ? dark
+        ? '#ff8a8a'
+        : '#c5221f'
+      : tone === 'warn'
+        ? dark
+          ? '#f0b429'
+          : '#d97706'
+        : dark
+          ? '#5fd28a'
+          : '#1a7f37';
+  return (
+    <Pressable
+      testID="ctx-ring"
+      accessibilityRole="button"
+      accessibilityLabel={`Context ${clamped}% — open session info`}
+      onPress={onPress}
+      className="h-9 w-9 items-center justify-center"
+      hitSlop={6}
+    >
+      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke={dark ? '#3a3a3a' : '#e2e2e6'}
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke={color}
+          strokeWidth={stroke}
+          fill="none"
+          strokeDasharray={`${(clamped / 100) * c} ${c}`}
+          strokeLinecap="round"
+          rotation="-90"
+          origin={`${size / 2}, ${size / 2}`}
+        />
+      </Svg>
+    </Pressable>
+  );
+}
 
 // One shared drawer hamburger so every screen looks and behaves the same.
 export function HamburgerBtn() {

@@ -20,6 +20,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.lynn.hermesmobile",
+      "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -35,7 +36,21 @@
       "expo-router",
       "expo-status-bar",
       "expo-splash-screen",
-      ["expo-navigation-bar", { "enforceContrast": false }]
-    ]
+      [
+        "expo-navigation-bar",
+        {
+          "enforceContrast": false
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "expo-navigation-bar": {
+        "enforceContrast": false
+      },
+      "eas": {
+        "projectId": "9c172b1d-4627-4f49-82ca-ee18c46595b1"
+      }
+    }
   }
 }

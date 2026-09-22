@@ -2,7 +2,7 @@ import type * as React from 'react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { Brain, Check, Cog, Copy, FileText } from 'lucide-react-native';
+import { Brain, Check, Cog, Copy, FileText, Pencil, RotateCcw } from 'lucide-react-native';
 import { cleanThinking, flattenLists, renderMediaTags } from '../utils/messages';
 import type { UiMessage } from '../utils/messages';
 import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../utils/diff';
@@ -360,33 +360,38 @@ export const MessageBubble = memo(function MessageBubble({
           {copyable && (
             <Pressable
               onPress={() => onCopy(item.id, item.text)}
-              className="flex-row items-center gap-1 px-0.5 py-0.5"
+              accessibilityRole="button"
+              accessibilityLabel={copied ? 'Copied' : 'Copy'}
+              className="px-0.5 py-0.5"
               hitSlop={6}
             >
               {copied ? (
-                <Check size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
+                <Check size={12} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
               ) : (
-                <Copy size={11} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
+                <Copy size={12} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
               )}
-              <Text
-                className={
-                  item.role === 'user'
-                    ? 'text-[11px] font-semibold text-white/75'
-                    : 'text-[11px] font-semibold text-neutral-400'
-                }
-              >
-                {copied ? 'Copied' : 'Copy'}
-              </Text>
             </Pressable>
           )}
           {canEdit && (
-            <Pressable onPress={() => onEdit(item.id)} className="px-0.5 py-0.5" hitSlop={6}>
-              <Text className="text-[11px] font-semibold text-white/75">Edit</Text>
+            <Pressable
+              onPress={() => onEdit(item.id)}
+              accessibilityRole="button"
+              accessibilityLabel="Edit"
+              className="px-0.5 py-0.5"
+              hitSlop={6}
+            >
+              <Pencil size={12} color="rgba(255,255,255,.75)" />
             </Pressable>
           )}
           {canRegenerate && (
-            <Pressable onPress={onRegenerate} className="px-0.5 py-0.5" hitSlop={6}>
-              <Text className="text-[11px] font-semibold text-neutral-400">Regenerate</Text>
+            <Pressable
+              onPress={onRegenerate}
+              accessibilityRole="button"
+              accessibilityLabel="Regenerate"
+              className="px-0.5 py-0.5"
+              hitSlop={6}
+            >
+              <RotateCcw size={12} color={dark ? '#aaa' : '#999'} />
             </Pressable>
           )}
         </View>

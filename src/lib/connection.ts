@@ -28,6 +28,20 @@ export async function getLastSession(): Promise<string | null> {
 }
 
 const K_NOTIFY = 'hermes.ui.notify';
+const K_MODEL = 'hermes.ui.model';
+const K_MODEL_PROVIDER = 'hermes.ui.modelProvider';
+
+/** Remember the last picked model across restarts (server stays the source of
+ *  truth for actual runs — this only seeds the composer chip on boot). */
+export async function saveModel(provider: string, model: string): Promise<void> {
+  await Promise.all([set(K_MODEL_PROVIDER, provider ?? ''), set(K_MODEL, model ?? '')]);
+}
+
+export async function getModel(): Promise<{ provider: string; model: string } | null> {
+  const [provider, model] = await Promise.all([get(K_MODEL_PROVIDER), get(K_MODEL)]);
+  if (!model) return null;
+  return { provider: provider ?? '', model };
+}
 
 export async function saveNotifyEnabled(on: boolean): Promise<void> {
   await set(K_NOTIFY, on ? '1' : '0');

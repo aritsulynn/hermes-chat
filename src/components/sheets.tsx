@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
@@ -7,6 +7,8 @@ import {
 } from '@gorhom/bottom-sheet';
 import { Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react-native';
 import { parseClarify } from '../utils/messages';
+import { readUsage, contextTone } from '../utils/usage';
+import { compactNumber } from '../utils/format';
 import { useApp } from '../hooks/app-store';
 import type { GatewayWs, ServerAsk } from '../lib/gateway-ws';
 
@@ -24,8 +26,21 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
   return (
     <View className="flex-row gap-2 py-1">
-      <Text className="w-[72px] text-[13px] text-neutral-500 dark:text-neutral-400">{label}</Text>
-      <Text className="flex-1 text-sm text-neutral-950 dark:text-neutral-100" numberOfLines={3}>
+      <Text className="w-[88px] shrink-0 text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400">{label}</Text>
+      <Text selectable className="min-w-0 flex-1 text-sm leading-[18px] text-neutral-950 dark:text-neutral-100">
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function StatCell({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-1 gap-0.5 rounded-xl bg-[#f4f4f6] px-3 py-2 dark:bg-[#212121]">
+      <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        {label}
+      </Text>
+      <Text className="text-[16px] font-bold text-neutral-950 dark:text-neutral-100" numberOfLines={1}>
         {value}
       </Text>
     </View>
@@ -51,6 +66,23 @@ export const InfoSheet = forwardRef<
   const dark = theme === 'dark';
   const [draft, setDraft] = useState(title);
   useEffect(() => setDraft(title), [title]);
+  // Usage arrives in two shapes (nested under session.info or flat from
+  // session.usage) — one reader covers both, same as the composer strip.
+  const snap = readUsage(info?.usage) ?? readUsage(usage);
+  const ctxPct =
+    snap?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(snap.contextPercent))) : null;
+  const tone = ctxPct == null ? 'ok' : contextTone(ctxPct);
+  const barColor = tone === 'hot' ? '#c5221f' : tone === 'warn' ? '#d97706' : '#1a7f37';
+  // Stat grid, chunked into pairs so every row fills evenly.
+  const stats: [string, string][] = [];
+  if (snap?.input != null) stats.push(['Input', compactNumber(snap.input)]);
+  if (snap?.output != null) stats.push(['Output', compactNumber(snap.output)]);
+  if (snap?.total != null) stats.push(['Total tokens', compactNumber(snap.total)]);
+  if (snap?.costUsd != null && snap.costUsd > 0) stats.push(['Cost', `$${snap.costUsd.toFixed(2)}`]);
+  if (snap?.subagents != null) stats.push(['Subagents', String(snap.subagents)]);
+  const statRows: [string, string][][] = [];
+  for (let i = 0; i < stats.length; i += 2) statRows.push(stats.slice(i, i + 2));
+  const canSave = draft.trim().length > 0 && draft.trim() !== title;
   return (
     <BottomSheetModal
       ref={ref}
@@ -61,37 +93,92 @@ export const InfoSheet = forwardRef<
       handleIndicatorStyle={{ backgroundColor: dark ? '#525252' : '#d4d4d4' }}
       onDismiss={onClose}
     >
-      <BottomSheetScrollView contentContainerStyle={{ padding: 16, gap: 10 }}>
-        <View className="flex-row items-center justify-between">
-          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Session info</Text>
+      <BottomSheetScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+        <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Session info</Text>
+        <View className="gap-1 rounded-2xl bg-[#f4f4f6] px-3.5 py-2 dark:bg-[#212121]">
+          <InfoRow label="Title" value={title || '(untitled)'} />
+          <InfoRow label="Model" value={typeof info?.model === 'string' && info.model ? info.model : model || undefined} />
+          <InfoRow
+            label="Provider"
+            value={typeof info?.provider === 'string' && info.provider ? info.provider : provider || undefined}
+          />
+          <InfoRow label="Profile" value={typeof info?.profile_name === 'string' ? info.profile_name : undefined} />
+          <InfoRow
+            label="Reasoning"
+            value={typeof info?.reasoning_effort_wire === 'string' ? info.reasoning_effort_wire : undefined}
+          />
+          <InfoRow label="Fast mode" value={info?.fast === true ? 'On' : undefined} />
+          <InfoRow label="Working dir" value={typeof info?.cwd === 'string' ? info.cwd : undefined} />
+          <InfoRow label="~Tokens" value={tokenEstimate > 0 ? `≈ ${tokenEstimate.toLocaleString()}` : undefined} />
         </View>
-        <InfoRow label="Title" value={title} />
         <View className="flex-row items-center gap-2">
           <TextInput
-            className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-sm text-neutral-950 dark:text-neutral-100"
+            className="min-w-0 flex-1 rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
             value={draft}
             onChangeText={setDraft}
             placeholder="Rename session…"
             placeholderTextColor={dark ? '#888' : '#9ca3af'}
             keyboardAppearance={dark ? 'dark' : 'light'}
             autoCapitalize="none"
+            returnKeyType="done"
+            onSubmitEditing={() => draft.trim() && onRename(draft.trim())}
           />
-          <Pressable onPress={() => draft.trim() && onRename(draft.trim())} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5">
-            <Text className="dark:text-neutral-100">Save</Text>
+          <Pressable
+            onPress={() => draft.trim() && onRename(draft.trim())}
+            disabled={!canSave}
+            className={`rounded-xl bg-[#1a73e8] px-3.5 py-2 ${canSave ? '' : 'opacity-40'}`}
+          >
+            <Text className="text-sm font-semibold text-white">Save</Text>
           </Pressable>
         </View>
-        <InfoRow label="~Tokens" value={tokenEstimate > 0 ? `≈ ${tokenEstimate.toLocaleString()}` : undefined} />
-        <InfoRow label="Model" value={typeof info?.model === 'string' && info.model ? info.model : model} />
-        <InfoRow
-          label="Provider"
-          value={typeof info?.provider === 'string' && info.provider ? info.provider : provider || undefined}
-        />
-        <InfoRow label="CWD" value={typeof info?.cwd === 'string' ? info.cwd : undefined} />
-        <Text className="mt-1 text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage</Text>
+        <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage</Text>
         {usageLoading ? (
-          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">loading…</Text>
+          <View className="flex-row items-center gap-2 py-2">
+            <ActivityIndicator size="small" color={dark ? '#888' : '#666'} />
+            <Text className="text-sm text-neutral-500 dark:text-neutral-400">loading usage…</Text>
+          </View>
+        ) : !snap ? (
+          <Text className="text-sm text-neutral-500 dark:text-neutral-400">No usage reported yet.</Text>
         ) : (
-          <Text className="rounded-lg bg-[#f4f4f6] dark:bg-[#212121] p-2 font-mono text-[13px] text-neutral-950 dark:text-neutral-100">{usage ? JSON.stringify(usage, null, 2) : '—'}</Text>
+          <View className="gap-2">
+            {ctxPct != null && (
+              <View className="gap-1.5 rounded-2xl bg-[#f4f4f6] p-3.5 dark:bg-[#212121]">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">
+                    Context window
+                  </Text>
+                  <Text
+                    className={`text-[13px] font-bold ${
+                      tone === 'hot'
+                        ? 'text-[#c5221f] dark:text-[#ff8a8a]'
+                        : tone === 'warn'
+                          ? 'text-[#d97706] dark:text-[#f0b429]'
+                          : 'text-neutral-500 dark:text-neutral-400'
+                    }`}
+                  >
+                    {snap.contextEstimated ? '~' : ''}
+                    {ctxPct}%
+                  </Text>
+                </View>
+                <View className="h-2 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+                  <View className="h-full rounded-full" style={{ width: `${ctxPct}%`, backgroundColor: barColor }} />
+                </View>
+                {snap.contextUsed != null && snap.contextMax != null && (
+                  <Text className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                    {compactNumber(snap.contextUsed)} / {compactNumber(snap.contextMax)} tokens
+                  </Text>
+                )}
+              </View>
+            )}
+            {statRows.map((row, i) => (
+              <View key={i} className="flex-row gap-2">
+                {row.map(([label, value]) => (
+                  <StatCell key={label} label={label} value={value} />
+                ))}
+                {row.length === 1 && <View className="flex-1" />}
+              </View>
+            ))}
+          </View>
         )}
       </BottomSheetScrollView>
     </BottomSheetModal>

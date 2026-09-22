@@ -33,13 +33,12 @@ import {
   todoLabel,
 } from '../../utils/messages';
 import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '../../utils/reasoning';
-import { compactNumber } from '../../utils/format';
 import { fuzzyScoreMulti } from '../../utils/fuzzy';
 import { contextTone, readUsage } from '../../utils/usage';
 import { isSlashSuggestion } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../lib/gateway-ws';
-import { AskSheet, Composer, HamburgerBtn, InfoSheet, MessageBubble } from '../../components';
+import { AskSheet, Composer, CtxRing, HamburgerBtn, InfoSheet, MessageBubble } from '../../components';
 import type { AnchorMeasure } from '../../components';
 
 // Offline fallback for the "/" wheel when the gateway predates `complete.slash`.
@@ -284,6 +283,9 @@ export function ChatScreen() {
   // Content-size growth (stream tokens, expand thinking) auto-scrolls only
   // then — expanding an old bubble mid-list no longer yanks to the bottom.
   const stickEnd = useRef(true);
+  // px from the true end that still counts as "at the bottom" (jump button
+  // hides, transcript auto-follows). Shared by onScroll and snapToEnd below.
+  const AT_END_PX = 120;
   // True briefly while the keyboard/dock padding changes — suppresses the
   // content-size auto-scroll so opening the keyboard doesn't shift the transcript.
   const kbResizeRef = useRef(false);
@@ -298,6 +300,25 @@ export function ChatScreen() {
   // Keyboard height — the absolute dock must be lifted by hand, and the list
   // owns its own bottom space (see the layout note below).
   const [kbH, setKbH] = useState(0);
+  // Measured list geometry for snapToEnd above: content/layout heights plus
+  // the end padding mirror (12 + dockH + kbH, same as contentContainerStyle).
+  const contentH = useRef(0);
+  const layoutH = useRef(0);
+  const endPad = useRef(0);
+  endPad.current = 12 + dockH + kbH;
+  // Y where the current drag started — snap only fires on net-downward moves.
+  const dragStartY = useRef(0);
+  // Latest scroll offset (mirrored in onScroll) — the jump button instant-jumps
+  // when far instead of smooth-scrolling ten thousand pixels sluggishly.
+  const scrollY = useRef(0);
+  // True while the user's finger is down — onScroll only flips follow state on
+  // user-driven scrolls, never mid-flight of a programmatic scrollEnd.
+  const touching = useRef(false);
+  // True while a programmatic scrollEnd is in flight (cleared on arrival or by
+  // timeout). Without this, onScroll mid-flight flips stickEnd=false, and any
+  // growth during the flight (stream tokens, a loading image resolving) lands
+  // the list short with nobody left to finish the trip.
+  const flying = useRef(false);
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
   const tokenEstimate = messages.reduce((n, m) => n + Math.ceil(m.text.length / 4), 0);
@@ -378,9 +399,40 @@ export function ChatScreen() {
     const anim = animated === false ? false : true;
     // Double-tick: one frame for layout shrink (keyboard resize), one for content.
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: anim }));
+      requestAnimationFrame(() => {
+        // Exact offset, not scrollToEnd(): the measured end is deterministic
+        // (contentH/layoutH track the same geometry the padding is built from).
+        const end = Math.max(0, contentH.current - layoutH.current);
+        if (end <= 0) return;
+        flying.current = true;
+        // Safety: never strand the follow state if the flight never lands.
+        setTimeout(() => {
+          flying.current = false;
+        }, 1200);
+        listRef.current?.scrollToOffset({ offset: end, animated: anim });
+      });
     });
   }, []);
+
+  // The list ends with `endPad` of empty space (room for the floating dock),
+  // so a manual scroll can stop inside that dead zone with the last bubble's
+  // footer hidden behind the composer. Snap through it: inside the
+  // recourse-free zone (jump button already hidden) always finish the last
+  // pixels; farther out, never steal an upward scroll.
+  const snapToEnd = useCallback(
+    (e: any) => {
+      touching.current = false;
+      const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+      const rest = contentH.current - (y + layoutH.current);
+      if (rest <= 2 || rest > endPad.current + 8) return;
+      if (rest >= AT_END_PX && y < dragStartY.current - 4) return;
+      stickEnd.current = true;
+      setAtBottom(true);
+      scrollEnd();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scrollEnd],
+  );
 
   // When the keyboard slides up the list height shrinks but content offset
   // stays — explicitly scroll so the latest message sits above the keyboard,
@@ -554,22 +606,29 @@ export function ChatScreen() {
       ),
       headerRight: sessionId
         ? () => (
-            <Pressable
-              testID="kebab-btn"
-              accessibilityRole="button"
-              accessibilityLabel="Chat menu"
-              onPress={() => setKebabOpen((v) => !v)}
-              className="justify-center px-4 py-2"
-              hitSlop={12}
-            >
-              <View ref={kebabRef}>
-                <MoreVertical size={20} color={headerIcon} />
-              </View>
-            </Pressable>
+            <View className="flex-row items-center">
+              {ctxPct != null && (
+                <CtxRing pct={ctxPct} tone={ctxTone} dark={dark} onPress={() => void openInfo()} />
+              )}
+              <Pressable
+                testID="kebab-btn"
+                accessibilityRole="button"
+                accessibilityLabel="Chat menu"
+                onPress={() => setKebabOpen((v) => !v)}
+                className="justify-center px-4 py-2"
+                hitSlop={12}
+                android_ripple={{ color: dark ? '#444' : '#ddd', borderless: true }}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <View ref={kebabRef}>
+                  <MoreVertical size={20} color={headerIcon} />
+                </View>
+              </Pressable>
+            </View>
           )
         : undefined,
     });
-  }, [navigation, insets.top, sessionId, sessionTitle, dark, headerIcon]);
+  }, [navigation, insets.top, sessionId, sessionTitle, dark, headerIcon, ctxPct, ctxTone, openInfo]);
 
   if (booting) {
     return (
@@ -686,6 +745,10 @@ export function ChatScreen() {
                 setSearchOpen(true);
               }}
               className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+              android_ripple={{ color: dark ? '#3a3a3a' : '#e5e5e5' }}
+              style={({ pressed }) => [
+                { backgroundColor: pressed ? (dark ? '#2e2e2e' : '#ededf0') : 'transparent' },
+              ]}
             >
               <Search size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Search</Text>
@@ -697,6 +760,10 @@ export function ChatScreen() {
                 void openInfo();
               }}
               className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+              android_ripple={{ color: dark ? '#3a3a3a' : '#e5e5e5' }}
+              style={({ pressed }) => [
+                { backgroundColor: pressed ? (dark ? '#2e2e2e' : '#ededf0') : 'transparent' },
+              ]}
             >
               <Info size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Session info</Text>
@@ -708,6 +775,10 @@ export function ChatScreen() {
                 void branchSession();
               }}
               className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+              android_ripple={{ color: dark ? '#3a3a3a' : '#e5e5e5' }}
+              style={({ pressed }) => [
+                { backgroundColor: pressed ? (dark ? '#2e2e2e' : '#ededf0') : 'transparent' },
+              ]}
             >
               <FileText size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Branch chat</Text>
@@ -764,17 +835,33 @@ export function ChatScreen() {
           keyExtractor={(m) => m.id}
           className="flex-1"
           contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }}
-          onContentSizeChange={() => {
+          onContentSizeChange={(_w, h) => {
+            contentH.current = h;
             if (stickEnd.current && !kbResizeRef.current) scrollEnd();
           }}
-          onLayout={() => {
+          onLayout={(e) => {
+            layoutH.current = e.nativeEvent.layout.height;
             // Only follow the tail when the user is already at the bottom — a
             // resize (keyboard/dock) must not yank a reading user to the end.
             if (stickEnd.current) scrollEnd(false);
           }}
+          onMomentumScrollEnd={snapToEnd}
+          onScrollEndDrag={snapToEnd}
+          onScrollBeginDrag={(e) => {
+            touching.current = true;
+            dragStartY.current = e.nativeEvent.contentOffset.y;
+          }}
           onScroll={(e) => {
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-            const atEnd = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
+            scrollY.current = contentOffset.y;
+            const atEnd = contentSize.height - (contentOffset.y + layoutMeasurement.height) < AT_END_PX;
+            // A programmatic flight owns the follow state until it lands —
+            // unless the user grabbed the list mid-flight (touching), which
+            // hands control back immediately.
+            if (flying.current && !touching.current) {
+              if (atEnd) flying.current = false;
+              else return;
+            }
             stickEnd.current = atEnd;
             setAtBottom((p) => (p === atEnd ? p : atEnd));
           }}
@@ -812,56 +899,6 @@ export function ChatScreen() {
         >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
-        {usage && (
-          <Pressable
-            onPress={() => void openInfo()}
-            className="flex-row items-center gap-2 px-3.5 pb-0.5"
-            hitSlop={6}
-          >
-            {ctxPct != null && (
-              <>
-                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
-                  ctx
-                </Text>
-                <View className="h-1.5 w-16 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-                  <View
-                    className={`h-full rounded-full ${
-                      ctxTone === 'hot' ? 'bg-[#c5221f]' : ctxTone === 'warn' ? 'bg-[#d97706]' : 'bg-[#1a7f37]'
-                    }`}
-                    style={{ width: `${ctxPct}%` }}
-                  />
-                </View>
-                <Text
-                  className={`text-[11px] font-semibold ${
-                    ctxTone === 'hot'
-                      ? 'text-[#c5221f] dark:text-[#ff8a8a]'
-                      : ctxTone === 'warn'
-                        ? 'text-[#d97706] dark:text-[#f0b429]'
-                        : 'text-neutral-500 dark:text-neutral-400'
-                  }`}
-                >
-                  {usage.contextEstimated ? '~' : ''}
-                  {ctxPct}%
-                </Text>
-              </>
-            )}
-            {usage.contextUsed != null && usage.contextMax != null && (
-              <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                {compactNumber(usage.contextUsed)}/{compactNumber(usage.contextMax)}
-              </Text>
-            )}
-            {usage.subagents != null && usage.subagents > 0 && (
-              <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">· {usage.subagents} sub</Text>
-            )}
-            {usage.costUsd != null && usage.costUsd > 0 ? (
-              <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">· ${usage.costUsd.toFixed(2)}</Text>
-            ) : usage.total != null && usage.total > 0 ? (
-              <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                · {compactNumber(usage.total)} tok
-              </Text>
-            ) : null}
-          </Pressable>
-        )}
         {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling
             that appears/disappears next to a focused input is one more chance
             for the browser to drop the caret out of the composer. */}
@@ -1137,10 +1174,15 @@ export function ChatScreen() {
           testID="scroll-to-bottom"
           onPress={() => {
             stickEnd.current = true;
-            scrollEnd();
+            // Far away: jump instantly (smooth-scrolling ~10k px is the sludge);
+            // nearby: keep the short smooth glide.
+            const dist = contentH.current - (scrollY.current + layoutH.current);
+            scrollEnd(dist < 3000);
           }}
           className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
-          style={{ bottom: 150, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
+          // Floats just above the dock, whose height moves (panels open/close,
+          // keyboard lifts it) — a fixed bottom hid the button behind the dock.
+          style={{ bottom: dockH + kbH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
         >
           <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
         </Pressable>

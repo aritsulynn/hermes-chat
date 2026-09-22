@@ -21,7 +21,7 @@ import {
   toWsUrl,
 } from '../lib/dashboard';
 import type { ModelProviderOption } from '../lib/dashboard';
-import { clearCookie, getCookie, getLastSession, getNotifyEnabled, getPassword, getTheme, loadConnection, saveCookie, saveHost, saveLastSession, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
+import { clearCookie, getCookie, getLastSession, getModel, getNotifyEnabled, getPassword, getTheme, loadConnection, saveCookie, saveHost, saveLastSession, saveModel, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
 import type { Theme } from '../lib/connection';
 import { pushNotification, requestNotifyPermission } from '../lib/notifications';
 import { GatewayWs } from '../lib/gateway-ws';
@@ -549,6 +549,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Restore the local-notifications preference.
         const savedNotify = await getNotifyEnabled().catch(() => false);
         if (!cancelled) setNotifyEnabled(savedNotify);
+        // Restore the last picked model so the composer chip survives restarts
+        // (the server global default still governs actual runs).
+        const savedModel = await getModel().catch(() => null);
+        if (!cancelled && savedModel) {
+          if (savedModel.provider) setModelProvider(savedModel.provider);
+          setModel(savedModel.model);
+        }
         // Silent reconnect — restore the session without asking login again.
         // Hard ceiling: even a totally wedged connect must release the boot
         // gate so the user gets the login form instead of a dead spinner.
@@ -788,7 +795,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         onNotice: (_sid, text) => {
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
         },
-        onSessionInfo: (info) => setSessionInfo(info),
+        onSessionInfo: (info) => {
+          setSessionInfo(info);
+          // Server truth wins when present (e.g. the global default changed on
+          // desktop) — and persists for the next boot.
+          if (info && typeof info.model === 'string' && info.model) {
+            const prov = typeof info.provider === 'string' ? info.provider : '';
+            setModelProvider(prov);
+            setModel(info.model);
+            void saveModel(prov, info.model);
+          }
+        },
         onTodo: (_sid, payload) => setTodos(normalizeTodos(payload)),
         onReplayTruncated: (sid) => {
           // Only the session on screen shares our transcript state.
@@ -893,6 +910,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (providerSlug: string, modelId: string) => {
       setModelProvider(providerSlug);
       setModel(modelId);
+      void saveModel(providerSlug, modelId);
       const g = gw.current;
       const sid = sessionId;
       if (!g || !sid) return; // applies to the next new session
@@ -1748,6 +1766,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (providerSlug: string, modelId: string) => {
       setModelProvider(providerSlug);
       setModel(modelId);
+      void saveModel(providerSlug, modelId);
       if (!host || !cookie.current) return;
       setToolLine('setting global default…');
       try {
