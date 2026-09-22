@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -38,7 +39,7 @@ import { contextTone, readUsage } from '../../utils/usage';
 import { isSlashSuggestion } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../lib/gateway-ws';
-import { AskSheet, Composer, CtxRing, HamburgerBtn, InfoSheet, MessageBubble } from '../../components';
+import { AskSheet, Composer, CtxRing, HamburgerBtn, InfoSheet, MessageBubble, Tap } from '../../components';
 import type { AnchorMeasure } from '../../components';
 
 // Offline fallback for the "/" wheel when the gateway predates `complete.slash`.
@@ -150,6 +151,7 @@ export function ChatScreen() {
   // row-nested markdown (lists) — a pixel value constrains measurement itself.
   const { width: winW, height: winH } = useWindowDimensions();
   const bubbleMax = Math.round(winW * 0.85);
+  const insets = useSafeAreaInsets();
 
   // Screen-level anchored popovers ("+" attach, model picker, thinking effort),
   // anchored to the composer controls that opened them. Rendered here, not in
@@ -338,20 +340,19 @@ export function ChatScreen() {
   // `right-*` class drifts the moment the header button's padding changes.
   const kebabRef = useRef<View>(null);
   const [kebabAnchor, setKebabAnchor] = useState({ right: 12, top: 8 });
+  // Window coords (the menu lives in a transparent Modal). `measureInWindow`
+  // is relative to the app window (which starts below the status bar) while the
+  // Modal's origin is the top of the screen — add the top inset to line them up.
   useEffect(() => {
     if (!kebabOpen) return;
     kebabRef.current?.measureInWindow((x, y, w, h) => {
       if (w <= 0) return;
-      const contentTop = rootWin.current.y;
       setKebabAnchor({
         right: Math.max(8, Math.round(winW - (x + w))),
-        // The icon sits in the header, above the screen content — so its
-        // bottom edge lands at (or above) the content top. Clamp to the
-        // content so the card always hangs just below the header.
-        top: contentTop > 0 ? Math.max(4, Math.round(y + h + 4 - contentTop)) : 8,
+        top: Math.round(y + h + 6 + insets.top),
       });
     });
-  }, [kebabOpen, winW]);
+  }, [kebabOpen, winW, insets.top]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [matchIdx, setMatchIdx] = useState(0);
@@ -588,7 +589,6 @@ export function ChatScreen() {
   // Native Drawer header: live session title, hamburger, kebab menu.
   // Android content height compacted 64→52 like sessions (iOS stays 44).
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
   useEffect(() => {
     navigation.setOptions({
       title: sessionId ? (sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : '') : '',
@@ -610,20 +610,19 @@ export function ChatScreen() {
               {ctxPct != null && (
                 <CtxRing pct={ctxPct} tone={ctxTone} dark={dark} onPress={() => void openInfo()} />
               )}
-              <Pressable
+              <Tap
                 testID="kebab-btn"
                 accessibilityRole="button"
                 accessibilityLabel="Chat menu"
                 onPress={() => setKebabOpen((v) => !v)}
-                className="justify-center px-4 py-2"
                 hitSlop={12}
-                android_ripple={{ color: dark ? '#444' : '#ddd', borderless: true }}
-                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+                radius={20}
+                className="h-10 w-10 items-center justify-center"
               >
                 <View ref={kebabRef}>
                   <MoreVertical size={20} color={headerIcon} />
                 </View>
-              </Pressable>
+              </Tap>
             </View>
           )
         : undefined,
@@ -650,9 +649,9 @@ export function ChatScreen() {
           <StatusBar style="auto" />
           <View className="flex-1 items-center justify-center p-6">
             <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</Text>
-            <Pressable onPress={() => void newSession()} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
+            <Tap onPress={() => void newSession()} radius={8} highlight="#1667d0" className="mt-2 items-center bg-[#1a73e8] px-[18px] py-[11px]">
               <Text className="text-[15px] font-semibold text-white">+ New chat</Text>
-            </Pressable>
+            </Tap>
           </View>
         </SafeAreaView>
       </View>
@@ -723,69 +722,64 @@ export function ChatScreen() {
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
 
-      {/* Kebab dropdown — absolute overlay, no Modal, no new Android window */}
-      {kebabOpen && (
-        <>
+      {/* Kebab dropdown — a transparent Modal so it can hang from the header
+          button (which sits above the screen content) and land exactly under
+          it in window coordinates. */}
+      <Modal
+        visible={kebabOpen}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => setKebabOpen(false)}
+      >
+        <View style={{ flex: 1 }}>
           <Pressable
-            style={{ position: 'absolute', inset: 0, zIndex: 40 }}
+            style={{ position: 'absolute', inset: 0 }}
             onPress={() => setKebabOpen(false)}
           />
           <View
             className="absolute w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
-            // Content area already starts below the native header, so anchor
-            // just under it. (top: insets.top + 52 double-counts the header
-            // and drops the menu mid-screen.) `right` comes from the measured
-            // kebab icon so the card's edge lines up with the button.
-            style={{ top: kebabAnchor.top, right: kebabAnchor.right, zIndex: 50, elevation: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8 }}
+            style={{ top: kebabAnchor.top, right: kebabAnchor.right }}
           >
-            <Pressable
+            <Tap
               testID="menu-search"
               onPress={() => {
                 setKebabOpen(false);
                 setSearchOpen(true);
               }}
-              className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-              android_ripple={{ color: dark ? '#3a3a3a' : '#e5e5e5' }}
-              style={({ pressed }) => [
-                { backgroundColor: pressed ? (dark ? '#2e2e2e' : '#ededf0') : 'transparent' },
-              ]}
+              radius={10}
+              className="flex-row items-center gap-2.5 px-3 py-2.5"
             >
               <Search size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Search</Text>
-            </Pressable>
-            <Pressable
+            </Tap>
+            <Tap
               testID="menu-info"
               onPress={() => {
                 setKebabOpen(false);
                 void openInfo();
               }}
-              className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-              android_ripple={{ color: dark ? '#3a3a3a' : '#e5e5e5' }}
-              style={({ pressed }) => [
-                { backgroundColor: pressed ? (dark ? '#2e2e2e' : '#ededf0') : 'transparent' },
-              ]}
+              radius={10}
+              className="flex-row items-center gap-2.5 px-3 py-2.5"
             >
               <Info size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Session info</Text>
-            </Pressable>
-            <Pressable
+            </Tap>
+            <Tap
               testID="menu-branch"
               onPress={() => {
                 setKebabOpen(false);
                 void branchSession();
               }}
-              className="flex-row items-center gap-2.5 rounded-lg px-3 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-              android_ripple={{ color: dark ? '#3a3a3a' : '#e5e5e5' }}
-              style={({ pressed }) => [
-                { backgroundColor: pressed ? (dark ? '#2e2e2e' : '#ededf0') : 'transparent' },
-              ]}
+              radius={10}
+              className="flex-row items-center gap-2.5 px-3 py-2.5"
             >
               <FileText size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Branch chat</Text>
-            </Pressable>
+            </Tap>
           </View>
-        </>
-      )}
+        </View>
+      </Modal>
 
       {/* Plain View, not KeyboardAvoidingView: the composer dock is absolutely
           positioned (so the transcript shows behind it), and an absolute child
@@ -811,22 +805,23 @@ export function ChatScreen() {
             <Text className="text-xs text-neutral-500 dark:text-neutral-400">
               {sq ? `${matchIndices.length ? matchIdx + 1 : 0}/${matchIndices.length}` : ''}
             </Text>
-            <Pressable onPress={() => jumpToMatch(matchIdx - 1)} className="p-1" hitSlop={8} disabled={!matchIndices.length}>
+            <Tap onPress={() => jumpToMatch(matchIdx - 1)} radius={16} className="p-1" hitSlop={8} disabled={!matchIndices.length}>
               <ChevronUp size={18} color={matchIndices.length ? headerIcon : '#ccc'} />
-            </Pressable>
-            <Pressable onPress={() => jumpToMatch(matchIdx + 1)} className="p-1" hitSlop={8} disabled={!matchIndices.length}>
+            </Tap>
+            <Tap onPress={() => jumpToMatch(matchIdx + 1)} radius={16} className="p-1" hitSlop={8} disabled={!matchIndices.length}>
               <ChevronDown size={18} color={matchIndices.length ? headerIcon : '#ccc'} />
-            </Pressable>
-            <Pressable
+            </Tap>
+            <Tap
               onPress={() => {
                 setSearchOpen(false);
                 setSearchQuery('');
               }}
+              radius={16}
               className="p-1"
               hitSlop={8}
             >
               <X size={18} color={headerIcon} />
-            </Pressable>
+            </Tap>
           </View>
         )}
         <FlatList
@@ -917,8 +912,9 @@ export function ChatScreen() {
             const active = todos.find(todoActive);
             return (
               <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Pressable
+                <Tap
                   onPress={() => setTodosOpen((v) => !v)}
+                  radius={8}
                   className="flex-row items-center gap-2 px-3 py-2"
                 >
                   <Text className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
@@ -941,7 +937,7 @@ export function ChatScreen() {
                   ) : (
                     <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
                   )}
-                </Pressable>
+                </Tap>
                 {todosOpen && (
                   <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
                     {todos.map((t, i) => {
@@ -984,8 +980,9 @@ export function ChatScreen() {
             const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
             return (
               <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Pressable
+                <Tap
                   onPress={() => setSubagentsOpen((v) => !v)}
+                  radius={8}
                   className="flex-row items-center gap-2 px-3 py-2"
                 >
                   <Text className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
@@ -1008,7 +1005,7 @@ export function ChatScreen() {
                   ) : (
                     <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
                   )}
-                </Pressable>
+                </Tap>
                 {subagentsOpen && (
                   <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled>
                     {subagents.map((s) => {
@@ -1053,13 +1050,13 @@ export function ChatScreen() {
                 {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
               </Text>
               {queueParked ? (
-                <Pressable onPress={resumeQueue} hitSlop={8} className="rounded px-1.5 py-0.5">
+                <Tap onPress={resumeQueue} hitSlop={8} radius={4} className="px-1.5 py-0.5">
                   <Text className="text-[11px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Resume</Text>
-                </Pressable>
+                </Tap>
               ) : (
-                <Pressable onPress={clearQueue} hitSlop={8} className="rounded px-1.5 py-0.5">
+                <Tap onPress={clearQueue} hitSlop={8} radius={4} className="px-1.5 py-0.5">
                   <Text className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</Text>
-                </Pressable>
+                </Tap>
               )}
             </View>
             <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
@@ -1071,16 +1068,17 @@ export function ChatScreen() {
                   >
                     {q.text}
                   </Text>
-                  <Pressable
+                  <Tap
                     onPress={() => sendQueuedNow(q.id)}
                     hitSlop={8}
-                    className="shrink-0 rounded border border-neutral-300 px-1.5 py-0.5 dark:border-neutral-700"
+                    radius={4}
+                    className="shrink-0 border border-neutral-300 px-1.5 py-0.5 dark:border-neutral-700"
                   >
                     <Text className="text-[11px] font-semibold dark:text-neutral-100">Send</Text>
-                  </Pressable>
-                  <Pressable onPress={() => removeQueued(q.id)} hitSlop={10} className="shrink-0 px-0.5">
+                  </Tap>
+                  <Tap onPress={() => removeQueued(q.id)} hitSlop={10} radius={4} className="shrink-0 px-1.5 py-0.5">
                     <Text className="text-[15px] leading-[15px] text-neutral-400">×</Text>
-                  </Pressable>
+                  </Tap>
                 </View>
               ))}
             </ScrollView>
@@ -1102,11 +1100,12 @@ export function ChatScreen() {
               {visibleCompletions.slice(0, 40).map((item, i) => {
                 const label = item.display || item.text;
                 return (
-                  <Pressable
+                  <Tap
                     key={`${item.text}-${i}`}
                     testID={`completion-option-${i}`}
                     onPress={() => applyCompletion(item)}
-                    className="flex-row items-center gap-2 px-3 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                    radius={8}
+                    className="flex-row items-center gap-2 px-3 py-2"
                   >
                     <Text
                       className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]"
@@ -1129,7 +1128,7 @@ export function ChatScreen() {
                         skill
                       </Text>
                     )}
-                  </Pressable>
+                  </Tap>
                 );
               })}
             </ScrollView>
@@ -1140,9 +1139,9 @@ export function ChatScreen() {
             <Text className="flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
               Editing — resend to rewind and rerun from here
             </Text>
-            <Pressable onPress={cancelEdit} hitSlop={8} className="shrink-0 rounded px-1.5 py-0.5">
+            <Tap onPress={cancelEdit} hitSlop={8} radius={4} className="shrink-0 px-1.5 py-0.5">
               <Text className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</Text>
-            </Pressable>
+            </Tap>
           </View>
         )}
         <Composer
@@ -1170,7 +1169,7 @@ export function ChatScreen() {
       </View>
       {/* Jump to the newest message (shown once the user scrolls up). */}
       {!atBottom && (
-        <Pressable
+        <Tap
           testID="scroll-to-bottom"
           onPress={() => {
             stickEnd.current = true;
@@ -1179,13 +1178,14 @@ export function ChatScreen() {
             const dist = contentH.current - (scrollY.current + layoutH.current);
             scrollEnd(dist < 3000);
           }}
-          className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
+          radius={18}
+          className="absolute right-3 z-40 h-9 w-9 items-center justify-center border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
           // Floats just above the dock, whose height moves (panels open/close,
           // keyboard lifts it) — a fixed bottom hid the button behind the dock.
           style={{ bottom: dockH + kbH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
         >
           <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
-        </Pressable>
+        </Tap>
       )}
       <AskSheet
         ref={askRef}
@@ -1230,11 +1230,6 @@ export function ChatScreen() {
               left: popLeft,
               bottom: popBottom,
               maxHeight: popMaxH,
-              elevation: 16,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: dark ? 0.5 : 0.18,
-              shadowRadius: 10,
             }}
           >
             {popover.kind === 'effort' && showEffort && (
@@ -1245,17 +1240,16 @@ export function ChatScreen() {
                 {effortOptions.map((e) => {
                   const on = e === effort.trim().toLowerCase();
                   return (
-                    <Pressable
+                    <Tap
                       key={e}
                       testID={`effort-option-${e}`}
                       onPress={() => {
                         void applyEffort(e);
                         closePopover();
                       }}
-                      className={`flex-row items-center gap-2 rounded-lg px-2.5 py-2 ${
-                        on
-                          ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20'
-                          : 'active:bg-neutral-100 dark:active:bg-neutral-800'
+                      radius={8}
+                      className={`flex-row items-center gap-2 px-2.5 py-2 ${
+                        on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                       }`}
                     >
                       <Text
@@ -1268,18 +1262,19 @@ export function ChatScreen() {
                         {reasoningLabel(e)}
                       </Text>
                       {on && <Check size={15} color="#1a73e8" />}
-                    </Pressable>
+                    </Tap>
                   );
                 })}
                 {/* Fast mode — separate from reasoning (`config.set fast`). */}
                 <View className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
-                <Pressable
+                <Tap
                   testID="fast-toggle"
                   onPress={() => {
                     void applyFast(!(sessionInfo?.fast === true));
                     closePopover();
                   }}
-                  className="flex-row items-center gap-2 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                  radius={8}
+                  className="flex-row items-center gap-2 px-2.5 py-2"
                 >
                   <Text
                     className={`flex-1 text-[14px] ${
@@ -1291,7 +1286,7 @@ export function ChatScreen() {
                     Fast mode
                   </Text>
                   {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
-                </Pressable>
+                </Tap>
               </>
             )}
 
@@ -1300,22 +1295,24 @@ export function ChatScreen() {
                 <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Attach
                 </Text>
-                <Pressable
+                <Tap
                   testID="attach-photo"
                   onPress={() => void pickImage()}
-                  className="flex-row items-center gap-2.5 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                  radius={8}
+                  className="flex-row items-center gap-2.5 px-2.5 py-2"
                 >
                   <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
                   <Text className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</Text>
-                </Pressable>
-                <Pressable
+                </Tap>
+                <Tap
                   testID="attach-file"
                   onPress={() => void pickFile()}
-                  className="flex-row items-center gap-2.5 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                  radius={8}
+                  className="flex-row items-center gap-2.5 px-2.5 py-2"
                 >
                   <FileText size={17} color={dark ? '#ccc' : '#444'} />
                   <Text className="text-[14px] text-neutral-900 dark:text-neutral-100">File</Text>
-                </Pressable>
+                </Tap>
               </>
             )}
 
@@ -1348,11 +1345,12 @@ export function ChatScreen() {
                     const open = mq ? true : (modelExpanded[p.slug] ?? false);
                     return (
                       <View key={p.slug || p.name}>
-                        <Pressable
+                        <Tap
                           onPress={() =>
                             setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))
                           }
-                          className="flex-row items-center gap-2 rounded-lg px-2.5 py-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                          radius={8}
+                          className="flex-row items-center gap-2 px-2.5 py-2"
                         >
                           <Text
                             className="flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100"
@@ -1368,7 +1366,7 @@ export function ChatScreen() {
                           ) : (
                             <ChevronRight size={15} color={dark ? '#a3a3a3' : '#666'} />
                           )}
-                        </Pressable>
+                        </Tap>
                         {open &&
                           (p.models ?? []).map((mm) => {
                             const on = mm === model && p.slug === modelProvider;
@@ -1379,11 +1377,12 @@ export function ChatScreen() {
                                   on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                                 }`}
                               >
-                                <Pressable
+                                <Tap
                                   onPress={() => {
                                     void pickModel(p.slug, mm);
                                     closePopover();
                                   }}
+                                  radius={6}
                                   className="flex-1"
                                 >
                                   <Text
@@ -1397,17 +1396,18 @@ export function ChatScreen() {
                                     {on ? '● ' : '○ '}
                                     {mm}
                                   </Text>
-                                </Pressable>
-                                <Pressable
+                                </Tap>
+                                <Tap
                                   onPress={() => {
                                     void setGlobalModel(p.slug, mm);
                                     closePopover();
                                   }}
-                                  className="rounded-lg border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+                                  radius={8}
+                                  className="border border-neutral-300 px-2 py-1 dark:border-neutral-700"
                                   hitSlop={8}
                                 >
                                   <Text className="text-[13px] dark:text-neutral-100">Global</Text>
-                                </Pressable>
+                                </Tap>
                               </View>
                             );
                           })}

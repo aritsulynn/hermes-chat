@@ -31,7 +31,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { AppProvider, useApp } from '../hooks/app-store';
-import { FilePreviewHost } from '../components';
+import { FilePreviewHost, Tap } from '../components';
 
 // Hold the native splash until the silent reconnect finishes (booting).
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -87,7 +87,6 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   if (!authed) return null;
   const dark = theme === 'dark';
   const dimColor = dark ? '#a3a3a3' : '#555';
-  const rowBg = dark ? '#272727' : '#e8e8ec';
   const close = () => props.navigation.closeDrawer();
   const onChat = pathname === '/chat';
   const hasActiveRecent = sessions.some((s) => onChat && s.id === sessionId);
@@ -112,41 +111,41 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
               autoFocus
               className="flex-1 rounded-lg border border-neutral-300 px-3 py-2.5 text-[16px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
             />
-            <Pressable
+            <Tap
               onPress={() => {
                 setSearchOpen(false);
                 setQ('');
               }}
               hitSlop={10}
+              radius={18}
               className="p-2"
             >
               <X size={20} color={dimColor} />
-            </Pressable>
+            </Tap>
           </View>
         ) : (
           <View className="flex-row items-center px-4 pt-2">
             <Text className="flex-1 text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
-            <Pressable onPress={() => setSearchOpen(true)} hitSlop={10} className="p-2">
+            <Tap onPress={() => setSearchOpen(true)} hitSlop={10} radius={18} className="p-2">
               <Search size={20} color={dimColor} />
-            </Pressable>
-            <Pressable onPress={close} hitSlop={10} className="p-2">
+            </Tap>
+            <Tap onPress={close} hitSlop={10} radius={18} className="p-2">
               <X size={20} color={dimColor} />
-            </Pressable>
+            </Tap>
           </View>
         )}
         <View className="px-3 pt-2 gap-1">
-          <Pressable
+          <Tap
             disabled={busy}
             onPress={() => {
               if (busy) return;
               close();
               void newSession();
             }}
-            className="flex-row items-center gap-3 rounded-xl px-3 py-3"
-            style={({ pressed }) => [
-              (isNewChat || pressed) ? { backgroundColor: rowBg } : undefined,
-              { opacity: busy ? 0.5 : 1 },
-            ]}
+            radius={12}
+            className={`flex-row items-center gap-3 px-3 py-3 ${
+              isNewChat ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+            } ${busy ? 'opacity-50' : ''}`}
           >
             <SquarePen size={20} color={isNewChat ? '#1a73e8' : dimColor} />
             <Text
@@ -158,21 +157,21 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             >
               New chat
             </Text>
-          </Pressable>
+          </Tap>
           {NAV_ITEMS.map((item) => {
             const active = pathname === `/${item.name}`;
             const Icon = item.icon;
             return (
-              <Pressable
+              <Tap
                 key={item.name}
                 onPress={() => {
                   close();
                   props.navigation.navigate(item.name);
                 }}
-                className="flex-row items-center gap-3 rounded-xl px-3 py-3"
-                style={({ pressed }) => [
-                  (active || pressed) ? { backgroundColor: rowBg } : undefined,
-                ]}
+                radius={12}
+                className={`flex-row items-center gap-3 px-3 py-3 ${
+                  active ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+                }`}
               >
                 <Icon size={20} color={active ? '#1a73e8' : dimColor} />
                 <Text
@@ -184,19 +183,17 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 >
                   {item.label}
                 </Text>
-              </Pressable>
+              </Tap>
             );
           })}
 
           {/* Meatball (More) Button under Files */}
-          <Pressable
+          <Tap
             onPress={() => setShowMoreMenu(!showMoreMenu)}
-            className="flex-row items-center gap-3 rounded-xl px-3 py-3"
-            style={({ pressed }) => [
-              (showMoreMenu || isMoreActive || pressed)
-                ? { backgroundColor: rowBg }
-                : undefined,
-            ]}
+            radius={12}
+            className={`flex-row items-center gap-3 px-3 py-3 ${
+              showMoreMenu || isMoreActive ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+            }`}
           >
             <Ellipsis
               size={20}
@@ -211,7 +208,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             >
               More
             </Text>
-          </Pressable>
+          </Tap>
 
           {/* Submenu for More */}
           {showMoreMenu && (
@@ -220,14 +217,16 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 const active = pathname === `/${item.name}`;
                 const Icon = item.icon;
                 return (
-                  <Pressable
+                  <Tap
                     key={item.name}
                     onPress={() => {
                       close();
                       props.navigation.navigate(item.name);
                     }}
-                    className="flex-row items-center gap-3 rounded-xl px-3 py-2.5"
-                    style={active ? { backgroundColor: rowBg } : undefined}
+                    radius={12}
+                    className={`flex-row items-center gap-3 px-3 py-2.5 ${
+                      active ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+                    }`}
                   >
                     <Icon size={18} color={active ? '#1a73e8' : dimColor} />
                     <Text
@@ -239,7 +238,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                     >
                       {item.label}
                     </Text>
-                  </Pressable>
+                  </Tap>
                 );
               })}
             </View>
@@ -257,7 +256,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           {visible.map((s) => {
             const active = onChat && s.id === sessionId;
             return (
-              <Pressable
+              <Tap
                 key={s.id}
                 accessibilityRole="button"
                 accessibilityLabel={`Open chat ${s.title || '(untitled)'}`}
@@ -283,10 +282,10 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                   );
                 }}
                 delayLongPress={400}
-                className="rounded-xl px-3 py-3"
-                style={({ pressed }) => [
-                  (active || pressed) ? { backgroundColor: rowBg } : undefined,
-                ]}
+                radius={12}
+                className={`px-3 py-3 ${
+                  active ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+                }`}
               >
                 <Text
                   numberOfLines={1}
@@ -295,7 +294,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 >
                   {s.title || '(untitled)'}
                 </Text>
-              </Pressable>
+              </Tap>
             );
           })}
         </View>
@@ -309,9 +308,10 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
-        <Pressable
+        <Tap
           onPress={() => setShowUserMenu(!showUserMenu)}
-          className="flex-row items-center gap-3 px-4 py-4 active:opacity-75"
+          radius={0}
+          className="flex-row items-center gap-3 px-4 py-4"
         >
           <View className="h-11 w-11 items-center justify-center rounded-full bg-[#1a73e8]">
             <Text className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</Text>
@@ -331,7 +331,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             color={dimColor}
             style={{ transform: [{ rotate: showUserMenu ? '-90deg' : '0deg' }] }}
           />
-        </Pressable>
+        </Tap>
       </View>
 
       {/* Floating Popover Menu right above the profile bar */}
@@ -360,17 +360,16 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
               const active = pathname === `/${item.name}`;
               const Icon = item.icon;
               return (
-                <Pressable
+                <Tap
                   key={item.name}
                   onPress={() => {
                     setShowUserMenu(false);
                     close();
                     props.navigation.navigate(item.name);
                   }}
-                  className={`flex-row items-center gap-3 rounded-xl px-3.5 py-3 ${
-                    active
-                      ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20'
-                      : 'active:bg-neutral-100 dark:active:bg-neutral-800'
+                  radius={12}
+                  className={`flex-row items-center gap-3 px-3.5 py-3 ${
+                    active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                   }`}
                 >
                   <Icon size={19} color={active ? '#1a73e8' : dark ? '#ccc' : '#444'} />
@@ -383,41 +382,44 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                   >
                     {item.label}
                   </Text>
-                </Pressable>
+                </Tap>
               );
             })}
 
             <View className="my-0.5 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
 
-            <Pressable
+            <Tap
               onPress={() => {
                 setShowUserMenu(false);
                 close();
                 props.navigation.navigate('settings');
               }}
-              className="flex-row items-center gap-3 rounded-xl px-3.5 py-3 active:bg-neutral-100 dark:active:bg-neutral-800"
+              radius={12}
+              className="flex-row items-center gap-3 px-3.5 py-3"
             >
               <Settings size={19} color={dark ? '#ccc' : '#444'} />
               <Text className="text-[15px] font-medium text-neutral-900 dark:text-neutral-100">
                 Settings
               </Text>
-            </Pressable>
+            </Tap>
 
             <View className="my-0.5 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
 
-            <Pressable
+            <Tap
               onPress={() => {
                 setShowUserMenu(false);
                 close();
                 void logout();
               }}
-              className="flex-row items-center gap-3 rounded-xl px-3.5 py-3 active:bg-red-50 dark:active:bg-red-950/40"
+              radius={12}
+              highlight="rgba(220,38,38,0.14)"
+              className="flex-row items-center gap-3 px-3.5 py-3"
             >
               <LogOut size={19} color="#dc2626" />
               <Text className="text-[15px] font-medium text-red-600 dark:text-red-400">
                 Log Out
               </Text>
-            </Pressable>
+            </Tap>
           </View>
         </>
       )}

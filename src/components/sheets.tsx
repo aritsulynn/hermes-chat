@@ -11,6 +11,7 @@ import { readUsage, contextTone } from '../utils/usage';
 import { compactNumber } from '../utils/format';
 import { useApp } from '../hooks/app-store';
 import type { GatewayWs, ServerAsk } from '../lib/gateway-ws';
+import { Tap } from './bits';
 
 export const renderBackdrop = (props: any) => (
   <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} />
@@ -123,13 +124,15 @@ export const InfoSheet = forwardRef<
             returnKeyType="done"
             onSubmitEditing={() => draft.trim() && onRename(draft.trim())}
           />
-          <Pressable
+          <Tap
             onPress={() => draft.trim() && onRename(draft.trim())}
             disabled={!canSave}
-            className={`rounded-xl bg-[#1a73e8] px-3.5 py-2 ${canSave ? '' : 'opacity-40'}`}
+            radius={12}
+            highlight="#1667d0"
+            className={`bg-[#1a73e8] px-3.5 py-2 ${canSave ? '' : 'opacity-40'}`}
           >
             <Text className="text-sm font-semibold text-white">Save</Text>
-          </Pressable>
+          </Tap>
         </View>
         <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage</Text>
         {usageLoading ? (
@@ -259,9 +262,9 @@ export const AskSheet = forwardRef<
                 {q.choices.map((c) => {
                   const on = (picked[q.qid] ?? []).includes(c);
                   return (
-                    <Pressable key={c} onPress={() => toggle(q.qid, c, q.multiSelect)} className={`rounded-full border border-[#1a73e8] px-3 py-[7px] ${on ? 'bg-[#1a73e8]' : ''}`}>
+                    <Tap key={c} onPress={() => toggle(q.qid, c, q.multiSelect)} radius={999} highlight={on ? '#1667d0' : 'rgba(26,115,232,0.12)'} className={`border border-[#1a73e8] px-3 py-[7px] ${on ? 'bg-[#1a73e8]' : ''}`}>
                       <Text className={`text-sm ${on ? 'text-white' : 'text-[#1a73e8]'}`}>{c}</Text>
-                    </Pressable>
+                    </Tap>
                   );
                 })}
               </View>
@@ -279,9 +282,9 @@ export const AskSheet = forwardRef<
             </View>
           ))}
           <View className="flex-row items-center justify-end gap-2.5">
-            <Pressable onPress={submitAll} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
+            <Tap onPress={submitAll} radius={8} highlight="#1667d0" className="mt-2 items-center bg-[#1a73e8] px-[18px] py-[11px]">
               <Text className="text-[15px] font-semibold text-white">Send answer</Text>
-            </Pressable>
+            </Tap>
           </View>
         </>
       );
@@ -340,11 +343,13 @@ export const AskSheet = forwardRef<
               const meta = CHOICE[c] ?? { label: c, hint: '' };
               const busy = sent !== null;
               return (
-                <Pressable
+                <Tap
                   key={c}
                   disabled={busy}
                   onPress={() => answer(c)}
-                  className={`rounded-xl px-4 py-2.5 ${deny ? 'border border-[#c5221f] dark:border-[#ff7b72]' : 'bg-[#1a73e8]'} ${busy ? 'opacity-50' : ''}`}
+                  radius={12}
+                  highlight={deny ? 'rgba(197,34,31,0.12)' : '#1667d0'}
+                  className={`px-4 py-2.5 ${deny ? 'border border-[#c5221f] dark:border-[#ff7b72]' : 'bg-[#1a73e8]'} ${busy ? 'opacity-50' : ''}`}
                 >
                   <Text
                     className={`text-center text-[15px] font-semibold ${deny ? 'text-[#c5221f] dark:text-[#ff7b72]' : 'text-white'}`}
@@ -358,7 +363,7 @@ export const AskSheet = forwardRef<
                       {meta.hint}
                     </Text>
                   )}
-                </Pressable>
+                </Tap>
               );
             })}
           </View>
@@ -401,12 +406,12 @@ export const AskSheet = forwardRef<
           autoFocus
         />
         <View className="flex-row items-center justify-end gap-2.5">
-          <Pressable onPress={() => onValue('')} className="rounded-lg border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5">
+          <Tap onPress={() => onValue('')} radius={8} className="border border-neutral-300 px-2.5 py-1.5 dark:border-neutral-700">
             <Text className="dark:text-neutral-100">Skip</Text>
-          </Pressable>
-          <Pressable onPress={() => onValue(text)} className="mt-2 items-center rounded-lg bg-[#1a73e8] px-[18px] py-[11px]">
+          </Tap>
+          <Tap onPress={() => onValue(text)} radius={8} highlight="#1667d0" className="mt-2 items-center bg-[#1a73e8] px-[18px] py-[11px]">
             <Text className="text-[15px] font-semibold text-white">Send</Text>
-          </Pressable>
+          </Tap>
         </View>
       </>
     );

@@ -1,12 +1,12 @@
 import type * as React from 'react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { Brain, Check, Cog, Copy, FileText, Pencil, RotateCcw } from 'lucide-react-native';
 import { cleanThinking, flattenLists, renderMediaTags } from '../utils/messages';
 import type { UiMessage } from '../utils/messages';
 import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../utils/diff';
-import { TypingDots } from './bits';
+import { TypingDots, Tap } from './bits';
 import { mdAi, mdAiDark, mdUser, makeSelectableRules } from './markdown';
 
 // Tokens arrive far faster than markdown needs to re-render. Leading + trailing
@@ -193,6 +193,9 @@ export const MessageBubble = memo(function MessageBubble({
     [item.role, item.diff, item.output, item.detail],
   );
   const toolStats = useMemo(() => countDiffLineStats(toolDiff), [toolDiff]);
+  // Pressed highlight for the footer actions, tinted for the bubble they sit on.
+  const actionPress =
+    item.role === 'user' ? 'rgba(255,255,255,0.25)' : 'rgba(120,120,128,0.24)';
   return (
     <View
       className={`rounded-[14px] px-3 py-2 ${
@@ -216,7 +219,7 @@ export const MessageBubble = memo(function MessageBubble({
         <TypingDots />
       ) : think ? (
         item.text ? (
-          <Pressable
+          <Tap
             onPress={() => {
               if (longFired.current) {
                 longFired.current = false;
@@ -227,6 +230,7 @@ export const MessageBubble = memo(function MessageBubble({
             onLongPress={() => {
               longFired.current = true;
             }}
+            radius={8}
           >
             <View className="flex-row gap-1.5">
               {/* Icon is 14px but a text line is 18px tall — center it inside a
@@ -243,12 +247,12 @@ export const MessageBubble = memo(function MessageBubble({
                 {cleanThinking(item.text)}
               </Text>
             </View>
-          </Pressable>
+          </Tap>
         ) : (
           <TypingDots dim />
         )
       ) : item.role === 'tool' ? (
-        <Pressable
+        <Tap
           onPress={() => {
             if (longFired.current) {
               longFired.current = false;
@@ -259,6 +263,7 @@ export const MessageBubble = memo(function MessageBubble({
           onLongPress={() => {
             longFired.current = true;
           }}
+          radius={8}
         >
           <View className="flex-row gap-1.5">
             {/* Same line-height box as the thinking bubble: the 14px icon
@@ -311,7 +316,7 @@ export const MessageBubble = memo(function MessageBubble({
               )}
             </>
           )}
-        </Pressable>
+        </Tap>
       ) : item.role === 'summary' ? (
         <View className="flex-row items-center gap-1.5">
           <FileText size={12} color={dark ? '#777' : '#999'} />
@@ -358,11 +363,13 @@ export const MessageBubble = memo(function MessageBubble({
             </Text>
           )}
           {copyable && (
-            <Pressable
+            <Tap
               onPress={() => onCopy(item.id, item.text)}
               accessibilityRole="button"
               accessibilityLabel={copied ? 'Copied' : 'Copy'}
-              className="px-0.5 py-0.5"
+              radius={6}
+              highlight={actionPress}
+              className="px-1.5 py-1"
               hitSlop={6}
             >
               {copied ? (
@@ -370,29 +377,33 @@ export const MessageBubble = memo(function MessageBubble({
               ) : (
                 <Copy size={12} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
               )}
-            </Pressable>
+            </Tap>
           )}
           {canEdit && (
-            <Pressable
+            <Tap
               onPress={() => onEdit(item.id)}
               accessibilityRole="button"
               accessibilityLabel="Edit"
-              className="px-0.5 py-0.5"
+              radius={6}
+              highlight={actionPress}
+              className="px-1.5 py-1"
               hitSlop={6}
             >
               <Pencil size={12} color="rgba(255,255,255,.75)" />
-            </Pressable>
+            </Tap>
           )}
           {canRegenerate && (
-            <Pressable
+            <Tap
               onPress={onRegenerate}
               accessibilityRole="button"
               accessibilityLabel="Regenerate"
-              className="px-0.5 py-0.5"
+              radius={6}
+              highlight={actionPress}
+              className="px-1.5 py-1"
               hitSlop={6}
             >
               <RotateCcw size={12} color={dark ? '#aaa' : '#999'} />
-            </Pressable>
+            </Tap>
           )}
         </View>
       )}

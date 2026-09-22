@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Keyboard, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Keyboard, Platform, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowUp,
@@ -12,6 +12,7 @@ import {
 
 import type { Attachment } from '../utils/messages';
 import { reasoningLabel } from '../utils/reasoning';
+import { Tap } from './bits';
 
 // How a control reports its position for a screen-level popover. The popover
 // lives in the chat screen (not here) so it can float above the list and still
@@ -135,10 +136,12 @@ export const Composer = memo(function Composer({
               const isImg =
                 (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(a.name);
               return (
-                <Pressable
+                <Tap
                   key={a.uri + a.name}
                   onPress={() => setAttachments(attachments.filter((x) => x.uri !== a.uri))}
-                  className="max-w-[220px] flex-row items-center gap-1 rounded-xl bg-[#e8eef7] dark:bg-[#272727] px-2 py-1"
+                  radius={12}
+                  highlight={dark ? '#4a4a4a' : '#d7e3f7'}
+                  className="max-w-[220px] flex-row items-center gap-1 bg-[#e8eef7] px-2 py-1 dark:bg-[#272727]"
                 >
                   {isImg ? (
                     // eslint-disable-next-line jsx-a11y/alt-text
@@ -150,7 +153,7 @@ export const Composer = memo(function Composer({
                     {a.name}
                   </Text>
                   <X size={12} color="#1a73e8" />
-                </Pressable>
+                </Tap>
               );
             })}
           </View>
@@ -189,20 +192,22 @@ export const Composer = memo(function Composer({
             + chip + effort + Steer + stop/send) is wider than a phone screen and
             spills past the right edge. */}
         <View className="flex-row items-center gap-1.5">
-          <Pressable
+          <Tap
             ref={plusRef}
             accessibilityRole="button"
             accessibilityLabel="Attach"
             onPress={() => onOpenAttachPicker(measurer(plusRef))}
-            className="h-8 w-8 shrink-0 items-center justify-center rounded-full"
+            radius={16}
+            className="h-8 w-8 shrink-0 items-center justify-center"
             hitSlop={8}
           >
             <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
-          </Pressable>
-          <Pressable
+          </Tap>
+          <Tap
             ref={modelRef}
             onPress={() => onOpenModelPicker(measurer(modelRef))}
-            className="min-w-0 max-w-[170px] shrink flex-row items-center gap-1 rounded-lg px-1.5 py-1.5 active:bg-black/5 dark:active:bg-white/10"
+            radius={8}
+            className="min-w-0 max-w-[170px] shrink flex-row items-center gap-1 px-1.5 py-1.5"
             hitSlop={8}
           >
             <View className="flex-row items-center gap-0.5">
@@ -211,59 +216,67 @@ export const Composer = memo(function Composer({
               </Text>
               <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
             </View>
-          </Pressable>
+          </Tap>
           {showEffort && (
-            <Pressable
+            <Tap
               ref={effortRef}
               onPress={() => onOpenEffortPicker(measurer(effortRef))}
-              className="shrink-0 rounded-lg px-2 py-1.5"
+              radius={8}
+              className="shrink-0 px-2 py-1.5"
               hitSlop={8}
             >
               <Text className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
                 {reasoningLabel(effort, effortWire)}
               </Text>
-            </Pressable>
+            </Tap>
           )}
           <View className="flex-1" />
           {generating ? (
             <>
               {!!input.trim() && !attachments.length && (
-                <Pressable
+                <Tap
                   onPress={() => onQueue(input)}
-                  className="shrink-0 items-center rounded-lg bg-neutral-200 px-2.5 py-1.5 dark:bg-neutral-700"
+                  radius={8}
+                  highlight={dark ? '#525252' : '#d4d4d4'}
+                  className="shrink-0 items-center bg-neutral-200 px-2.5 py-1.5 dark:bg-neutral-700"
                   hitSlop={8}
                 >
                   <Text className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</Text>
-                </Pressable>
+                </Tap>
               )}
               {!!input.trim() && (
-                <Pressable
+                <Tap
                   onPress={() => onRedirect(input)}
-                  className="shrink-0 items-center rounded-lg border border-neutral-300 px-2 py-1.5 dark:border-neutral-700"
+                  radius={8}
+                  className="shrink-0 items-center border border-neutral-300 px-2 py-1.5 dark:border-neutral-700"
                   hitSlop={8}
                 >
                   <Text className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</Text>
-                </Pressable>
+                </Tap>
               )}
-              <Pressable
+              <Tap
                 onPress={stop}
                 accessibilityRole="button"
                 accessibilityLabel="Stop"
-                className="h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#c5221f]"
+                radius={8}
+                highlight="#a01a17"
+                className="h-9 w-9 shrink-0 items-center justify-center bg-[#c5221f]"
               >
                 <Square size={13} color="#fff" fill="#fff" />
-              </Pressable>
+              </Tap>
             </>
           ) : (
-            <Pressable
+            <Tap
               onPress={send}
               accessibilityRole="button"
               accessibilityLabel="Send"
-              className={`h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-200 dark:bg-neutral-200 ${!canSend ? 'opacity-40' : ''}`}
+              radius={8}
+              highlight="#d4d4d4"
+              className={`h-9 w-9 shrink-0 items-center justify-center bg-neutral-200 ${!canSend ? 'opacity-40' : ''}`}
               disabled={!canSend}
             >
               <ArrowUp size={19} color="#1c1c1c" />
-            </Pressable>
+            </Tap>
           )}
         </View>
       </View>
