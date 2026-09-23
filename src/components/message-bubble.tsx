@@ -268,7 +268,7 @@ export const MessageBubble = memo(function MessageBubble({
       ref={bubbleRef}
       className={`rounded-[14px] px-3 py-2 ${
         item.role === 'user'
-          ? 'self-end bg-[#1a73e8]'
+          ? 'self-end bg-[#d3e3fd]'
           : think
             ? 'self-start border border-[#e2e2e6] bg-[#f7f7f9] dark:border-neutral-700 dark:bg-[#212121]'
             : item.role === 'interim'

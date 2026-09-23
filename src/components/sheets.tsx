@@ -1,11 +1,12 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
-import { Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react-native';
+import { Check, Copy, Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react-native';
 import { parseClarify } from '../utils/messages';
 import { readUsage, contextTone } from '../utils/usage';
 import { compactNumber } from '../utils/format';
@@ -198,16 +199,21 @@ export const AskSheet = forwardRef<
     onApproval: (c: string) => void;
     onDismiss: () => void;
     gw: GatewayWs | null;
+    /** Which chat this ask belongs to (the approval acts on the open chat). */
+    contextLabel?: string;
   }
->(function AskSheet({ ask, onValue, onApproval, onDismiss, gw }, ref) {
+>(function AskSheet({ ask, onValue, onApproval, onDismiss, gw, contextLabel }, ref) {
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   // Which button was tapped — keeps the sheet from answering twice.
   const [sent, setSent] = useState<string | null>(null);
+  const [cmdCopied, setCmdCopied] = useState(false);
   const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
       if (lockTimer.current) clearTimeout(lockTimer.current);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
     },
     [],
   );
@@ -219,6 +225,7 @@ export const AskSheet = forwardRef<
     setText('');
     setPicked({});
     setSent(null);
+    setCmdCopied(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ask?.rpcId]);
 
@@ -326,6 +333,14 @@ export const AskSheet = forwardRef<
         setSent(c);
         onApproval(c);
       };
+      const copyCmd = () => {
+        if (!cmd) return;
+        void Clipboard.setStringAsync(cmd).then(() => {
+          setCmdCopied(true);
+          if (copyTimer.current) clearTimeout(copyTimer.current);
+          copyTimer.current = setTimeout(() => setCmdCopied(false), 1200);
+        });
+      };
       return (
         <>
           <View className="flex-row items-center gap-2">
@@ -334,21 +349,50 @@ export const AskSheet = forwardRef<
               Allow this command?
             </Text>
           </View>
+          {!!contextLabel && (
+            <Text className="text-[13px] text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
+              in {contextLabel}
+            </Text>
+          )}
           {!!description && (
             <Text className="text-sm text-neutral-700 dark:text-neutral-200">{description}</Text>
           )}
           {!!cmd && (
-            // Long commands must scroll inside their own box, not push the
-            // buttons off the bottom of the sheet.
-            <ScrollView
-              className="max-h-[150px] rounded-lg bg-[#f4f4f6] dark:bg-[#212121]"
-              contentContainerStyle={{ padding: 8 }}
-              nestedScrollEnabled
-            >
-              <Text selectable className="font-mono text-[13px] leading-[18px] text-neutral-950 dark:text-neutral-100">
-                {cmd}
-              </Text>
-            </ScrollView>
+            <View className="gap-1.5">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Command
+                </Text>
+                <Tap
+                  onPress={copyCmd}
+                  accessibilityRole="button"
+                  accessibilityLabel={cmdCopied ? 'Copied' : 'Copy command'}
+                  radius={8}
+                  className="flex-row items-center gap-1 px-2 py-1"
+                  hitSlop={8}
+                >
+                  {cmdCopied ? (
+                    <Check size={14} color={dark ? '#5fd28a' : '#1a7f37'} />
+                  ) : (
+                    <Copy size={14} color={dark ? '#aaa' : '#666'} />
+                  )}
+                  <Text className="text-[12px] font-medium text-neutral-500 dark:text-neutral-400">
+                    {cmdCopied ? 'Copied' : 'Copy'}
+                  </Text>
+                </Tap>
+              </View>
+              {/* Long commands scroll inside their own box, not pushing the
+                  buttons off the bottom of the sheet. */}
+              <ScrollView
+                className="max-h-[150px] rounded-lg bg-[#f4f4f6] dark:bg-[#212121]"
+                contentContainerStyle={{ padding: 8 }}
+                nestedScrollEnabled
+              >
+                <Text selectable className="font-mono text-[13px] leading-[18px] text-neutral-950 dark:text-neutral-100">
+                  {cmd}
+                </Text>
+              </ScrollView>
+            </View>
           )}
           <View className="gap-2 pt-1">
             {choices.map((c) => {

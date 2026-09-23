@@ -466,19 +466,24 @@ export class GatewayWs {
     });
   }
 
-  async submit(sessionId: string, text: string, opts: { queued?: boolean; rewindRowId?: number } = {}): Promise<'streaming' | 'queued'> {
+  async submit(sessionId: string, text: string, opts: { queued?: boolean; rewindRowId?: number; confirmEmptyTruncate?: boolean } = {}): Promise<'streaming' | 'queued'> {
     // NOTE: this backend validates params strictly — no model/provider/effort
     // here (they 400 "Extra inputs are not permitted"). Per-message model
     // override does not exist; switching is via slash.exec (/model).
     // A rewind/edit/regenerate cut needs BOTH `confirm_truncate` and a durable
     // target (`truncate_before_row_id`); ordinal-only cuts are refused for
-    // durable sessions.
+    // durable sessions. Rewinding the FIRST turn wipes the whole transcript,
+    // which the server only allows with `confirm_empty_truncate` too.
     const r = await this.call('prompt.submit', {
       session_id: sessionId,
       text,
       ...(opts.queued ? { queued: true } : {}),
       ...(opts.rewindRowId != null
-        ? { truncate_before_row_id: opts.rewindRowId, confirm_truncate: true }
+        ? {
+            truncate_before_row_id: opts.rewindRowId,
+            confirm_truncate: true,
+            ...(opts.confirmEmptyTruncate ? { confirm_empty_truncate: true } : {}),
+          }
         : {}),
     });
     return r?.status === 'queued' ? 'queued' : 'streaming';

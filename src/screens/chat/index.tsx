@@ -315,12 +315,13 @@ export function ChatScreen() {
   // Keyboard height — the absolute dock must be lifted by hand, and the list
   // owns its own bottom space (see the layout note below).
   const [kbH, setKbH] = useState(0);
-  // Measured list geometry for snapToEnd above: content/layout heights plus
-  // the end padding mirror (12 + dockH + kbH, same as contentContainerStyle).
+  // Gap between the lifted dock and the keyboard so the composer doesn't sit
+  // flush on it. Only while the keyboard is open.
+  const kbGap = kbH > 0 ? 8 : 0;
   const contentH = useRef(0);
   const layoutH = useRef(0);
   const endPad = useRef(0);
-  endPad.current = 12 + dockH + kbH;
+  endPad.current = 12 + dockH + kbH + kbGap;
   // Y where the current drag started — snap only fires on net-downward moves.
   const dragStartY = useRef(0);
   // Latest scroll offset (mirrored in onScroll) — the jump button instant-jumps
@@ -606,15 +607,45 @@ export function ChatScreen() {
   }, [infoOpen]);
   const askRef = useRef<BottomSheetModal>(null);
   const askPresented = useRef(false);
+  // A dismiss animation in flight — presenting during it strands the backdrop
+  // (stuck dark screen). A new ask waits for onDismiss instead of barging in.
+  const askDismissing = useRef(false);
+  const askQueued = useRef(false);
+  // Fresh `ask` for the dismiss handler (the effect closure would see stale).
+  const askMirror = useRef(ask);
+  askMirror.current = ask;
   useEffect(() => {
     if (ask) {
+      if (askPresented.current) return; // already open — content flows via props
+      if (askDismissing.current) {
+        askQueued.current = true; // show once the close animation lands
+        return;
+      }
       askRef.current?.present();
       askPresented.current = true;
-    } else if (askPresented.current) {
-      askPresented.current = false;
-      askRef.current?.dismiss();
+    } else {
+      askQueued.current = false;
+      if (askPresented.current) {
+        askPresented.current = false;
+        askDismissing.current = true;
+        askRef.current?.dismiss();
+      }
     }
   }, [ask]);
+  // A close landing must not kill a newer ask: if one arrived mid-dismiss,
+  // re-present instead of clearing it (the old path cleared it AND dismissed
+  // under it — the stuck dark backdrop).
+  const onAskSheetDismiss = useCallback(() => {
+    askDismissing.current = false;
+    if (askMirror.current) {
+      askQueued.current = false;
+      askRef.current?.present();
+      askPresented.current = true;
+      return;
+    }
+    askQueued.current = false;
+    dismissAsk();
+  }, [dismissAsk]);
 
   // In-conversation search — match message indices, jump between them.
   const sq = searchQuery.trim().toLowerCase();
@@ -690,8 +721,8 @@ export function ChatScreen() {
     return s;
   }, [searchOpen, sq, messages, streamingTexts]);
   const listContentStyle = useMemo(
-    () => ({ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }),
-    [dockH, kbH],
+    () => ({ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH + kbGap }),
+    [dockH, kbH, kbGap],
   );
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
   const listMaintainVisible = useMemo(() => ({ minIndexForVisible: 0 }), []);
@@ -1121,7 +1152,7 @@ export function ChatScreen() {
             composer instead of a solid background band. */}
         <View
           className="absolute left-0 right-0 bg-white dark:bg-black"
-          style={{ bottom: kbH }}
+          style={{ bottom: kbH + kbGap }}
           onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
         >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
@@ -1424,8 +1455,9 @@ export function ChatScreen() {
         ask={ask}
         onValue={answerValue}
         onApproval={answerApproval}
-        onDismiss={dismissAsk}
+        onDismiss={onAskSheetDismiss}
         gw={getGw()}
+        contextLabel={sessionTitle || undefined}
       />
       <InfoSheet
         ref={infoRef}

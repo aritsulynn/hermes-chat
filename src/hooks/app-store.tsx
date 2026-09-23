@@ -24,7 +24,7 @@ import {
 import type { ModelProviderOption } from '../lib/dashboard';
 import { clearCookie, getCookie, getLastSession, getModel, getNotifyEnabled, getPassword, getTheme, loadConnection, saveCookie, saveHost, saveLastSession, saveModel, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
 import type { Theme } from '../lib/connection';
-import { pushNotification, requestNotifyPermission } from '../lib/notifications';
+import { ensureAndroidChannel, onNotificationTap, pushNotification, requestNotifyPermission } from '../lib/notifications';
 import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
 import { changedFilesFromDiff, inlineDiffFromDetail } from '../utils/diff';
@@ -253,6 +253,18 @@ async function uploadAttachments(
   });
   await Promise.all(workers);
   return out;
+}
+
+/** True when rewinding to this message wipes the whole durable transcript (the
+ *  target is the first row-id-bearing turn) — the server then requires
+ *  `confirm_empty_truncate` on top of `confirm_truncate`. Scoped to real
+ *  turns only: thinking/tool/summary/notice rows carry no durable ids. */
+function cutsWholeTranscript(list: UiMessage[], targetId: string): boolean {
+  const idx = list.findIndex((m) => m.id === targetId);
+  if (idx < 0) return false;
+  return !list
+    .slice(0, idx)
+    .some((m) => (m.role === 'user' || m.role === 'assistant') && m.rowId != null);
 }
 
 /** Turn a REST/WS history transcript into transcript items — shared by opening a
@@ -632,6 +644,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const newSessionRef = useRef<() => Promise<void>>(async () => {});
   const stopRef = useRef<() => void>(() => {});
   const renameSessionRef = useRef<(t: string) => Promise<void>>(async () => {});
+  // Tapping a Hermes notification reopens the chat (works from home screen /
+  // anywhere outside the app — the silent reconnect restores the session).
+  useEffect(() => {
+    void ensureAndroidChannel();
+    const unsub = onNotificationTap(() => {
+      try {
+        router.push('/chat');
+      } catch {}
+    });
+    return () => unsub?.();
+  }, []);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1578,11 +1601,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Shared by send() and the slash dispatches that expand to a prompt (skills,
   // bundles, /bg-style sends).
   const beginTurn = useCallback(
-    async (submitText: string, echo?: { text: string; media?: Attachment[] }, rewindRowId?: number) => {
+    async (submitText: string, echo?: { text: string; media?: Attachment[] }, rewindRowId?: number, confirmEmptyTruncate?: boolean) => {
       const g = gw.current;
       const sid = sessionId;
       if (!g || !sid) return;
-      const submitOpts = rewindRowId != null ? { rewindRowId } : {};
+      const submitOpts = rewindRowId != null ? { rewindRowId, ...(confirmEmptyTruncate ? { confirmEmptyTruncate: true } : {}) } : {};
       turnOwnerRef.current.set(sid, sessionKey ?? sid);
       // Rewind: the server cuts history at that user row, so drop the matching
       // local tail first (and re-echo the user line for regenerate, which passes
@@ -1846,7 +1869,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const regenerate = useCallback(() => {
     const g = gw.current;
     if (!g || !sessionId || generatingRef.current) return;
-    const lastUser = [...messagesRef.current]
+    const list = messagesRef.current;
+    const lastUser = [...list]
       .reverse()
       .find((m) => m.role === 'user' && m.rowId != null && m.text.trim());
     if (!lastUser) {
@@ -1854,7 +1878,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       stampRowIdsRef.current();
       return;
     }
-    void beginTurn(lastUser.text, undefined, lastUser.rowId as number);
+    void beginTurn(lastUser.text, undefined, lastUser.rowId as number, cutsWholeTranscript(list, lastUser.id));
   }, [sessionId, beginTurn]);
 
   // Large-paste handling: spill to a server file (paste.collapse) and keep the
@@ -1965,7 +1989,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]
       .filter(Boolean)
       .join('\n');
-    await beginTurn(submitText, { text: shownText, media: images }, rewindRowId);
+    // Editing the first turn rewrites the whole transcript — same server gate
+    // as regenerate (confirm_empty_truncate).
+    const rewindTarget =
+      rewindRowId != null
+        ? messagesRef.current.find(
+            (m) => m.rowId === rewindRowId && (m.role === 'user' || m.role === 'assistant'),
+          )
+        : undefined;
+    await beginTurn(
+      submitText,
+      { text: shownText, media: images },
+      rewindRowId,
+      rewindTarget ? cutsWholeTranscript(messagesRef.current, rewindTarget.id) : false,
+    );
   }, [input, attachments, sessionId, host, setInput, setAttachments, beginTurn, runSlash, enqueueQueued]);
   sendRef.current = send;
 

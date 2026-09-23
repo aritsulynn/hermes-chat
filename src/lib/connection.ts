@@ -56,6 +56,17 @@ export async function getNotifyEnabled(): Promise<boolean> {
   return (await get(K_NOTIFY)) === '1';
 }
 
+const K_KANBAN_BOARD = 'hermes.ui.kanbanBoard';
+
+/** Remember the selected kanban board across restarts. */
+export async function saveKanbanBoard(slug: string): Promise<void> {
+  await set(K_KANBAN_BOARD, slug ?? '');
+}
+
+export async function getKanbanBoard(): Promise<string | null> {
+  return get(K_KANBAN_BOARD);
+}
+
 export interface Connection {
   host: string; // e.g. http://your-server:9119
   username: string;

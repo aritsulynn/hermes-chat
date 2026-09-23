@@ -235,7 +235,7 @@ export const Composer = memo(function Composer({
                   onPress={() => onQueue(input)}
                   radius={8}
                   highlight={dark ? '#525252' : '#d4d4d4'}
-                  className="shrink-0 items-center bg-neutral-200 px-2.5 py-1.5 dark:bg-neutral-700"
+                  className="shrink-0 items-center rounded-lg bg-neutral-200 px-2.5 py-1.5 dark:bg-neutral-700"
                   hitSlop={8}
                 >
                   <Text className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</Text>
@@ -245,7 +245,7 @@ export const Composer = memo(function Composer({
                 <Tap
                   onPress={() => onRedirect(input)}
                   radius={8}
-                  className="shrink-0 items-center border border-neutral-300 px-2 py-1.5 dark:border-neutral-700"
+                  className="shrink-0 items-center rounded-lg border border-neutral-300 px-2 py-1.5 dark:border-neutral-700"
                   hitSlop={8}
                 >
                   <Text className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</Text>
@@ -255,7 +255,7 @@ export const Composer = memo(function Composer({
                 onPress={stop}
                 accessibilityRole="button"
                 accessibilityLabel="Stop"
-                radius={8}
+                radius={18}
                 highlight="#a01a17"
                 className="h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#c5221f]"
               >
@@ -267,7 +267,7 @@ export const Composer = memo(function Composer({
               onPress={send}
               accessibilityRole="button"
               accessibilityLabel="Send"
-              radius={8}
+              radius={18}
               highlight="#d4d4d4"
               className={`h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-200 ${!canSend ? 'opacity-40' : ''}`}
               disabled={!canSend}

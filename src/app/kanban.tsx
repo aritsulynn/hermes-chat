@@ -1,5 +1,5 @@
-import { OpsScreen } from '../screens/ops';
+import { KanbanScreen } from '../screens/kanban';
 
 export default function KanbanRoute() {
-  return <OpsScreen tab="kanban" hideTabs />;
+  return <KanbanScreen />;
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -293,10 +294,26 @@ export function CronScreen() {
   const [formDeliver, setFormDeliver] = useState('local');
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Bottom sheet sits under the keyboard on Android (edge-to-edge ignores
+  // adjustResize), so lift it by hand like the chat dock does.
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e: any) => setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0))),
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKbH(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // Run History state
-  const [runsModalOpen, setRunsModalOpen] = useState(false);
-  const [selectedJobForRuns, setSelectedJobForRuns] = useState<CronJobItem | null>(null);
+  const [runsModalOpen, setRunsModalOpen] = useState(false);  const [selectedJobForRuns, setSelectedJobForRuns] = useState<CronJobItem | null>(null);
   const [runsList, setRunsList] = useState<CronRunItem[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
@@ -826,7 +843,10 @@ export function CronScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           className="flex-1 justify-end bg-black/50"
         >
-          <View className="max-h-[90%] rounded-t-3xl border-t border-neutral-200 bg-white p-5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900">
+          <View
+            className="max-h-[90%] rounded-t-3xl border-t border-neutral-200 bg-white p-5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
+            style={{ marginBottom: kbH }}
+          >
             {/* Modal Header */}
             <View className="flex-row items-center justify-between pb-3 border-b border-neutral-200 dark:border-neutral-800">
               <Text className="text-lg font-bold text-neutral-950 dark:text-neutral-100">

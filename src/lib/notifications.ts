@@ -11,9 +11,27 @@ import { AppState, Platform } from 'react-native';
 
 let cached: any = null;
 
+/** Expo Go (SDK 53+) removed push-notification support entirely — even
+ *  `require('expo-notifications')` throws an uncaught redbox, so never touch
+ *  the module there. Real devices use a dev build / APK instead. */
+function isExpoGo(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('expo-constants');
+    const Constants = mod?.default ?? mod;
+    return Constants?.appOwnership === 'expo';
+  } catch {
+    return false;
+  }
+}
+
 function nativeNotifications(): any {
   if (Platform.OS === 'web') return null;
   if (cached !== null) return cached || null;
+  if (isExpoGo()) {
+    cached = false;
+    return null;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require('expo-notifications');
@@ -70,6 +88,25 @@ export async function requestNotifyPermission(): Promise<boolean> {
   }
 }
 
+/** Android 8+ drops channel-less notifications on many devices — create ours
+ *  once (idempotent, no permission needed). */
+let channelReady = false;
+
+export async function ensureAndroidChannel(): Promise<void> {
+  if (channelReady || Platform.OS !== 'android') return;
+  try {
+    const N = nativeNotifications();
+    if (!N?.setNotificationChannelAsync) return;
+    await N.setNotificationChannelAsync('hermes-alerts', {
+      name: 'Hermes alerts',
+      importance: N.AndroidImportance?.HIGH ?? 4,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#1a73e8',
+    });
+    channelReady = true;
+  } catch {}
+}
+
 export function isAppForeground(): boolean {
   try {
     if (Platform.OS === 'web') {
@@ -96,6 +133,28 @@ export async function pushNotification(title: string, body: string): Promise<voi
     }
     const N = nativeNotifications();
     if (!N) return;
-    await N.scheduleNotificationAsync({ content: { title, body }, trigger: null });
+    await ensureAndroidChannel();
+    await N.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: Platform.OS === 'android' ? { channelId: 'hermes-alerts' } : null,
+    });
   } catch {}
+}
+
+/** Run `cb` when the user taps one of our notifications (opens the chat).
+ *  Returns an unsubscribe fn (or null on web / without the module). */
+export function onNotificationTap(cb: () => void): (() => void) | null {
+  try {
+    if (Platform.OS === 'web') return null;
+    const N = nativeNotifications();
+    if (!N?.addNotificationResponseReceivedListener) return null;
+    const sub = N.addNotificationResponseReceivedListener(() => cb());
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch {}
+    };
+  } catch {
+    return null;
+  }
 }

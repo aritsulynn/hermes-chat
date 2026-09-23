@@ -1,0 +1,637 @@
+// Kanban board screen — parity with the desktop kanban plugin, phone-sized:
+// board switcher, collapsible columns, cards, create/move/edit/delete tasks.
+// Talks to the plugin's own REST router (see hermes-agent
+// plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Redirect, useNavigation } from 'expo-router';
+import {
+  ActivityIndicator,
+  Alert,
+  Keyboard,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { useApp } from '../../hooks/app-store';
+import { getKanbanBoard, saveKanbanBoard } from '../../lib/connection';
+import { errMsg } from '../../utils/messages';
+import { HamburgerBtn, Tap } from '../../components';
+
+// Subset of the desktop KanbanTask — only what this screen reads, so a
+// backend schema addition never breaks the build.
+interface KanbanTask {
+  id: string;
+  title: string;
+  body?: string | null;
+  status: string;
+  assignee?: string | null;
+  priority?: number | null;
+  progress?: { done: number; total: number } | null;
+  warnings?: { count: number } | null;
+  comment_count?: number | null;
+}
+
+interface KanbanColumn {
+  name: string;
+  tasks: KanbanTask[];
+}
+
+interface KanbanBoardData {
+  columns: KanbanColumn[];
+}
+
+interface BoardMeta {
+  slug: string;
+  name?: string | null;
+  is_current?: boolean;
+  total?: number;
+}
+
+const API = '/api/plugins/kanban';
+
+// Column dot colors (same tones as the desktop COLUMN_META).
+const COLUMN_DOT: Record<string, string> = {
+  triage: '#9ca3af',
+  todo: '#9ca3af',
+  scheduled: '#a78bfa',
+  ready: '#60a5fa',
+  running: '#34d399',
+  blocked: '#f87171',
+  review: '#fbbf24',
+  done: '#9ca3af',
+  archived: '#6b7280',
+};
+
+const dotOf = (name: string) => COLUMN_DOT[name] ?? '#60a5fa';
+
+function asTask(r: any): KanbanTask {
+  return {
+    id: String(r?.id ?? ''),
+    title: String(r?.title ?? '(untitled)'),
+    body: typeof r?.body === 'string' ? r.body : null,
+    status: String(r?.status ?? ''),
+    assignee: typeof r?.assignee === 'string' ? r.assignee : null,
+    priority: typeof r?.priority === 'number' ? r.priority : null,
+    progress:
+      r?.progress && typeof r.progress === 'object'
+        ? { done: Number(r.progress.done ?? 0), total: Number(r.progress.total ?? 0) }
+        : null,
+    warnings:
+      r?.warnings && typeof r.warnings === 'object'
+        ? { count: Number(r.warnings.count ?? 0) }
+        : null,
+    comment_count: typeof r?.comment_count === 'number' ? r.comment_count : null,
+  };
+}
+
+function CardChips({ t, dark }: { t: KanbanTask; dark: boolean }) {
+  const chips: string[] = [];
+  if (t.assignee) chips.push(`@${t.assignee}`);
+  if (t.priority != null) chips.push(`P${t.priority}`);
+  if (t.progress && t.progress.total > 0) chips.push(`✓ ${t.progress.done}/${t.progress.total}`);
+  if (t.comment_count) chips.push(`◷ ${t.comment_count}`);
+  if (!chips.length && !t.warnings?.count) return null;
+  return (
+    <View className="mt-1.5 flex-row flex-wrap gap-1.5">
+      {chips.map((c) => (
+        <Text
+          key={c}
+          className="rounded-md bg-black/[0.05] px-1.5 py-0.5 text-[11px] text-neutral-600 dark:bg-white/10 dark:text-neutral-300"
+        >
+          {c}
+        </Text>
+      ))}
+      {!!t.warnings?.count && (
+        <Text className="rounded-md bg-[#c5221f]/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#c5221f] dark:text-[#ff8a8a]">
+          ! {t.warnings.count}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+export function KanbanScreen() {
+  const { booting, authed, opsGet, opsMut, theme } = useApp();
+  const dark = theme === 'dark';
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+
+  const [boards, setBoards] = useState<BoardMeta[]>([]);
+  const [slug, setSlug] = useState('');
+  const [board, setBoard] = useState<KanbanBoardData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Per-column collapse overrides; absence = auto (empty + archived collapse).
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Detail sheet task + its editable fields.
+  const [detail, setDetail] = useState<KanbanTask | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editBody, setEditBody] = useState('');
+  const [saving, setSaving] = useState(false);
+  // Create sheet fields.
+  const [showCreate, setShowCreate] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newBody, setNewBody] = useState('');
+  const [newStatus, setNewStatus] = useState('');
+  // Bottom sheets sit under the keyboard on Android (edge-to-edge ignores
+  // adjustResize), so lift them by hand like the chat dock does.
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e: any) => setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0))),
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKbH(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    (navigation as any).setOptions?.({
+      headerLeft: () => <HamburgerBtn />,
+      headerTintColor: dark ? '#f5f5f5' : '#111',
+      title: 'Kanban',
+    });
+  }, [navigation, dark]);
+
+  const boardQuery = useCallback(
+    (extra = '') => {
+      const q = new URLSearchParams();
+      if (slug) q.set('board', slug);
+      if (extra) {
+        for (const [k, v] of new URLSearchParams(extra)) q.set(k, v);
+      }
+      const qs = q.toString();
+      return qs ? `?${qs}` : '';
+    },
+    [slug],
+  );
+
+  const loadBoards = useCallback(async (): Promise<BoardMeta[]> => {
+    try {
+      const r: any = await opsGet(`${API}/boards`);
+      const rows = Array.isArray(r?.boards) ? r.boards : [];
+      const list: BoardMeta[] = rows.map((b: any) => ({
+        slug: String(b?.slug ?? ''),
+        ...(typeof b?.name === 'string' ? { name: b.name } : {}),
+        ...(typeof b?.is_current === 'boolean' ? { is_current: b.is_current } : {}),
+        ...(typeof b?.total === 'number' ? { total: b.total } : {}),
+      }));
+      setBoards(list);
+      return list;
+    } catch {
+      setBoards([]);
+      return [];
+    }
+  }, [opsGet]);
+
+  const loadBoard = useCallback(async (): Promise<KanbanBoardData | null> => {
+    try {
+      const r: any = await opsGet(`${API}/board${boardQuery('include_archived=true')}`);
+      const cols = Array.isArray(r?.columns) ? r.columns : [];
+      const data: KanbanBoardData = {
+        columns: cols.map((c: any) => ({
+          name: String(c?.name ?? '(col)'),
+          tasks: Array.isArray(c?.tasks) ? c.tasks.map(asTask) : [],
+        })),
+      };
+      setBoard(data);
+      setError(null);
+      return data;
+    } catch (e) {
+      setError(errMsg(e));
+      setBoard(null);
+      return null;
+    }
+  }, [opsGet, boardQuery]);
+
+  const reload = useCallback(
+    async (pull = false) => {
+      if (pull) setRefreshing(true);
+      else setLoading(true);
+      try {
+        const list = await loadBoards();
+        // First run: restore the saved board, else the server current.
+        if (!slug) {
+          const saved = await getKanbanBoard().catch(() => null);
+          const pick =
+            (saved && list.some((b) => b.slug === saved) && saved) ||
+            list.find((b) => b.is_current)?.slug ||
+            list[0]?.slug ||
+            '';
+          if (pick && pick !== slug) {
+            setSlug(pick);
+            return; // boardQuery changes → effect below reloads the board
+          }
+        }
+        await loadBoard();
+      } finally {
+        if (pull) setRefreshing(false);
+        else setLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loadBoards, loadBoard],
+  );
+
+  // Board body follows the selected slug.
+  useEffect(() => {
+    if (!authed) return;
+    setCollapsed({});
+    setDetail(null);
+    setLoading(true);
+    void loadBoard().finally(() => setLoading(false));
+  }, [authed, slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (authed) void reload();
+  }, [authed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickSlug = (s: string) => {
+    setSlug(s);
+    void saveKanbanBoard(s);
+  };
+
+  const isCollapsed = (name: string, count: number) =>
+    collapsed[name] ?? (name === 'archived' || count === 0);
+
+  const totalTasks = useMemo(
+    () => (board?.columns ?? []).reduce((n, c) => n + c.tasks.length, 0),
+    [board],
+  );
+  const activeBoard = boards.find((b) => b.slug === slug);
+
+  const openDetail = (t: KanbanTask) => {
+    setDetail(t);
+    setEditTitle(t.title);
+    setEditBody(t.body ?? '');
+  };
+
+  const mutate = async (fn: () => Promise<unknown>, after?: () => void) => {
+    setSaving(true);
+    try {
+      await fn();
+      const b = await loadBoard();
+      after?.();
+      // Keep the detail sheet on the fresh row so consecutive moves work.
+      if (detail && b) {
+        const fresh = b.columns.flatMap((c) => c.tasks).find((t) => t.id === detail.id);
+        if (fresh) {
+          setDetail(fresh);
+          setEditTitle(fresh.title);
+          setEditBody(fresh.body ?? '');
+        } else {
+          setDetail(null);
+        }
+      }
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const moveTask = (t: KanbanTask, status: string) => {
+    if (!t.id || t.status === status) return;
+    void mutate(() => opsMut(`${API}/tasks/${encodeURIComponent(t.id)}${boardQuery()}`, 'PATCH', { status }));
+  };
+
+  const saveDetail = () => {
+    if (!detail || !editTitle.trim()) return;
+    const patch: Record<string, unknown> = {};
+    if (editTitle.trim() !== detail.title) patch.title = editTitle.trim();
+    if (editBody !== (detail.body ?? '')) patch.body = editBody;
+    if (!Object.keys(patch).length) {
+      setDetail(null);
+      return;
+    }
+    void mutate(() =>
+      opsMut(`${API}/tasks/${encodeURIComponent(detail.id)}${boardQuery()}`, 'PATCH', patch),
+    );
+  };
+
+  const deleteDetail = () => {
+    if (!detail) return;
+    const t = detail;
+    Alert.alert('Delete task', `"${t.title}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          void mutate(() => opsMut(`${API}/tasks/${encodeURIComponent(t.id)}${boardQuery()}`, 'DELETE')),
+      },
+    ]);
+  };
+
+  const createTask = () => {
+    const title = newTitle.trim();
+    if (!title) return;
+    const cols = board?.columns.map((c) => c.name) ?? [];
+    const status = (newStatus || cols.find((c) => c === 'todo') || cols.find((c) => c !== 'archived') || cols[0] || '').trim();
+    void mutate(
+      () =>
+        opsMut(`${API}/tasks${boardQuery()}`, 'POST', {
+          title,
+          ...(newBody.trim() ? { body: newBody.trim() } : {}),
+          ...(status ? { status } : {}),
+        }),
+      () => {
+        setShowCreate(false);
+        setNewTitle('');
+        setNewBody('');
+        setNewStatus('');
+      },
+    );
+  };
+
+  if (booting) {
+    return (
+      <SafeAreaView className="flex-1 bg-white dark:bg-black items-center justify-center gap-3">
+        <StatusBar style="auto" />
+        <ActivityIndicator size="large" />
+      </SafeAreaView>
+    );
+  }
+  if (!authed) return <Redirect href="/login" />;
+
+  const statusOptions = board?.columns.map((c) => c.name) ?? [];
+  const createStatus =
+    newStatus || statusOptions.find((c) => c === 'todo') || statusOptions.find((c) => c !== 'archived') || '';
+
+  return (
+    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
+        <StatusBar style="auto" />
+        {/* Board switcher + new-task button */}
+        <View className="flex-row items-center gap-2 px-3 pt-2">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, flexGrow: 1 }}>
+            {boards.map((b) => {
+              const active = b.slug === slug || (!slug && b.is_current);
+              return (
+                <Tap
+                  key={b.slug}
+                  onPress={() => pickSlug(b.slug)}
+                  radius={999}
+                  className={`rounded-full border px-3 py-1.5 ${active ? 'border-[#1a73e8] bg-[#1a73e8]' : 'border-neutral-300 dark:border-neutral-700'}`}
+                >
+                  <Text className={`text-[13px] font-semibold ${active ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                    {b.name || b.slug}
+                    {typeof b.total === 'number' ? ` · ${b.total}` : ''}
+                  </Text>
+                </Tap>
+              );
+            })}
+            {boards.length === 0 && !loading && (
+              <Text className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                {activeBoard?.name || 'default board'}
+              </Text>
+            )}
+          </ScrollView>
+          <Tap
+            onPress={() => setShowCreate(true)}
+            accessibilityRole="button"
+            accessibilityLabel="New task"
+            radius={999}
+            highlight="#1667d0"
+            className="h-9 w-9 items-center justify-center rounded-full bg-[#1a73e8]"
+          >
+            <Text className="text-[20px] leading-[20px] text-white">+</Text>
+          </Tap>
+        </View>
+        {!!error && <Text className="px-3.5 pt-2 text-[#c5221f] dark:text-[#ff7b72]">{error}</Text>}
+        <ScrollView
+          contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 24 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void reload(true)} />}
+        >
+          {loading && <ActivityIndicator />}
+          {!loading && !board && !error && (
+            <Text className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</Text>
+          )}
+          {!loading && board && totalTasks === 0 && (
+            <Text className="text-sm text-neutral-500 dark:text-neutral-400">
+              No tasks yet — tap + to create one.
+            </Text>
+          )}
+          {(board?.columns ?? []).map((col) => {
+            const shut = isCollapsed(col.name, col.tasks.length);
+            return (
+              <View
+                key={col.name}
+                className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800"
+              >
+                <Tap
+                  onPress={() => setCollapsed((p) => ({ ...p, [col.name]: !shut }))}
+                  radius={0}
+                  className="flex-row items-center gap-2 bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
+                >
+                  <View className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
+                  <Text className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
+                    {col.name}
+                  </Text>
+                  <Text className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+                    {col.tasks.length}
+                  </Text>
+                  <Text className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</Text>
+                </Tap>
+                {!shut && (
+                  <View className="gap-2 p-2.5">
+                    {col.tasks.length === 0 && (
+                      <Text className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</Text>
+                    )}
+                    {col.tasks.map((t) => (
+                      <Tap
+                        key={t.id}
+                        onPress={() => openDetail(t)}
+                        radius={12}
+                        className="rounded-xl border border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
+                      >
+                        <Text
+                          className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
+                          numberOfLines={2}
+                        >
+                          {t.title}
+                        </Text>
+                        {!!t.body && (
+                          <Text
+                            className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
+                            numberOfLines={2}
+                          >
+                            {t.body}
+                          </Text>
+                        )}
+                        <CardChips t={t} dark={dark} />
+                      </Tap>
+                    ))}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+
+        {/* Task detail sheet */}
+        <Modal
+          visible={!!detail}
+          transparent
+          animationType="slide"
+          statusBarTranslucent
+          onRequestClose={() => setDetail(null)}
+        >
+          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+            <Pressable style={{ position: 'absolute', inset: 0 }} onPress={() => setDetail(null)} />
+            <View
+              className="rounded-t-3xl border-t border-neutral-200 bg-white dark:border-neutral-800 dark:bg-[#141414]"
+              style={{ maxHeight: '85%', paddingBottom: Math.max(insets.bottom, 12), marginBottom: kbH }}
+            >
+              <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
+                <TextInput
+                  className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  placeholder="Title"
+                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  keyboardAppearance={dark ? 'dark' : 'light'}
+                  multiline
+                />
+                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Move to
+                </Text>
+                <View className="flex-row flex-wrap gap-1.5">
+                  {statusOptions.filter((s) => s !== 'archived').map((s) => {
+                    const on = detail?.status === s;
+                    return (
+                      <Tap
+                        key={s}
+                        onPress={() => detail && moveTask(detail, s)}
+                        radius={999}
+                        className={`rounded-full border px-3 py-1.5 ${on ? 'border-[#1a73e8] bg-[#1a73e8]' : 'border-neutral-300 dark:border-neutral-700'}`}
+                      >
+                        <Text className={`text-[13px] font-medium capitalize ${on ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                          {s}
+                        </Text>
+                      </Tap>
+                    );
+                  })}
+                </View>
+                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Notes
+                </Text>
+                <TextInput
+                  className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                  value={editBody}
+                  onChangeText={setEditBody}
+                  placeholder="Details…"
+                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  keyboardAppearance={dark ? 'dark' : 'light'}
+                  multiline
+                  textAlignVertical="top"
+                />
+                {detail && <CardChips t={detail} dark={dark} />}
+                <View className="flex-row gap-2 pt-1">
+                  <Tap
+                    onPress={saveDetail}
+                    radius={12}
+                    highlight="#1667d0"
+                    className={`flex-1 items-center rounded-xl bg-[#1a73e8] px-4 py-3 ${saving ? 'opacity-50' : ''}`}
+                    disabled={saving}
+                  >
+                    <Text className="text-[15px] font-semibold text-white">{saving ? 'Saving…' : 'Save'}</Text>
+                  </Tap>
+                  <Tap
+                    onPress={deleteDetail}
+                    radius={12}
+                    className="items-center rounded-xl border border-[#c5221f] px-4 py-3 dark:border-[#ff7b72]"
+                    disabled={saving}
+                  >
+                    <Text className="text-[15px] font-semibold text-[#c5221f] dark:text-[#ff7b72]">Delete</Text>
+                  </Tap>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* New task sheet */}
+        <Modal
+          visible={showCreate}
+          transparent
+          animationType="slide"
+          statusBarTranslucent
+          onRequestClose={() => setShowCreate(false)}
+        >
+          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+            <Pressable style={{ position: 'absolute', inset: 0 }} onPress={() => setShowCreate(false)} />
+            <View
+              className="rounded-t-3xl border-t border-neutral-200 bg-white dark:border-neutral-800 dark:bg-[#141414]"
+              style={{ maxHeight: '85%', paddingBottom: Math.max(insets.bottom, 12), marginBottom: kbH }}
+            >
+              <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
+                <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
+                <TextInput
+                  className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                  value={newTitle}
+                  onChangeText={setNewTitle}
+                  placeholder="Title"
+                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  keyboardAppearance={dark ? 'dark' : 'light'}
+                  autoFocus
+                  returnKeyType="next"
+                />
+                <TextInput
+                  className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                  value={newBody}
+                  onChangeText={setNewBody}
+                  placeholder="Details (optional)"
+                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  keyboardAppearance={dark ? 'dark' : 'light'}
+                  multiline
+                  textAlignVertical="top"
+                />
+                <View className="flex-row flex-wrap gap-1.5">
+                  {statusOptions.filter((s) => s !== 'archived').map((s) => {
+                    const on = createStatus === s;
+                    return (
+                      <Tap
+                        key={s}
+                        onPress={() => setNewStatus(s)}
+                        radius={999}
+                        className={`border px-3 py-1.5 ${on ? 'border-[#1a73e8] bg-[#1a73e8]' : 'border-neutral-300 dark:border-neutral-700'}`}
+                      >
+                        <Text className={`text-[13px] font-medium capitalize ${on ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                          {s}
+                        </Text>
+                      </Tap>
+                    );
+                  })}
+                </View>
+                <Tap
+                  onPress={createTask}
+                  radius={12}
+                  highlight="#1667d0"
+                  className={`items-center rounded-xl bg-[#1a73e8] px-4 py-3 ${!newTitle.trim() || saving ? 'opacity-50' : ''}`}
+                  disabled={!newTitle.trim() || saving}
+                >
+                  <Text className="text-[15px] font-semibold text-white">{saving ? 'Creating…' : 'Create task'}</Text>
+                </Tap>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      </SafeAreaView>
+    </View>
+  );
+}

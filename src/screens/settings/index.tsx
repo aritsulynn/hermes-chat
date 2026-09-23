@@ -23,6 +23,7 @@ import {
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components';
+import { notificationsSupported } from '../../lib/notifications';
 import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
 export function SettingsScreen() {
@@ -329,6 +330,7 @@ export function SettingsScreen() {
                 <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
                   Notify when a turn finishes or the agent needs input (approval, clarify), while the
                   app is in the background.
+                  {!notificationsSupported() && ' Requires a development build — not available in Expo Go.'}
                 </Text>
               </View>
               <Switch
