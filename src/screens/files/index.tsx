@@ -150,6 +150,14 @@ function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`;
 }
 
+const TEXT_MIME_RE = /^(text\/|application\/(json|xml|yaml|x-yaml|javascript|csv|toml|x-sh))/i;
+const TEXT_EXTS = new Set(['txt','md','markdown','log','env','csv','tsv','json','xml','yaml','yml','ini','cfg','conf','toml','sh','bash','js','jsx','ts','tsx','py','html','htm','css','scss','sql','rs','go','c','cpp','h','java','kt','rb','php','svg']);
+function isTextReadable(mime: string | null | undefined, name: string): boolean {
+  if (mime && TEXT_MIME_RE.test(mime)) return true;
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  return TEXT_EXTS.has(ext);
+}
+
 export function FilesScreen() {
   const { authed, opsGet, opsMut, theme } = useApp();
   const dark = theme === 'dark';
@@ -230,10 +238,17 @@ export function FilesScreen() {
     if (!raw || raw === '~') return [{ label: '~', path: '~' }];
     const parts = raw.split('/').filter(Boolean);
     const crumbs: { label: string; path: string }[] = [];
+    const startsWithTilde = raw.startsWith('~');
     let accum = '';
     crumbs.push({ label: '/', path: '/' });
     for (const part of parts) {
-      accum += '/' + part;
+      if (accum === '') {
+        accum = startsWithTilde && part === '~' ? '~' : '/' + part;
+      } else if (accum === '~') {
+        accum = `~/${part}`;
+      } else {
+        accum += '/' + part;
+      }
       crumbs.push({ label: part, path: accum });
     }
     return crumbs;
@@ -280,7 +295,7 @@ export function FilesScreen() {
         setIsEditingFile(false);
         if (res.data_url && res.data_url.includes(';base64,')) {
           const b64 = res.data_url.split(';base64,')[1];
-          setFileTextContent(base64ToUtf8(b64));
+          setFileTextContent(isTextReadable(res.mime_type, res.name) ? base64ToUtf8(b64) : '');
         } else {
           setFileTextContent('');
         }

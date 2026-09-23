@@ -188,8 +188,6 @@ export async function mintWsTicket(baseUrl: string, cookie: string): Promise<str
   const body = (await res.json()) as any;
   const ticket = typeof body?.ticket === 'string' ? body.ticket : '';
   if (!ticket) throw new Error('WS ticket response had no ticket');
-  const err2: any = null;
-  void err2;
   return ticket;
 }
 

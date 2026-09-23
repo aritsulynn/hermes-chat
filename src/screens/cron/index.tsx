@@ -122,20 +122,21 @@ function formatDateTime(iso?: string | null): string {
   }
 }
 
+function toEpochMs(ts: number | string | null | undefined): number | null {
+  if (ts === null || ts === undefined || ts === '') return null;
+  if (typeof ts === 'number') return ts < 1e11 ? ts * 1000 : ts;
+  const n = Number(ts);
+  if (!isNaN(n)) return n < 1e11 ? n * 1000 : n;
+  const d = new Date(ts).getTime();
+  return isNaN(d) ? null : d;
+}
+
 function formatRunTime(ts?: number | string | null): string {
   if (!ts) return '—';
   try {
-    let date: Date;
-    if (typeof ts === 'number') {
-      date = new Date(ts < 1e11 ? ts * 1000 : ts);
-    } else {
-      const num = Number(ts);
-      if (!isNaN(num)) {
-        date = new Date(num < 1e11 ? num * 1000 : num);
-      } else {
-        date = new Date(ts);
-      }
-    }
+    const ms = toEpochMs(ts);
+    if (ms === null) return String(ts);
+    const date = new Date(ms);
     if (isNaN(date.getTime())) return String(ts);
     return date.toLocaleString(undefined, {
       month: 'short',
@@ -154,19 +155,9 @@ function formatRunDuration(
   ended?: number | string | null,
 ): string | null {
   if (!started || !ended) return null;
-  const s =
-    typeof started === 'number'
-      ? started < 1e11
-        ? started * 1000
-        : started
-      : Number(started) || new Date(started).getTime();
-  const e =
-    typeof ended === 'number'
-      ? ended < 1e11
-        ? ended * 1000
-        : ended
-      : Number(ended) || new Date(ended).getTime();
-  if (isNaN(s) || isNaN(e) || e < s) return null;
+  const s = toEpochMs(started);
+  const e = toEpochMs(ended);
+  if (s === null || e === null || isNaN(s) || isNaN(e) || e < s) return null;
   const diffSec = Math.round((e - s) / 1000);
   if (diffSec < 60) return `${diffSec}s`;
   const m = Math.floor(diffSec / 60);

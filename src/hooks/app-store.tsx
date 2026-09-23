@@ -615,6 +615,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const openWs = useCallback(async (h: string): Promise<GatewayWs> => {
     const ticket = await mintWsTicket(h, cookie.current);
+    // Events carry the runtime session id. Only the session on screen may touch
+    // the transcript — a cron run / subagent / another client's turn must not
+    // bleed in. An empty id is treated as current (some frames are global).
+    const isCurrentSession = (sid: string) =>
+      !sid || !sessionIdRef.current || sid === sessionIdRef.current;
     const ws = new GatewayWs({
       wsUrl: toWsUrl(h, ticket),
       refreshUrl: async () => {
@@ -625,12 +630,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       replaySessions: () => (sessionIdRef.current ? [sessionIdRef.current] : []),
       events: {
         onState: (s) => setConn(s),
-        onToken: (_sid, delta) => {
+        onToken: (sid, delta) => {
+          if (!isCurrentSession(sid)) return;
           const aid = liveAid.current;
           if (!aid) return;
           setMessages((prev) => prev.map((m) => (m.id === aid ? { ...m, text: m.text + delta } : m)));
         },
-        onReasoning: (_sid, delta) => {
+        onReasoning: (sid, delta) => {
+          if (!isCurrentSession(sid)) return;
           let aid = liveThinkAid.current;
           if (!aid) {
             aid = nid();
@@ -648,7 +655,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const id = aid;
           setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, text: m.text + delta } : m)));
         },
-        onInterim: (_sid, text) => {
+        onInterim: (sid, text) => {
+          if (!isCurrentSession(sid)) return;
           // Interim status belongs ABOVE the streaming answer chronologically —
           // pin it before the pending bubble (same as thinking), else it lands
           // below the final answer.
@@ -660,7 +668,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return [...prev.slice(0, aiIdx), item, ...prev.slice(aiIdx)];
           });
         },
-        onTool: (_sid, info) => {
+        onTool: (sid, info) => {
+          if (!isCurrentSession(sid)) return;
           if (info.phase === 'complete') {
             setToolLine(null);
             const mid = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
@@ -734,7 +743,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return [...prev.slice(0, aiIdx), item, ...prev.slice(aiIdx)];
           });
         },
-        onComplete: (_sid, text) => {
+        onComplete: (sid, text) => {
+          if (!isCurrentSession(sid)) return;
           const aid = liveAid.current;
           liveAid.current = null;
           liveThinkAid.current = null;
@@ -806,7 +816,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             void saveModel(prov, info.model);
           }
         },
-        onTodo: (_sid, payload) => setTodos(normalizeTodos(payload)),
+        onTodo: (sid, payload) => {
+          if (!isCurrentSession(sid)) return;
+          setTodos(normalizeTodos(payload));
+        },
         onReplayTruncated: (sid) => {
           // Only the session on screen shares our transcript state.
           if (sid === sessionIdRef.current) resyncRef.current();
@@ -1075,16 +1088,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     gw.current = null;
     cookie.current = '';
     liveThinkAid.current = null;
+    liveAid.current = null;
+    generatingRef.current = false;
     draftsRef.current.clear();
     setInputRaw('');
     await clearCookie();
     setAuthed(false);
+    sessionIdRef.current = null;
     setSessionId(null);
     setSessionKey(null);
     setMessages([]);
     setSessions([]);
     setSessionInfo(null);
     setUsageInfo(null);
+    setGenerating(false);
+    setAsk(null);
+    setToolLine(null);
+    setTodos([]);
+    setSubagents([]);
+    queuedRef.current = [];
+    setQueued([]);
+    setQueueParked(false);
+    setAttachments([]);
+    editRowRef.current = null;
+    setEditingRowId(null);
     setInfoOpen(false);
     router.replace('/login');
   };
@@ -1124,6 +1151,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (hist.length === 0) hist = await g.history(liveId);
       setSessionKey(s.id);
       void saveLastSession(s.id);
+      sessionIdRef.current = liveId;
       setSessionId(liveId);
       draftKeyRef.current = s.id;
       setInputRaw(draftsRef.current.get(s.id) ?? '');
@@ -1138,7 +1166,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       queuedRef.current = [];
       setQueued([]);
       setQueueParked(false);
-      setTodos([]);
+      editRowRef.current = null;
+      setEditingRowId(null);
       setSubagents([]);
       router.push('/chat');
     } catch (e) {
@@ -1170,12 +1199,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       setSessionKey(storedSessionId || sid);
       void saveLastSession(storedSessionId || sid);
+      sessionIdRef.current = sid;
       setSessionId(sid);
       setSessionTitle('');
       setMessages([]);
       queuedRef.current = [];
       setQueued([]);
       setQueueParked(false);
+      editRowRef.current = null;
+      setEditingRowId(null);
       setTodos([]);
       setSubagents([]);
       draftKeyRef.current = storedSessionId || sid;
@@ -1211,15 +1243,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(m?.reasoning ? { reasoning: String(m.reasoning) } : {}),
         ...(typeof m?.name === 'string' ? { name: m.name } : {}),
       }));
-      setSessionKey(String(r?.stored_session_id || liveId));
-      void saveLastSession(String(r?.stored_session_id || liveId));
+      const branchKey = String(r?.stored_session_id || liveId);
+      setSessionKey(branchKey);
+      void saveLastSession(branchKey);
+      sessionIdRef.current = liveId;
       setSessionId(liveId);
       setSessionTitle(String(r?.title ?? ''));
       setMessages(historyToItems(hist));
       queuedRef.current = [];
       setQueued([]);
+      editRowRef.current = null;
+      setEditingRowId(null);
       setTodos([]);
       setSubagents([]);
+      setAttachments([]);
+      setSessionInfo(null);
+      setUsageInfo(null);
+      draftKeyRef.current = branchKey;
+      setInputRaw(draftsRef.current.get(branchKey) ?? '');
       router.push('/chat');
     } catch (e: any) {
       setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
@@ -1292,6 +1333,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const r: any = await g.resume(sessionKey);
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
+            sessionIdRef.current = liveId;
             setSessionId(liveId);
             const status = await g.submit(liveId, submitText, submitOpts);
             if (status === 'queued') setToolLine('queued — will run after the live turn…');
@@ -1707,12 +1749,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       draftsRef.current.delete(storedId);
       if (sessionKey === storedId) {
         setSessionKey(null);
+        sessionIdRef.current = null;
         setSessionId(null);
         setSessionTitle('');
         setMessages([]);
         setInputRaw('');
         setSessionInfo(null);
         setUsageInfo(null);
+        setTodos([]);
+        setSubagents([]);
+        queuedRef.current = [];
+        setQueued([]);
+        setQueueParked(false);
+        setGenerating(false);
+        generatingRef.current = false;
+        editRowRef.current = null;
+        setEditingRowId(null);
+        setAsk(null);
+        setToolLine(null);
         router.replace('/chat');
       }
     },
@@ -1748,6 +1802,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const r: any = await g.resume(sessionKey);
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
+            sessionIdRef.current = liveId;
             setSessionId(liveId);
             await g.redirect(liveId, t);
             return;
@@ -1767,7 +1822,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setModelProvider(providerSlug);
       setModel(modelId);
       void saveModel(providerSlug, modelId);
-      if (!host || !cookie.current) return;
+      if (!host) return;
       setToolLine('setting global default…');
       try {
         await setMainModel(host, cookie.current, providerSlug, modelId);
@@ -1805,6 +1860,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const r: any = await g.resume(recentId);
         const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : recentId;
         setSessionKey(recentId);
+        sessionIdRef.current = liveId;
         setSessionId(liveId);
         setSessionTitle('');
         setMessages([]);

@@ -414,12 +414,16 @@ export class GatewayWs {
         const ctx = typeof m?.context === 'string' ? m.context : '';
         return { role: 'tool', content: ctx || name, ...(name ? { name } : {}) };
       }
-      const text =
-        typeof m?.text === 'string'
-          ? m.text
-          : typeof m?.content === 'string'
-            ? m.content
-            : JSON.stringify(m?.text ?? m?.content ?? '');
+      let text = '';
+      if (typeof m?.text === 'string') text = m.text;
+      else if (typeof m?.content === 'string') text = m.content;
+      else if (m?.text != null || m?.content != null) {
+        try {
+          text = JSON.stringify(m?.text ?? m?.content);
+        } catch {
+          text = '';
+        }
+      }
       const reasoning = reasoningTextOf(m);
       return {
         role: String(m?.role ?? ''),
