@@ -120,7 +120,9 @@ export const Composer = memo(function Composer({
       hide.remove();
     };
   }, []);
-  const canSend = !!input.trim() || attachments.length > 0;
+  const trimmedInput = input.trim();
+  const hasText = trimmedInput.length > 0;
+  const canSend = hasText || attachments.length > 0;
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
   return (
     <View className="px-2.5 pt-2" style={{ paddingBottom: webKb > 0 ? webKb + 18 : kbOpen ? 18 : Math.max(insets.bottom, 10) }}>
@@ -233,7 +235,7 @@ export const Composer = memo(function Composer({
           <View className="flex-1" />
           {generating ? (
             <>
-              {!!input.trim() && !attachments.length && (
+              {hasText && !attachments.length && (
                 <Tap
                   onPress={() => onQueue(input)}
                   radius={8}
@@ -244,7 +246,7 @@ export const Composer = memo(function Composer({
                   <Text className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</Text>
                 </Tap>
               )}
-              {!!input.trim() && (
+              {hasText && (
                 <Tap
                   onPress={() => onRedirect(input)}
                   radius={8}

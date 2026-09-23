@@ -164,7 +164,7 @@ export class GatewayWs {
   private replaySessions?: () => string[];
   private heartbeatMs: number;
   private maxBackoffMs: number;
-  private pending = new Map<number | string, { ok: (r: any) => void; fail: (e: RpcError) => void }>();
+  private pending = new Map<number | string, { ok: (r: any) => void; fail: (e: RpcError) => void; timer: ReturnType<typeof setTimeout> }>();
   private state: ConnState = 'idle';
   private closed = false;
   private backoff = 1000;
@@ -178,6 +178,11 @@ export class GatewayWs {
   private replayEpoch: string | null = null;
   private replaying = false;
   private replayHold: Array<{ type: string; params: any }> | null = null;
+  // Token coalescing — deltas arrive ~30Hz; flushing per frame = setState storm.
+  // Buffer per session and flush at most every 50ms (or on turn end).
+  private tokenBuf = new Map<string, string>();
+  private reasoningBuf = new Map<string, string>();
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Snapshot of handshake diagnostics for error messages / debugging. */
   wsDebug(): WsDebug {
@@ -219,6 +224,7 @@ export class GatewayWs {
 
   close() {
     this.closed = true;
+    this.flushBuffers();
     this.clearTimers();
     try {
       (this.ws as any)?.close?.();
@@ -234,8 +240,10 @@ export class GatewayWs {
   private clearTimers() {
     if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.flushTimer) clearTimeout(this.flushTimer);
     this.pingTimer = null;
     this.reconnectTimer = null;
+    this.flushTimer = null;
   }
 
   private dial() {
@@ -247,6 +255,10 @@ export class GatewayWs {
     } catch {
       return this.scheduleReconnect();
     }
+    // Never orphan the prior socket — close it before replacing.
+    try {
+      (this.ws as any)?.close?.();
+    } catch {}
     this.ws = ws;
 
     ws.onopen = () => {
@@ -302,6 +314,7 @@ export class GatewayWs {
         // surfaces as auth-expired when the app re-logs-in.
       }
     }
+    if (this.closed) return;
     const wait = Math.min(this.backoff, this.maxBackoffMs);
     this.backoff = Math.min(this.backoff * 2, this.maxBackoffMs);
     this.reconnectTimer = setTimeout(() => this.dial(), wait);
@@ -309,8 +322,13 @@ export class GatewayWs {
 
   private startHeartbeat() {
     this.clearTimers();
+    let pingInFlight = false;
     const beat = () => {
-      this.call('gateway.ping', {}).catch(() => {});
+      if (pingInFlight) return;
+      pingInFlight = true;
+      this.call('gateway.ping', {}).catch(() => {}).finally(() => {
+        pingInFlight = false;
+      });
     };
     this.pingTimer = setInterval(beat, this.heartbeatMs);
   }
@@ -318,6 +336,7 @@ export class GatewayWs {
   private failAllPending(err: RpcError) {
     for (const [, p] of this.pending) {
       try {
+        clearTimeout(p.timer);
         p.fail(err);
       } catch {}
     }
@@ -333,24 +352,36 @@ export class GatewayWs {
         return;
       }
       const id = nextId++;
-      this.pending.set(id, {
-        ok: (r) => resolve(r),
-        fail: (e) => reject(e),
-      });
-      try {
-        this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
-      } catch (e) {
-        this.pending.delete(id);
-        reject({ code: -32000, message: String(e) } satisfies RpcError);
-      }
       // Safety timeout so a lost reply never hangs the UI forever.
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         const p = this.pending.get(id);
         if (p) {
           this.pending.delete(id);
           p.fail({ code: -32000, message: 'RPC timeout' });
         }
       }, timeoutMs);
+      // Clear the safety timer as soon as the reply settles.
+      this.pending.set(id, {
+        ok: (r) => {
+          clearTimeout(timer);
+          resolve(r);
+        },
+        fail: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+        timer,
+      });
+      try {
+        this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+      } catch (e) {
+        const p = this.pending.get(id);
+        if (p) {
+          clearTimeout(p.timer);
+          this.pending.delete(id);
+        }
+        reject({ code: -32000, message: String(e) } satisfies RpcError);
+      }
     });
   }
 
@@ -584,6 +615,7 @@ export class GatewayWs {
       const p = this.pending.get(msg.id);
       if (p) {
         this.pending.delete(msg.id);
+        clearTimeout(p.timer);
         if (msg.error) p.fail(msg.error as RpcError);
         else p.ok(msg.result);
       }
@@ -690,12 +722,19 @@ export class GatewayWs {
       // double-deliver (the replay carries the same seq) or advance the watermark
       // past the gap we're filling.
       if (this.replaying) {
-        this.replayHold?.push({ type, params });
+        if (this.replayHold && this.replayHold.length < 500) {
+          this.replayHold?.push({ type, params });
+        }
         return;
       }
       const seen = this.lastSeq.get(sid) ?? 0;
       if (seq <= seen) return; // replayed / duplicate
       this.lastSeq.set(sid, seq);
+      // Bound the per-session watermark map — sessions accumulate forever otherwise.
+      if (this.lastSeq.size > 200) {
+        const oldest = this.lastSeq.keys().next().value;
+        if (oldest !== undefined) this.lastSeq.delete(oldest);
+      }
     }
     // Server nests event data under params.payload (see _event_frame in
     // tui_gateway/server.py) — top-level params only carries type/session_id.
@@ -703,6 +742,29 @@ export class GatewayWs {
   }
 
   /** Fan one event out to the registered callbacks (live or replayed). */
+  private flushBuffers() {
+    if (this.tokenBuf.size === 0 && this.reasoningBuf.size === 0) return;
+    const tokens = [...this.tokenBuf.entries()];
+    const reasonings = [...this.reasoningBuf.entries()];
+    this.tokenBuf.clear();
+    this.reasoningBuf.clear();
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    for (const [sid, t] of tokens) {
+      if (t) this.events.onToken?.(sid, t);
+    }
+    for (const [sid, t] of reasonings) {
+      if (t) this.events.onReasoning?.(sid, t);
+    }
+  }
+
+  private scheduleFlush() {
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => this.flushBuffers(), 50);
+  }
+
   private dispatch(type: string, sid: string, body: Record<string, any>) {
     this.dbg.lastEvent = type;
     const strOf = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -723,21 +785,29 @@ export class GatewayWs {
       }
       case 'message.delta': {
         const t = strOf(body.text);
-        if (t) this.events.onToken?.(sid, t);
+        if (t) {
+          this.tokenBuf.set(sid, (this.tokenBuf.get(sid) ?? '') + t);
+          this.scheduleFlush();
+        }
         break;
       }
       case 'reasoning.delta':
       case 'thinking.delta': {
         const t = strOf(body.text);
-        if (t) this.events.onReasoning?.(sid, t);
+        if (t) {
+          this.reasoningBuf.set(sid, (this.reasoningBuf.get(sid) ?? '') + t);
+          this.scheduleFlush();
+        }
         break;
       }
       case 'message.interim': {
+        this.flushBuffers();
         const t = strOf(body.text);
         if (t) this.events.onInterim?.(sid, t);
         break;
       }
       case 'message.complete':
+        this.flushBuffers();
         this.events.onComplete?.(sid, strOf(body.text), body);
         break;
       case 'tool.start':

@@ -2,7 +2,7 @@
 // (App.tsx), lifted into a context provider so the expo-router screens
 // (login / sessions / chat) share one connection, one gateway socket and
 // one transcript. Navigation replaced setScreen() with expo-router routes.
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -62,6 +62,11 @@ export interface AppStore {
   sessionId: string | null;
   sessionTitle: string;
   messages: UiMessage[];
+  /** Live streaming deltas by bubble id — kept outside `messages` so per-token
+   *  updates are O(1) instead of mapping the whole transcript. Merged into
+   *  `messages` once on turn end (desktop parity: hot state local, durable
+   *  transcript appended, not rewritten). */
+  streamingTexts: Record<string, string>;
   input: string;
   setInput: (v: string) => void;
   model: string;
@@ -156,7 +161,17 @@ const AppContext = createContext<AppStore | null>(null);
 
 // Rejecting timeout so a wedged server can never trap the UI on a spinner.
 function withTimeout<T>(p: Promise<T>, ms: number, what = 'timed out'): Promise<T> {
-  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(what)), ms))]);
+  let t: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(what)), ms);
+  });
+  return Promise.race([p.then((v) => {
+    if (t) clearTimeout(t);
+    return v;
+  }, (e) => {
+    if (t) clearTimeout(t);
+    throw e;
+  }), timeout]);
 }
 
 // ── Attachment upload ───────────────────────────────────────────────────────
@@ -196,9 +211,12 @@ async function uploadAttachments(
   host: string,
   cookie: string,
 ): Promise<{ name: string; path: string; image: boolean }[]> {
-  const out: { name: string; path: string; image: boolean }[] = [];
-  for (const f of files) {
-    const name = f.name.replace(/[\\/]/g, '_') || `upload-${Date.now()}`;
+  // Parallel with cap 3 — old serial for..await took N x latency.
+  const out: { name: string; path: string; image: boolean }[] = new Array(files.length);
+  let cursor = 0;
+  const uploadOne = async (index: number) => {
+    const f = files[index];
+    const name = f.name.replace(/[\\/]/g, '_') || `upload-${Date.now()}-${index}`;
     const image = isImageAttachment(f);
     const b64 = await attachmentBytes(f);
     if (!b64) throw new Error(`${name}: could not read the file`);
@@ -208,7 +226,7 @@ async function uploadAttachments(
       dashboardOpsMut(host, cookie, '/api/files/upload', 'POST', { path, data_url, overwrite: true });
     try {
       const r: any = await put(`~/${name}`);
-      out.push({ name, path: typeof r?.path === 'string' && r.path ? r.path : `~/${name}`, image });
+      out[index] = { name, path: typeof r?.path === 'string' && r.path ? r.path : `~/${name}`, image };
     } catch (first) {
       // Some builds reject the `~` shorthand for writes — resolve the managed
       // root and retry once before giving up.
@@ -217,9 +235,16 @@ async function uploadAttachments(
       if (!root) throw first;
       const target = `${root}/${name}`;
       const r: any = await put(target);
-      out.push({ name, path: typeof r?.path === 'string' && r.path ? r.path : target, image });
+      out[index] = { name, path: typeof r?.path === 'string' && r.path ? r.path : target, image };
     }
-  }
+  };
+  const workers = Array.from({ length: Math.min(3, files.length) }, async () => {
+    while (cursor < files.length) {
+      const i = cursor++;
+      await uploadOne(i);
+    }
+  });
+  await Promise.all(workers);
   return out;
 }
 
@@ -276,6 +301,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
   const [sessionTitle, setSessionTitle] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [streamingTexts, setStreamingTexts] = useState<Record<string, string>>({});
+  const streamingRef = useRef<Record<string, string>>({});
+  streamingRef.current = streamingTexts;
+  const clearStreaming = useCallback(() => {
+    streamingRef.current = {};
+    setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
+  }, []);
   const [inputRaw, setInputRaw] = useState('');
   const [model, setModel] = useState('Muse Spark 1.3 Free');
   const [modelProvider, setModelProvider] = useState('');
@@ -488,10 +520,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const g = gw.current;
     if (!generating || !sessionId || !g) return;
     let live = true;
+    const sameRows = (a: SubagentRow[], b: SubagentRow[]) => {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        const x = a[i];
+        const y = b[i];
+        if (x.subagent_id !== y.subagent_id || x.status !== y.status || x.tool_count !== y.tool_count || x.last_tool !== y.last_tool) return false;
+      }
+      return true;
+    };
     const tick = () => {
       g.subagents(sessionId)
         .then((r) => {
-          if (live) setSubagents(normalizeSubagents(r));
+          if (!live) return;
+          const next = normalizeSubagents(r);
+          // New array every tick re-renders the dock even when nothing changed.
+          setSubagents((prev) => (sameRows(prev, next) ? prev : next));
         })
         .catch(() => {});
     };
@@ -510,6 +554,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [sessionKey, sessionId]);
   const setInput = useCallback((v: string) => {
     draftsRef.current.set(draftKeyRef.current, v);
+    // Bound the per-session draft map — one entry per visited session otherwise.
+    if (draftsRef.current.size > 50) {
+      const oldest = draftsRef.current.keys().next().value;
+      if (oldest !== undefined && oldest !== draftKeyRef.current) draftsRef.current.delete(oldest);
+    }
     setInputRaw(v);
   }, []);
   const input = inputRaw;
@@ -580,6 +629,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Connect pipeline ─────────────────────────────────────────────────────
 
+  // Cleanup pending timers on unmount so token/tool/copy timeouts can't fire late.
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      if (toolRefreshTimer.current) clearTimeout(toolRefreshTimer.current);
+    },
+    [],
+  );
+
   const copyText = useCallback(async (id: string, text: string) => {
     try {
       await Clipboard.setStringAsync(text);
@@ -633,8 +691,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         onToken: (sid, delta) => {
           if (!isCurrentSession(sid)) return;
           const aid = liveAid.current;
-          if (!aid) return;
-          setMessages((prev) => prev.map((m) => (m.id === aid ? { ...m, text: m.text + delta } : m)));
+          if (!aid || !delta) return;
+          // O(1): buffer outside `messages`, no transcript map per delta.
+          // Update the ref synchronously — onComplete may fire before React re-renders.
+          const next = { ...streamingRef.current, [aid]: (streamingRef.current[aid] ?? '') + delta };
+          streamingRef.current = next;
+          setStreamingTexts(next);
         },
         onReasoning: (sid, delta) => {
           if (!isCurrentSession(sid)) return;
@@ -651,9 +713,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
               if (aiIdx === -1) return [...prev, think];
               return [...prev.slice(0, aiIdx), think, ...prev.slice(aiIdx)];
             });
+            if (!delta) return;
           }
           const id = aid;
-          setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, text: m.text + delta } : m)));
+          if (!delta) return;
+          const next = { ...streamingRef.current, [id]: (streamingRef.current[id] ?? '') + delta };
+          streamingRef.current = next;
+          setStreamingTexts(next);
         },
         onInterim: (sid, text) => {
           if (!isCurrentSession(sid)) return;
@@ -746,6 +812,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         onComplete: (sid, text) => {
           if (!isCurrentSession(sid)) return;
           const aid = liveAid.current;
+          const thinkId = liveThinkAid.current;
           liveAid.current = null;
           liveThinkAid.current = null;
           liveTurnTools.current = [];
@@ -754,13 +821,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // drain below would see a stale "generating" and bail.
           generatingRef.current = false;
           setToolLine(null);
-          if (aid) {
-            setMessages((prev) =>
-              prev.map((m) => (m.id === aid ? { ...m, text: text || m.text, pending: false } : m)),
-            );
-          } else if (text) {
-            setMessages((prev) => [...prev, { id: nid(), role: 'assistant', text }]);
+          // Single merge: fold buffered deltas into the durable transcript once.
+          const deltas = streamingRef.current;
+          const hasDeltas = aid && deltas[aid] !== undefined || thinkId && deltas[thinkId] !== undefined;
+          if (aid || thinkId || text) {
+            const base = messagesRef.current;
+            let next: UiMessage[];
+            if (hasDeltas) {
+              next = base.map((m) => {
+                const d = deltas[m.id];
+                if (d === undefined) return m;
+                // Server text wins when present, else keep streamed buffer.
+                const finalText = m.id === aid && text ? text : m.text + d;
+                return { ...m, text: finalText, pending: false };
+              });
+            } else if (aid) {
+              next = base.map((m) => (m.id === aid ? { ...m, text: text || m.text, pending: false } : m));
+            } else {
+              next = base;
+            }
+            if (!aid && text) {
+              next = [...next, { id: nid(), role: 'assistant', text }];
+            }
+            messagesRef.current = next;
+            setMessages(next);
           }
+          streamingRef.current = {};
+          setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
           // End-of-turn file summary: fold every inline diff this turn produced.
           const turnDiffs = liveTurnDiffs.current;
           liveTurnDiffs.current = [];
@@ -870,10 +957,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Model picker inventory ─────────────────────────────────────────────
   // WS model.options first (same payload as REST), cookie REST as fallback.
+  const providersRef = useRef<ModelProviderOption[] | null>(null);
+  providersRef.current = providers;
+  const providersLoadingRef = useRef(false);
+  const providersAtRef = useRef(0);
+  const catalogAtRef = useRef(0);
 
   const loadProviders = useCallback(async () => {
     const g = gw.current;
-    if (!g) return;
+    if (!g || providersLoadingRef.current) return;
+    // 30s TTL — the model popover opens often, don't refetch every open.
+    if (providersRef.current && Date.now() - providersAtRef.current < 30000) return;
+    providersLoadingRef.current = true;
     setProvidersLoading(true);
     setProvidersError(null);
     try {
@@ -891,16 +986,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...(p?.capabilities && typeof p.capabilities === 'object' ? { capabilities: p.capabilities } : {}),
           })),
         );
+        providersAtRef.current = Date.now();
         return;
       }
       throw new Error('empty provider list');
     } catch (eWs) {
       try {
         setProviders(await getModelOptions(host, cookie.current));
+        providersAtRef.current = Date.now();
       } catch (eRest) {
         setProvidersError(errMsg(eRest) || errMsg(eWs));
       }
     } finally {
+      providersLoadingRef.current = false;
       setProvidersLoading(false);
     }
   }, [host, sessionId]);
@@ -914,8 +1012,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadCommandsCatalog = useCallback(async () => {
     const g = gw.current;
     if (!g) return;
+    // 60s TTL — sessionId effect fires often, catalog barely changes.
+    if (Date.now() - catalogAtRef.current < 60000) return;
     try {
       rememberCommandsCatalog(await g.commandsCatalog(sessionId ?? undefined));
+      catalogAtRef.current = Date.now();
       setCatalogVersion((v) => v + 1);
     } catch {
       // Older backend without commands.catalog — keep the static registry.
@@ -1079,16 +1180,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
   connectRef.current = connect;
 
-  const login = async () => {
+  const login = useCallback(async () => {
     const pw = password || (await getPassword()) || '';
     if (!host.trim() || !username.trim() || !pw) {
       setError('Fill host, username and password');
       return;
     }
     await connect(host.trim(), username.trim(), pw);
-  };
+  }, [host, username, password, connect]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     gw.current?.close();
     gw.current = null;
     cookie.current = '';
@@ -1103,6 +1204,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSessionId(null);
     setSessionKey(null);
     setMessages([]);
+    clearStreaming();
     setSessions([]);
     setSessionInfo(null);
     setUsageInfo(null);
@@ -1119,11 +1221,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setEditingRowId(null);
     setInfoOpen(false);
     router.replace('/login');
-  };
+  }, [sessionKey]);
 
   // ── Sessions ─────────────────────────────────────────────────────────────
 
-  const openSession = async (s: SessionSummary) => {
+  const openSession = useCallback(async (s: SessionSummary) => {
     const g = gw.current;
     if (!g) {
       setError('Not connected — please login again');
@@ -1168,6 +1270,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // restore it as a thinking bubble above its answer, like the live view.
       const items = historyToItems(hist);
       setMessages(items);
+      clearStreaming();
       queuedRef.current = [];
       setQueued([]);
       setQueueParked(false);
@@ -1188,10 +1291,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setOpeningId(null);
     }
-  };
+  }, [host]);
   openSessionRef.current = openSession;
 
-  const newSession = async () => {
+  const newSession = useCallback(async () => {
     const g = gw.current;
     if (!g) return;
     setBusy(true);
@@ -1208,6 +1311,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionId(sid);
       setSessionTitle('');
       setMessages([]);
+      clearStreaming();
       queuedRef.current = [];
       setQueued([]);
       setQueueParked(false);
@@ -1228,7 +1332,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setBusy(false);
     }
-  };
+  }, [model, modelProvider, effort]);
   newSessionRef.current = newSession;
 
   // Fork the current chat into an independent copy (session.branch) and open it.
@@ -1255,6 +1359,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionId(liveId);
       setSessionTitle(String(r?.title ?? ''));
       setMessages(historyToItems(hist));
+      clearStreaming();
       queuedRef.current = [];
       setQueued([]);
       editRowRef.current = null;
@@ -1322,6 +1427,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       liveToolAid.current = null;
       liveTurnTools.current = [];
       liveTurnDiffs.current = [];
+      clearStreaming();
       setSubagents([]);
       setMessages((prev) => [...prev, { id: aid, role: 'assistant', text: '', pending: true }]);
       setGenerating(true);
@@ -1699,7 +1805,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Session details ────────────────────────────────────────────────────
 
-  const openInfo = async () => {
+  const openInfo = useCallback(async () => {
     setInfoOpen(true);
     setInfoSeq((s) => s + 1);
     const g = gw.current;
@@ -1712,7 +1818,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setUsageLoading(false);
     }
-  };
+  }, [sessionId]);
 
   // ── Ask replies ──────────────────────────────────────────────────────────
 
@@ -1778,6 +1884,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSessionId(null);
         setSessionTitle('');
         setMessages([]);
+        clearStreaming();
         setInputRaw('');
         setSessionInfo(null);
         setUsageInfo(null);
@@ -1889,6 +1996,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSessionId(liveId);
         setSessionTitle('');
         setMessages([]);
+        clearStreaming();
         router.push('/chat');
       } catch (e) {
         setError(errMsg(e));
@@ -1923,7 +2031,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [host],
   );
 
-  const value: AppStore = {
+  const value: AppStore = useMemo(
+    () => ({
     booting,
     authed,
     busy,
@@ -1940,6 +2049,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sessionId,
     sessionTitle,
     messages,
+    streamingTexts,
     input,
     setInput,
     model,
@@ -2012,7 +2122,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     getGw,
     diagnostics,
     getCookie,
-  };
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [booting, authed, busy, error, host, username, password, conn, sessions, openingId, sessionId, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, connect, login, logout, refreshSessions, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, dismissAsk, theme, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
+  );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

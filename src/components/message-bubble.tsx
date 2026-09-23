@@ -61,10 +61,23 @@ const DIFF_MAX_LINES = 160;
 // for those lines (ASCII diffs/tables keep their alignment everywhere else).
 const hasThai = (s: string) => /[\u0E00-\u0E7F]/.test(s);
 
+// Cached time formatter — `toLocaleTimeString` (Intl) per bubble per render is slow.
+let cachedTimeFmt: Intl.DateTimeFormat | null = null;
+function formatBubbleTime(ts: number): string {
+  try {
+    if (!cachedTimeFmt) {
+      cachedTimeFmt = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return cachedTimeFmt.format(new Date(ts * 1000));
+  } catch {
+    return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
 // Inline unified diff (one RN Text per line so +/- can be tinted; a single
 // <Text> can't carry a per-line background). Rows are capped — a huge patch on a
 // phone is unreadable anyway; the full diff is still on the tool result.
-function DiffView({ diff, dark }: { diff: string; dark: boolean }) {
+const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: boolean }) {
   const lines = useMemo(() => diff.split('\n'), [diff]);
   const shown = lines.length > DIFF_MAX_LINES ? lines.slice(0, DIFF_MAX_LINES) : lines;
   const colorOf = (kind: ReturnType<typeof diffLineKind>): string =>
@@ -112,13 +125,13 @@ function DiffView({ diff, dark }: { diff: string; dark: boolean }) {
       )}
     </View>
   );
-}
+});
 
 // Plain monospace block for a tool RESULT (terminal output, file body, …).
 // Capped: a giant dump on a phone is unreadable and expensive to lay out.
 const OUTPUT_MAX_LINES = 200;
 
-function ToolOutput({ text }: { text: string }) {
+const ToolOutput = memo(function ToolOutput({ text }: { text: string }) {
   const lines = useMemo(() => text.split('\n'), [text]);
   const shown = lines.length > OUTPUT_MAX_LINES ? lines.slice(0, OUTPUT_MAX_LINES) : lines;
   return (
@@ -143,7 +156,14 @@ function ToolOutput({ text }: { text: string }) {
       )}
     </View>
   );
-}
+});
+
+// Stable thumbnail — inline `source={{uri}}` per render gives <Image> a new
+// identity every token and forces a native re-resolve/flicker.
+const BubbleThumb = memo(function BubbleThumb({ uri, name }: { uri: string; name: string }) {
+  const source = useMemo(() => ({ uri }), [uri]);
+  return <Image key={uri + name} source={source} resizeMode="cover" className="h-20 w-20 rounded-lg bg-black/10" />;
+});
 
 export const MessageBubble = memo(function MessageBubble({
   item,
@@ -345,12 +365,7 @@ export const MessageBubble = memo(function MessageBubble({
           {!!item.media?.length && (
             <View className="mb-1 flex-row flex-wrap gap-1.5">
               {item.media.map((a) => (
-                <Image
-                  key={a.uri + a.name}
-                  source={{ uri: a.uri }}
-                  resizeMode="cover"
-                  className="h-20 w-20 rounded-lg bg-black/10"
-                />
+                <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
               ))}
             </View>
           )}
@@ -373,7 +388,7 @@ export const MessageBubble = memo(function MessageBubble({
                   : 'text-[10px] text-neutral-400 dark:text-neutral-500'
               }
             >
-              {new Date(item.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {formatBubbleTime(item.ts)}
             </Text>
           )}
           {copyable && (

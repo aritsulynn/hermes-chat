@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -55,6 +55,49 @@ function formatDayLabel(dayStr: string): string {
     return dayStr;
   }
 }
+
+// Memo bar — selecting one day shouldn't re-render the other 89 bars.
+const DayBar = memo(function DayBar({
+  day,
+  tokens,
+  maxTokens,
+  selected,
+  onSelect,
+}: {
+  day: string;
+  tokens: number;
+  maxTokens: number;
+  selected: boolean;
+  onSelect: (day: string) => void;
+}) {
+  const hasTokens = tokens > 0;
+  const heightPercent = hasTokens ? Math.max(12, Math.round((tokens / maxTokens) * 100)) : 4;
+  return (
+    <Pressable onPress={() => onSelect(day)} className="items-center justify-end w-7 h-full">
+      <View
+        className={`w-full rounded-t-sm ${
+          selected
+            ? 'bg-blue-600 dark:bg-blue-500'
+            : hasTokens
+              ? 'bg-[#1a73e8] dark:bg-[#7aa7ff]'
+              : 'bg-neutral-200 dark:bg-neutral-800'
+        }`}
+        style={{ height: `${heightPercent}%` }}
+      />
+      <Text
+        className={`mt-1.5 font-mono text-[9px] ${
+          selected
+            ? 'font-bold text-blue-600 dark:text-blue-400'
+            : hasTokens
+              ? 'text-neutral-700 dark:text-neutral-300 font-medium'
+              : 'text-neutral-400 dark:text-neutral-600'
+        }`}
+      >
+        {formatDayLabel(day)}
+      </Text>
+    </Pressable>
+  );
+});
 
 interface ToolSkillItem {
   name: string;
@@ -186,6 +229,12 @@ export function UsageScreen() {
     }
     return max;
   }, [fullDailyEntries]);
+  const handleSelectDay = useCallback(
+    (day: string) => {
+      setSelectedDay((prev: any) => (prev?.day === day ? null : fullDailyEntries.find((d) => d.day === day) ?? null));
+    },
+    [fullDailyEntries],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
@@ -438,42 +487,16 @@ export function UsageScreen() {
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-4">
                   <View className="flex-row items-end gap-2 h-36 pt-4 pb-2 px-1">
-                    {fullDailyEntries.map((d) => {
-                      const dayTokens = (d?.input_tokens || 0) + (d?.output_tokens || 0) + (d?.reasoning_tokens || 0);
-                      const hasTokens = dayTokens > 0;
-                      const heightPercent = hasTokens ? Math.max(12, Math.round((dayTokens / maxDayTokens) * 100)) : 4;
-                      const isSelected = selectedDay?.day === d.day;
-
-                      return (
-                        <Pressable
-                          key={d.day}
-                          onPress={() => setSelectedDay(isSelected ? null : d)}
-                          className="items-center justify-end w-7 h-full"
-                        >
-                          <View
-                            className={`w-full rounded-t-sm ${
-                              isSelected
-                                ? 'bg-blue-600 dark:bg-blue-500'
-                                : hasTokens
-                                ? 'bg-[#1a73e8] dark:bg-[#7aa7ff]'
-                                : 'bg-neutral-200 dark:bg-neutral-800'
-                            }`}
-                            style={{ height: `${heightPercent}%` }}
-                          />
-                          <Text
-                            className={`mt-1.5 font-mono text-[9px] ${
-                              isSelected
-                                ? 'font-bold text-blue-600 dark:text-blue-400'
-                                : hasTokens
-                                ? 'text-neutral-700 dark:text-neutral-300 font-medium'
-                                : 'text-neutral-400 dark:text-neutral-600'
-                            }`}
-                          >
-                            {formatDayLabel(d.day)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
+                    {fullDailyEntries.map((d) => (
+                      <DayBar
+                        key={d.day}
+                        day={d.day}
+                        tokens={(d?.input_tokens || 0) + (d?.output_tokens || 0) + (d?.reasoning_tokens || 0)}
+                        maxTokens={maxDayTokens}
+                        selected={selectedDay?.day === d.day}
+                        onSelect={handleSelectDay}
+                      />
+                    ))}
                   </View>
                 </ScrollView>
               )}

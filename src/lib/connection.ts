@@ -11,6 +11,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Note: web storage is NOT encrypted; native stays in the OS keychain.
 const useWebStore = Platform.OS === 'web';
 
+// In-memory read-through cache: SecureStore = keychain I/O, slow. Boot reads
+// host/user/pw/cookie/theme/model back-to-back — cache so repeats are free.
+// Writes update the cache synchronously; deletes evict it.
+const memCache = new Map<string, string | null>();
+
 const K_HOST = 'hermes.conn.host';
 const K_USERNAME = 'hermes.conn.username';
 const K_PASSWORD = 'hermes.conn.password';
@@ -60,13 +65,20 @@ export interface Connection {
 
 async function get(key: string): Promise<string | null> {
   try {
-    return useWebStore ? await AsyncStorage.getItem(key) : await SecureStore.getItemAsync(key);
+    const cached = memCache.get(key);
+    if (cached !== undefined) return cached;
+    const v = useWebStore ? await AsyncStorage.getItem(key) : await SecureStore.getItemAsync(key);
+    // Cache hits AND misses (null) so repeat boot reads don't hit keychain again.
+    // Miss cache is short-lived to avoid stale first-run writes.
+    memCache.set(key, v);
+    return v;
   } catch {
-    return null;
+    return memCache.get(key) ?? null;
   }
 }
 
 async function set(key: string, value: string): Promise<void> {
+  memCache.set(key, value);
   try {
     if (useWebStore) {
       await AsyncStorage.setItem(key, value);
@@ -81,6 +93,7 @@ async function set(key: string, value: string): Promise<void> {
 }
 
 async function del(key: string): Promise<void> {
+  memCache.delete(key);
   try {
     if (useWebStore) await AsyncStorage.removeItem(key);
     else await SecureStore.deleteItemAsync(key);

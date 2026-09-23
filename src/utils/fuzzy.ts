@@ -125,8 +125,11 @@ export function fuzzyScore(target: string, query: string): FuzzyMatch | null {
  * union of matched positions. Returns null if any token fails to match.
  */
 export function fuzzyScoreMulti(target: string, query: string): FuzzyMatch | null {
-  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  return fuzzyScoreMultiTokens(target, query.trim().toLowerCase().split(/\s+/).filter(Boolean));
+}
 
+/** Tokenized variant — pre-split the query once when scoring many targets. */
+export function fuzzyScoreMultiTokens(target: string, tokens: string[]): FuzzyMatch | null {
   if (!tokens.length) {
     return { score: 0, positions: [] }
   }
@@ -170,10 +173,11 @@ export function fuzzyRank<T>(items: readonly T[], query: string, toText: (item: 
     return items.map(item => ({ item, score: 0, positions: [] }))
   }
 
+  const tokens = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
   const ranked: Array<RankedItem<T> & { index: number }> = []
 
   items.forEach((item, index) => {
-    const match = fuzzyScoreMulti(toText(item), trimmed)
+    const match = fuzzyScoreMultiTokens(toText(item), tokens)
 
     if (match) {
       ranked.push({ item, score: match.score, positions: match.positions, index })

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Platform,
   Pressable,
@@ -38,6 +39,34 @@ type LogLevelFilter = (typeof LOG_LEVELS)[number];
 const LINE_COUNTS = [50, 100, 200, 500] as const;
 
 export type LineSeverity = 'error' | 'warning' | 'info' | 'debug';
+
+const LEVEL_COLORS: Record<LogLevelFilter, { activeBg: string; activeText: string; activeBorder: string }> = {
+  ALL: {
+    activeBg: 'bg-neutral-900 dark:bg-neutral-100',
+    activeText: 'text-white dark:text-neutral-950',
+    activeBorder: 'border-neutral-900 dark:border-neutral-100',
+  },
+  INFO: {
+    activeBg: 'bg-blue-600',
+    activeText: 'text-white',
+    activeBorder: 'border-blue-600',
+  },
+  WARNING: {
+    activeBg: 'bg-amber-600',
+    activeText: 'text-white',
+    activeBorder: 'border-amber-600',
+  },
+  ERROR: {
+    activeBg: 'bg-rose-600',
+    activeText: 'text-white',
+    activeBorder: 'border-rose-600',
+  },
+  DEBUG: {
+    activeBg: 'bg-indigo-600',
+    activeText: 'text-white',
+    activeBorder: 'border-indigo-600',
+  },
+};
 
 const LEVEL_TOKEN_RE =
   /^\d{4}-\d{2}-\d{2}[ T][\d:,.]+\s+(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL|FATAL)\b/;
@@ -113,47 +142,107 @@ export function LogsScreen() {
     if (authed) void fetchLogs();
   }, [authed, file, level, lineCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh interval (every 3.5 seconds)
+  // Auto-refresh interval (every 3.5 seconds) — skips when backgrounded
+  // so the Drawer keeping this screen mounted doesn't poll forever.
   useEffect(() => {
     if (!autoRefresh || !authed) return;
+    let appActive = true;
+    const sub = AppState.addEventListener('change', (s) => {
+      appActive = s === 'active';
+    });
     const interval = setInterval(() => {
+      if (!appActive) return;
       void fetchLogs(true);
     }, 3500);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [autoRefresh, authed, fetchLogs]);
 
   // Copy to clipboard
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
   const handleCopy = async () => {
     try {
       await Clipboard.setStringAsync(lines.join('\n'));
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {}
   };
 
-  const scrollToBottom = () => {
-    if (lines.length > 0) {
-      listRef.current?.scrollToEnd({ animated: true });
-    }
-  };
-
-  const scrollToTop = () => {
-    if (lines.length > 0) {
-      listRef.current?.scrollToIndex({ index: 0, animated: true });
-    }
-  };
-
-  // Statistics
+  // Statistics + per-row severity in one pass — old code ran classifyLine
+  // per row in renderItem AND again in stats (2x O(n)).
+  const rows = useMemo(
+    () => lines.map((line) => ({ line, sev: classifyLine(line) })),
+    [lines],
+  );
   const stats = useMemo(() => {
     let errorCount = 0;
     let warnCount = 0;
-    for (const l of lines) {
-      const sev = classifyLine(l);
-      if (sev === 'error') errorCount++;
-      else if (sev === 'warning') warnCount++;
+    for (const r of rows) {
+      if (r.sev === 'error') errorCount++;
+      else if (r.sev === 'warning') warnCount++;
     }
-    return { errorCount, warnCount, total: lines.length };
-  }, [lines]);
+    return { errorCount, warnCount, total: rows.length };
+  }, [rows]);
+
+  const scrollToBottom = useCallback(() => {
+    if (rows.length > 0) {
+      try {
+        listRef.current?.scrollToEnd({ animated: true });
+      } catch {}
+    }
+  }, [rows.length]);
+
+  const scrollToTop = useCallback(() => {
+    if (rows.length > 0) {
+      try {
+        listRef.current?.scrollToIndex({ index: 0, animated: true });
+      } catch {}
+    }
+  }, [rows.length]);
+  const logKeyExtractor = useCallback(
+    (item: { line: string }, index: number) => `${index}-${item.line.length}-${item.line.slice(0, 24)}`,
+    [],
+  );
+  const renderLogRow = useCallback(
+    ({ item, index }: { item: { line: string; sev: LineSeverity }; index: number }) => {
+      const isErr = item.sev === 'error';
+      const isWarn = item.sev === 'warning';
+      const isDbg = item.sev === 'debug';
+      return (
+        <View
+          className={`flex-row items-start py-0.5 px-1 rounded ${
+            isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
+          }`}
+        >
+          <Text className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</Text>
+          <Text
+            selectable
+            className={`flex-1 font-mono text-[11px] leading-4 ${
+              isErr
+                ? 'text-red-400 font-medium'
+                : isWarn
+                  ? 'text-amber-300'
+                  : isDbg
+                    ? 'text-neutral-500'
+                    : 'text-neutral-200'
+            }`}
+          >
+            {item.line}
+          </Text>
+        </View>
+      );
+    },
+    [],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
@@ -354,34 +443,7 @@ export function LogsScreen() {
                 >
                   {LOG_LEVELS.map((lvl) => {
                     const isSelected = level === lvl;
-                    const levelColors: Record<LogLevelFilter, { activeBg: string; activeText: string; activeBorder: string }> = {
-                      ALL: {
-                        activeBg: 'bg-neutral-900 dark:bg-neutral-100',
-                        activeText: 'text-white dark:text-neutral-950',
-                        activeBorder: 'border-neutral-900 dark:border-neutral-100',
-                      },
-                      INFO: {
-                        activeBg: 'bg-blue-600',
-                        activeText: 'text-white',
-                        activeBorder: 'border-blue-600',
-                      },
-                      WARNING: {
-                        activeBg: 'bg-amber-600',
-                        activeText: 'text-white',
-                        activeBorder: 'border-amber-600',
-                      },
-                      ERROR: {
-                        activeBg: 'bg-rose-600',
-                        activeText: 'text-white',
-                        activeBorder: 'border-rose-600',
-                      },
-                      DEBUG: {
-                        activeBg: 'bg-indigo-600',
-                        activeText: 'text-white',
-                        activeBorder: 'border-indigo-600',
-                      },
-                    };
-                    const color = levelColors[lvl];
+                    const color = LEVEL_COLORS[lvl];
 
                     return (
                       <Pressable
@@ -512,41 +574,15 @@ export function LogsScreen() {
         <View className="flex-1 bg-[#101014]">
           <FlatList
             ref={listRef}
-            data={lines}
-            keyExtractor={(_, index) => String(index)}
+            data={rows}
+            keyExtractor={logKeyExtractor}
             contentContainerStyle={{ padding: 10, paddingBottom: insets.bottom + 48 }}
-            renderItem={({ item, index }) => {
-              const sev = classifyLine(item);
-              const isErr = sev === 'error';
-              const isWarn = sev === 'warning';
-              const isDbg = sev === 'debug';
-
-              return (
-                <View
-                  className={`flex-row items-start py-0.5 px-1 rounded ${
-                    isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
-                  }`}
-                >
-                  <Text className="w-9 select-none font-mono text-[10px] text-neutral-600">
-                    {index + 1}
-                  </Text>
-                  <Text
-                    selectable
-                    className={`flex-1 font-mono text-[11px] leading-4 ${
-                      isErr
-                        ? 'text-red-400 font-medium'
-                        : isWarn
-                          ? 'text-amber-300'
-                          : isDbg
-                            ? 'text-neutral-500'
-                            : 'text-neutral-200'
-                    }`}
-                  >
-                    {item}
-                  </Text>
-                </View>
-              );
-            }}
+            renderItem={renderLogRow}
+            initialNumToRender={30}
+            maxToRenderPerBatch={30}
+            windowSize={7}
+            updateCellsBatchingPeriod={80}
+            removeClippedSubviews
           />
 
           {/* Quick Jump Buttons (Floating) */}

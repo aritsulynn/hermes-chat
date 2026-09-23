@@ -1,7 +1,7 @@
 // Ops route — parity with the dashboard web UI:
 // cron jobs, kanban boards/tasks, log viewer, usage analytics, file browser.
 // All best-effort REST over the session cookie (see src/dashboard.ts opsGet/opsMut).
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Redirect, useNavigation } from 'expo-router';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -113,6 +113,15 @@ export function OpsScreen({
   if (!authed) return <Redirect href="/login" />;
 
   const cronJobs: any[] = Array.isArray(data?.jobs) ? data.jobs : Array.isArray(data) ? data : [];
+  // JSON dump is expensive on large boards — stringify once per data change, not per render.
+  const dataDump = useMemo(() => {
+    if (tab === 'cron' || data === null) return '';
+    try {
+      return (typeof data === 'string' ? data : JSON.stringify(data, null, 2)).slice(0, 8000);
+    } catch {
+      return '';
+    }
+  }, [tab, data]);
 
   const cronAction = async (id: string, action: 'pause' | 'resume' | 'trigger') => {
     try {
@@ -235,7 +244,7 @@ export function OpsScreen({
         )}
         {tab !== 'cron' && data !== null && !loading && (
           <Text selectable className="rounded-lg bg-[#f4f4f6] dark:bg-[#212121] p-2 font-mono text-[13px] text-neutral-950 dark:text-neutral-100">
-            {typeof data === 'string' ? data.slice(0, 8000) : JSON.stringify(data, null, 2).slice(0, 8000)}
+            {dataDump}
           </Text>
         )}
       </ScrollView>

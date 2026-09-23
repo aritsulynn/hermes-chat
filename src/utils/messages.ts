@@ -100,8 +100,12 @@ export function utf8ToBase64(text: string): string {
   try {
     if (typeof btoa === 'function') {
       const bytes = new TextEncoder().encode(text);
+      // Chunked join — `+=` per byte is quadratic for large files.
+      const CHUNK = 0x8000;
       let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      for (let i = 0; i < bytes.byteLength; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
       return btoa(binary);
     }
   } catch {}

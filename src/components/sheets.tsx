@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import {
   BottomSheetBackdrop,
@@ -204,6 +204,13 @@ export const AskSheet = forwardRef<
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   // Which button was tapped — keeps the sheet from answering twice.
   const [sent, setSent] = useState<string | null>(null);
+  const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (lockTimer.current) clearTimeout(lockTimer.current);
+    },
+    [],
+  );
   const snapPoints = useMemo(() => ['60%', '90%'], []);
   const { theme } = useApp();
   const dark = theme === 'dark';
@@ -221,6 +228,7 @@ export const AskSheet = forwardRef<
 
     // Batch/single clarify — answer locks per question via clarify.lock so the
     // agent sees partial progress; the final answer set resolves the request.
+    // Debounced: rapid multi-select taps used to spam one RPC per tap.
     if (m === 'clarify') {
       const { single, questions } = parseClarify(ask);
       const toggle = (qid: string, choice: string, multi: boolean) => {
@@ -231,9 +239,14 @@ export const AskSheet = forwardRef<
               ? cur.filter((c) => c !== choice)
               : [...cur, choice]
             : [choice];
-          // Lock-in: server keeps it even on timeout.
-          gw?.call('clarify.lock', { request_id: ask.rpcId, question_id: qid, answer: next.join(', ') }).catch(() => {});
-          return { ...prev, [qid]: next };
+          const nextAll = { ...prev, [qid]: next };
+          const rpcId = ask.rpcId;
+          if (lockTimer.current) clearTimeout(lockTimer.current);
+          lockTimer.current = setTimeout(() => {
+            const payload = nextAll[qid]?.join(', ') ?? '';
+            gw?.call('clarify.lock', { request_id: rpcId, question_id: qid, answer: payload }).catch(() => {});
+          }, 300);
+          return nextAll;
         });
       };
       const submitAll = () => {

@@ -1,7 +1,7 @@
 // Root layout — expo-router Drawer (https://docs.expo.dev/router/advanced/drawer/).
 // Native drawer items (DrawerItemList/DrawerItem) instead of handmade buttons.
 import '../../global.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Drawer, DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { useGlobalSearchParams, usePathname, useRouter } from 'expo-router';
@@ -93,11 +93,13 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const isNewChat = onChat && !hasActiveRecent && messages.length === 0;
   const isMoreActive = MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`);
   // Inline filter replaces the removed /sessions page (drawer is the list now).
+  // Memoized so every streamed token doesn't refilter + rebuild 50 rows.
   const ql = q.trim().toLowerCase();
-  const visible = (ql
-    ? sessions.filter((s) => (s.title || '').toLowerCase().includes(ql))
-    : sessions
-  ).slice(0, 50);
+  const visible = useMemo(
+    () =>
+      (ql ? sessions.filter((s) => (s.title || '').toLowerCase().includes(ql)) : sessions).slice(0, 50),
+    [sessions, ql],
+  );
   return (
     <View className="flex-1" style={{ backgroundColor: dark ? '#000' : '#fff' }}>
       <DrawerContentScrollView {...props} contentContainerStyle={{ paddingBottom: 16 }}>

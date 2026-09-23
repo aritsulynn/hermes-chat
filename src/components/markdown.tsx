@@ -14,8 +14,10 @@ function astText(node: any): string {
 // A factory (not a constant) because the media rules need the active theme —
 // markdown has no styles channel for `dark`.
 export const makeSelectableRules = (dark: boolean) => ({
+  // Selectable lives ONLY on the outermost textgroup — nested selectable Texts
+  // double TextView cost on Android. Leaf text stays plain.
   text: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <Text key={node.key} selectable style={[inheritedStyles, styles.text]}>
+    <Text key={node.key} style={[inheritedStyles, styles.text]}>
       {node.content}
     </Text>
   ),

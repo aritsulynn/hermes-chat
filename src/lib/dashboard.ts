@@ -385,12 +385,20 @@ function restReasoning(row: Record<string, unknown>): string {
     .trim();
 }
 
+const sessionMessagesCache = new Map<string, { at: number; items: RestHistoryItem[] }>();
+
 export async function getSessionMessages(
   baseUrl: string,
   cookie: string,
   storedId: string,
   limit = 200,
 ): Promise<RestHistoryItem[]> {
+  // 5s in-memory TTL — toolRefresh + stampRowIds + resync often fire
+  // back-to-back for the same session and each refetches 200 rows.
+  const cacheKey = `${normalizeBase(baseUrl)}|${storedId}|${limit}`;
+  const now = Date.now();
+  const hit = sessionMessagesCache.get(cacheKey);
+  if (hit && now - hit.at < 5000) return hit.items;
   const base = normalizeBase(baseUrl);
   const path = storedId
     .split('/')
@@ -456,5 +464,10 @@ export async function getSessionMessages(
       });
     }
   }
+  if (sessionMessagesCache.size > 20) {
+    const oldest = sessionMessagesCache.keys().next().value;
+    if (oldest !== undefined) sessionMessagesCache.delete(oldest);
+  }
+  sessionMessagesCache.set(cacheKey, { at: now, items });
   return items;
 }

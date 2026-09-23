@@ -15,7 +15,7 @@
 //
 // Server files are cookie-gated, so the system browser can't open them — they
 // are read in-app instead.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -72,29 +72,59 @@ function pathOfHref(href: string): string | null {
 // Server-side files sit behind three different gates: /api/media (the agent's
 // media roots — images only), /api/fs/read-data-url (any path) and
 // /api/files/read (the managed root the Files tab browses). Try in that order.
+// Results are memoized per path so scrolling an image-heavy transcript doesn't
+// refetch the same file per bubble mount. In-flight requests are shared too.
+const serverFileCache = new Map<string, string>();
+const serverFilePending = new Map<string, Promise<string>>();
 async function readServerFile(
   opsGet: (path: string) => Promise<any>,
   path: string,
 ): Promise<string> {
+  const hit = serverFileCache.get(path);
+  if (hit !== undefined) return hit;
+  const inflight = serverFilePending.get(path);
+  if (inflight) return inflight;
   const q = encodeURIComponent(path);
   const attempts: [string, (r: any) => unknown][] = [
     [`/api/media?path=${q}`, (r) => r?.data_url],
     [`/api/fs/read-data-url?path=${q}`, (r) => r?.dataUrl],
     [`/api/files/read?path=${q}`, (r) => r?.data_url],
   ];
-  for (const [url, pick] of attempts) {
-    try {
-      const v = pick(await opsGet(url));
-      if (typeof v === 'string' && v.startsWith('data:')) return v;
-    } catch {}
-  }
-  return '';
+  const p = (async () => {
+    for (const [url, pick] of attempts) {
+      try {
+        // 15s ceiling per endpoint so a wedged server can't hang the thumbnail forever.
+        const v = pick(
+          await Promise.race([
+            opsGet(url),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('media timeout')), 15000)),
+          ]),
+        );
+        if (typeof v === 'string' && v.startsWith('data:')) {
+          // Bound the cache — image data URLs are large.
+          if (serverFileCache.size > 40) {
+            const oldest = serverFileCache.keys().next().value;
+            if (oldest !== undefined) serverFileCache.delete(oldest);
+          }
+          serverFileCache.set(path, v);
+          return v;
+        }
+      } catch {}
+    }
+    return '';
+  })().finally(() => {
+    serverFilePending.delete(path);
+  });
+  serverFilePending.set(path, p);
+  return p;
 }
 
 const imageSource = (uri: string, cookie: string) => ({
   uri,
   ...(cookie && !/^data:/i.test(uri) ? { headers: { Cookie: cookie } } : {}),
 });
+
+const ratioCache = new Map<string, number>();
 
 /** Share or download a resolved media URI. Remote/relative sources share the URL;
  *  an embedded data URL is written to a cache file first; web uses the Web Share
@@ -204,9 +234,25 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     boxH = 340;
     if (ratio) boxW = Math.round(boxH * ratio);
   }
+  const imgSource = useMemo(() => imageSource(uri ?? '', cookie), [uri, cookie]);
+  const boxStyle = useMemo(
+    () => ({
+      width: boxW,
+      height: boxH,
+      borderRadius: 10,
+      backgroundColor: dark ? '#1b1b1b' : '#e9e9ee',
+    }),
+    [boxW, boxH, dark],
+  );
 
+  // Cached aspect ratios so thumbnail + preview of the same URI cost one native call.
   useEffect(() => {
     if (!uri) return;
+    const cached = ratioCache.get(uri);
+    if (cached) {
+      setRatio(cached);
+      return;
+    }
     let alive = true;
     try {
       // No headers here (getSize has none) — authed sources just keep the
@@ -214,7 +260,15 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
       Image.getSize(
         uri,
         (w, h) => {
-          if (alive && w > 0 && h > 0) setRatio(w / h);
+          if (alive && w > 0 && h > 0) {
+            const r = w / h;
+            if (ratioCache.size > 200) {
+              const oldest = ratioCache.keys().next().value;
+              if (oldest !== undefined) ratioCache.delete(oldest);
+            }
+            ratioCache.set(uri, r);
+            setRatio(r);
+          }
         },
         () => {},
       );
@@ -245,15 +299,10 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
       style={{ width: boxW, height: boxH }}
     >
       <Image
-        source={imageSource(uri, cookie)}
+        source={imgSource}
         resizeMode="contain"
         onError={() => setBroken(true)}
-        style={{
-          width: boxW,
-          height: boxH,
-          borderRadius: 10,
-          backgroundColor: dark ? '#1b1b1b' : '#e9e9ee',
-        }}
+        style={boxStyle}
       />
     </Pressable>
   );
@@ -378,7 +427,8 @@ export function FileChip({
       if (mime.startsWith('image/')) showPreview({ kind: 'image', uri: d });
       else if (TEXT_MIME.test(mime)) {
         const b64 = d.split(';base64,')[1] ?? '';
-        showPreview({ kind: 'text', text: base64ToUtf8(b64).slice(0, PREVIEW_MAX_CHARS) });
+        // Slice BEFORE decode — decoding a multi-MB file just to show 20k chars spikes memory.
+        showPreview({ kind: 'text', text: base64ToUtf8(b64.slice(0, 30000)).slice(0, PREVIEW_MAX_CHARS) });
       } else showPreview({ kind: 'other' });
     } finally {
       setBusy(false);

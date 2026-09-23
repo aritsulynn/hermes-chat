@@ -34,7 +34,7 @@ import {
   todoLabel,
 } from '../../utils/messages';
 import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '../../utils/reasoning';
-import { fuzzyScoreMulti } from '../../utils/fuzzy';
+import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
 import { contextTone, readUsage } from '../../utils/usage';
 import { isSlashSuggestion } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
@@ -69,6 +69,7 @@ export function ChatScreen() {
     sessionId,
     sessionTitle,
     messages,
+    streamingTexts,
     input,
     setInput,
     model,
@@ -252,8 +253,10 @@ export function ChatScreen() {
   // Slash rows filter at render (not when the RPC lands) so a late
   // `commands.catalog` reply re-curates the rows already on screen. Path rows
   // come curated by the backend.
-  const visibleCompletions =
-    completionKind === 'slash' ? completions.filter((it) => isSlashSuggestion(it.text)) : completions;
+  const visibleCompletions = useMemo(
+    () => (completionKind === 'slash' ? completions.filter((it) => isSlashSuggestion(it.text)) : completions),
+    [completionKind, completions],
+  );
 
   const applyCompletion = useCallback(
     (item: SlashCompletionItem) => {
@@ -323,7 +326,12 @@ export function ChatScreen() {
   const flying = useRef(false);
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
-  const tokenEstimate = messages.reduce((n, m) => n + Math.ceil(m.text.length / 4), 0);
+  const tokenEstimate = useMemo(() => {
+    let n = 0;
+    for (const m of messages) n += Math.ceil(m.text.length / 4);
+    for (const k in streamingTexts) n += Math.ceil(streamingTexts[k].length / 4);
+    return n;
+  }, [messages, streamingTexts]);
   // Regenerate targets the last assistant bubble; the rewind target is the last
   // user row that carries a durable id.
   const lastAssistantId = useMemo(
@@ -396,6 +404,7 @@ export function ChatScreen() {
   const onEdit = useCallback((id: string) => editMessage(id), [editMessage]);
   const onRegenerate = useCallback(() => regenerate(), [regenerate]);
 
+  const scrollEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollEnd = useCallback((animated?: unknown) => {
     const anim = animated === false ? false : true;
     // Double-tick: one frame for layout shrink (keyboard resize), one for content.
@@ -407,13 +416,20 @@ export function ChatScreen() {
         if (end <= 0) return;
         flying.current = true;
         // Safety: never strand the follow state if the flight never lands.
-        setTimeout(() => {
+        if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
+        scrollEndTimer.current = setTimeout(() => {
           flying.current = false;
         }, 1200);
         listRef.current?.scrollToOffset({ offset: end, animated: anim });
       });
     });
   }, []);
+  useEffect(
+    () => () => {
+      if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
+    },
+    [],
+  );
 
   // The list ends with `endPad` of empty space (room for the floating dock),
   // so a manual scroll can stop inside that dead zone with the last bubble's
@@ -442,16 +458,18 @@ export function ChatScreen() {
   // Also re-anchor any open popover, since the composer moves up with the
   // keyboard (matters for the model search field).
   useEffect(() => {
+    let t1: ReturnType<typeof setTimeout> | null = null;
+    let t2: ReturnType<typeof setTimeout> | null = null;
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e: any) => {
       setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0)));
-      setTimeout(() => {
+      t1 = setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
       }, 50);
     });
     const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
       setKbH(0);
-      setTimeout(() => {
+      t2 = setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
       }, 50);
@@ -459,6 +477,8 @@ export function ChatScreen() {
     return () => {
       show.remove();
       hide.remove();
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
     };
   }, [scrollEnd, remeasurePopover]);
 
@@ -559,9 +579,14 @@ export function ChatScreen() {
   const matchIndices = useMemo(
     () =>
       searchOpen && sq
-        ? messages.map((m, i) => (m.text.toLowerCase().includes(sq) ? i : -1)).filter((i) => i >= 0)
+        ? messages
+            .map((m, i) => {
+              const t = streamingTexts[m.id] ? m.text + streamingTexts[m.id] : m.text;
+              return t.toLowerCase().includes(sq) ? i : -1;
+            })
+            .filter((i) => i >= 0)
         : [],
-    [searchOpen, sq, messages],
+    [searchOpen, sq, messages, streamingTexts],
   );
   const jumpToMatch = useCallback(
     (n: number) => {
@@ -586,6 +611,108 @@ export function ChatScreen() {
       return () => clearTimeout(t);
     }
   }, [sq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Model picker + list memos must live before the early returns below
+  // (hooks can't run after a conditional return). They only read state/props.
+  const modelProviders = providers ?? FALLBACK_PROVIDERS;
+  const mq = modelQuery.trim().toLowerCase();
+  const modelVisibleProviders = useMemo(() => {
+    const list0 = modelProviders;
+    const q = mq;
+    const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+    return list0
+      .map((p) => {
+        const list = p.models ?? [];
+        if (!q) return { ...p, models: list };
+        const providerHit =
+          fuzzyScoreMultiTokens(p.name, tokens) !== null || fuzzyScoreMultiTokens(p.slug || '', tokens) !== null;
+        if (providerHit) return { ...p, models: list };
+        const models = list
+          .map((mm) => ({ mm, s: fuzzyScoreMultiTokens(mm, tokens)?.score }))
+          .filter((x): x is { mm: string; s: number } => x.s !== undefined)
+          .sort((a, b) => b.s - a.s)
+          .map((x) => x.mm);
+        return { ...p, models };
+      })
+      .filter((p) => (q ? (p.models?.length ?? 0) > 0 : true));
+  }, [modelProviders, mq]);
+  // Search highlight: precompute matched ids once instead of toLowerCase per bubble per render.
+  // Includes buffered streaming text so the live bubble highlights too.
+  const highlightIds = useMemo(() => {
+    if (!searchOpen || !sq) return null;
+    const s = new Set<string>();
+    for (const m of messages) {
+      const t = streamingTexts[m.id] ? m.text + streamingTexts[m.id] : m.text;
+      if (t.toLowerCase().includes(sq)) s.add(m.id);
+    }
+    return s;
+  }, [searchOpen, sq, messages, streamingTexts]);
+  const listContentStyle = useMemo(
+    () => ({ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }),
+    [dockH, kbH],
+  );
+  const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
+  const listMaintainVisible = useMemo(() => ({ minIndexForVisible: 0 }), []);
+  const handleContentSizeChange = useCallback(
+    (_w: number, h: number) => {
+      contentH.current = h;
+      if (touching.current) return;
+      if (stickEnd.current && !kbResizeRef.current) scrollEnd(false);
+    },
+    [scrollEnd],
+  );
+  const handleListLayout = useCallback(
+    (e: any) => {
+      layoutH.current = e.nativeEvent.layout.height;
+      if (stickEnd.current) scrollEnd(false);
+    },
+    [scrollEnd],
+  );
+  const handleScrollBeginDrag = useCallback((e: any) => {
+    touching.current = true;
+    dragStartY.current = e.nativeEvent.contentOffset.y;
+  }, []);
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    scrollY.current = contentOffset.y;
+    const atEnd = contentSize.height - (contentOffset.y + layoutMeasurement.height) < AT_END_PX;
+    if (flying.current && !touching.current) {
+      if (atEnd) flying.current = false;
+      else return;
+    }
+    stickEnd.current = atEnd;
+    setAtBottom((p) => (p === atEnd ? p : atEnd));
+  }, []);
+  const renderMessage = useCallback(
+    ({ item }: { item: UiMessage }) => {
+      // Merge the O(1) streaming buffer for the 1-2 live bubbles only —
+      // other rows keep their stable `item` reference so memo() holds.
+      const delta = streamingTexts[item.id];
+      const liveItem = delta ? { ...item, text: item.text + delta } : item;
+      return (
+        <MessageBubble
+          item={liveItem}
+          bubbleMax={bubbleMax}
+          dark={dark}
+          expanded={!!expanded[item.id]}
+          highlight={highlightIds?.has(item.id) ?? false}
+          longFired={longFired}
+          onToggleExpand={onToggleExpand}
+          copied={copiedId === item.id}
+          onCopy={onCopy}
+          canEdit={item.role === 'user' && item.rowId != null && !generating}
+          canRegenerate={!!lastAssistantId && item.id === lastAssistantId && hasRegenTarget && !generating}
+          onEdit={onEdit}
+          onRegenerate={onRegenerate}
+        />
+      );
+    },
+    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onEdit, onRegenerate, streamingTexts],
+  );
+  const listExtraData = useMemo(
+    () => ({ expanded, highlightIds, copiedId, generating, lastAssistantId, dark, bubbleMax, streamingTexts }),
+    [expanded, highlightIds, copiedId, generating, lastAssistantId, dark, bubbleMax, streamingTexts],
+  );
 
   // Native Drawer header: live session title, hamburger, kebab menu.
   // Android content height compacted 64→52 like sessions (iOS stays 44).
@@ -660,6 +787,7 @@ export function ChatScreen() {
   }
 
   // Popover geometry: anchor above the tapped control (window → root coords).
+  // (modelVisibleProviders/highlight/list memos live above the early returns.)
   const popW = popover
     ? popover.kind === 'model'
       ? Math.min(winW - 24, 340)
@@ -681,28 +809,6 @@ export function ChatScreen() {
     popover?.kind === 'model'
       ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove))
       : undefined;
-
-  // Model picker list (search + provider accordions), moved out of the old
-  // composer bottom sheet so it can render in the screen-level popover.
-  const modelProviders = providers ?? FALLBACK_PROVIDERS;
-  const mq = modelQuery.trim().toLowerCase();
-  const modelVisibleProviders = modelProviders
-    .map((p) => {
-      const list = p.models ?? [];
-      if (!mq) return { ...p, models: list };
-      // Provider-name hit keeps its whole list; otherwise rank models fuzzily
-      // (`son4` → claude-sonnet-4) instead of a plain substring filter.
-      const providerHit =
-        fuzzyScoreMulti(p.name, mq) !== null || fuzzyScoreMulti(p.slug || '', mq) !== null;
-      if (providerHit) return { ...p, models: list };
-      const models = list
-        .map((mm) => ({ mm, s: fuzzyScoreMulti(mm, mq)?.score }))
-        .filter((x): x is { mm: string; s: number } => x.s !== undefined)
-        .sort((a, b) => b.s - a.s)
-        .map((x) => x.mm);
-      return { ...p, models };
-    })
-    .filter((p) => (mq ? (p.models?.length ?? 0) > 0 : true));
 
   return (
     <View
@@ -828,70 +934,27 @@ export function ChatScreen() {
         <FlatList
           ref={listRef}
           data={messages}
-          keyExtractor={(m) => m.id}
+          keyExtractor={listKeyExtractor}
+          extraData={listExtraData}
           className="flex-1"
-          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }}
-          onContentSizeChange={(_w, h) => {
-            contentH.current = h;
-            // Never yank while the finger is down: the next streamed token
-            // would undo a slow scroll-up mid-gesture ("can't scroll up, it
-            // pulls back down"). Instant, not animated: a fresh animated
-            // flight per token batch restarts the glide and fights the
-            // user's drag. Explicit jumps (send/jump button/keyboard) still
-            // animate through scrollEnd().
-            if (touching.current) return;
-            if (stickEnd.current && !kbResizeRef.current) scrollEnd(false);
-          }}
-          onLayout={(e) => {
-            layoutH.current = e.nativeEvent.layout.height;
-            // Only follow the tail when the user is already at the bottom — a
-            // resize (keyboard/dock) must not yank a reading user to the end.
-            if (stickEnd.current) scrollEnd(false);
-          }}
+          contentContainerStyle={listContentStyle}
+          onContentSizeChange={handleContentSizeChange}
+          onLayout={handleListLayout}
           onMomentumScrollEnd={snapToEnd}
           onScrollEndDrag={snapToEnd}
-          onScrollBeginDrag={(e) => {
-            touching.current = true;
-            dragStartY.current = e.nativeEvent.contentOffset.y;
-          }}
-          onScroll={(e) => {
-            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-            scrollY.current = contentOffset.y;
-            const atEnd = contentSize.height - (contentOffset.y + layoutMeasurement.height) < AT_END_PX;
-            // A programmatic flight owns the follow state until it lands —
-            // unless the user grabbed the list mid-flight (touching), which
-            // hands control back immediately.
-            if (flying.current && !touching.current) {
-              if (atEnd) flying.current = false;
-              else return;
-            }
-            stickEnd.current = atEnd;
-            setAtBottom((p) => (p === atEnd ? p : atEnd));
-          }}
-          scrollEventThrottle={16}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onScroll={handleScroll}
+          scrollEventThrottle={32}
+          maintainVisibleContentPosition={listMaintainVisible}
           automaticallyAdjustKeyboardInsets={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="none"
-          renderItem={({ item }) => (
-            <MessageBubble
-              item={item}
-              bubbleMax={bubbleMax}
-              dark={dark}
-              expanded={!!expanded[item.id]}
-              highlight={searchOpen && !!sq && item.text.toLowerCase().includes(sq)}
-              longFired={longFired}
-              onToggleExpand={onToggleExpand}
-              copied={copiedId === item.id}
-              onCopy={onCopy}
-              canEdit={item.role === 'user' && item.rowId != null && !generating}
-              canRegenerate={
-                !!lastAssistantId && item.id === lastAssistantId && hasRegenTarget && !generating
-              }
-              onEdit={onEdit}
-              onRegenerate={onRegenerate}
-            />
-          )}
+          removeClippedSubviews
+          windowSize={11}
+          maxToRenderPerBatch={12}
+          updateCellsBatchingPeriod={80}
+          initialNumToRender={12}
+          renderItem={renderMessage}
         />
         {/* Floating bottom dock — transparent, so the transcript shows behind the
             composer instead of a solid background band. */}

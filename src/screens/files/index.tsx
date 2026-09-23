@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -150,6 +151,49 @@ function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`;
 }
 
+// Memoized row — the old ScrollView.map rebuilt every icon/date/bytes per keystroke.
+const FileRow = memo(function FileRow({
+  entry,
+  dark,
+  onOpen,
+  onDelete,
+}: {
+  entry: ManagedFileEntry;
+  dark: boolean;
+  onOpen: (e: ManagedFileEntry) => void;
+  onDelete: (path: string, isDir: boolean, name: string) => void;
+}) {
+  const category = getFileCategory(entry.name, entry.mime_type);
+  const isDir = entry.is_directory;
+  const Icon = isDir ? Folder : category.icon;
+  const iconColor = isDir ? '#f59e0b' : category.color;
+  const iconBg = isDir ? '#f59e0b18' : category.bgColor;
+  return (
+    <Pressable
+      onPress={() => onOpen(entry)}
+      onLongPress={() => onDelete(entry.path, entry.is_directory, entry.name)}
+      className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-2.5 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
+    >
+      <View className="h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: iconBg }}>
+        <Icon size={20} color={iconColor} />
+      </View>
+      <View className="flex-1 justify-center">
+        <Text numberOfLines={1} className="font-mono text-sm font-medium text-neutral-900 dark:text-neutral-100">
+          {entry.name}
+        </Text>
+        <View className="mt-0.5 flex-row items-center gap-2">
+          <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            {isDir ? 'Folder' : formatBytes(entry.size)}
+          </Text>
+          <Text className="text-[11px] text-neutral-400 dark:text-neutral-600">·</Text>
+          <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">{formatDate(entry.mtime)}</Text>
+        </View>
+      </View>
+      {isDir ? <ChevronRight size={17} color={dark ? '#666' : '#aaa'} /> : null}
+    </Pressable>
+  );
+});
+
 const TEXT_MIME_RE = /^(text\/|application\/(json|xml|yaml|x-yaml|javascript|csv|toml|x-sh))/i;
 const TEXT_EXTS = new Set(['txt','md','markdown','log','env','csv','tsv','json','xml','yaml','yml','ini','cfg','conf','toml','sh','bash','js','jsx','ts','tsx','py','html','htm','css','scss','sql','rs','go','c','cpp','h','java','kt','rb','php','svg']);
 function isTextReadable(mime: string | null | undefined, name: string): boolean {
@@ -168,7 +212,6 @@ export function FilesScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Jump to Path Modal
   const [pathModalOpen, setPathModalOpen] = useState(false);
@@ -196,6 +239,24 @@ export function FilesScreen() {
 
   // Uploading
   const [uploading, setUploading] = useState(false);
+  // Debounced search — typing shouldn't refilter + rebuild every row per keystroke.
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchInput.trim().toLowerCase()), 150);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+  const searchQuery = searchInput;
+  const setSearchQuery = setSearchInput;
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+  // Stale-load guard — rapid breadcrumb/up/jump shouldn't let an old listing win.
+  const loadSeq = useRef(0);
 
   const activeDirectory = listing?.path ?? currentPath;
   const currentPathRef = useRef<string>('~');
@@ -203,6 +264,7 @@ export function FilesScreen() {
 
   const load = useCallback(
     async (path?: string, isRefresh = false) => {
+      const seq = ++loadSeq.current;
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
@@ -210,13 +272,16 @@ export function FilesScreen() {
         const targetPath = (path !== undefined ? path : currentPathRef.current || '~').trim();
         const query = targetPath ? `?path=${encodeURIComponent(targetPath)}` : '';
         const res: ManagedFilesResponse = await opsGet(`/api/files${query}`);
+        if (seq !== loadSeq.current) return;
         setListing(res);
         setCurrentPath(res.path);
         currentPathRef.current = res.path;
         setPathInput(res.path);
       } catch (e) {
+        if (seq !== loadSeq.current) return;
         setError(errMsg(e));
       } finally {
+        if (seq !== loadSeq.current) return;
         setLoading(false);
         setRefreshing(false);
       }
@@ -254,31 +319,34 @@ export function FilesScreen() {
     return crumbs;
   }, [activeDirectory]);
 
-  const handleDeleteEntry = (targetPath: string, isDir: boolean, name: string) => {
-    Alert.alert(
-      isDir ? 'Delete Folder' : 'Delete File',
-      `Are you sure you want to delete "${name}"? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await opsMut('/api/files', 'DELETE', { path: targetPath, recursive: isDir });
-              if (previewModalOpen) {
-                setPreviewModalOpen(false);
-                setSelectedFile(null);
+  const handleDeleteEntry = useCallback(
+    (targetPath: string, isDir: boolean, name: string) => {
+      Alert.alert(
+        isDir ? 'Delete Folder' : 'Delete File',
+        `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await opsMut('/api/files', 'DELETE', { path: targetPath, recursive: isDir });
+                if (previewModalOpen) {
+                  setPreviewModalOpen(false);
+                  setSelectedFile(null);
+                }
+                await load(activeDirectory);
+              } catch (e) {
+                Alert.alert('Delete Failed', errMsg(e));
               }
-              await load(activeDirectory);
-            } catch (e) {
-              Alert.alert('Delete Failed', errMsg(e));
-            }
+            },
           },
-        },
-      ],
-    );
-  };
+        ],
+      );
+    },
+    [opsMut, previewModalOpen, load, activeDirectory],
+  );
 
   const handleOpenEntry = async (entry: ManagedFileEntry) => {
     if (entry.is_directory) {
@@ -422,25 +490,45 @@ export function FilesScreen() {
     if (!fileTextContent) return;
     await Clipboard.setStringAsync(fileTextContent);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(false), 2000);
   };
 
-  // Filter entries
-  const filteredEntries = useMemo(() => {
-    if (!listing?.entries) return [];
-    if (!searchQuery.trim()) return listing.entries;
-    const q = searchQuery.trim().toLowerCase();
-    return listing.entries.filter((item) => item.name.toLowerCase().includes(q));
-  }, [listing?.entries, searchQuery]);
+  // Filter entries — single pass for filter + counts.
+  const { filteredEntries, folderCount, fileCount } = useMemo(() => {
+    const entries = listing?.entries ?? [];
+    let folders = 0;
+    let files = 0;
+    for (const e of entries) {
+      if (e.is_directory) folders++;
+      else files++;
+    }
+    if (!debouncedQuery) return { filteredEntries: entries, folderCount: folders, fileCount: files };
+    const filtered = entries.filter((item) => item.name.toLowerCase().includes(debouncedQuery));
+    return { filteredEntries: filtered, folderCount: folders, fileCount: files };
+  }, [listing?.entries, debouncedQuery]);
 
-  const folderCount = useMemo(
-    () => (listing?.entries || []).filter((e) => e.is_directory).length,
-    [listing?.entries],
+  const handleOpenEntryStable = useCallback(
+    (entry: ManagedFileEntry) => {
+      void handleOpenEntry(entry);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [opsGet],
   );
-  const fileCount = useMemo(
-    () => (listing?.entries || []).filter((e) => !e.is_directory).length,
-    [listing?.entries],
+  const fileKeyExtractor = useCallback((item: ManagedFileEntry) => item.path, []);
+  const renderFileRow = useCallback(
+    ({ item }: { item: ManagedFileEntry }) => (
+      <FileRow entry={item} dark={dark} onOpen={handleOpenEntryStable} onDelete={handleDeleteEntry} />
+    ),
+    [dark, handleOpenEntryStable, handleDeleteEntry],
   );
+  const closePreview = useCallback(() => {
+    // Release the base64 payload — keeping data_url retains the whole file in JS memory.
+    setPreviewModalOpen(false);
+    setSelectedFile(null);
+    setFileTextContent('');
+    setIsEditingFile(false);
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
@@ -600,115 +688,60 @@ export function FilesScreen() {
         </View>
       )}
 
-      {/* File List */}
-      <ScrollView
+      {/* File List — virtualized so large folders don't mount every row. */}
+      <FlatList
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        data={filteredEntries}
+        keyExtractor={fileKeyExtractor}
+        renderItem={renderFileRow}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24, flexGrow: 1 }}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => void load(activeDirectory, true)}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load(activeDirectory, true)} />
         }
-      >
-        {/* Parent Directory Link (..) */}
-        {listing?.parent && (
-          <Pressable
-            onPress={handleGoUp}
-            className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
-          >
-            <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
-              <ArrowUp size={18} color="#f59e0b" />
+        initialNumToRender={20}
+        maxToRenderPerBatch={20}
+        windowSize={7}
+        updateCellsBatchingPeriod={60}
+        removeClippedSubviews
+        ListHeaderComponent={
+          listing?.parent ? (
+            <Pressable
+              onPress={handleGoUp}
+              className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
+            >
+              <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
+                <ArrowUp size={18} color="#f59e0b" />
+              </View>
+              <View className="flex-1">
+                <Text className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</Text>
+                <Text className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</Text>
+              </View>
+            </Pressable>
+          ) : null
+        }
+        ListEmptyComponent={
+          loading && !refreshing ? (
+            <View className="items-center justify-center py-16">
+              <ActivityIndicator size="large" color="#1a73e8" />
+              <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</Text>
             </View>
-            <View className="flex-1">
-              <Text className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                ..
+          ) : !loading ? (
+            <View className="items-center justify-center py-20 px-6">
+              <View className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
+                <Folder size={28} color={dark ? '#666' : '#999'} />
+              </View>
+              <Text className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                {searchInput ? 'No matching files' : 'Folder is empty'}
               </Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                Parent directory
+              <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                {searchInput
+                  ? `No files or folders matching "${searchInput}"`
+                  : 'Upload files or create folders using the top buttons.'}
               </Text>
             </View>
-          </Pressable>
-        )}
-
-        {/* Loading Spinner */}
-        {loading && !refreshing && (
-          <View className="items-center justify-center py-16">
-            <ActivityIndicator size="large" color="#1a73e8" />
-            <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
-              Loading files...
-            </Text>
-          </View>
-        )}
-
-        {/* Empty State */}
-        {!loading && filteredEntries.length === 0 && (
-          <View className="items-center justify-center py-20 px-6">
-            <View className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
-              <Folder size={28} color={dark ? '#666' : '#999'} />
-            </View>
-            <Text className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-              {searchQuery ? 'No matching files' : 'Folder is empty'}
-            </Text>
-            <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-              {searchQuery
-                ? `No files or folders matching "${searchQuery}"`
-                : 'Upload files or create folders using the top buttons.'}
-            </Text>
-          </View>
-        )}
-
-        {/* Items */}
-        {!loading &&
-          filteredEntries.map((entry) => {
-            const isDir = entry.is_directory;
-            const category = getFileCategory(entry.name, entry.mime_type);
-            const Icon = isDir ? Folder : category.icon;
-            const iconColor = isDir ? '#f59e0b' : category.color;
-            const iconBg = isDir ? '#f59e0b18' : category.bgColor;
-
-            return (
-              <Pressable
-                key={entry.path}
-                onPress={() => void handleOpenEntry(entry)}
-                onLongPress={() => handleDeleteEntry(entry.path, entry.is_directory, entry.name)}
-                className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-2.5 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
-              >
-                {/* Icon */}
-                <View
-                  className="h-10 w-10 items-center justify-center rounded-xl"
-                  style={{ backgroundColor: iconBg }}
-                >
-                  <Icon size={20} color={iconColor} />
-                </View>
-
-                {/* Details */}
-                <View className="flex-1 justify-center">
-                  <Text
-                    numberOfLines={1}
-                    className="font-mono text-sm font-medium text-neutral-900 dark:text-neutral-100"
-                  >
-                    {entry.name}
-                  </Text>
-                  <View className="mt-0.5 flex-row items-center gap-2">
-                    <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                      {isDir ? 'Folder' : formatBytes(entry.size)}
-                    </Text>
-                    <Text className="text-[11px] text-neutral-400 dark:text-neutral-600">·</Text>
-                    <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                      {formatDate(entry.mtime)}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Actions */}
-                {isDir ? (
-                  <ChevronRight size={17} color={dark ? '#666' : '#aaa'} />
-                ) : null}
-              </Pressable>
-            );
-          })}
-      </ScrollView>
+          ) : null
+        }
+      />
 
       {/* Reading File Overlay */}
       {readingFile && (
@@ -727,7 +760,7 @@ export function FilesScreen() {
         visible={previewModalOpen}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setPreviewModalOpen(false)}
+        onRequestClose={closePreview}
       >
         <SafeAreaView className="flex-1 bg-white dark:bg-neutral-950">
           <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
@@ -806,10 +839,7 @@ export function FilesScreen() {
               ) : null}
 
               <Pressable
-                onPress={() => {
-                  setPreviewModalOpen(false);
-                  setIsEditingFile(false);
-                }}
+                onPress={closePreview}
                 hitSlop={8}
                 className="rounded-lg p-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
               >
