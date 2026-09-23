@@ -105,7 +105,16 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
         if (e2 instanceof Error && /CORS/.test(e2.message)) throw e2;
       }
     }
-    throw new Error(`Unreachable: ${e instanceof Error ? e.message : String(e)}`);
+    const raw = e instanceof Error ? e.message : String(e);
+    // Stale native shell (built before the cleartext config) surfaces as a
+    // CLEARTEXT policy rejection — tell the user it's the app build, not the
+    // server, and that only a fresh native build fixes it (OTA can't).
+    if (/CLEARTEXT/i.test(raw)) {
+      throw new Error(
+        `Android blocked plain-HTTP to this host (CLEARTEXT policy). This build is too old — rebuild the native APK after the network-security fix and reinstall, then retry. Detail: ${raw}`,
+      );
+    }
+    throw new Error(`Unreachable: ${raw}`);
   }
   if (!res.ok) throw new Error(`Dashboard probe failed: HTTP ${res.status}`);
   const body = (await res.json()) as any;

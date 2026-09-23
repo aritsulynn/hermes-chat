@@ -417,16 +417,17 @@ export function ChatScreen() {
 
   // The list ends with `endPad` of empty space (room for the floating dock),
   // so a manual scroll can stop inside that dead zone with the last bubble's
-  // footer hidden behind the composer. Snap through it: inside the
-  // recourse-free zone (jump button already hidden) always finish the last
-  // pixels; farther out, never steal an upward scroll.
+  // footer hidden behind the composer. Snap through it on downward releases
+  // only — an upward release is the user reading back, and must never be
+  // stolen even inside the zone (a tall dock stretches the zone past
+  // AT_END_PX, which used to yank upward scrolls back down).
   const snapToEnd = useCallback(
     (e: any) => {
       touching.current = false;
       const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+      if (y < dragStartY.current - 4) return;
       const rest = contentH.current - (y + layoutH.current);
       if (rest <= 2 || rest > endPad.current + 8) return;
-      if (rest >= AT_END_PX && y < dragStartY.current - 4) return;
       stickEnd.current = true;
       setAtBottom(true);
       scrollEnd();
@@ -832,7 +833,14 @@ export function ChatScreen() {
           contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH }}
           onContentSizeChange={(_w, h) => {
             contentH.current = h;
-            if (stickEnd.current && !kbResizeRef.current) scrollEnd();
+            // Never yank while the finger is down: the next streamed token
+            // would undo a slow scroll-up mid-gesture ("can't scroll up, it
+            // pulls back down"). Instant, not animated: a fresh animated
+            // flight per token batch restarts the glide and fights the
+            // user's drag. Explicit jumps (send/jump button/keyboard) still
+            // animate through scrollEnd().
+            if (touching.current) return;
+            if (stickEnd.current && !kbResizeRef.current) scrollEnd(false);
           }}
           onLayout={(e) => {
             layoutH.current = e.nativeEvent.layout.height;
@@ -888,7 +896,7 @@ export function ChatScreen() {
         {/* Floating bottom dock — transparent, so the transcript shows behind the
             composer instead of a solid background band. */}
         <View
-          className="absolute left-0 right-0"
+          className="absolute left-0 right-0 bg-white dark:bg-black"
           style={{ bottom: kbH }}
           onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
         >
@@ -1179,7 +1187,7 @@ export function ChatScreen() {
             scrollEnd(dist < 3000);
           }}
           radius={18}
-          className="absolute right-3 z-40 h-9 w-9 items-center justify-center border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
+          className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
           // Floats just above the dock, whose height moves (panels open/close,
           // keyboard lifts it) — a fixed bottom hid the button behind the dock.
           style={{ bottom: dockH + kbH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}

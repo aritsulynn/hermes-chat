@@ -260,7 +260,7 @@ export const Composer = memo(function Composer({
                 accessibilityLabel="Stop"
                 radius={8}
                 highlight="#a01a17"
-                className="h-9 w-9 shrink-0 items-center justify-center bg-[#c5221f]"
+                className="h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#c5221f]"
               >
                 <Square size={13} color="#fff" fill="#fff" />
               </Tap>
@@ -272,7 +272,7 @@ export const Composer = memo(function Composer({
               accessibilityLabel="Send"
               radius={8}
               highlight="#d4d4d4"
-              className={`h-9 w-9 shrink-0 items-center justify-center bg-neutral-200 ${!canSend ? 'opacity-40' : ''}`}
+              className={`h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-200 ${!canSend ? 'opacity-40' : ''}`}
               disabled={!canSend}
             >
               <ArrowUp size={19} color="#1c1c1c" />

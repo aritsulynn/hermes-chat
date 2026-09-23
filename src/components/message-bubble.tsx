@@ -55,6 +55,12 @@ function useThrottledText(text: string, pending: boolean | undefined, ms = 250) 
 // (see the useCallback'd handlers in ChatScreen).
 const DIFF_MAX_LINES = 160;
 
+// System monospace on some OEM Android builds (notably Xiaomi/HyperOS) ships
+// without Thai glyphs and with broken fallback — Thai text set in `font-mono`
+// renders as tofu squares. Detect Thai and fall back to the default UI font
+// for those lines (ASCII diffs/tables keep their alignment everywhere else).
+const hasThai = (s: string) => /[\u0E00-\u0E7F]/.test(s);
+
 // Inline unified diff (one RN Text per line so +/- can be tinted; a single
 // <Text> can't carry a per-line background). Rows are capped — a huge patch on a
 // phone is unreadable anyway; the full diff is still on the tool result.
@@ -89,7 +95,11 @@ function DiffView({ diff, dark }: { diff: string; dark: boolean }) {
         const kind = diffLineKind(line);
         return (
           <View key={i} style={bgOf(kind) ? { backgroundColor: bgOf(kind) } : undefined}>
-            <Text selectable className="px-1.5 font-mono text-[11px] leading-[15px]" style={{ color: colorOf(kind) }}>
+            <Text
+              selectable
+              className={hasThai(line) ? 'px-1.5 text-[11px] leading-[15px]' : 'px-1.5 font-mono text-[11px] leading-[15px]'}
+              style={{ color: colorOf(kind) }}
+            >
               {line || ' '}
             </Text>
           </View>
@@ -117,7 +127,11 @@ function ToolOutput({ text }: { text: string }) {
         <Text
           key={i}
           selectable
-          className="px-1.5 font-mono text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300"
+          className={
+            hasThai(l)
+              ? 'px-1.5 text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300'
+              : 'px-1.5 font-mono text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300'
+          }
         >
           {l || ' '}
         </Text>

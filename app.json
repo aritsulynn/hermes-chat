@@ -10,7 +10,13 @@
     "scheme": "hermes-mobile",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lynn.hermesmobile"
+      "bundleIdentifier": "com.lynn.hermesmobile",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -31,6 +37,7 @@
       "typedRoutes": true
     },
     "plugins": [
+      "./plugins/allow-cleartext.js",
       "expo-secure-store",
       "expo-notifications",
       "expo-router",
