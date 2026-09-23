@@ -1,12 +1,13 @@
 import type * as React from 'react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { Brain, Check, Cog, Copy, FileText, Pencil, RotateCcw } from 'lucide-react-native';
+import { Brain, Check, Cog, Copy, Ellipsis, FileText, RotateCcw } from 'lucide-react-native';
 import { cleanThinking, flattenLists, renderMediaTags } from '../utils/messages';
 import type { UiMessage } from '../utils/messages';
 import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../utils/diff';
 import { TypingDots, Tap } from './bits';
+import type { AnchorMeasure } from './composer';
 import { mdAi, mdAiDark, mdUser, makeSelectableRules } from './markdown';
 
 // Tokens arrive far faster than markdown needs to re-render. Leading + trailing
@@ -63,7 +64,7 @@ const hasThai = (s: string) => /[\u0E00-\u0E7F]/.test(s);
 
 // Cached time formatter — `toLocaleTimeString` (Intl) per bubble per render is slow.
 let cachedTimeFmt: Intl.DateTimeFormat | null = null;
-function formatBubbleTime(ts: number): string {
+export function formatBubbleTime(ts: number): string {
   try {
     if (!cachedTimeFmt) {
       cachedTimeFmt = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
@@ -175,10 +176,12 @@ export const MessageBubble = memo(function MessageBubble({
   onToggleExpand,
   copied,
   onCopy,
-  canEdit,
   canRegenerate,
-  onEdit,
+  canBranch,
   onRegenerate,
+  onBranchMenu,
+  onUserMenu,
+  onTip,
 }: {
   item: UiMessage;
   bubbleMax: number;
@@ -190,11 +193,16 @@ export const MessageBubble = memo(function MessageBubble({
   /** Boolean, not the copied id: an id prop would re-render every bubble. */
   copied: boolean;
   onCopy: (id: string, text: string) => void;
-  /** Edit & resend (rewind) this user message — only when it has a row id. */
-  canEdit?: boolean;
   /** Rerun the last turn — only on the last assistant bubble. */
   canRegenerate?: boolean;
-  onEdit: (id: string) => void;
+  /** Per-message ⋯ menu (Branch chat) — assistant bubbles. */
+  canBranch?: boolean;
+  /** Screen-level popover trigger — same AnchorMeasure pattern as the composer. */
+  onBranchMenu: (measure: AnchorMeasure, id: string) => void;
+  /** Long-press menu for our own messages (Copy / Edit). */
+  onUserMenu: (measure: AnchorMeasure, id: string) => void;
+  /** Long-press tooltip for the footer icon buttons. */
+  onTip: (measure: AnchorMeasure, label: string) => void;
   onRegenerate: () => void;
 }) {
   const rules = useMemo(() => makeSelectableRules(dark), [dark]);
@@ -230,8 +238,34 @@ export const MessageBubble = memo(function MessageBubble({
   // Pressed highlight for the footer actions, tinted for the bubble they sit on.
   const actionPress =
     item.role === 'user' ? 'rgba(255,255,255,0.25)' : 'rgba(120,120,128,0.24)';
+  // Anchor for the screen-level ⋯ popover (same measurer shape as Composer).
+  const branchAnchorRef = useRef<View>(null);
+  const copyAnchorRef = useRef<View>(null);
+  const regenAnchorRef = useRef<View>(null);
+  // Tooltip peek fired on a footer icon: swallow the onPress that fires on
+  // release, so peeking at the label doesn't also trigger the action.
+  const tipFired = useRef(false);
+  const fireTip = (ref: { current: View | null }, label: string) => {
+    tipFired.current = true;
+    onTip((cb) =>
+      ref.current?.measureInWindow((x, y, w, h) => {
+        if (w > 0) cb({ x, y, w, h });
+      }),
+      label,
+    );
+  };
+  const guardedPress = (fn: () => void) => () => {
+    if (tipFired.current) {
+      tipFired.current = false;
+      return;
+    }
+    fn();
+  };
+  // Whole-bubble anchor for the long-press menu on our own messages.
+  const bubbleRef = useRef<View>(null);
   return (
     <View
+      ref={bubbleRef}
       className={`rounded-[14px] px-3 py-2 ${
         item.role === 'user'
           ? 'self-end bg-[#1a73e8]'
@@ -359,41 +393,58 @@ export const MessageBubble = memo(function MessageBubble({
           </Text>
         </View>
       ) : markdown ? (
-        <>
-          {/* Images that travelled with this message (uploaded copies live on
-              the server; this is the local thumbnail). */}
-          {!!item.media?.length && (
-            <View className="mb-1 flex-row flex-wrap gap-1.5">
-              {item.media.map((a) => (
-                <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
-              ))}
-            </View>
-          )}
-          {!!liveText && (
-            <Markdown rules={rules} style={item.role === 'user' ? mdUser : dark ? mdAiDark : mdAi}>{body}</Markdown>
-          )}
-        </>
+        item.role === 'user' ? (
+          // Long-press our own message for the Copy / Edit menu. Plain
+          // Pressable (no press tint) so the bubble look doesn't change.
+          <Pressable
+            onLongPress={() =>
+              bubbleRef.current?.measureInWindow((x, y, w, h) => {
+                if (w > 0) onUserMenu((cb) => cb({ x, y, w, h }), item.id);
+              })
+            }
+            delayLongPress={400}
+            accessibilityRole="button"
+            accessibilityLabel="Message actions"
+          >
+            {!!item.media?.length && (
+              <View className="mb-1 flex-row flex-wrap gap-1.5">
+                {item.media.map((a) => (
+                  <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
+                ))}
+              </View>
+            )}
+            {!!liveText && (
+              <Markdown rules={rules} style={mdUser}>{body}</Markdown>
+            )}
+          </Pressable>
+        ) : (
+          <>
+            {!!item.media?.length && (
+              <View className="mb-1 flex-row flex-wrap gap-1.5">
+                {item.media.map((a) => (
+                  <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
+                ))}
+              </View>
+            )}
+            {!!liveText && (
+              <Markdown rules={rules} style={dark ? mdAiDark : mdAi}>{body}</Markdown>
+            )}
+          </>
+        )
       ) : (
         <Text selectable className={item.role === 'user' ? 'text-[15px] leading-[21px] text-white' : 'text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100'}>
           {item.text}
         </Text>
       )}
-      {(copyable || canEdit || canRegenerate) && (
+      {/* Footer: bot time lives in its ⋯ menu, ours in the long-press menu —
+          copy icon stays on bot bubbles only. */}
+      {((copyable && item.role !== 'user') || canRegenerate || canBranch) && (
         <View className="mt-1 flex-row items-center gap-3 self-end">
-          {!!item.ts && (
-            <Text
-              className={
-                item.role === 'user'
-                  ? 'text-[10px] text-white/60'
-                  : 'text-[10px] text-neutral-400 dark:text-neutral-500'
-              }
-            >
-              {formatBubbleTime(item.ts)}
-            </Text>
-          )}
-          {copyable && (
+          {copyable && item.role !== 'user' && (
             <Tap
-              onPress={() => onCopy(item.id, item.text)}
+              onPress={guardedPress(() => onCopy(item.id, item.text))}
+              onLongPress={() => fireTip(copyAnchorRef, copied ? 'Copied!' : 'Copy')}
+              delayLongPress={400}
               accessibilityRole="button"
               accessibilityLabel={copied ? 'Copied' : 'Copy'}
               radius={6}
@@ -401,29 +452,20 @@ export const MessageBubble = memo(function MessageBubble({
               className="px-1.5 py-1"
               hitSlop={6}
             >
-              {copied ? (
-                <Check size={12} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
-              ) : (
-                <Copy size={12} color={item.role === 'user' ? 'rgba(255,255,255,.75)' : dark ? '#aaa' : '#999'} />
-              )}
-            </Tap>
-          )}
-          {canEdit && (
-            <Tap
-              onPress={() => onEdit(item.id)}
-              accessibilityRole="button"
-              accessibilityLabel="Edit"
-              radius={6}
-              highlight={actionPress}
-              className="px-1.5 py-1"
-              hitSlop={6}
-            >
-              <Pencil size={12} color="rgba(255,255,255,.75)" />
+              <View ref={copyAnchorRef}>
+                {copied ? (
+                  <Check size={12} color={dark ? '#aaa' : '#999'} />
+                ) : (
+                  <Copy size={12} color={dark ? '#aaa' : '#999'} />
+                )}
+              </View>
             </Tap>
           )}
           {canRegenerate && (
             <Tap
-              onPress={onRegenerate}
+              onPress={guardedPress(onRegenerate)}
+              onLongPress={() => fireTip(regenAnchorRef, 'Regenerate')}
+              delayLongPress={400}
               accessibilityRole="button"
               accessibilityLabel="Regenerate"
               radius={6}
@@ -431,7 +473,33 @@ export const MessageBubble = memo(function MessageBubble({
               className="px-1.5 py-1"
               hitSlop={6}
             >
-              <RotateCcw size={12} color={dark ? '#aaa' : '#999'} />
+              <View ref={regenAnchorRef}>
+                <RotateCcw size={12} color={dark ? '#aaa' : '#999'} />
+              </View>
+            </Tap>
+          )}
+          {canBranch && (
+            <Tap
+              onPress={guardedPress(() =>
+                onBranchMenu((cb) =>
+                  branchAnchorRef.current?.measureInWindow((x, y, w, h) => {
+                    if (w > 0) cb({ x, y, w, h });
+                  }),
+                  item.id,
+                ),
+              )}
+              onLongPress={() => fireTip(branchAnchorRef, 'More actions')}
+              delayLongPress={400}
+              accessibilityRole="button"
+              accessibilityLabel="More actions"
+              radius={6}
+              highlight={actionPress}
+              className="px-1.5 py-1"
+              hitSlop={6}
+            >
+              <View ref={branchAnchorRef}>
+                <Ellipsis size={12} color={dark ? '#aaa' : '#999'} />
+              </View>
             </Tap>
           )}
         </View>

@@ -150,12 +150,15 @@ export function Field({
   onChange,
   placeholder,
   secure,
+  onSubmit,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   secure?: boolean;
+  /** Keyboard action (e.g. password Enter = Connect). */
+  onSubmit?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
   const { theme } = useApp();
@@ -173,6 +176,8 @@ export function Field({
           keyboardAppearance={dark ? 'dark' : 'light'}
           autoCapitalize="none"
           autoCorrect={false}
+          returnKeyType={onSubmit ? 'go' : 'default'}
+          onSubmitEditing={() => onSubmit?.()}
         />
       </View>
     );
@@ -189,6 +194,8 @@ export function Field({
           keyboardAppearance={dark ? 'dark' : 'light'}
           autoCapitalize="none"
           autoCorrect={false}
+          returnKeyType={onSubmit ? 'go' : 'default'}
+          onSubmitEditing={() => onSubmit?.()}
         />
         <Tap onPress={() => setVisible((v) => !v)} radius={8} className="px-2.5 py-2" hitSlop={8}>
           <Text className="text-sm font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">{visible ? 'Hide' : 'Show'}</Text>

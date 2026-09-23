@@ -57,7 +57,7 @@ export async function getNotifyEnabled(): Promise<boolean> {
 }
 
 export interface Connection {
-  host: string; // e.g. http://192.168.1.8:9119
+  host: string; // e.g. http://your-server:9119
   username: string;
   hasPassword: boolean;
   hasCookie: boolean;
@@ -108,7 +108,7 @@ export async function loadConnection(): Promise<Connection> {
     get(K_COOKIE),
   ]);
   return {
-    host: host ?? 'http://192.168.1.8:9119',
+    host: host ?? '',
     username: username ?? '',
     hasPassword: !!password,
     hasCookie: !!cookie,

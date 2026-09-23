@@ -4,6 +4,7 @@
 // one transcript. Navigation replaced setScreen() with expo-router routes.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useColorScheme as useSystemScheme } from 'react-native';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { readAsStringAsync } from 'expo-file-system/legacy';
@@ -60,6 +61,8 @@ export interface AppStore {
   sessions: SessionSummary[];
   openingId: string | null;
   sessionId: string | null;
+  /** Stored DB id (session.list id) — stable across resumes, used for highlight. */
+  sessionKey: string | null;
   sessionTitle: string;
   messages: UiMessage[];
   /** Live streaming deltas by bubble id — kept outside `messages` so per-token
@@ -95,7 +98,11 @@ export interface AppStore {
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
-  refreshSessions: () => Promise<SessionSummary[]>;
+  refreshSessions: (limit?: number) => Promise<SessionSummary[]>;
+  /** Fetch the next page (limit+100) — used by drawer infinite scroll. */
+  loadMoreSessions: () => Promise<SessionSummary[]>;
+  sessionsHasMore: boolean;
+  sessionsLoadingMore: boolean;
   openSession: (s: SessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
   send: () => Promise<void>;
@@ -286,7 +293,7 @@ export function useApp(): AppStore {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [host, setHost] = useState('http://192.168.1.8:9119');
+  const [host, setHost] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberPw] = useState(true);
@@ -296,6 +303,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [conn, setConn] = useState<ConnState>('idle');
   const [authed, setAuthed] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionsLimit, setSessionsLimit] = useState(100);
+  const [sessionsHasMore, setSessionsHasMore] = useState(true);
+  const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false);
+  const sessionsLimitRef = useRef(100);
+  sessionsLimitRef.current = sessionsLimit;
+  const sessionsHasMoreRef = useRef(true);
+  sessionsHasMoreRef.current = sessionsHasMore;
+  const sessionsLoadingMoreRef = useRef(false);
+  const sessionsFetchRef = useRef<Promise<SessionSummary[]> | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
@@ -307,6 +323,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const clearStreaming = useCallback(() => {
     streamingRef.current = {};
     setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
+  }, []);
+  // Park the visible room's live turn before leaving it, so coming back can
+  // restore its Stop button instead of stranding Send/Stop on the wrong room.
+  const parkLiveTurn = useCallback(() => {
+    if (generatingRef.current) {
+      const key = latest.current.sessionKey ?? sessionIdRef.current;
+      if (key) parkedLiveRef.current.add(key);
+    }
+  }, []);
+  // Re-anchor streaming after a transcript rebuild while this room's turn is
+  // live (REST is newer truth; the pre-switch buffer was already dropped).
+  const reanchorLiveTurn = useCallback((items: UiMessage[]): UiMessage[] => {
+    const tail = items[items.length - 1];
+    if (tail && tail.role === 'assistant') {
+      liveAid.current = tail.id;
+      return items;
+    }
+    const rea = nid();
+    liveAid.current = rea;
+    return [...items, { id: rea, role: 'assistant', text: '', pending: true }];
   }, []);
   const [inputRaw, setInputRaw] = useState('');
   const [model, setModel] = useState('Muse Spark 1.3 Free');
@@ -341,7 +377,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const copyTimer = useRef<any>(null);
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [ask, setAsk] = useState<ServerAsk | null>(null);
-  const [theme, setThemeState] = useState<Theme>('light');
+  const systemScheme = useSystemScheme();
+  const [theme, setThemeState] = useState<Theme>(() =>
+    // Match the system on first paint: NativeWind's dark: variants follow the
+    // system scheme, so starting at hardcoded 'light' on a dark-mode phone
+    // paints dark-variant text on light inline backgrounds until the user
+    // toggles once (which locks both sides together).
+    systemScheme === 'dark' ? 'dark' : 'light',
+  );
   // Local notifications (turn complete / server asks while backgrounded).
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const { setColorScheme } = useNWColorScheme();
@@ -369,6 +412,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const liveToolAid = useRef<string | null>(null);
   const liveTurnTools = useRef<string[]>([]); // tool bubbles minted this turn, in order
   const liveTurnDiffs = useRef<string[]>([]); // inline diffs seen this turn (for the end-of-turn summary)
+  // Live turns are per-session: the latch must follow the room, not the app.
+  // parkedLive = stored keys with a background-live turn; turnOwner maps each
+  // live runtime sid to its stored key so a background complete cleans up.
+  const turnOwnerRef = useRef<Map<string, string>>(new Map());
+  const parkedLiveRef = useRef<Set<string>>(new Set());
+  // Last turn-event time — the watchdog below releases a stranded Stop latch.
+  const lastTurnEventAt = useRef(0);
   // Live runtime session id for callbacks frozen in openWs (reconnect replay).
   const sessionIdRef = useRef<string | null>(null);
   sessionIdRef.current = sessionId;
@@ -499,7 +549,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const hist = await getSessionMessages(h, cookie.current, sk);
         if (hist.length) {
-          setMessages(historyToItems(hist));
+          const items = historyToItems(hist);
+          clearStreaming();
+          if (generatingRef.current) {
+            // Rebuild dropped the live bubble — re-anchor so streaming continues.
+            setMessages(reanchorLiveTurn(items));
+            lastTurnEventAt.current = Date.now();
+          } else {
+            setMessages(items);
+          }
           setToolLine(null);
         }
       } catch {}
@@ -594,6 +652,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             setColorScheme(savedTheme);
           } catch {}
+        } else {
+          // No saved choice: lock NativeWind to the same system-derived theme
+          // the state started with, or the two drift until the first toggle.
+          try {
+            setColorScheme(systemScheme === 'dark' ? 'dark' : 'light');
+          } catch {}
         }
         // Restore the local-notifications preference.
         const savedNotify = await getNotifyEnabled().catch(() => false);
@@ -608,7 +672,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Silent reconnect — restore the session without asking login again.
         // Hard ceiling: even a totally wedged connect must release the boot
         // gate so the user gets the login form instead of a dead spinner.
-        if (c.hasCookie && c.username) {
+        if (c.hasCookie && c.username && c.host.trim()) {
           try {
             await withTimeout(connectRef.current(c.host, c.username, savedPw ?? ''), 90000, 'connect timed out');
           } catch (e) {
@@ -671,9 +735,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return fresh;
   }, []);
 
+  // Ask the backend which sessions are actually working right now (desktop
+  // parity: the `session.active_list` snapshot behind confirmReconnectSettlesExcept).
+  // Returns null when the backend has no such method — callers fall back to timeouts.
+  // Only refs + gw.current, so stable across renders and safe inside frozen WS handlers.
+  const probeWorkingSessions = useCallback(async (): Promise<Set<string> | null> => {
+    const g = gw.current;
+    if (!g) return null;
+    try {
+      const rows = await g.activeList(sessionIdRef.current ?? undefined);
+      const working = new Set<string>();
+      for (const r of rows) {
+        // `waiting` (pending approval/input) is still live — desktop never retires needsInput.
+        if (r.status === 'working' || r.status === 'waiting' || r.status === 'starting') {
+          if (r.sessionKey) working.add(r.sessionKey);
+          if (r.id) working.add(r.id);
+        }
+      }
+      return working;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Post-reconnect reconcile (desktop parity: reconcileBusyStatesOnReconnect).
+  // A respawned backend re-mints runtime ids, so a pre-drop `busy` can never get
+  // its terminal publish — confirm parked latches against the snapshot instead
+  // of letting them lie forever. A still-live turn re-asserts on its next event.
+  const confirmAfterReconnect = useCallback(async () => {
+    if (parkedLiveRef.current.size === 0 && !generatingRef.current) return;
+    const working = await probeWorkingSessions();
+    if (!working) return; // can't confirm — leave everything, the watchdog still covers it
+    for (const key of [...parkedLiveRef.current]) {
+      if (!working.has(key)) parkedLiveRef.current.delete(key);
+    }
+    const cur = latest.current.sessionKey ?? sessionIdRef.current;
+    if (generatingRef.current && cur && !working.has(cur)) {
+      releaseLocalTurn();
+      resyncRef.current();
+    }
+  }, [probeWorkingSessions]);
+
   const openWs = useCallback(async (h: string): Promise<GatewayWs> => {
-    const ticket = await mintWsTicket(h, cookie.current);
-    // Events carry the runtime session id. Only the session on screen may touch
+    const ticket = await mintWsTicket(h, cookie.current);    // Events carry the runtime session id. Only the session on screen may touch
     // the transcript — a cron run / subagent / another client's turn must not
     // bleed in. An empty id is treated as current (some frames are global).
     const isCurrentSession = (sid: string) =>
@@ -687,11 +791,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Replay missed events only for the session the app is showing.
       replaySessions: () => (sessionIdRef.current ? [sessionIdRef.current] : []),
       events: {
-        onState: (s) => setConn(s),
+        onState: (s) => {
+          setConn(s);
+          if (s === 'ready') void confirmAfterReconnect();
+        },
         onToken: (sid, delta) => {
           if (!isCurrentSession(sid)) return;
           const aid = liveAid.current;
           if (!aid || !delta) return;
+          lastTurnEventAt.current = Date.now();
           // O(1): buffer outside `messages`, no transcript map per delta.
           // Update the ref synchronously — onComplete may fire before React re-renders.
           const next = { ...streamingRef.current, [aid]: (streamingRef.current[aid] ?? '') + delta };
@@ -717,12 +825,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           const id = aid;
           if (!delta) return;
+          lastTurnEventAt.current = Date.now();
           const next = { ...streamingRef.current, [id]: (streamingRef.current[id] ?? '') + delta };
           streamingRef.current = next;
           setStreamingTexts(next);
         },
         onInterim: (sid, text) => {
           if (!isCurrentSession(sid)) return;
+          lastTurnEventAt.current = Date.now();
           // Interim status belongs ABOVE the streaming answer chronologically —
           // pin it before the pending bubble (same as thinking), else it lands
           // below the final answer.
@@ -736,6 +846,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         },
         onTool: (sid, info) => {
           if (!isCurrentSession(sid)) return;
+          lastTurnEventAt.current = Date.now();
           if (info.phase === 'complete') {
             setToolLine(null);
             const mid = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
@@ -810,6 +921,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         },
         onComplete: (sid, text) => {
+          // Background turn finished — drop its parked latch (the visible room is untouched).
+          const owner = turnOwnerRef.current.get(sid);
+          turnOwnerRef.current.delete(sid);
+          if (owner) {
+            parkedLiveRef.current.delete(owner);
+          } else if (isCurrentSession(sid) && latest.current.sessionKey) {
+            parkedLiveRef.current.delete(latest.current.sessionKey);
+          }
           if (!isCurrentSession(sid)) return;
           const aid = liveAid.current;
           const thinkId = liveThinkAid.current;
@@ -942,16 +1061,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return ws;
   }, []);
 
-  const refreshSessions = useCallback(async (): Promise<SessionSummary[]> => {
+  const refreshSessions = useCallback(async (limit?: number): Promise<SessionSummary[]> => {
     const g = gw.current;
     if (!g) return [];
+    // Default to the current known depth so a drawer reopen doesn't shrink
+    // back to 100 after the user already scrolled deeper.
+    const want = limit ?? sessionsLimitRef.current ?? 100;
+    // Concurrent scroll-bottom + drawer-open refreshes must not interleave.
+    if (sessionsFetchRef.current) return sessionsFetchRef.current;
+    const p: Promise<SessionSummary[]> = (async () => {
+      try {
+        const s = await g.listSessions(want);
+        setSessions(s);
+        setSessionsLimit(want);
+        // session.list returns newest-first up to limit — a full page means
+        // there may be older chats still on the server.
+        setSessionsHasMore(s.length >= want);
+        return s;
+      } catch (e) {
+        setError(errMsg(e));
+        return [];
+      } finally {
+        sessionsFetchRef.current = null;
+      }
+    })();
+    sessionsFetchRef.current = p;
+    return p;
+  }, []);
+
+  const loadMoreSessions = useCallback(async (): Promise<SessionSummary[]> => {
+    if (sessionsLoadingMoreRef.current || !sessionsHasMoreRef.current) return [];
+    const g = gw.current;
+    if (!g) return [];
+    sessionsLoadingMoreRef.current = true;
+    setSessionsLoadingMore(true);
+    const want = Math.min((sessionsLimitRef.current ?? 100) + 100, 1000);
     try {
-      const s = await g.listSessions(100);
+      const s = await g.listSessions(want);
       setSessions(s);
+      setSessionsLimit(want);
+      setSessionsHasMore(s.length >= want && want < 1000);
       return s;
     } catch (e) {
       setError(errMsg(e));
       return [];
+    } finally {
+      sessionsLoadingMoreRef.current = false;
+      setSessionsLoadingMore(false);
     }
   }, []);
 
@@ -1197,6 +1353,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     liveAid.current = null;
     generatingRef.current = false;
     draftsRef.current.clear();
+    parkedLiveRef.current.clear();
+    turnOwnerRef.current.clear();
     setInputRaw('');
     await clearCookie();
     setAuthed(false);
@@ -1233,10 +1391,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setOpeningId(s.id);
     setError(null);
+    // Leaving a mid-turn session strands the latch: the old turn's onComplete
+    // is filtered by isCurrentSession, so park it (restored on return) and
+    // reset the local Stop/Send state. The server turn keeps running.
+    parkLiveTurn();
+    liveAid.current = null;
     liveThinkAid.current = null;
     liveTools.current.clear();
     liveToolAid.current = null;
     liveTurnTools.current = [];
+    setGenerating(false);
+    generatingRef.current = false;
+    setToolLine(null);
     try {
       // resume mints a FRESH live runtime id — history/submit/interrupt must use
       // the returned session_id, NOT the stored id (server keeps two id spaces).
@@ -1269,8 +1435,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Reasoning rides on the assistant message (sidecar, not its own role) —
       // restore it as a thinking bubble above its answer, like the live view.
       const items = historyToItems(hist);
-      setMessages(items);
       clearStreaming();
+      if (parkedLiveRef.current.has(s.id)) {
+        // Back in a room whose turn is still live — re-anchor streaming to the
+        // transcript tail and re-arm Stop.
+        setMessages(reanchorLiveTurn(items));
+        lastTurnEventAt.current = Date.now();
+        setGenerating(true);
+        generatingRef.current = true;
+      } else {
+        setMessages(items);
+      }
       queuedRef.current = [];
       setQueued([]);
       setQueueParked(false);
@@ -1299,6 +1474,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!g) return;
     setBusy(true);
     setError(null);
+    // Same stranded-latch guard as openSession (see above).
+    parkLiveTurn();
+    liveAid.current = null;
+    liveThinkAid.current = null;
+    setGenerating(false);
+    generatingRef.current = false;
+    setToolLine(null);
     try {
       const { sessionId: sid, storedSessionId } = await g.createSession({
         ...(model ? { model } : {}),
@@ -1340,6 +1522,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const g = gw.current;
     const sid = sessionId;
     if (!g || !sid) return;
+    // Branching abandons the live runtime — same stranded-latch guard as openSession.
+    parkLiveTurn();
+    liveAid.current = null;
+    liveThinkAid.current = null;
+    setGenerating(false);
+    generatingRef.current = false;
+    setToolLine(null);
     try {
       const r: any = await g.branchSession(sid);
       const liveId = String(r?.session_id ?? '');
@@ -1394,6 +1583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sid = sessionId;
       if (!g || !sid) return;
       const submitOpts = rewindRowId != null ? { rewindRowId } : {};
+      turnOwnerRef.current.set(sid, sessionKey ?? sid);
       // Rewind: the server cuts history at that user row, so drop the matching
       // local tail first (and re-echo the user line for regenerate, which passes
       // no explicit echo).
@@ -1432,6 +1622,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMessages((prev) => [...prev, { id: aid, role: 'assistant', text: '', pending: true }]);
       setGenerating(true);
       generatingRef.current = true; // flip now: a drain before the re-render must not double-send
+      lastTurnEventAt.current = Date.now();
       try {
         const status = await g.submit(sid, submitText, submitOpts);
         if (status === 'queued') setToolLine('queued — will run after the live turn…');
@@ -1446,6 +1637,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
             sessionIdRef.current = liveId;
             setSessionId(liveId);
+            turnOwnerRef.current.delete(sid);
+            turnOwnerRef.current.set(liveId, sessionKey);
             const status = await g.submit(liveId, submitText, submitOpts);
             if (status === 'queued') setToolLine('queued — will run after the live turn…');
             return;
@@ -1801,6 +1994,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     g.interrupt(sid).catch(() => releaseLocalTurn());
   }, [sessionId, releaseLocalTurn]);
+
+  // Watchdog: a missed turn-end (dropped complete, truncated replay, an error
+  // notice instead of complete) must never strand the Stop button forever.
+  // Desktop parity: confirm against `session.active_list` before releasing —
+  // a still-live turn just snoozes. Releasing only the LOCAL latch is safe —
+  // liveAid stays, so a late message.complete still finalizes the transcript.
+  useEffect(() => {
+    if (!generating || !sessionId) return;
+    const t = setInterval(() => {
+      if (!generatingRef.current) return;
+      if (Date.now() - lastTurnEventAt.current < 180000) return;
+      void (async () => {
+        const working = await probeWorkingSessions();
+        const sk = latest.current.sessionKey;
+        const cur = sk ?? sessionIdRef.current;
+        if (working && cur && working.has(cur)) {
+          lastTurnEventAt.current = Date.now(); // still alive — snooze
+          return;
+        }
+        // Gone (or old backend with no confirm producer) — release.
+        if (sk) parkedLiveRef.current.delete(sk);
+        releaseLocalTurn();
+        setMessages((prev) => [
+          ...prev,
+          { id: nid(), role: 'notice', text: 'No updates for a while — released the stop button. The reply will still land if the agent is working.' },
+        ]);
+      })();
+    }, 10000);
+    return () => clearInterval(t);
+  }, [generating, sessionId, releaseLocalTurn, probeWorkingSessions]);
   stopRef.current = stop;
 
   // ── Session details ────────────────────────────────────────────────────
@@ -1878,6 +2101,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       setSessions((prev) => prev.filter((s) => s.id !== storedId));
       draftsRef.current.delete(storedId);
+      parkedLiveRef.current.delete(storedId);
+      for (const [liveSid, owner] of turnOwnerRef.current) {
+        if (owner === storedId) turnOwnerRef.current.delete(liveSid);
+      }
       if (sessionKey === storedId) {
         setSessionKey(null);
         sessionIdRef.current = null;
@@ -1885,6 +2112,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSessionTitle('');
         setMessages([]);
         clearStreaming();
+        liveAid.current = null;
+        liveThinkAid.current = null;
         setInputRaw('');
         setSessionInfo(null);
         setUsageInfo(null);
@@ -1991,6 +2220,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const r: any = await g.resume(recentId);
         const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : recentId;
+        parkLiveTurn();
+        liveAid.current = null;
+        liveThinkAid.current = null;
+        setGenerating(false);
+        generatingRef.current = false;
+        setToolLine(null);
         setSessionKey(recentId);
         sessionIdRef.current = liveId;
         setSessionId(liveId);
@@ -2047,6 +2282,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sessions,
     openingId,
     sessionId,
+    sessionKey,
     sessionTitle,
     messages,
     streamingTexts,
@@ -2077,6 +2313,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     login,
     logout,
     refreshSessions,
+    loadMoreSessions,
+    sessionsHasMore,
+    sessionsLoadingMore,
     openSession,
     newSession,
     send,
@@ -2124,7 +2363,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     getCookie,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [booting, authed, busy, error, host, username, password, conn, sessions, openingId, sessionId, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, connect, login, logout, refreshSessions, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, dismissAsk, theme, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
+    [booting, authed, busy, error, host, username, password, conn, sessions, openingId, sessionId, sessionKey, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, connect, login, logout, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, dismissAsk, theme, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

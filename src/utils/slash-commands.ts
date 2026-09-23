@@ -118,9 +118,9 @@ export const SLASH_REGISTRY: Record<string, SlashDisposition> = {
   '/refine': null,
   '/reload': 'terminal',
   '/reload-mcp': 'advanced',
-  '/reload-skills': 'advanced',
+  '/reload-skills': null,
   '/reload_mcp': 'advanced',
-  '/reload_skills': 'advanced',
+  '/reload_skills': null,
   '/reset': null,
   '/restart': 'terminal',
   '/resume': null,
@@ -132,7 +132,7 @@ export const SLASH_REGISTRY: Record<string, SlashDisposition> = {
   '/sessions': null,
   '/set-home': 'terminal',
   '/sethome': 'terminal',
-  '/skills': 'settings',
+  '/skills': null,
   '/skin': null,
   '/snap': 'terminal',
   '/snapshot': 'terminal',
@@ -197,6 +197,8 @@ export interface CommandsCatalogMeta {
 export interface CommandsCatalogLike {
   canon?: Record<string, string>;
   commands?: Record<string, CommandsCatalogMeta>;
+  /** Per-skill ranking from the backend (`origin`, `usage`) — absent on older backends. */
+  skills?: Record<string, { origin?: string; usage?: number }>;
 }
 
 let liveCatalog: CommandsCatalogLike | undefined;
@@ -223,6 +225,15 @@ const AS_REASON: Record<string, SlashUnavailableReason> = {
   settings: 'settings',
   terminal: 'terminal',
 };
+
+/** Observed backend usage for a skill slash command (higher = more used). */
+export function skillUsage(name: string): number | undefined {
+  const skills = liveCatalog?.skills;
+  if (!skills) return undefined;
+  const key = `/${slashName(name)}`;
+  const entry = skills[key] ?? skills[canonicalSlash(name)];
+  return typeof entry?.usage === 'number' ? entry.usage : undefined;
+}
 
 /** Resolve an alias to its canonical command name (live canon first). */
 export function canonicalSlash(name: string): string {

@@ -127,11 +127,6 @@ export const Composer = memo(function Composer({
   return (
     <View className="px-2.5 pt-2" style={{ paddingBottom: webKb > 0 ? webKb + 18 : kbOpen ? 18 : Math.max(insets.bottom, 10) }}>
       <View className="gap-1.5 rounded-2xl border border-neutral-200/80 bg-[#f4f4f6] px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-[#212121]">
-        {generating && (
-          <Text className="px-1.5 text-xs text-neutral-500 dark:text-neutral-400">
-            live — Queue holds · Steer ↪ corrects · ■ stops
-          </Text>
-        )}
         {attachments.length > 0 && (
           <View className="flex-row flex-wrap gap-1.5">
             {attachments.map((a) => {

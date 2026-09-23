@@ -603,6 +603,29 @@ export class GatewayWs {
     return this.call('paste.collapse', { text });
   }
 
+  /**
+   * Live-session snapshot (`session.active_list`) — which sessions are actually
+   * working right now. Used to confirm a silent turn is really gone before
+   * releasing its latch (desktop parity: confirmReconnectSettlesExcept).
+   * Throws on older backends without the method.
+   */
+  activeList(
+    currentSessionId?: string,
+  ): Promise<Array<{ id: string; sessionKey: string; status: string }>> {
+    return this.call(
+      'session.active_list',
+      currentSessionId ? { current_session_id: currentSessionId } : {},
+      15000,
+    ).then((r: any) => {
+      const rows = Array.isArray(r?.sessions) ? r.sessions : [];
+      return rows.map((s: any) => ({
+        id: String(s?.id ?? ''),
+        sessionKey: String(s?.session_key ?? ''),
+        status: String(s?.status ?? ''),
+      }));
+    });
+  }
+
   usage(sessionId: string): Promise<any> {
     return this.call('session.usage', { session_id: sessionId });
   }

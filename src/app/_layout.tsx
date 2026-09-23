@@ -12,7 +12,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
-import { Alert, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import {
   Activity,
   ChevronRight,
@@ -28,6 +28,7 @@ import {
   Settings,
   SquarePen,
   Sun,
+  Wrench,
   X,
 } from 'lucide-react-native';
 import { AppProvider, useApp } from '../hooks/app-store';
@@ -46,6 +47,7 @@ const NAV_ITEMS = [
 
 const MORE_NAV_ITEMS = [
   { name: 'kanban', label: 'Kanban', icon: Kanban },
+  { name: 'skills', label: 'Skills', icon: Wrench },
 ] as const;
 
 // Items shown inside the profile bar popover (above Settings / Log Out)
@@ -62,8 +64,8 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
   const drawerOpen = useDrawerStatus() === 'open';
   const {
-    authed, username, host, busy, sessionId, sessions, messages,
-    newSession, openSession, refreshSessions, logout, theme, deleteSessionById,
+    authed, username, host, busy, sessionId, sessionKey, openingId, sessions, messages,
+    newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, logout, theme, deleteSessionById,
   } = useApp();
   // Hooks FIRST — no early return above this line (authed flips at
   // login; returning early before hooks breaks hook order).
@@ -72,6 +74,9 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState('');
+  // Infinite scroll: render in pages of 50, grow on scroll-bottom. Network
+  // fetch only when the local list is exhausted but the server may hold more.
+  const [visibleCount, setVisibleCount] = useState(50);
   // Keep Recents fresh every time the drawer opens (replaces the old
   // manual Refresh item).
   useEffect(() => {
@@ -84,25 +89,61 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
       setShowUserMenu(false);
     }
   }, [drawerOpen, pathname, refreshSessions]);
+  // Inline filter replaces the removed /sessions page (drawer is the list now).
+  // Memoized so every streamed token doesn't refilter + rebuild rows.
+  // MUST stay above the `!authed` early return — hooks can't run after one.
+  const ql = q.trim().toLowerCase();
+  const filtered = useMemo(
+    () => (ql ? sessions.filter((s) => (s.title || '').toLowerCase().includes(ql)) : sessions),
+    [sessions, ql],
+  );
+  const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  // New search starts from the top again.
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [ql]);
+  // Bottom reached: first reveal more of what's already fetched, else ask the
+  // server for the next 100 (session.list is newest-first, limit-based).
+  // Fired from onScroll + momentum/drag end: a fast fling can jump past the
+  // threshold between throttled onScroll ticks, so the end events are the
+  // backstop.
+  const handleRecentsScroll = ({ nativeEvent }: any) => {
+    if (!nativeEvent) return;
+    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+    if (!layoutMeasurement || !contentOffset || !contentSize) return;
+    const nearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 240;
+    if (!nearBottom || sessionsLoadingMore) return;
+    if (visibleCount < filtered.length) {
+      setVisibleCount((c) => Math.min(c + 50, filtered.length));
+    } else if (!ql && sessionsHasMore) {
+      void loadMoreSessions().then((s) => {
+        // New rows arrived — reveal the next page immediately.
+        if (s.length > filtered.length) setVisibleCount((c) => c + 50);
+      });
+    }
+  };
   if (!authed) return null;
   const dark = theme === 'dark';
   const dimColor = dark ? '#a3a3a3' : '#555';
   const close = () => props.navigation.closeDrawer();
   const onChat = pathname === '/chat';
-  const hasActiveRecent = sessions.some((s) => onChat && s.id === sessionId);
+  // session.list ids are STORED ids (sessionKey) while sessionId is the live
+  // runtime id minted by resume/create — comparing stored vs live never
+  // matches, so highlight must use the stored key.
+  const activeId = sessionKey ?? sessionId;
+  const hasActiveRecent = sessions.some((s) => onChat && s.id === activeId);
   const isNewChat = onChat && !hasActiveRecent && messages.length === 0;
   const isMoreActive = MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`);
-  // Inline filter replaces the removed /sessions page (drawer is the list now).
-  // Memoized so every streamed token doesn't refilter + rebuild 50 rows.
-  const ql = q.trim().toLowerCase();
-  const visible = useMemo(
-    () =>
-      (ql ? sessions.filter((s) => (s.title || '').toLowerCase().includes(ql)) : sessions).slice(0, 50),
-    [sessions, ql],
-  );
   return (
     <View className="flex-1" style={{ backgroundColor: dark ? '#000' : '#fff' }}>
-      <DrawerContentScrollView {...props} contentContainerStyle={{ paddingBottom: 16 }}>
+      <DrawerContentScrollView
+        {...props}
+        contentContainerStyle={{ paddingBottom: 16 }}
+        onScroll={handleRecentsScroll}
+        onMomentumScrollEnd={handleRecentsScroll}
+        onScrollEndDrag={handleRecentsScroll}
+        scrollEventThrottle={16}
+      >
         {searchOpen ? (
           <View className="flex-row items-center gap-1 px-4 pt-2">
             <TextInput
@@ -256,7 +297,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             </Text>
           )}
           {visible.map((s) => {
-            const active = onChat && s.id === sessionId;
+            const active = onChat && (s.id === activeId || s.id === openingId);
             return (
               <Tap
                 key={s.id}
@@ -292,13 +333,24 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 <Text
                   numberOfLines={1}
                   ellipsizeMode="tail"
-                  className="text-[16px] text-neutral-950 dark:text-neutral-100"
+                  className={`text-[16px] ${
+                    active
+                      ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                      : 'text-neutral-950 dark:text-neutral-100'
+                  }`}
                 >
                   {s.title || '(untitled)'}
                 </Text>
               </Tap>
             );
           })}
+          {/* Infinite-scroll footer: spinner while the next 100 loads. */}
+          {!ql && sessionsLoadingMore && (
+            <View className="flex-row items-center justify-center gap-2 py-3">
+              <ActivityIndicator size="small" />
+              <Text className="text-[13px] text-neutral-500 dark:text-neutral-400">Loading more…</Text>
+            </View>
+          )}
         </View>
       </DrawerContentScrollView>
 
@@ -504,6 +556,15 @@ function ThemedDrawer() {
           title: 'Kanban',
           drawerLabel: 'Kanban',
           drawerIcon: drawerIcon(Kanban),
+        }}
+      />
+      <Drawer.Screen
+        name="skills"
+        options={{
+          headerShown: false,
+          title: 'Skills',
+          drawerLabel: 'Skills',
+          drawerIcon: drawerIcon(Wrench),
         }}
       />
       <Drawer.Screen

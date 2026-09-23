@@ -20,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Redirect, useNavigation } from 'expo-router';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ChevronDown, ChevronUp, Check, ChevronRight, FileText, Image as ImageIcon, Info, MoreVertical, Search, X } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, GitFork, Image as ImageIcon, Info, MoreVertical, Pencil, Search, X } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import {
   FALLBACK_PROVIDERS,
@@ -36,11 +36,11 @@ import {
 import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '../../utils/reasoning';
 import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
 import { contextTone, readUsage } from '../../utils/usage';
-import { isSlashSuggestion } from '../../utils/slash-commands';
+import { isSlashSuggestion, skillUsage } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../lib/gateway-ws';
-import { AskSheet, Composer, CtxRing, HamburgerBtn, InfoSheet, MessageBubble, Tap } from '../../components';
-import type { AnchorMeasure } from '../../components';
+import { AskSheet, Composer, CtxRing, HamburgerBtn, InfoSheet, MessageBubble, Tap, formatBubbleTime } from '../../components';
+import type { AnchorMeasure, AnchorRect } from '../../components';
 
 // Offline fallback for the "/" wheel when the gateway predates `complete.slash`.
 // The live catalog (built-ins + quick_commands + skills) supersedes this whenever
@@ -252,11 +252,21 @@ export function ChatScreen() {
   }, [input, sessionId, getGw]);
   // Slash rows filter at render (not when the RPC lands) so a late
   // `commands.catalog` reply re-curates the rows already on screen. Path rows
-  // come curated by the backend.
-  const visibleCompletions = useMemo(
-    () => (completionKind === 'slash' ? completions.filter((it) => isSlashSuggestion(it.text)) : completions),
-    [completionKind, completions],
-  );
+  // come curated by the backend. Skill rows rank by backend-observed usage —
+  // stable order otherwise so the wheel doesn't jump around.
+  const visibleCompletions = useMemo(() => {
+    if (completionKind !== 'slash') return completions;
+    const filtered = completions.filter((it) => isSlashSuggestion(it.text));
+    const withUsage = filtered.map((it, i) => ({
+      it,
+      i,
+      usage: it.kind === 'skill' ? (skillUsage(it.text) ?? -1) : -1,
+    }));
+    if (!withUsage.some((r) => r.usage >= 0)) return filtered;
+    return withUsage
+      .sort((a, b) => b.usage - a.usage || a.i - b.i)
+      .map((r) => r.it);
+  }, [completionKind, completions]);
 
   const applyCompletion = useCallback(
     (item: SlashCompletionItem) => {
@@ -401,8 +411,40 @@ export function ChatScreen() {
     [refreshToolResults],
   );
   const onCopy = useCallback((id: string, text: string) => void copyText(id, text), [copyText]);
-  const onEdit = useCallback((id: string) => editMessage(id), [editMessage]);
   const onRegenerate = useCallback(() => regenerate(), [regenerate]);
+  // Per-message ⋯ popover (Branch chat) — same screen-level Modal pattern as
+  // the kebab menu, anchored to the bubble's ⋯ button.
+  const [branchAnchor, setBranchAnchor] = useState<{ anchor: AnchorRect; id: string } | null>(null);
+  const openBranchMenu = useCallback(
+    (m: AnchorMeasure, id: string) => m((a) => setBranchAnchor({ anchor: a, id })),
+    [],
+  );
+  const closeBranchMenu = useCallback(() => setBranchAnchor(null), []);
+  // Long-press menu on our own messages (Copy / Edit) — same popover pattern.
+  const [userMenu, setUserMenu] = useState<{ anchor: AnchorRect; id: string } | null>(null);
+  const openUserMenu = useCallback(
+    (m: AnchorMeasure, id: string) => m((a) => setUserMenu({ anchor: a, id })),
+    [],
+  );
+  const closeUserMenu = useCallback(() => setUserMenu(null), []);
+  // Icon tooltips (bubble footer buttons) — a floating label that never
+  // captures touches, auto-dismissed. No Modal: a modal would eat the release
+  // tap and complicate the guarded onPress in the bubble.
+  const [tip, setTip] = useState<{ anchor: AnchorRect; label: string } | null>(null);
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (tipTimer.current) clearTimeout(tipTimer.current);
+    },
+    [],
+  );
+  const showTip = useCallback((m: AnchorMeasure, label: string) => {
+    m((a) => {
+      setTip({ anchor: a, label });
+      if (tipTimer.current) clearTimeout(tipTimer.current);
+      tipTimer.current = setTimeout(() => setTip(null), 1200);
+    });
+  }, []);
 
   const scrollEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollEnd = useCallback((animated?: unknown) => {
@@ -700,14 +742,16 @@ export function ChatScreen() {
           onToggleExpand={onToggleExpand}
           copied={copiedId === item.id}
           onCopy={onCopy}
-          canEdit={item.role === 'user' && item.rowId != null && !generating}
           canRegenerate={!!lastAssistantId && item.id === lastAssistantId && hasRegenTarget && !generating}
-          onEdit={onEdit}
+          canBranch={item.role === 'assistant' && !item.pending}
           onRegenerate={onRegenerate}
+          onBranchMenu={openBranchMenu}
+          onUserMenu={openUserMenu}
+          onTip={showTip}
         />
       );
     },
-    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onEdit, onRegenerate, streamingTexts],
+    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, openBranchMenu, openUserMenu, showTip, streamingTexts],
   );
   const listExtraData = useMemo(
     () => ({ expanded, highlightIds, copiedId, generating, lastAssistantId, dark, bubbleMax, streamingTexts }),
@@ -872,19 +916,136 @@ export function ChatScreen() {
               <Info size={17} color={headerIcon} />
               <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Session info</Text>
             </Tap>
-            <Tap
-              testID="menu-branch"
-              onPress={() => {
-                setKebabOpen(false);
-                void branchSession();
-              }}
-              radius={10}
-              className="flex-row items-center gap-2.5 px-3 py-2.5"
-            >
-              <FileText size={17} color={headerIcon} />
-              <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Branch chat</Text>
-            </Tap>
           </View>
+        </View>
+      </Modal>
+
+      {/* Per-message ⋯ popover — floats above the ⋯ button that opened it
+          (window → modal coords, same +insets.top shift as the kebab menu).
+          Falls below the button when there's no room above. */}
+      <Modal
+        visible={!!branchAnchor}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={closeBranchMenu}
+      >
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={{ position: 'absolute', inset: 0 }}
+            onPress={closeBranchMenu}
+          />
+          {!!branchAnchor &&
+            (() => {
+              const target = messages.find((m) => m.id === branchAnchor.id);
+              const menuW = 192;
+              const left = Math.max(8, Math.min(branchAnchor.anchor.x + branchAnchor.anchor.w - menuW, winW - menuW - 8));
+              const above = branchAnchor.anchor.y > 96;
+              return (
+                <View
+                  className="absolute w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
+                  style={
+                    above
+                      ? { bottom: winH - branchAnchor.anchor.y + 8, left }
+                      : { top: branchAnchor.anchor.y + branchAnchor.anchor.h + 8 + insets.top, left }
+                  }
+                >
+                  {!!target?.ts && (
+                    <View className="flex-row items-center gap-2.5 px-3 py-2">
+                      <Clock size={17} color={dark ? '#888' : '#999'} />
+                      <Text className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                        {formatBubbleTime(target.ts)}
+                      </Text>
+                    </View>
+                  )}
+                  <Tap
+                    testID="menu-branch"
+                    onPress={() => {
+                      closeBranchMenu();
+                      void branchSession();
+                    }}
+                    radius={10}
+                    className="flex-row items-center gap-2.5 px-3 py-2.5"
+                  >
+                    <GitFork size={17} color={headerIcon} />
+                    <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Branch chat</Text>
+                  </Tap>
+                </View>
+              );
+            })()}
+        </View>
+      </Modal>
+
+      {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
+      <Modal
+        visible={!!userMenu}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={closeUserMenu}
+      >
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={{ position: 'absolute', inset: 0 }}
+            onPress={closeUserMenu}
+          />
+          {!!userMenu &&
+            (() => {
+              const target = messages.find((m) => m.id === userMenu.id);
+              const delta = target ? streamingTexts[target.id] : undefined;
+              const fullText = target ? target.text + (delta ?? '') : '';
+              const showCopy = !!target && !!fullText && !target.pending;
+              const showEdit = !!target && target.role === 'user' && target.rowId != null && !generating;
+              if (!target || (!showCopy && !showEdit)) return null;
+              const menuW = 192;
+              const left = Math.max(8, Math.min(userMenu.anchor.x + userMenu.anchor.w - menuW, winW - menuW - 8));
+              const above = userMenu.anchor.y > 128;
+              return (
+                <View
+                  className="absolute w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
+                  style={
+                    above
+                      ? { bottom: winH - userMenu.anchor.y + 8, left }
+                      : { top: userMenu.anchor.y + userMenu.anchor.h + 8 + insets.top, left }
+                  }
+                >
+                  {!!target.ts && (
+                    <View className="flex-row items-center gap-2.5 px-3 py-2">
+                      <Clock size={17} color={dark ? '#888' : '#999'} />
+                      <Text className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                        {formatBubbleTime(target.ts)}
+                      </Text>
+                    </View>
+                  )}
+                  {showCopy && (
+                    <Tap
+                      onPress={() => {
+                        closeUserMenu();
+                        void copyText(target.id, fullText);
+                      }}
+                      radius={10}
+                      className="flex-row items-center gap-2.5 px-3 py-2.5"
+                    >
+                      <Copy size={17} color={headerIcon} />
+                      <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</Text>
+                    </Tap>
+                  )}
+                  {showEdit && (
+                    <Tap
+                      onPress={() => {
+                        closeUserMenu();
+                        editMessage(target.id);
+                      }}
+                      radius={10}
+                      className="flex-row items-center gap-2.5 px-3 py-2.5"
+                    >
+                      <Pencil size={17} color={headerIcon} />
+                      <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</Text>
+                    </Tap>
+                  )}
+                </View>
+              );
+            })()}
         </View>
       </Modal>
 
@@ -1500,6 +1661,22 @@ export function ChatScreen() {
         </>
       )}
     </SafeAreaView>
+      {/* Icon tooltip — pointerEvents="none" so it never steals taps. */}
+      {!!tip &&
+        (() => {
+          const relY = tip.anchor.y - rootWin.current.y;
+          const rootH = rootWin.current.h || winH;
+          const left = Math.max(8, Math.min(tip.anchor.x + tip.anchor.w / 2 - 48, winW - 104));
+          return (
+            <View
+              pointerEvents="none"
+              className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-white/90"
+              style={{ bottom: Math.max(8, rootH - relY + 8), left }}
+            >
+              <Text className="text-[12px] text-white dark:text-black">{tip.label}</Text>
+            </View>
+          );
+        })()}
     </View>
   );
 }

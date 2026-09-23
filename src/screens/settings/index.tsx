@@ -25,7 +25,6 @@ import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components';
 import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
-
 export function SettingsScreen() {
   const { authed, username, host, conn, theme, setTheme, logout, sessionInfo, applyApprovalMode, diagnostics, notificationsEnabled, setNotifications } = useApp();
   const dark = theme === 'dark';
