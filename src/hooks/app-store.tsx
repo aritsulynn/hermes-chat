@@ -22,8 +22,8 @@ import {
   toWsUrl,
 } from '../lib/dashboard';
 import type { ModelProviderOption } from '../lib/dashboard';
-import { clearCookie, getCookie, getLastSession, getModel, getNotifyEnabled, getPassword, getTheme, loadConnection, saveCookie, saveHost, saveLastSession, saveModel, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
-import type { Theme } from '../lib/connection';
+import { clearCookie, getActiveProfile, getCookie, getLastSession, getModel, getNotifyEnabled, getPassword, getTheme, loadConnection, saveActiveProfile, saveCookie, saveHost, saveLastSession, saveModel, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
+import type { ResolvedTheme, Theme } from '../lib/connection';
 import { ensureAndroidChannel, onNotificationTap, pushNotification, requestNotifyPermission } from '../lib/notifications';
 import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
@@ -35,6 +35,7 @@ import {
   isSlashCommand,
   nid,
   parseSlashCommand,
+  utf8ToBase64,
 } from '../utils/messages';
 import {
   rememberCommandsCatalog,
@@ -58,7 +59,12 @@ export interface AppStore {
   password: string;
   setPassword: (v: string) => void;
   conn: ConnState;
-  sessions: SessionSummary[];
+  /** Gateway profile currently selected for Chat and profile-aware screens. */
+  activeProfile: string;
+  profiles: AgentProfile[];
+  refreshProfiles: () => Promise<void>;
+  switchProfile: (profile: string) => Promise<void>;
+  sessions: ScopedSessionSummary[];
   openingId: string | null;
   sessionId: string | null;
   /** Stored DB id (session.list id) — stable across resumes, used for highlight. */
@@ -98,12 +104,12 @@ export interface AppStore {
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
-  refreshSessions: (limit?: number) => Promise<SessionSummary[]>;
+  refreshSessions: (limit?: number) => Promise<ScopedSessionSummary[]>;
   /** Fetch the next page (limit+100) — used by drawer infinite scroll. */
-  loadMoreSessions: () => Promise<SessionSummary[]>;
+  loadMoreSessions: () => Promise<ScopedSessionSummary[]>;
   sessionsHasMore: boolean;
   sessionsLoadingMore: boolean;
-  openSession: (s: SessionSummary) => Promise<void>;
+  openSession: (s: ScopedSessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
   send: () => Promise<void>;
   stop: () => void;
@@ -149,7 +155,10 @@ export interface AppStore {
   answerValue: (value: string) => void;
   answerApproval: (choice: string) => void;
   dismissAsk: () => void;
-  theme: Theme;
+  /** Effective theme after resolving `system`. */
+  theme: ResolvedTheme;
+  /** Persisted user preference: light, dark, or follow the device. */
+  themeMode: Theme;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   renameSession: (title: string) => Promise<void>;
@@ -181,9 +190,99 @@ function withTimeout<T>(p: Promise<T>, ms: number, what = 'timed out'): Promise<
   }), timeout]);
 }
 
+export interface AgentProfile {
+  name: string;
+  display_name?: string;
+  description?: string;
+  model?: string | null;
+  provider?: string | null;
+  is_default?: boolean;
+  gateway_running?: boolean;
+  [key: string]: unknown;
+}
+
+export interface ScopedSessionSummary extends SessionSummary {
+  profile?: string;
+}
+
+function normalizeProfileName(name: string | null | undefined): string {
+  const value = String(name ?? '').trim();
+  return value || 'default';
+}
+
+function profilesOf(payload: unknown): AgentProfile[] {
+  const rows = Array.isArray(payload) ? payload : Array.isArray((payload as any)?.profiles) ? (payload as any).profiles : [];
+  return rows
+    .filter((row: any) => row && typeof row === 'object' && typeof row.name === 'string' && row.name.trim())
+    .map((row: any) => ({ ...row, name: normalizeProfileName(row.name) }));
+}
+
+async function discoverAgentProfiles(host: string, cookie: string): Promise<{ profiles: AgentProfile[]; current: string }> {
+  const [listResult, currentResult] = await Promise.allSettled([
+    dashboardOpsGet(host, cookie, '/api/profiles'),
+    dashboardOpsGet(host, cookie, '/api/profiles/active'),
+  ]);
+  const rows = listResult.status === 'fulfilled' ? profilesOf(listResult.value) : [];
+  const currentPayload = currentResult.status === 'fulfilled' ? currentResult.value : null;
+  const current = normalizeProfileName(
+    typeof currentPayload?.current === 'string' ? currentPayload.current : rows[0]?.name,
+  );
+  return { profiles: rows, current };
+}
+
+/** Durable session identity is profile + stored id; stored ids may collide across profiles. */
+function profileSessionKey(profile: string, storedId: string): string {
+  return JSON.stringify([normalizeProfileName(profile), storedId]);
+}
+
+/** Keep the raw gateway usage shape in state; `readUsage` normalizes at render. */
+function mergeUsageState(previous: unknown, patch: unknown): any {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return previous;
+  const base =
+    previous && typeof previous === 'object' && !Array.isArray(previous)
+      ? (previous as Record<string, unknown>)
+      : {};
+  return { ...base, ...(patch as Record<string, unknown>) };
+}
+
+// A cold resume builds its agent off the response path. The breakdown RPC is
+// intentionally no-wait, so retry briefly until that build can reconstruct
+// context occupancy from the restored transcript.
+const CONTEXT_WAKEUP_DELAYS_MS = [0, 200, 600, 1500, 3000];
+
+function scheduleContextHydration(
+  gateway: GatewayWs,
+  sessionId: string,
+  isCurrent: () => boolean,
+  publish: (snapshot: any) => void,
+  delays = CONTEXT_WAKEUP_DELAYS_MS,
+): () => void {
+  let stopped = false;
+  const attempt = (index: number) => {
+    setTimeout(async () => {
+      if (stopped || !isCurrent()) return;
+      try {
+        const snapshot = await gateway.contextBreakdown(sessionId);
+        if (stopped || !isCurrent()) return;
+        if (typeof snapshot?.context_max === 'number' && snapshot.context_max > 0) {
+          publish(snapshot);
+          return;
+        }
+      } catch {
+        return;
+      }
+      if (index + 1 < delays.length) attempt(index + 1);
+    }, delays[index]);
+  };
+  attempt(0);
+  return () => {
+    stopped = true;
+  };
+}
+
 // ── Attachment upload ───────────────────────────────────────────────────────
-// prompt.submit is text-only, so bytes ride the dashboard files API (the same
-// route the Files tab uses) and the agent is handed a path it can open.
+// prompt.submit is text-only, so bytes are staged through session-scoped
+// file.attach/image.attach_bytes RPCs and the agent is handed the returned ref.
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // raw; JSON base64 is ~4/3 bigger
 
@@ -215,8 +314,8 @@ async function attachmentBytes(a: Attachment): Promise<string> {
 
 async function uploadAttachments(
   files: Attachment[],
-  host: string,
-  cookie: string,
+  gateway: GatewayWs,
+  sessionId: string,
 ): Promise<{ name: string; path: string; image: boolean }[]> {
   // Parallel with cap 3 — old serial for..await took N x latency.
   const out: { name: string; path: string; image: boolean }[] = new Array(files.length);
@@ -228,22 +327,25 @@ async function uploadAttachments(
     const b64 = await attachmentBytes(f);
     if (!b64) throw new Error(`${name}: could not read the file`);
     if (b64.length > MAX_UPLOAD_BYTES * 1.4) throw new Error(`${name}: too large (10 MB max)`);
-    const data_url = `data:${f.mime || 'application/octet-stream'};base64,${b64}`;
-    const put = (path: string) =>
-      dashboardOpsMut(host, cookie, '/api/files/upload', 'POST', { path, data_url, overwrite: true });
-    try {
-      const r: any = await put(`~/${name}`);
-      out[index] = { name, path: typeof r?.path === 'string' && r.path ? r.path : `~/${name}`, image };
-    } catch (first) {
-      // Some builds reject the `~` shorthand for writes — resolve the managed
-      // root and retry once before giving up.
-      const home: any = await dashboardOpsGet(host, cookie, '/api/files?path=~').catch(() => null);
-      const root = typeof home?.path === 'string' ? home.path.replace(/\/+$/, '') : '';
-      if (!root) throw first;
-      const target = `${root}/${name}`;
-      const r: any = await put(target);
-      out[index] = { name, path: typeof r?.path === 'string' && r.path ? r.path : target, image };
-    }
+    const dataUrl = `data:${f.mime || 'application/octet-stream'};base64,${b64}`;
+    const result: any = image
+      ? await gateway.call('image.attach_bytes', {
+          session_id: sessionId,
+          content_base64: b64,
+          filename: name,
+        })
+      : await gateway.call('file.attach', {
+          session_id: sessionId,
+          name,
+          data_url: dataUrl,
+        });
+    const path =
+      typeof result?.path === 'string' && result.path
+        ? result.path
+        : typeof result?.ref_text === 'string' && result.ref_text
+          ? result.ref_text
+          : name;
+    out[index] = { name, path, image };
   };
   const workers = Array.from({ length: Math.min(3, files.length) }, async () => {
     while (cursor < files.length) {
@@ -313,8 +415,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const [conn, setConn] = useState<ConnState>('idle');
+  const [activeProfile, setActiveProfile] = useState('default');
+  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [authed, setAuthed] = useState(false);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessions, setSessions] = useState<ScopedSessionSummary[]>([]);
   const [sessionsLimit, setSessionsLimit] = useState(100);
   const [sessionsHasMore, setSessionsHasMore] = useState(true);
   const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false);
@@ -323,7 +427,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const sessionsHasMoreRef = useRef(true);
   sessionsHasMoreRef.current = sessionsHasMore;
   const sessionsLoadingMoreRef = useRef(false);
-  const sessionsFetchRef = useRef<Promise<SessionSummary[]> | null>(null);
+  const sessionsFetchRef = useRef<Promise<ScopedSessionSummary[]> | null>(null);
+  const sessionsFetchProfileRef = useRef<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
@@ -339,10 +444,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Park the visible room's live turn before leaving it, so coming back can
   // restore its Stop button instead of stranding Send/Stop on the wrong room.
   const parkLiveTurn = useCallback(() => {
-    if (generatingRef.current) {
-      const key = latest.current.sessionKey ?? sessionIdRef.current;
-      if (key) parkedLiveRef.current.add(key);
-    }
+    if (!generatingRef.current) return;
+    const profile = latest.current.activeProfile;
+    const stored = latest.current.sessionKey;
+    const runtime = sessionIdRef.current;
+    const owner = stored
+      ? profileSessionKey(profile, stored)
+      : runtime
+        ? runtimeOwners.current.get(runtime) ?? profileSessionKey(profile, runtime)
+        : null;
+    if (owner) parkedLiveRef.current.add(owner);
   }, []);
   // Re-anchor streaming after a transcript rebuild while this room's turn is
   // live (REST is newer truth; the pre-switch buffer was already dropped).
@@ -390,33 +501,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [ask, setAsk] = useState<ServerAsk | null>(null);
   const systemScheme = useSystemScheme();
-  const [theme, setThemeState] = useState<Theme>(() =>
-    // Match the system on first paint: NativeWind's dark: variants follow the
-    // system scheme, so starting at hardcoded 'light' on a dark-mode phone
-    // paints dark-variant text on light inline backgrounds until the user
-    // toggles once (which locks both sides together).
-    systemScheme === 'dark' ? 'dark' : 'light',
-  );
+  const systemTheme: ResolvedTheme = systemScheme === 'dark' ? 'dark' : 'light';
+  // First install follows the device. An explicit saved Light/Dark choice wins.
+  const [themeMode, setThemeMode] = useState<Theme>('system');
+  const theme: ResolvedTheme = themeMode === 'system' ? systemTheme : themeMode;
   // Local notifications (turn complete / server asks while backgrounded).
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const { setColorScheme } = useNWColorScheme();
 
   const setTheme = useCallback(
     (t: Theme) => {
-      setThemeState(t);
+      setThemeMode(t);
+      // Resolve immediately to avoid a one-frame flash; the effect below keeps
+      // NativeWind synced if the device appearance changes later.
       try {
-        setColorScheme(t);
+        setColorScheme(t === 'system' ? systemTheme : t);
       } catch {}
       void saveTheme(t);
     },
-    [setColorScheme],
+    [setColorScheme, systemTheme],
   );
   const toggleTheme = useCallback(() => {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   }, [theme, setTheme]);
+  useEffect(() => {
+    try {
+      setColorScheme(theme);
+    } catch {}
+  }, [setColorScheme, theme]);
 
   const gw = useRef<GatewayWs | null>(null);
   const cookie = useRef<string>('');
+  const activeProfileRef = useRef('default');
+  activeProfileRef.current = activeProfile;
+  const activeProfilePreferenceRef = useRef<string | null>(null);
+  const profileEpochRef = useRef(0);
+  /** runtime session id → scoped durable owner (profile + stored id). */
+  const runtimeOwners = useRef<Map<string, string>>(new Map());
+  const refreshProfiles = useCallback(async () => {
+    if (!host || !cookie.current) return;
+    try {
+      const discovered = await discoverAgentProfiles(host, cookie.current);
+      setProfiles(discovered.profiles);
+    } catch {}
+  }, [host]);
   const uploading = useRef(false); // send() re-entrancy guard while bytes go up
   const liveAid = useRef<string | null>(null);
   const liveThinkAid = useRef<string | null>(null);
@@ -434,6 +562,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Live runtime session id for callbacks frozen in openWs (reconnect replay).
   const sessionIdRef = useRef<string | null>(null);
   sessionIdRef.current = sessionId;
+  const contextHydrateCancelRef = useRef<(() => void) | null>(null);
+  const contextPendingSidRef = useRef<string | null>(null);
   // Queue plumbing reads the freshest values from inside the once-created WS
   // event handlers (onComplete drains the queue before React re-renders).
   const generatingRef = useRef(false);
@@ -449,9 +579,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   queuedRef.current = queued;
   messagesRef.current = messages;
   notifyRef.current = notifyEnabled;
-  // Latest host/sessionKey for callbacks frozen in openWs (created once).
-  const latest = useRef({ host, sessionKey });
-  latest.current = { host, sessionKey };
+  // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
+  const latest = useRef({ host, activeProfile, sessionKey });
+  latest.current = { host, activeProfile, sessionKey };
   // Tool RESULT fill from the REST transcript. The gateway's history projection
   // deliberately omits tool results (`name` + 80-char `context` + `args` only —
   // tui_gateway/session_history.py::_history_to_messages), and the live
@@ -462,6 +592,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toolRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   toolRefreshRef.current = () => {
     const h = latest.current.host;
+    const profile = latest.current.activeProfile;
+    const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
     const ck = cookie.current;
     // Web: the jar is empty (Set-Cookie is unreadable) but the browser cookie
@@ -469,7 +601,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!h || !sk) return;
     void (async () => {
       try {
-        const items = await getSessionMessages(h, ck, sk);
+        const items = await getSessionMessages(h, ck, sk, profile);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         const restTools = items.filter((m) => m.role === 'tool' && m.content.trim());
         const liveTools = messagesRef.current.filter((m) => m.role === 'tool');
         if (restTools.length === 0 || liveTools.length === 0) return;
@@ -525,11 +658,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const stampRowIdsRef = useRef<() => void>(() => {});
   stampRowIdsRef.current = () => {
     const h = latest.current.host;
+    const profile = latest.current.activeProfile;
+    const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
     if (!h || !sk) return;
     void (async () => {
       try {
-        const items = await getSessionMessages(h, cookie.current, sk);
+        const items = await getSessionMessages(h, cookie.current, sk, profile);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         const rest = items.filter(
           (m) => (m.role === 'user' || m.role === 'assistant') && m.rowId != null && m.content.trim(),
         );
@@ -555,11 +691,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const resyncRef = useRef<() => void>(() => {});
   resyncRef.current = () => {
     const h = latest.current.host;
+    const profile = latest.current.activeProfile;
+    const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
     if (!h || !sk) return;
     void (async () => {
       try {
-        const hist = await getSessionMessages(h, cookie.current, sk);
+        const hist = await getSessionMessages(h, cookie.current, sk, profile);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         if (hist.length) {
           const items = historyToItems(hist);
           clearStreaming();
@@ -575,6 +714,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch {}
     })();
   };
+
+  const hydrateSessionContext = useCallback((g: GatewayWs, sid: string) => {
+    contextHydrateCancelRef.current?.();
+    contextPendingSidRef.current = sid;
+    contextHydrateCancelRef.current = scheduleContextHydration(
+      g,
+      sid,
+      () => sessionIdRef.current === sid,
+      (snapshot) => {
+        if (contextPendingSidRef.current === sid) contextPendingSidRef.current = null;
+        setUsageInfo((prev: any) => mergeUsageState(prev, snapshot));
+      },
+    );
+  }, []);
+
   // Refresh the composer status strip at each turn end (session.info isn't
   // guaranteed to carry usage every turn); session.usage answers the live numbers.
   const usageRefreshRef = useRef<() => void>(() => {});
@@ -582,7 +736,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const g = gw.current;
     const sid = sessionId;
     if (!g || !sid) return;
-    void g.usage(sid).then(setUsageInfo).catch(() => {});
+    void g
+      .usage(sid)
+      .then((info) => {
+        if (sessionIdRef.current === sid) setUsageInfo((prev: any) => mergeUsageState(prev, info));
+      })
+      .catch(() => {});
   };
   // Live subagent roster — polled while a turn runs (subagent.list is scoped to
   // this session). Cheap: the RPC returns a small snapshot.
@@ -620,8 +779,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const draftsRef = useRef<Map<string, string>>(new Map());
   const draftKeyRef = useRef<string>('__none__');
   useEffect(() => {
-    draftKeyRef.current = sessionKey ?? sessionId ?? '__none__';
-  }, [sessionKey, sessionId]);
+    const id = sessionKey ?? sessionId;
+    draftKeyRef.current = id ? profileSessionKey(activeProfile, id) : `${activeProfile}::__none__`;
+  }, [activeProfile, sessionKey, sessionId]);
   const setInput = useCallback((v: string) => {
     draftsRef.current.set(draftKeyRef.current, v);
     // Bound the per-session draft map — one entry per visited session otherwise.
@@ -667,27 +827,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const savedPw = await getPassword().catch(() => null);
         if (cancelled) return;
         if (savedPw) setPassword(savedPw);
-        // Restore theme before first paint if possible.
+        const savedProfile = await getActiveProfile().catch(() => null);
+        if (savedProfile) {
+          const normalized = normalizeProfileName(savedProfile);
+          activeProfilePreferenceRef.current = normalized;
+          activeProfileRef.current = normalized;
+          setActiveProfile(normalized);
+        }
+        // Restore the saved preference before releasing the splash gate.
         const savedTheme = await getTheme().catch(() => null);
         if (cancelled) return;
-        if (savedTheme) {
-          setThemeState(savedTheme);
-          try {
-            setColorScheme(savedTheme);
-          } catch {}
-        } else {
-          // No saved choice: lock NativeWind to the same system-derived theme
-          // the state started with, or the two drift until the first toggle.
-          try {
-            setColorScheme(systemScheme === 'dark' ? 'dark' : 'light');
-          } catch {}
-        }
+        if (savedTheme) setThemeMode(savedTheme);
+        try {
+          setColorScheme(savedTheme === 'system' || !savedTheme ? systemTheme : savedTheme);
+        } catch {}
         // Restore the local-notifications preference.
         const savedNotify = await getNotifyEnabled().catch(() => false);
         if (!cancelled) setNotifyEnabled(savedNotify);
         // Restore the last picked model so the composer chip survives restarts
         // (the server global default still governs actual runs).
-        const savedModel = await getModel().catch(() => null);
+        const savedModel = await getModel(activeProfileRef.current).catch(() => null);
         if (!cancelled && savedModel) {
           if (savedModel.provider) setModelProvider(savedModel.provider);
           setModel(savedModel.model);
@@ -771,8 +930,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       for (const r of rows) {
         // `waiting` (pending approval/input) is still live — desktop never retires needsInput.
         if (r.status === 'working' || r.status === 'waiting' || r.status === 'starting') {
-          if (r.sessionKey) working.add(r.sessionKey);
-          if (r.id) working.add(r.id);
+          if (!r.id) continue;
+          const owner =
+            runtimeOwners.current.get(r.id) ??
+            (r.id === sessionIdRef.current
+              ? profileSessionKey(activeProfileRef.current, r.id)
+              : null);
+          if (owner) working.add(owner);
         }
       }
       return working;
@@ -792,7 +956,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     for (const key of [...parkedLiveRef.current]) {
       if (!working.has(key)) parkedLiveRef.current.delete(key);
     }
-    const cur = latest.current.sessionKey ?? sessionIdRef.current;
+    const stored = latest.current.sessionKey;
+    const runtime = sessionIdRef.current;
+    const cur = stored
+      ? profileSessionKey(latest.current.activeProfile, stored)
+      : runtime
+        ? runtimeOwners.current.get(runtime) ?? profileSessionKey(latest.current.activeProfile, runtime)
+        : null;
     if (generatingRef.current && cur && !working.has(cur)) {
       releaseLocalTurn();
       resyncRef.current();
@@ -800,11 +970,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [probeWorkingSessions]);
 
   const openWs = useCallback(async (h: string): Promise<GatewayWs> => {
-    const ticket = await mintWsTicket(h, cookie.current);    // Events carry the runtime session id. Only the session on screen may touch
-    // the transcript — a cron run / subagent / another client's turn must not
-    // bleed in. An empty id is treated as current (some frames are global).
+    const ticket = await mintWsTicket(h, cookie.current);    // Events carry the runtime session id. Only the active profile's foreground
+    // runtime may touch the transcript. During a profile switch there is
+    // intentionally no current runtime until session.create resolves, so every
+    // session-scoped event is ignored during that gap.
     const isCurrentSession = (sid: string) =>
-      !sid || !sessionIdRef.current || sid === sessionIdRef.current;
+      !sid || (!!sessionIdRef.current && sid === sessionIdRef.current);
     const ws = new GatewayWs({
       wsUrl: toWsUrl(h, ticket),
       refreshUrl: async () => {
@@ -950,7 +1121,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (owner) {
             parkedLiveRef.current.delete(owner);
           } else if (isCurrentSession(sid) && latest.current.sessionKey) {
-            parkedLiveRef.current.delete(latest.current.sessionKey);
+            parkedLiveRef.current.delete(
+              profileSessionKey(latest.current.activeProfile, latest.current.sessionKey),
+            );
           }
           if (!isCurrentSession(sid)) return;
           const aid = liveAid.current;
@@ -1031,20 +1204,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
             void pushNotification('Hermes finished', (text || '').trim().slice(0, 160) || 'Turn complete');
           }
         },
-        onNotice: (_sid, text) => {
+        onNotice: (sid, text) => {
+          if (!isCurrentSession(sid)) return;
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
         },
         onSessionInfo: (sid, info) => {
           if (!isCurrentSession(sid)) return;
           setSessionInfo(info);
+          if (info?.usage) setUsageInfo((prev: any) => mergeUsageState(prev, info.usage));
+          if (contextPendingSidRef.current === sid && gw.current) {
+            hydrateSessionContext(gw.current, sid);
+          }
           // Server truth wins when present (e.g. the global default changed on
           // desktop) — and persists for the next boot.
           if (info && typeof info.model === 'string' && info.model) {
             const prov = typeof info.provider === 'string' ? info.provider : '';
             setModelProvider(prov);
             setModel(info.model);
-            void saveModel(prov, info.model);
+            void saveModel(prov, info.model, latest.current.activeProfile);
           }
+        },
+        onUsage: (sid, usage) => {
+          if (!isCurrentSession(sid)) return;
+          setUsageInfo((prev: any) => mergeUsageState(prev, usage));
         },
         onTodo: (sid, payload) => {
           if (!isCurrentSession(sid)) return;
@@ -1077,24 +1259,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         },
         onAskCancel: (rpcId) => {
-          setAsk((cur) => (cur?.rpcId === rpcId ? null : cur));
+          setAsk((cur) =>
+            cur?.rpcId === rpcId && (!cur.sessionId || isCurrentSession(cur.sessionId)) ? null : cur,
+          );
         },
       },
     });
     return ws;
-  }, []);
+  }, [hydrateSessionContext]);
 
-  const refreshSessions = useCallback(async (limit?: number): Promise<SessionSummary[]> => {
+  const refreshSessions = useCallback(async (limit?: number): Promise<ScopedSessionSummary[]> => {
     const g = gw.current;
     if (!g) return [];
+    const profile = activeProfileRef.current;
+    const epoch = profileEpochRef.current;
     // Default to the current known depth so a drawer reopen doesn't shrink
     // back to 100 after the user already scrolled deeper.
     const want = limit ?? sessionsLimitRef.current ?? 100;
-    // Concurrent scroll-bottom + drawer-open refreshes must not interleave.
-    if (sessionsFetchRef.current) return sessionsFetchRef.current;
-    const p: Promise<SessionSummary[]> = (async () => {
+    // Concurrent scroll-bottom + drawer-open refreshes share one request, but
+    // a profile switch always starts a separate request for the new scope.
+    if (sessionsFetchRef.current && sessionsFetchProfileRef.current === profile) {
+      return sessionsFetchRef.current;
+    }
+    sessionsFetchRef.current = null;
+    sessionsFetchProfileRef.current = null;
+    let p: Promise<ScopedSessionSummary[]> | null = null;
+    p = (async () => {
       try {
-        const s = await g.listSessions(want);
+        const rows = await g.listSessions(want, profile);
+        const s: ScopedSessionSummary[] = rows.map((row) => ({
+          ...row,
+          profile: (row as ScopedSessionSummary).profile ?? profile,
+        }));
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return [];
         setSessions(s);
         setSessionsLimit(want);
         // session.list returns newest-first up to limit — a full page means
@@ -1102,31 +1299,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSessionsHasMore(s.length >= want);
         return s;
       } catch (e) {
-        setError(errMsg(e));
+        if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+          setError(errMsg(e));
+        }
         return [];
       } finally {
-        sessionsFetchRef.current = null;
+        if (sessionsFetchRef.current === p) {
+          sessionsFetchRef.current = null;
+          sessionsFetchProfileRef.current = null;
+        }
       }
     })();
     sessionsFetchRef.current = p;
+    sessionsFetchProfileRef.current = profile;
     return p;
   }, []);
 
-  const loadMoreSessions = useCallback(async (): Promise<SessionSummary[]> => {
+  const loadMoreSessions = useCallback(async (): Promise<ScopedSessionSummary[]> => {
     if (sessionsLoadingMoreRef.current || !sessionsHasMoreRef.current) return [];
     const g = gw.current;
     if (!g) return [];
+    const profile = activeProfileRef.current;
+    const epoch = profileEpochRef.current;
     sessionsLoadingMoreRef.current = true;
     setSessionsLoadingMore(true);
     const want = Math.min((sessionsLimitRef.current ?? 100) + 100, 1000);
     try {
-      const s = await g.listSessions(want);
+      const rows = await g.listSessions(want, profile);
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return [];
+      const s: ScopedSessionSummary[] = rows.map((row) => ({
+        ...row,
+        profile: (row as ScopedSessionSummary).profile ?? profile,
+      }));
       setSessions(s);
       setSessionsLimit(want);
       setSessionsHasMore(s.length >= want && want < 1000);
       return s;
     } catch (e) {
-      setError(errMsg(e));
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        setError(errMsg(e));
+      }
       return [];
     } finally {
       sessionsLoadingMoreRef.current = false;
@@ -1144,6 +1356,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const loadProviders = useCallback(async () => {
     const g = gw.current;
+    const profile = activeProfileRef.current;
+    const epoch = profileEpochRef.current;
     if (!g || providersLoadingRef.current) return;
     // 30s TTL — the model popover opens often, don't refetch every open.
     if (providersRef.current && Date.now() - providersAtRef.current < 30000) return;
@@ -1151,9 +1365,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProvidersLoading(true);
     setProvidersError(null);
     try {
-      const raw = await g.modelOptions(sessionId ?? undefined);
+      const raw = await g.modelOptions(sessionId ?? undefined, sessionId ? undefined : profile);
       const rows = Array.isArray(raw?.providers) ? raw.providers : [];
       if (rows.length > 0) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setProviders(
           rows.map((p: any) => ({
             slug: String(p?.slug ?? ''),
@@ -1171,10 +1386,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error('empty provider list');
     } catch (eWs) {
       try {
-        setProviders(await getModelOptions(host, cookie.current));
+        const next = await getModelOptions(host, cookie.current, { profile });
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        setProviders(next);
         providersAtRef.current = Date.now();
       } catch (eRest) {
-        setProvidersError(errMsg(eRest) || errMsg(eWs));
+        if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+          setProvidersError(errMsg(eRest) || errMsg(eWs));
+        }
       }
     } finally {
       providersLoadingRef.current = false;
@@ -1206,9 +1425,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const pickModel = useCallback(
     async (providerSlug: string, modelId: string) => {
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       setModelProvider(providerSlug);
       setModel(modelId);
-      void saveModel(providerSlug, modelId);
+      void saveModel(providerSlug, modelId, profile);
       const g = gw.current;
       const sid = sessionId;
       if (!g || !sid) return; // applies to the next new session
@@ -1216,17 +1437,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setToolLine('switching model…');
       try {
         await g.switchModel(sid, modelId, providerSlug || undefined);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Model → ${providerSlug ? `${providerSlug}:` : ''}${modelId} (this chat)` }]);
       } catch (e: any) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         const code = e?.code !== undefined ? ` [${e.code}]` : '';
         const msg = errMsg(e);
         const hint = /timed?\s*out/i.test(msg) ? ' — try again, the worker is warm now' : '';
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Switch failed${code}: ${msg}${hint}` }]);
       } finally {
-        setToolLine(null);
+        if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+          setToolLine(null);
+        }
       }
     },
-    [sessionId],
+    [activeProfile, sessionId],
   );
 
   // Composer thinking-effort pick: applies to the LIVE session via `config.set`
@@ -1237,6 +1462,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (level: string) => {
       const v = level.trim().toLowerCase();
       if (!v) return;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       setEffort(v);
       const g = gw.current;
       const sid = sessionId;
@@ -1244,14 +1471,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await g.configSet('reasoning', v, sid);
       } catch {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         try {
           await g.slashExec(sid, `/reasoning ${v}`);
         } catch (e2: any) {
+          if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `reasoning: ${errMsg(e2)}` }]);
         }
       }
     },
-    [sessionId],
+    [activeProfile, sessionId],
   );
 
   // Fast mode (`/fast`) — session-scoped, same config.set path as reasoning.
@@ -1259,28 +1488,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (on: boolean) => {
       const g = gw.current;
       const sid = sessionId;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       if (!g || !sid) return;
       try {
         await g.configSet('fast', on ? 'fast' : 'normal', sid);
       } catch (e: any) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `fast: ${errMsg(e)}` }]);
       }
     },
-    [sessionId],
+    [activeProfile, sessionId],
   );
 
   // Persistent dangerous-command approval mode (manual | smart | off).
   const applyApprovalMode = useCallback(
     async (mode: 'manual' | 'smart' | 'off') => {
       const g = gw.current;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       if (!g) return;
       try {
-        await g.configSet('approvals.mode', mode, sessionId ?? undefined);
+        await g.configSet(
+          'approvals.mode',
+          mode,
+          sessionId ?? undefined,
+          undefined,
+          sessionId ? undefined : profile,
+        );
       } catch (e: any) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `approvals: ${errMsg(e)}` }]);
       }
     },
-    [sessionId],
+    [activeProfile, sessionId],
   );
 
   // Local notifications: request permission on enable (web needs the gesture).
@@ -1308,6 +1549,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
           throw new Error(`Dashboard auth providers [${probe.providers.join(',')}] — basic not offered.`);
         }
         await ensureCookie(h, user, pw);
+        const discovered = await discoverAgentProfiles(h, cookie.current);
+        setProfiles(discovered.profiles);
+        const preferred = activeProfilePreferenceRef.current;
+        const selected =
+          preferred && discovered.profiles.some((profile) => profile.name === preferred)
+            ? preferred
+            : discovered.current;
+        activeProfilePreferenceRef.current = selected;
+        activeProfileRef.current = selected;
+        setActiveProfile(selected);
+        void saveActiveProfile(selected);
+        const selectedInfo = discovered.profiles.find((profile) => profile.name === selected);
+        const rememberedModel = await getModel(selected).catch(() => null);
+        setModel(String(rememberedModel?.model ?? selectedInfo?.model ?? ''));
+        setModelProvider(String(rememberedModel?.provider ?? selectedInfo?.provider ?? ''));
         gw.current?.close();
         const ws = await openWs(h);
         gw.current = ws;
@@ -1337,7 +1593,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // Restore the chat the user was last viewing, else the most recent.
           let target = list[0];
           try {
-            const saved = await getLastSession();
+            const saved = await getLastSession(activeProfileRef.current);
             const found = saved ? list.find((s) => s.id === saved) : undefined;
             if (found) target = found;
           } catch {}
@@ -1378,6 +1634,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     draftsRef.current.clear();
     parkedLiveRef.current.clear();
     turnOwnerRef.current.clear();
+    runtimeOwners.current.clear();
+    profileEpochRef.current += 1;
+    sessionsFetchRef.current = null;
+    sessionsFetchProfileRef.current = null;
     setInputRaw('');
     await clearCookie();
     setAuthed(false);
@@ -1394,6 +1654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToolLine(null);
     setTodos([]);
     setSubagents([]);
+    setProviders(null);
     queuedRef.current = [];
     setQueued([]);
     setQueueParked(false);
@@ -1406,12 +1667,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Sessions ─────────────────────────────────────────────────────────────
 
-  const openSession = useCallback(async (s: SessionSummary) => {
+  const openSession = useCallback(async (s: ScopedSessionSummary) => {
     const g = gw.current;
     if (!g) {
       setError('Not connected — please login again');
       return;
     }
+    const profile = normalizeProfileName(s.profile ?? activeProfileRef.current);
+    const epoch = profileEpochRef.current;
+    if (activeProfileRef.current !== profile) return;
     setOpeningId(s.id);
     setError(null);
     // Leaving a mid-turn session strands the latch: the old turn's onComplete
@@ -1429,8 +1693,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       // resume mints a FRESH live runtime id — history/submit/interrupt must use
       // the returned session_id, NOT the stored id (server keeps two id spaces).
-      const r: any = await g.resume(s.id);
+      const r: any = await g.call('session.resume', {
+        profile,
+        session_id: s.id,
+        omit_messages: false,
+      });
       const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : s.id;
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      const resumeInfo =
+        r?.info && typeof r.info === 'object' && !Array.isArray(r.info) ? r.info : null;
       // Resume carries the session's todo snapshot; restore the checklist.
       setTodos(normalizeTodos(r?.todo_state));
       // Full transcript via REST first (tool RESULT content + reasoning) —
@@ -1440,26 +1711,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Gate on the cookie ONLY as a fallback signal: on web the jar is empty
         // (JS can't read Set-Cookie) while the browser cookie still authenticates
         // via `credentials: 'include'`, so always try REST.
-        hist = await getSessionMessages(host, cookie.current, s.id);
+        hist = await getSessionMessages(host, cookie.current, s.id, profile);
       } catch {
         hist = [];
       }
       if (hist.length === 0) hist = await g.history(liveId);
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      const owner = profileSessionKey(profile, s.id);
+      runtimeOwners.current.set(liveId, owner);
       setSessionKey(s.id);
-      void saveLastSession(s.id);
+      void saveLastSession(s.id, profile);
       sessionIdRef.current = liveId;
       setSessionId(liveId);
-      draftKeyRef.current = s.id;
-      setInputRaw(draftsRef.current.get(s.id) ?? '');
+      draftKeyRef.current = owner;
+      setInputRaw(draftsRef.current.get(owner) ?? '');
       setAttachments([]);
-      setSessionInfo(null);
-      setUsageInfo(null);
+      // A live resume already returns the authoritative runtime info. Applying
+      // it here avoids depending on a later session.info broadcast, which can
+      // race the REST transcript load while the previous runtime is still current.
+      setSessionInfo(resumeInfo);
+      setUsageInfo(resumeInfo?.usage ?? null);
       setSessionTitle(s.title || '');
+      void g
+        .usage(liveId)
+        .then((info) => {
+          if (sessionIdRef.current === liveId) setUsageInfo((prev: any) => mergeUsageState(prev, info));
+        })
+        .catch(() => {});
+      hydrateSessionContext(g, liveId);
       // Reasoning rides on the assistant message (sidecar, not its own role) —
       // restore it as a thinking bubble above its answer, like the live view.
       const items = historyToItems(hist);
       clearStreaming();
-      if (parkedLiveRef.current.has(s.id)) {
+      if (parkedLiveRef.current.has(owner)) {
         // Back in a room whose turn is still live — re-anchor streaming to the
         // transcript tail and re-arm Stop.
         setMessages(reanchorLiveTurn(items));
@@ -1477,6 +1761,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSubagents([]);
       router.push('/chat');
     } catch (e) {
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       const msg = errMsg(e);
       if (/not.?found/i.test(msg)) {
         // Stale entry — the session is gone server-side (pruned/deleted).
@@ -1487,14 +1772,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError(msg);
       }
     } finally {
-      setOpeningId(null);
+      if (activeProfileRef.current === profile) setOpeningId(null);
     }
-  }, [host]);
+  }, [host, hydrateSessionContext]);
   openSessionRef.current = openSession;
 
   const newSession = useCallback(async () => {
     const g = gw.current;
     if (!g) return;
+    const profile = activeProfileRef.current;
+    const epoch = profileEpochRef.current;
     setBusy(true);
     setError(null);
     // Same stranded-latch guard as openSession (see above).
@@ -1505,13 +1792,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     generatingRef.current = false;
     setToolLine(null);
     try {
-      const { sessionId: sid, storedSessionId } = await g.createSession({
+      const result: any = await g.call('session.create', {
+        profile,
         ...(model ? { model } : {}),
         ...(modelProvider ? { provider: modelProvider } : {}),
-        ...(effort ? { effort } : {}),
+        ...(effort ? { reasoning_effort: effort.toLowerCase() } : {}),
       });
+      const sid = String(result?.session_id ?? '');
+      const storedSessionId = String(result?.stored_session_id ?? sid);
+      if (!sid) throw new Error('Profile session creation returned no session id');
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      const owner = profileSessionKey(profile, storedSessionId || sid);
+      runtimeOwners.current.set(sid, owner);
       setSessionKey(storedSessionId || sid);
-      void saveLastSession(storedSessionId || sid);
+      void saveLastSession(storedSessionId || sid, profile);
       sessionIdRef.current = sid;
       setSessionId(sid);
       setSessionTitle('');
@@ -1524,8 +1818,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setEditingRowId(null);
       setTodos([]);
       setSubagents([]);
-      draftKeyRef.current = storedSessionId || sid;
-      setInputRaw(draftsRef.current.get(draftKeyRef.current) ?? '');
+      draftKeyRef.current = owner;
+      setInputRaw(draftsRef.current.get(owner) ?? '');
       setAttachments([]);
       setSessionInfo(null);
       setUsageInfo(null);
@@ -1533,17 +1827,124 @@ export function AppProvider({ children }: { children: ReactNode }) {
       liveToolAid.current = null;
       router.push('/chat');
     } catch (e) {
-      setError(errMsg(e));
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        setError(errMsg(e));
+      }
     } finally {
-      setBusy(false);
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        setBusy(false);
+      }
     }
   }, [model, modelProvider, effort]);
   newSessionRef.current = newSession;
+
+  const switchProfile = useCallback(
+    async (profileName: string) => {
+      const next = normalizeProfileName(profileName);
+      if (next === activeProfileRef.current) return;
+      if (profiles.length > 0 && !profiles.some((profile) => profile.name === next)) {
+        setError(`Profile "${next}" is no longer available`);
+        void refreshProfiles();
+        return;
+      }
+      const g = gw.current;
+      if (!g) {
+        setError('Not connected — please login again');
+        return;
+      }
+
+      setBusy(true);
+      setError(null);
+      // Preserve the outgoing profile's unsent text, then park any live turn.
+      // The old runtime/socket stays alive; only the foreground workspace moves.
+      if (draftKeyRef.current) draftsRef.current.set(draftKeyRef.current, inputRaw);
+      parkLiveTurn();
+      const epoch = ++profileEpochRef.current;
+      activeProfilePreferenceRef.current = next;
+      activeProfileRef.current = next;
+      setActiveProfile(next);
+      void saveActiveProfile(next);
+
+      sessionIdRef.current = null;
+      contextHydrateCancelRef.current?.();
+      contextHydrateCancelRef.current = null;
+      contextPendingSidRef.current = null;
+      setSessionId(null);
+      setSessionKey(null);
+      setSessionTitle('');
+      setMessages([]);
+      clearStreaming();
+      liveAid.current = null;
+      liveThinkAid.current = null;
+      liveTools.current.clear();
+      liveToolAid.current = null;
+      liveTurnTools.current = [];
+      liveTurnDiffs.current = [];
+      setSessions([]);
+      setOpeningId(null);
+      setGenerating(false);
+      generatingRef.current = false;
+      setQueued([]);
+      queuedRef.current = [];
+      setQueueParked(false);
+      queueParkedRef.current = false;
+      setAttachments([]);
+      setSessionInfo(null);
+      setUsageInfo(null);
+      setUsageLoading(false);
+      setTodos([]);
+      setSubagents([]);
+      setAsk(null);
+      setToolLine(null);
+      setEditingRowId(null);
+      editRowRef.current = null;
+      setInfoOpen(false);
+      setInputRaw('');
+      draftKeyRef.current = `${next}::__none__`;
+      sessionsFetchRef.current = null;
+      sessionsFetchProfileRef.current = null;
+      setSessionsLimit(100);
+      setSessionsHasMore(true);
+      sessionsLoadingMoreRef.current = false;
+      setSessionsLoadingMore(false);
+      providersRef.current = null;
+      providersLoadingRef.current = false;
+      setProvidersLoading(false);
+      providersAtRef.current = 0;
+      catalogAtRef.current = 0;
+      setProviders(null);
+      setProvidersError(null);
+
+      const info = profiles.find((profile) => profile.name === next);
+      const remembered = await getModel(next).catch(() => null);
+      if (activeProfileRef.current !== next || profileEpochRef.current !== epoch) return;
+      setModel(String(remembered?.model ?? info?.model ?? ''));
+      setModelProvider(String(remembered?.provider ?? info?.provider ?? ''));
+
+      try {
+        await refreshSessions(100);
+        if (activeProfileRef.current !== next || profileEpochRef.current !== epoch) return;
+        await newSessionRef.current();
+      } catch (e) {
+        if (activeProfileRef.current === next && profileEpochRef.current === epoch) {
+          setError(errMsg(e));
+        }
+      } finally {
+        if (activeProfileRef.current === next && profileEpochRef.current === epoch) {
+          setBusy(false);
+          router.replace('/chat');
+        }
+      }
+    },
+    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions],
+  );
 
   // Fork the current chat into an independent copy (session.branch) and open it.
   const branchSession = useCallback(async () => {
     const g = gw.current;
     const sid = sessionId;
+    const profile = activeProfileRef.current;
+    const epoch = profileEpochRef.current;
     if (!g || !sid) return;
     // Branching abandons the live runtime — same stranded-latch guard as openSession.
     parkLiveTurn();
@@ -1556,6 +1957,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r: any = await g.branchSession(sid);
       const liveId = String(r?.session_id ?? '');
       if (!liveId) return;
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       const hist: HistoryMessage[] = (Array.isArray(r?.messages) ? r.messages : []).map((m: any) => ({
         role: String(m?.role ?? ''),
         content: String(m?.text ?? m?.content ?? ''),
@@ -1565,8 +1967,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(typeof m?.name === 'string' ? { name: m.name } : {}),
       }));
       const branchKey = String(r?.stored_session_id || liveId);
+      const owner = profileSessionKey(profile, branchKey);
+      runtimeOwners.current.set(liveId, owner);
       setSessionKey(branchKey);
-      void saveLastSession(branchKey);
+      void saveLastSession(branchKey, profile);
       sessionIdRef.current = liveId;
       setSessionId(liveId);
       setSessionTitle(String(r?.title ?? ''));
@@ -1579,15 +1983,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTodos([]);
       setSubagents([]);
       setAttachments([]);
-      setSessionInfo(null);
-      setUsageInfo(null);
-      draftKeyRef.current = branchKey;
-      setInputRaw(draftsRef.current.get(branchKey) ?? '');
+      const branchInfo =
+        r?.info && typeof r.info === 'object' && !Array.isArray(r.info) ? r.info : null;
+      setSessionInfo(branchInfo);
+      setUsageInfo(branchInfo?.usage ?? null);
+      void g
+        .usage(liveId)
+        .then((info) => {
+          if (sessionIdRef.current === liveId) setUsageInfo((prev: any) => mergeUsageState(prev, info));
+        })
+        .catch(() => {});
+      hydrateSessionContext(g, liveId);
+      draftKeyRef.current = owner;
+      setInputRaw(draftsRef.current.get(owner) ?? '');
       router.push('/chat');
     } catch (e: any) {
-      setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
+      }
     }
-  }, [sessionId]);
+  }, [sessionId, hydrateSessionContext]);
 
   // ── Chat ─────────────────────────────────────────────────────────────────
   // Scrolling lives in the chat screen (it owns the FlatList ref); send()
@@ -1604,9 +2019,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (submitText: string, echo?: { text: string; media?: Attachment[] }, rewindRowId?: number, confirmEmptyTruncate?: boolean) => {
       const g = gw.current;
       const sid = sessionId;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       if (!g || !sid) return;
       const submitOpts = rewindRowId != null ? { rewindRowId, ...(confirmEmptyTruncate ? { confirmEmptyTruncate: true } : {}) } : {};
-      turnOwnerRef.current.set(sid, sessionKey ?? sid);
+      const owner = profileSessionKey(profile, sessionKey ?? sid);
+      turnOwnerRef.current.set(sid, owner);
+      runtimeOwners.current.set(sid, owner);
       // Rewind: the server cuts history at that user row, so drop the matching
       // local tail first (and re-echo the user line for regenerate, which passes
       // no explicit echo).
@@ -1648,24 +2067,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastTurnEventAt.current = Date.now();
       try {
         const status = await g.submit(sid, submitText, submitOpts);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         if (status === 'queued') setToolLine('queued — will run after the live turn…');
       } catch (e: any) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         let msg = e?.message ?? String(e);
         let code = e?.code;
         // Live runtime expired server-side (orphan-reaped / evicted / idle TTL) —
         // resume the STORED session for a fresh live id and retry once.
         if ((code === 4001 || /not.?found/i.test(msg)) && sessionKey) {
           try {
-            const r: any = await g.resume(sessionKey);
+            const r: any = await g.call('session.resume', {
+              profile,
+              session_id: sessionKey,
+              omit_messages: false,
+            });
+            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
+            runtimeOwners.current.set(liveId, owner);
             sessionIdRef.current = liveId;
             setSessionId(liveId);
             turnOwnerRef.current.delete(sid);
-            turnOwnerRef.current.set(liveId, sessionKey);
+            turnOwnerRef.current.set(liveId, owner);
+            runtimeOwners.current.set(liveId, owner);
             const status = await g.submit(liveId, submitText, submitOpts);
+            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
             if (status === 'queued') setToolLine('queued — will run after the live turn…');
             return;
           } catch (e2: any) {
+            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
             msg = e2?.message ?? String(e2);
             code = e2?.code;
           }
@@ -1681,7 +2111,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMessages((prev) => prev.filter((m) => m.id !== aid));
       }
     },
-    [sessionId, sessionKey, setSessionId],
+    [activeProfile, sessionId, sessionKey, setSessionId],
   );
 
   // Run a slash command server-side: slash.exec first (live shortcuts + worker),
@@ -1693,25 +2123,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (raw: string) => {
       const g = gw.current;
       const sid = sessionId;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       const full = raw.trim();
       if (!g || !sid || generating || !full) return;
+      const current = () =>
+        activeProfileRef.current === profile && profileEpochRef.current === epoch;
       setMessages((prev) => [...prev, { id: nid(), role: 'user', text: full }]);
-      const show = (text: string) =>
-        setMessages((prev) => [...prev, { id: nid(), role: 'assistant', text }]);
-      const fail = (text: string) =>
-        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
+      const show = (text: string) => {
+        if (current()) setMessages((prev) => [...prev, { id: nid(), role: 'assistant', text }]);
+      };
+      const fail = (text: string) => {
+        if (current()) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
+      };
 
       // slash.exec refuses skill/quick/bundle commands with 4018 — reroute those
       // through command.dispatch, whose result is the structured directive.
       const exec = async (command: string): Promise<any> => {
         try {
           const r: any = await g.slashExec(sid, command);
+          if (!current()) return null;
           if (r && typeof r === 'object' && typeof r.type === 'string') return r;
           const out = typeof r?.output === 'string' ? r.output.trim() : '';
           const warn = typeof r?.warning === 'string' ? r.warning.trim() : '';
           show([warn, out || '(no output)'].filter(Boolean).join('\n\n'));
           return null;
         } catch (e: any) {
+          if (!current()) return null;
           if (e?.code === 4018 || e?.code === 4011) {
             const { name, arg } = parseSlashCommand(command);
             return g.commandDispatch(sid, name, arg);
@@ -1721,7 +2159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
 
       const handle = async (d: any): Promise<void> => {
-        if (!d) return;
+        if (!d || !current()) return;
         switch (d.type) {
           case 'exec':
           case 'plugin':
@@ -1748,7 +2186,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return;
           }
           case 'prefill':
-            if (typeof d.message === 'string') {
+            if (typeof d.message === 'string' && current()) {
               setInput(d.message);
               if (d.notice) show(String(d.notice));
             }
@@ -1764,14 +2202,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         d = await exec(full);
       } catch (e: any) {
+        if (!current()) return;
         setToolLine(null);
         fail(`/${name || 'command'}: ${errMsg(e)}`);
         return;
       }
+      if (!current()) return;
       setToolLine(null);
       if (d) await handle(d);
     },
-    [sessionId, generating, beginTurn, setInput],
+    [activeProfile, sessionId, generating, beginTurn, setInput],
   );
 
   // ── Prompt queue ─────────────────────────────────────────────────────────
@@ -1881,28 +2321,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void beginTurn(lastUser.text, undefined, lastUser.rowId as number, cutsWholeTranscript(list, lastUser.id));
   }, [sessionId, beginTurn]);
 
-  // Large-paste handling: spill to a server file (paste.collapse) and keep the
-  // placeholder inline so a wall of text doesn't bloat the prompt.
+  // Large-paste handling: stage text in the active session workspace so it
+  // follows the selected profile instead of the process launch home.
   const pasteLarge = useCallback(
     async (text: string) => {
       const g = gw.current;
-      if (!g) {
+      const sid = sessionId;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
+      if (!g || !sid) {
         setInput(text);
         return;
       }
       try {
-        const r = await g.pasteCollapse(text);
-        setInput(r?.placeholder || text);
+        const r: any = await g.call('file.attach', {
+          session_id: sid,
+          name: `paste-${Date.now()}.txt`,
+          data_url: `data:text/plain;base64,${utf8ToBase64(text)}`,
+        });
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        setInput(typeof r?.ref_text === 'string' && r.ref_text ? r.ref_text : text);
       } catch {
-        setInput(text);
+        if (activeProfileRef.current === profile && profileEpochRef.current === epoch) setInput(text);
       }
     },
-    [setInput],
+    [activeProfile, sessionId, setInput],
   );
 
   const send = useCallback(async (override?: string) => {
     const text = (override ?? input).trim();
     const g = gw.current;
+    const profile = activeProfile;
+    const epoch = profileEpochRef.current;
     const files = override === undefined ? attachments : [];
     if ((!text && files.length === 0) || !g || !sessionId) return;
     // An edit resend rewinds history to that user row first (cleared below).
@@ -1942,16 +2392,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const hint = slashMobileHint(text);
         if (blocked) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: blocked }]);
         else if (hint) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: hint }]);
-        else await runSlash(text);
+        else {
+          await runSlash(text);
+          if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        }
       }
       // A queued slash command doesn't start a turn, so drain the next one here.
       drainRef.current();
       return;
     }
 
-    // Bytes go up BEFORE the prompt: prompt.submit is text-only, so attachments
-    // travel through the dashboard files API (the route the Files tab already
-    // uses) and the agent is handed the server path to read. A failed upload
+    // Bytes go up BEFORE the prompt through the active runtime session, so
+    // attachments land in the selected profile's workspace. A failed upload
     // aborts the send and leaves the input + chips in place to retry.
     let sent: { name: string; path: string; image: boolean }[] = [];
     if (files.length) {
@@ -1961,14 +2413,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       uploading.current = true;
       setToolLine(`uploading ${files.length} file${files.length === 1 ? '' : 's'}…`);
       try {
-        sent = await uploadAttachments(files, host, cookie.current);
+        sent = await uploadAttachments(files, g, sessionId);
       } catch (e) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setToolLine(null);
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Upload failed: ${errMsg(e)}` }]);
         return;
       } finally {
         uploading.current = false;
       }
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       setToolLine(null);
     }
 
@@ -2003,7 +2457,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       rewindRowId,
       rewindTarget ? cutsWholeTranscript(messagesRef.current, rewindTarget.id) : false,
     );
-  }, [input, attachments, sessionId, host, setInput, setAttachments, beginTurn, runSlash, enqueueQueued]);
+  }, [activeProfile, input, attachments, sessionId, setInput, setAttachments, beginTurn, runSlash, enqueueQueued]);
   sendRef.current = send;
 
   // Release the local "a turn is running" latch without clearing the live
@@ -2023,14 +2477,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setQueueParked(true);
     const g = gw.current;
     const sid = sessionId;
+    const profile = activeProfile;
+    const epoch = profileEpochRef.current;
     // No live socket/session, or the interrupt itself fails → the server will
     // never emit the turn-end event, so clear the latch ourselves.
     if (!g || !sid) {
       releaseLocalTurn();
       return;
     }
-    g.interrupt(sid).catch(() => releaseLocalTurn());
-  }, [sessionId, releaseLocalTurn]);
+    g.interrupt(sid).catch(() => {
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        releaseLocalTurn();
+      }
+    });
+  }, [activeProfile, sessionId, releaseLocalTurn]);
 
   // Watchdog: a missed turn-end (dropped complete, truncated replay, an error
   // notice instead of complete) must never strand the Stop button forever.
@@ -2045,13 +2505,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void (async () => {
         const working = await probeWorkingSessions();
         const sk = latest.current.sessionKey;
-        const cur = sk ?? sessionIdRef.current;
+        const runtime = sessionIdRef.current;
+        const cur = sk
+          ? profileSessionKey(latest.current.activeProfile, sk)
+          : runtime
+            ? runtimeOwners.current.get(runtime) ?? profileSessionKey(latest.current.activeProfile, runtime)
+            : null;
         if (working && cur && working.has(cur)) {
           lastTurnEventAt.current = Date.now(); // still alive — snooze
           return;
         }
         // Gone (or old backend with no confirm producer) — release.
-        if (sk) parkedLiveRef.current.delete(sk);
+        if (cur) parkedLiveRef.current.delete(cur);
         releaseLocalTurn();
         setMessages((prev) => [
           ...prev,
@@ -2069,16 +2534,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setInfoOpen(true);
     setInfoSeq((s) => s + 1);
     const g = gw.current;
-    if (!g || !sessionId) return;
+    const sid = sessionId;
+    const profile = activeProfile;
+    const epoch = profileEpochRef.current;
+    if (!g || !sid) return;
     setUsageLoading(true);
     try {
-      setUsageInfo(await g.usage(sessionId));
+      const info = await g.usage(sid);
+      if (sessionIdRef.current === sid) setUsageInfo((prev: any) => mergeUsageState(prev, info));
     } catch (e) {
-      setUsageInfo({ error: errMsg(e) });
+      if (sessionIdRef.current === sid) setUsageInfo({ error: errMsg(e) });
     } finally {
-      setUsageLoading(false);
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        setUsageLoading(false);
+      }
     }
-  }, [sessionId]);
+  }, [activeProfile, sessionId]);
 
   // ── Ask replies ──────────────────────────────────────────────────────────
 
@@ -2108,39 +2579,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (title: string) => {
       const g = gw.current;
       const sid = sessionId ?? sessionKey;
+      const stored = sessionKey;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       const t = title.trim();
       if (!g || !sid || !t) return;
       await g.rename(sid, t);
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       setSessionTitle(t);
-      if (sessionKey) {
-        const sk = sessionKey;
-        setSessions((prev) => prev.map((s) => (s.id === sk ? { ...s, title: t } : s)));
+      if (stored) {
+        setSessions((prev) => prev.map((s) => (s.id === stored ? { ...s, title: t } : s)));
       }
     },
-    [sessionId, sessionKey],
+    [activeProfile, sessionId, sessionKey],
   );
   renameSessionRef.current = renameSession;
 
   const deleteSessionById = useCallback(
     async (storedId: string) => {
       const g = gw.current;
+      const profile = activeProfileRef.current;
+      const epoch = profileEpochRef.current;
       if (!g) return;
       try {
-        await g.deleteSession(storedId);
+        await g.deleteSession(storedId, profile);
       } catch {
         // Fall back to close when the backend has no delete route.
         try {
           await g.closeSession(storedId);
         } catch (e) {
-          setError(errMsg(e));
+          if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+            setError(errMsg(e));
+          }
           return;
         }
       }
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      const ownerKey = profileSessionKey(profile, storedId);
       setSessions((prev) => prev.filter((s) => s.id !== storedId));
-      draftsRef.current.delete(storedId);
-      parkedLiveRef.current.delete(storedId);
+      draftsRef.current.delete(ownerKey);
+      parkedLiveRef.current.delete(ownerKey);
       for (const [liveSid, owner] of turnOwnerRef.current) {
-        if (owner === storedId) turnOwnerRef.current.delete(liveSid);
+        if (owner === ownerKey) turnOwnerRef.current.delete(liveSid);
+      }
+      for (const [runtime, owner] of runtimeOwners.current) {
+        if (owner === ownerKey) runtimeOwners.current.delete(runtime);
       }
       if (sessionKey === storedId) {
         setSessionKey(null);
@@ -2175,16 +2658,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const g = gw.current;
     if (!g || !sessionId) return;
     await g.closeSession(sessionId);
+    const owner = runtimeOwners.current.get(sessionId);
+    runtimeOwners.current.delete(sessionId);
+    if (owner) {
+      parkedLiveRef.current.delete(owner);
+      turnOwnerRef.current.delete(sessionId);
+    }
   }, [sessionId]);
 
   const redirectLive = useCallback(
     async (text: string) => {
       const g = gw.current;
       const t = text.trim();
+      const profile = activeProfileRef.current;
+      const epoch = profileEpochRef.current;
       if (!g || !sessionId || !t) return;
       setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `↪ steer: ${t.slice(0, 120)}` }]);
       try {
         const r: any = await g.redirect(sessionId, t);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         // The turn was already past its steerable point, so the server keeps
         // the text as the next user turn instead of dropping it.
         if (r?.status === 'queued') {
@@ -2194,17 +2686,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ]);
         }
       } catch (e: any) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         const msg = e?.message ?? String(e);
         // Live runtime expired server-side — same recovery as send().
         if ((e?.code === 4001 || /not.?found/i.test(msg)) && sessionKey) {
           try {
-            const r: any = await g.resume(sessionKey);
+            const r: any = await g.call('session.resume', {
+              profile,
+              session_id: sessionKey,
+              omit_messages: false,
+            });
+            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
+            runtimeOwners.current.set(liveId, profileSessionKey(profile, sessionKey));
             sessionIdRef.current = liveId;
             setSessionId(liveId);
             await g.redirect(liveId, t);
             return;
           } catch (e2) {
+            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
             setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Steer failed: ${errMsg(e2)}` }]);
             return;
           }
@@ -2217,32 +2717,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setGlobalModel = useCallback(
     async (providerSlug: string, modelId: string) => {
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
       setModelProvider(providerSlug);
       setModel(modelId);
-      void saveModel(providerSlug, modelId);
+      void saveModel(providerSlug, modelId, profile);
       if (!host) return;
       setToolLine('setting global default…');
       try {
-        await setMainModel(host, cookie.current, providerSlug, modelId);
+        await setMainModel(host, cookie.current, providerSlug, modelId, profile);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setMessages((prev) => [
           ...prev,
           { id: nid(), role: 'notice', text: `Global default → ${providerSlug ? `${providerSlug}:` : ''}${modelId}` },
         ]);
       } catch (e) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Global set failed: ${errMsg(e)}` }]);
       } finally {
-        setToolLine(null);
+        if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+          setToolLine(null);
+        }
       }
     },
-    [host],
+    [activeProfile, host],
   );
 
   const jumpToRecent = useCallback(async () => {
     const g = gw.current;
+    const profile = activeProfileRef.current;
+    const epoch = profileEpochRef.current;
     if (!g) return;
     setBusy(true);
     try {
-      const recentId = await g.mostRecent();
+      const recentId = await g.mostRecent(profile);
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       if (!recentId) {
         await refreshSessions();
         return;
@@ -2255,8 +2764,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await refreshSessions();
       // List may use a different id space — resume directly as fallback.
       try {
-        const r: any = await g.resume(recentId);
+        const r: any = await g.call('session.resume', {
+          profile,
+          session_id: recentId,
+          omit_messages: false,
+        });
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : recentId;
+        const owner = profileSessionKey(profile, recentId);
+        runtimeOwners.current.set(liveId, owner);
         parkLiveTurn();
         liveAid.current = null;
         liveThinkAid.current = null;
@@ -2264,6 +2780,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         generatingRef.current = false;
         setToolLine(null);
         setSessionKey(recentId);
+        draftKeyRef.current = owner;
+        setInputRaw(draftsRef.current.get(owner) ?? '');
         sessionIdRef.current = liveId;
         setSessionId(liveId);
         setSessionTitle('');
@@ -2271,10 +2789,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearStreaming();
         router.push('/chat');
       } catch (e) {
-        setError(errMsg(e));
+        if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+          setError(errMsg(e));
+        }
       }
     } finally {
-      setBusy(false);
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        setBusy(false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, refreshSessions]);
@@ -2284,6 +2806,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       conn,
       host,
+      profile: activeProfile,
+      profiles: profiles.map((profile) => profile.name),
       sessionId,
       sessionKey,
       model,
@@ -2292,7 +2816,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       queued: queued.length,
       ws: gw.current?.wsDebug() ?? null,
     }),
-    [conn, host, sessionId, sessionKey, model, modelProvider, effort, queued.length],
+    [conn, host, activeProfile, profiles, sessionId, sessionKey, model, modelProvider, effort, queued.length],
   );
   const getCookie = useCallback(() => cookie.current, []);
 
@@ -2316,6 +2840,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     password,
     setPassword,
     conn,
+    activeProfile,
+    profiles,
+    refreshProfiles,
+    switchProfile,
     sessions,
     openingId,
     sessionId,
@@ -2385,6 +2913,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     answerApproval,
     dismissAsk,
     theme,
+    themeMode,
     setTheme,
     toggleTheme,
     renameSession,
@@ -2400,7 +2929,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     getCookie,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [booting, authed, busy, error, host, username, password, conn, sessions, openingId, sessionId, sessionKey, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, connect, login, logout, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, dismissAsk, theme, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
+    [booting, authed, busy, error, host, username, password, conn, activeProfile, profiles, refreshProfiles, switchProfile, sessions, openingId, sessionId, sessionKey, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, connect, login, logout, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, dismissAsk, theme, themeMode, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

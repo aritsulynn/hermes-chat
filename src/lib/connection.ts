@@ -21,31 +21,67 @@ const K_USERNAME = 'hermes.conn.username';
 const K_PASSWORD = 'hermes.conn.password';
 const K_COOKIE = 'hermes.conn.cookie';
 const K_THEME = 'hermes.ui.theme';
+const K_ACTIVE_PROFILE = 'hermes.ui.activeProfile';
 const K_LAST_SESSION = 'hermes.ui.lastSession';
+const K_LAST_SESSION_PREFIX = 'hermes.ui.lastSession.profile';
+const K_MODEL = 'hermes.ui.model';
+const K_MODEL_PREFIX = 'hermes.ui.model.profile';
+const K_MODEL_PROVIDER = 'hermes.ui.modelProvider';
+const K_MODEL_PROVIDER_PREFIX = 'hermes.ui.modelProvider.profile';
+const DEFAULT_PROFILE = 'default';
 
-/** Remember the session the user was viewing (restored on the next boot). */
-export async function saveLastSession(id: string): Promise<void> {
-  if (id) await set(K_LAST_SESSION, id);
+function normalizeProfile(profile: string | null | undefined): string {
+  return String(profile ?? '').trim() || DEFAULT_PROFILE;
 }
 
-export async function getLastSession(): Promise<string | null> {
-  return get(K_LAST_SESSION);
+function profileStorageKey(prefix: string, profile: string): string {
+  return `${prefix}.${encodeURIComponent(normalizeProfile(profile))}`;
+}
+
+/** Persist the global UI profile independently from the server's launch profile. */
+export async function saveActiveProfile(profile: string): Promise<void> {
+  await set(K_ACTIVE_PROFILE, normalizeProfile(profile));
+}
+
+export async function getActiveProfile(): Promise<string | null> {
+  return get(K_ACTIVE_PROFILE);
+}
+
+/** Remember the session the user was viewing in each profile. */
+export async function saveLastSession(id: string, profile = DEFAULT_PROFILE): Promise<void> {
+  if (id) await set(profileStorageKey(K_LAST_SESSION_PREFIX, profile), id);
+}
+
+export async function getLastSession(profile = DEFAULT_PROFILE): Promise<string | null> {
+  const scoped = await get(profileStorageKey(K_LAST_SESSION_PREFIX, profile));
+  if (scoped) return scoped;
+  // Migrate the pre-profile value only into the default namespace.
+  return normalizeProfile(profile) === DEFAULT_PROFILE ? get(K_LAST_SESSION) : null;
 }
 
 const K_NOTIFY = 'hermes.ui.notify';
-const K_MODEL = 'hermes.ui.model';
-const K_MODEL_PROVIDER = 'hermes.ui.modelProvider';
 
-/** Remember the last picked model across restarts (server stays the source of
- *  truth for actual runs — this only seeds the composer chip on boot). */
-export async function saveModel(provider: string, model: string): Promise<void> {
-  await Promise.all([set(K_MODEL_PROVIDER, provider ?? ''), set(K_MODEL, model ?? '')]);
+/** Remember the last picked model per profile across restarts. */
+export async function saveModel(
+  provider: string,
+  model: string,
+  profile = DEFAULT_PROFILE,
+): Promise<void> {
+  await Promise.all([
+    set(profileStorageKey(K_MODEL_PROVIDER_PREFIX, profile), provider ?? ''),
+    set(profileStorageKey(K_MODEL_PREFIX, profile), model ?? ''),
+  ]);
 }
 
-export async function getModel(): Promise<{ provider: string; model: string } | null> {
-  const [provider, model] = await Promise.all([get(K_MODEL_PROVIDER), get(K_MODEL)]);
-  if (!model) return null;
-  return { provider: provider ?? '', model };
+export async function getModel(profile = DEFAULT_PROFILE): Promise<{ provider: string; model: string } | null> {
+  const [provider, model] = await Promise.all([
+    get(profileStorageKey(K_MODEL_PROVIDER_PREFIX, profile)),
+    get(profileStorageKey(K_MODEL_PREFIX, profile)),
+  ]);
+  if (model) return { provider: provider ?? '', model };
+  if (normalizeProfile(profile) !== DEFAULT_PROFILE) return null;
+  const [legacyProvider, legacyModel] = await Promise.all([get(K_MODEL_PROVIDER), get(K_MODEL)]);
+  return legacyModel ? { provider: legacyProvider ?? '', model: legacyModel } : null;
 }
 
 export async function saveNotifyEnabled(on: boolean): Promise<void> {
@@ -157,11 +193,12 @@ export async function clearCookie(): Promise<void> {
   await del(K_COOKIE);
 }
 
-export type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark' | 'system';
+export type ResolvedTheme = Exclude<Theme, 'system'>;
 
 export async function getTheme(): Promise<Theme | null> {
   const v = await get(K_THEME);
-  return v === 'dark' || v === 'light' ? v : null;
+  return v === 'dark' || v === 'light' || v === 'system' ? v : null;
 }
 
 export async function saveTheme(t: Theme): Promise<void> {

@@ -8,7 +8,7 @@ import type { UiMessage } from '../utils/messages';
 import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../utils/diff';
 import { TypingDots, Tap } from './bits';
 import type { AnchorMeasure } from './composer';
-import { mdAi, mdAiDark, mdUser, makeSelectableRules } from './markdown';
+import { mdAi, mdAiDark, mdUser, mdUserDark, makeSelectableRules } from './markdown';
 
 // Tokens arrive far faster than markdown needs to re-render. Leading + trailing
 // throttle: show the first token immediately, then at most one re-parse per
@@ -268,7 +268,7 @@ export const MessageBubble = memo(function MessageBubble({
       ref={bubbleRef}
       className={`rounded-[14px] px-3 py-2 ${
         item.role === 'user'
-          ? 'self-end bg-[#d3e3fd]'
+          ? 'self-end bg-[#e5e7eb] dark:bg-[#3f3f46]'
           : think
             ? 'self-start border border-[#e2e2e6] bg-[#f7f7f9] dark:border-neutral-700 dark:bg-[#212121]'
             : item.role === 'interim'
@@ -280,7 +280,7 @@ export const MessageBubble = memo(function MessageBubble({
                   : item.role === 'summary'
                     ? 'self-start bg-transparent'
                     : 'self-start bg-[#f0f0f2] dark:bg-[#272727]'
-      }${highlight ? ' border-2 border-[#1a73e8]' : ''}`}
+      }${highlight ? ' border-2 border-[#b45309] dark:border-[#fbbf24]' : ''}`}
       style={{ maxWidth: bubbleMax }}
     >
       {typing ? (
@@ -414,7 +414,7 @@ export const MessageBubble = memo(function MessageBubble({
               </View>
             )}
             {!!liveText && (
-              <Markdown rules={rules} style={mdUser}>{body}</Markdown>
+              <Markdown rules={rules} style={dark ? mdUserDark : mdUser}>{body}</Markdown>
             )}
           </Pressable>
         ) : (
@@ -432,7 +432,7 @@ export const MessageBubble = memo(function MessageBubble({
           </>
         )
       ) : (
-        <Text selectable className={item.role === 'user' ? 'text-[15px] leading-[21px] text-white' : 'text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100'}>
+        <Text selectable className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
           {item.text}
         </Text>
       )}

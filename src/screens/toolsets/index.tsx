@@ -1,0 +1,289 @@
+// Toolsets route — user-facing capability groups ported from Hermes Desktop's
+// Capabilities → Toolsets view. Toolsets control which groups of tools the
+// agent can use (terminal, web, browser, vision, media generation, and more).
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { Boxes, RefreshCw, Search } from 'lucide-react-native';
+import { useApp } from '../../hooks/app-store';
+import { HamburgerBtn } from '../../components';
+import { errMsg } from '../../utils/messages';
+import { getToolsets, setToolsetEnabled } from '../../lib/toolsets';
+import type { ToolsetInfo } from '../../lib/toolsets';
+
+// Same presentation-only curation as Hermes Desktop's Toolsets tab.
+const HIDDEN_TOOLSETS = new Set(['discord', 'discord_admin', 'yuanbao', 'context_engine', 'moa']);
+
+function displayLabel(toolset: ToolsetInfo): string {
+  const raw = typeof toolset.label === 'string' ? toolset.label : typeof toolset.name === 'string' ? toolset.name : '';
+  // Backend labels may include a leading emoji. Keep the mobile list text-only.
+  const text = raw.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  if (text) return text;
+  return String(toolset.name ?? '(unnamed)')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function ToolsetsScreen() {
+  const { activeProfile, opsGet, opsMut, theme } = useApp();
+  const dark = theme === 'dark';
+  const insets = useSafeAreaInsets();
+
+  const [toolsets, setToolsets] = useState<ToolsetInfo[] | null>(null);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [unsupported, setUnsupported] = useState(false);
+  const [toggling, setToggling] = useState<string | null>(null);
+  const loadEpoch = useRef(0);
+
+  const load = useCallback(
+    async (isRefresh = false) => {
+      const profile = activeProfile;
+      const epoch = ++loadEpoch.current;
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
+      try {
+        const next = await getToolsets(opsGet, profile);
+        if (activeProfile !== profile || loadEpoch.current !== epoch) return;
+        setToolsets(next);
+        setUnsupported(false);
+      } catch (e) {
+        if (activeProfile !== profile || loadEpoch.current !== epoch) return;
+        const msg = errMsg(e);
+        if (/HTTP 404/.test(msg)) {
+          setUnsupported(true);
+          setToolsets([]);
+        } else {
+          setError(msg);
+        }
+      } finally {
+        if (activeProfile === profile && loadEpoch.current === epoch) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [activeProfile, opsGet],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggle = useCallback(
+    async (name: string, enabled: boolean) => {
+      const profile = activeProfile;
+      setToggling(name);
+      setToolsets((prev) => (prev ?? []).map((row) => (row.name === name ? { ...row, enabled } : row)));
+      try {
+        const result = await setToolsetEnabled(opsMut, name, enabled, profile);
+        if (activeProfile !== profile) return;
+        if (result.post_setup_started) {
+          Alert.alert('Setup started', `${name} was enabled. Hermes is preparing its required dependency in the background.`);
+        }
+      } catch (e) {
+        if (activeProfile !== profile) return;
+        setToolsets((prev) => (prev ?? []).map((row) => (row.name === name ? { ...row, enabled: !enabled } : row)));
+        Alert.alert('Toolset update failed', errMsg(e));
+      } finally {
+        if (activeProfile === profile) setToggling(null);
+      }
+    },
+    [activeProfile, opsMut],
+  );
+
+  const visibleToolsets = useMemo(
+    () => (toolsets ?? []).filter((row) => !HIDDEN_TOOLSETS.has(String(row.name))),
+    [toolsets],
+  );
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return visibleToolsets;
+    return visibleToolsets.filter((row) =>
+      [row.name, row.label, row.description, ...(row.tools ?? [])].some((value) =>
+        String(value ?? '').toLowerCase().includes(q),
+      ),
+    );
+  }, [query, visibleToolsets]);
+  const enabledCount = visibleToolsets.filter((row) => row.enabled).length;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
+        <StatusBar style="auto" />
+
+        <View
+          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
+          style={{ paddingTop: insets.top + 10 }}
+        >
+          <View className="flex-row items-center gap-3">
+            <HamburgerBtn />
+            <View>
+              <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Toolsets</Text>
+              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                {activeProfile} · {loading ? 'Loading…' : `${enabledCount}/${visibleToolsets.length} enabled`}
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Refresh toolsets"
+            onPress={() => void load(true)}
+            hitSlop={8}
+            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+          >
+            <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          className="flex-1 px-4 py-4"
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
+        >
+          <View className="mb-3 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <View className="flex-row items-start gap-2.5">
+              <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
+              <Text className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
+                Toolsets group the tools Hermes can use. Changes apply to new chats.
+              </Text>
+            </View>
+          </View>
+
+          {!loading && !unsupported && !error && (
+            <View className="mb-3 flex-row items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
+              <Search size={16} color={dark ? '#888' : '#777'} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search toolsets…"
+                placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                autoCapitalize="none"
+                autoCorrect={false}
+                accessibilityLabel="Search toolsets"
+                className="min-h-11 min-w-0 flex-1 px-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
+              />
+            </View>
+          )}
+
+          {loading && !refreshing ? (
+            <View className="items-center py-16">
+              <ActivityIndicator size="large" color="#1a73e8" />
+            </View>
+          ) : unsupported ? (
+            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Text className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+                Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability toolsets here.
+              </Text>
+            </View>
+          ) : error ? (
+            <View className="flex-row items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-950 dark:bg-red-950/30">
+              <Text className="flex-1 text-xs text-red-600 dark:text-red-400">{error}</Text>
+              <Pressable onPress={() => void load()}>
+                <Text className="text-xs font-semibold text-red-700 dark:text-red-300">Retry</Text>
+              </Pressable>
+            </View>
+          ) : filtered.length === 0 ? (
+            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                {query ? `No toolsets match “${query.trim()}”.` : 'No configurable toolsets were returned.'}
+              </Text>
+            </View>
+          ) : (
+            <View className="gap-2">
+              {filtered.map((toolset) => {
+                const name = String(toolset.name ?? '');
+                if (!name) return null;
+                const enabled = toolset.enabled;
+                const label = displayLabel(toolset);
+                const description = String(toolset.description ?? '').trim();
+                const toolCount = toolset.tools.length;
+                return (
+                  <View
+                    key={name}
+                    className={`rounded-2xl border p-3.5 ${
+                      enabled
+                        ? 'border-neutral-300 bg-neutral-50/70 dark:border-neutral-700 dark:bg-neutral-900/60'
+                        : 'border-neutral-200 bg-white/70 dark:border-neutral-800 dark:bg-neutral-950/60'
+                    }`}
+                  >
+                    <View className="flex-row items-center gap-3">
+                      <View
+                        className={`h-9 w-9 items-center justify-center rounded-xl ${
+                          enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-neutral-100 dark:bg-neutral-900'
+                        }`}
+                      >
+                        <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
+                      </View>
+                      <View className="min-w-0 flex-1">
+                        <Text
+                          numberOfLines={1}
+                          className={`text-sm font-semibold ${
+                            enabled ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
+                          }`}
+                        >
+                          {label}
+                        </Text>
+                        {!!description && (
+                          <Text
+                            numberOfLines={2}
+                            className="mt-0.5 text-xs leading-[17px] text-neutral-500 dark:text-neutral-400"
+                          >
+                            {description}
+                          </Text>
+                        )}
+                        <View className="mt-1 flex-row items-center gap-2">
+                          <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">
+                            {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
+                          </Text>
+                          <View
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'
+                            }`}
+                          />
+                          <Text
+                            className={`text-[11px] font-medium ${
+                              toolset.configured
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                            }`}
+                          >
+                            {toolset.configured ? 'Ready' : 'Needs setup'}
+                          </Text>
+                        </View>
+                      </View>
+                      {toggling === name ? (
+                        <ActivityIndicator size="small" color="#1a73e8" />
+                      ) : (
+                        <Switch
+                          value={enabled}
+                          onValueChange={(value) => void toggle(name, value)}
+                          accessibilityLabel={`${enabled ? 'Disable' : 'Enable'} ${label} toolset`}
+                        />
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </View>
+  );
+}

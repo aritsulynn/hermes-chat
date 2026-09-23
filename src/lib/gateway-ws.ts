@@ -32,6 +32,8 @@ export interface SessionSummary {
   messageCount: number;
   source: string;
   startedAt: number;
+  /** Durable identity namespace used to disambiguate equal stored ids. */
+  profile?: string;
 }
 
 export interface HistoryMessage {
@@ -48,7 +50,8 @@ export interface HistoryMessage {
 
 /** One `/`-wheel row from `complete.slash` (tui_gateway/contracts/tools_commands.py). */
 export interface SlashCompletionItem {
-  /** Replacement token, usually `/name` (may carry a trailing space). */
+  /** Replacement token. Slash rows are bare names (`goal`) on the current gateway;
+   * legacy/offline rows may include the trigger (`/goal`) or a trailing space. */
   text: string;
   /** Human label; the server defaults it to `text`. */
   display: string;
@@ -121,6 +124,8 @@ export interface GatewayEvents {
   onComplete?: (sessionId: string, text: string, raw?: any) => void;
   onNotice?: (sessionId: string, text: string) => void;
   onSessionInfo?: (sid: string, info: any) => void;
+  /** Live token/context snapshot while a turn runs — `session.usage`. */
+  onUsage?: (sid: string, usage: any) => void;
   /** Agent todo snapshot (`{todos, revision}`) — `todo.updated`. */
   onTodo?: (sessionId: string, payload: any) => void;
   /** After a reconnect, the replay ring had already dropped the gap — callers
@@ -394,8 +399,12 @@ export class GatewayWs {
 
   // ── Session methods (thin wrappers; result shapes per methods_session.py) ─
 
-  async listSessions(limit = 100): Promise<SessionSummary[]> {
-    const r = await this.call('session.list', { limit });
+  async listSessions(limit = 100, profile?: string): Promise<SessionSummary[]> {
+    const selectedProfile = String(profile ?? '').trim();
+    const r = await this.call('session.list', {
+      limit,
+      ...(selectedProfile ? { profile: selectedProfile } : {}),
+    });
     const rows = r?.sessions ?? [];
     return rows.map((s: any) => ({
       id: String(s?.id ?? ''),
@@ -404,20 +413,29 @@ export class GatewayWs {
       messageCount: Number(s?.message_count ?? 0),
       source: String(s?.source ?? ''),
       startedAt: Number(s?.started_at ?? 0),
+      ...(selectedProfile ? { profile: selectedProfile } : {}),
     }));
   }
 
-  async mostRecent(): Promise<string | null> {
+  async mostRecent(profile?: string): Promise<string | null> {
     try {
-      const r = await this.call('session.most_recent', {});
+      const selectedProfile = String(profile ?? '').trim();
+      const r = await this.call('session.most_recent', {
+        ...(selectedProfile ? { profile: selectedProfile } : {}),
+      });
       return typeof r?.session_id === 'string' ? r.session_id : null;
     } catch {
       return null;
     }
   }
 
-  async createSession(opts: { title?: string; model?: string; provider?: string; effort?: string } = {}): Promise<{ sessionId: string; storedSessionId: string }> {
+  async createSession(
+    opts: { title?: string; model?: string; provider?: string; effort?: string } = {},
+    profile?: string,
+  ): Promise<{ sessionId: string; storedSessionId: string }> {
+    const selectedProfile = String(profile ?? '').trim();
     const r = await this.call('session.create', {
+      ...(selectedProfile ? { profile: selectedProfile } : {}),
       ...(opts.title ? { title: opts.title } : {}),
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.provider ? { provider: opts.provider } : {}),
@@ -429,8 +447,25 @@ export class GatewayWs {
   }
 
   /** Attach to a live session / reload durable one. Returns live payload. */
-  resume(sessionId: string, omitMessages = false): Promise<any> {
-    return this.call('session.resume', { session_id: sessionId, omit_messages: omitMessages });
+  resume(sessionId: string, omitMessages?: boolean, profile?: string): Promise<any>;
+  resume(sessionId: string, profile?: string, omitMessages?: boolean): Promise<any>;
+  resume(
+    sessionId: string,
+    omitMessagesOrProfile: boolean | string = false,
+    profileOrOmitMessages?: boolean | string,
+  ): Promise<any> {
+    const profileFirst = typeof omitMessagesOrProfile === 'string';
+    const omitMessages = profileFirst
+      ? Boolean(profileOrOmitMessages)
+      : Boolean(omitMessagesOrProfile);
+    const selectedProfile = String(
+      profileFirst ? omitMessagesOrProfile : (profileOrOmitMessages as string | undefined) ?? '',
+    ).trim();
+    return this.call('session.resume', {
+      session_id: sessionId,
+      omit_messages: omitMessages,
+      ...(selectedProfile ? { profile: selectedProfile } : {}),
+    });
   }
 
   async history(sessionId: string): Promise<HistoryMessage[]> {
@@ -505,8 +540,16 @@ export class GatewayWs {
   // ── Model picker ───────────────────────────────────────────────────────
   // Same payload builder as REST GET /api/model/options (see dashboard.ts).
 
-  async modelOptions(sessionId?: string): Promise<any> {
-    return this.call('model.options', sessionId ? { session_id: sessionId } : {});
+  async modelOptions(sessionId?: string, profile?: string): Promise<any> {
+    const selectedProfile = String(profile ?? '').trim();
+    return this.call(
+      'model.options',
+      sessionId
+        ? { session_id: sessionId }
+        : selectedProfile
+          ? { profile: selectedProfile }
+          : {},
+    );
   }
 
   /**
@@ -521,8 +564,12 @@ export class GatewayWs {
     return this.call('slash.exec', { session_id: sessionId, command: `/model ${arg}` });
   }
 
-  deleteSession(sessionId: string): Promise<any> {
-    return this.call('session.delete', { session_id: sessionId });
+  deleteSession(sessionId: string, profile?: string): Promise<any> {
+    const selectedProfile = String(profile ?? '').trim();
+    return this.call('session.delete', {
+      session_id: sessionId,
+      ...(selectedProfile ? { profile: selectedProfile } : {}),
+    });
   }
 
   /** Fork the current session into an independent copy (`session.branch`). */
@@ -585,17 +632,30 @@ export class GatewayWs {
    *  `config.set {key:'reasoning', value:<level>}` (session-scoped unless
    *  `scope:'global'`; the slash worker only reaches config.yaml and leaves the
    *  live agent's reasoning untouched — see desktop's reasoning-slash.ts). */
-  configSet(key: string, value: string, sessionId?: string, scope?: 'global' | 'session'): Promise<any> {
+  configSet(
+    key: string,
+    value: string,
+    sessionId?: string,
+    scope?: 'global' | 'session',
+    profile?: string,
+  ): Promise<any> {
+    const selectedProfile = String(profile ?? '').trim();
     return this.call('config.set', {
       key,
       value,
       ...(sessionId ? { session_id: sessionId } : {}),
+      ...(!sessionId && selectedProfile ? { profile: selectedProfile } : {}),
       ...(scope ? { scope } : {}),
     });
   }
 
-  configGet(key: string, sessionId?: string): Promise<any> {
-    return this.call('config.get', { key, ...(sessionId ? { session_id: sessionId } : {}) });
+  configGet(key: string, sessionId?: string, profile?: string): Promise<any> {
+    const selectedProfile = String(profile ?? '').trim();
+    return this.call('config.get', {
+      key,
+      ...(sessionId ? { session_id: sessionId } : {}),
+      ...(!sessionId && selectedProfile ? { profile: selectedProfile } : {}),
+    });
   }
 
   /** Live child agents owned by this session (`subagent.list`). */
@@ -633,6 +693,15 @@ export class GatewayWs {
 
   usage(sessionId: string): Promise<any> {
     return this.call('session.usage', { session_id: sessionId });
+  }
+
+  /**
+   * Current context occupancy, including an estimate reconstructed from a
+   * restored transcript. Unlike session.usage's provider-anchored counters,
+   * this is available before an old session has run another turn.
+   */
+  contextBreakdown(sessionId: string): Promise<any> {
+    return this.call('session.context_breakdown', { session_id: sessionId });
   }
 
   // ── Frame routing ──────────────────────────────────────────────────────
@@ -860,6 +929,9 @@ export class GatewayWs {
         break;
       case 'session.info':
         this.events.onSessionInfo?.(sid, body);
+        break;
+      case 'session.usage':
+        this.events.onUsage?.(sid, body?.usage ?? body);
         break;
       case 'todo.updated':
         this.events.onTodo?.(sid, body);

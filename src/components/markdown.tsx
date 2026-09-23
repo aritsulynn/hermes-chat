@@ -148,6 +148,25 @@ export const mdAiDark = StyleSheet.create({
   tr: { borderBottomWidth: 1, borderColor: '#222' },
 });
 
+export const mdUserDark = StyleSheet.create({
+  body: { fontSize: 15, lineHeight: 21, color: '#f3f4f6' },
+  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: '#f3f4f6' },
+  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: '#f3f4f6' },
+  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: '#f3f4f6' },
+  paragraph: { marginVertical: 4 },
+  link: { color: '#93c5fd' },
+  blockquote: { backgroundColor: 'rgba(147,197,253,.12)', borderLeftWidth: 3, borderLeftColor: '#93c5fd', paddingHorizontal: 8, paddingVertical: 4 },
+  code_inline: { backgroundColor: 'rgba(255,255,255,.1)', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#f3f4f6' },
+  fence: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  code_block: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  list_item: { flexDirection: 'row', marginVertical: 2 },
+  bullet_list_content: { flex: 1 },
+  ordered_list_content: { flex: 1 },
+  hr: { backgroundColor: 'rgba(255,255,255,.2)', height: 1, marginVertical: 8 },
+});
+
 export const mdUser = StyleSheet.create({
   body: { fontSize: 15, lineHeight: 21, color: '#041e49' },
   heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: '#041e49' },

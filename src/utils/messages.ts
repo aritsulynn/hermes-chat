@@ -127,6 +127,16 @@ export const isSlashCommand = (text: string): boolean => SLASH_COMMAND_RE.test(t
 export const slashToken = (text: string): string | null =>
   /^\/[^\s]*$/.test(text) ? text : null;
 
+/** Replace a slash-command completion token and leave one trailing space. */
+export function applySlashCompletion(input: string, text: string, replaceFrom: number): string {
+  // `complete.slash` returns the command name without its trigger (`goal`),
+  // while older/offline rows may already include it (`/goal`). Only add the
+  // trigger during the command stage; argument rows follow the same RPC and
+  // must remain plain values (`/model son` → `/model sonnet `).
+  const replacement = slashToken(input) && !text.startsWith('/') ? `/${text}` : text;
+  return `${input.slice(0, replaceFrom)}${replacement.replace(/\s+$/, '')} `;
+}
+
 /** Trailing `@reference` token under the composer caret (start-of-line or after
  *  whitespace — `foo@bar` is an email, not a reference). Mirrors the TUI/desktop
  *  trigger; `@` alone opens the root hint list. */

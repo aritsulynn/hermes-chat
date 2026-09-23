@@ -8,7 +8,7 @@ import {
 } from '@gorhom/bottom-sheet';
 import { Check, Copy, Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react-native';
 import { parseClarify } from '../utils/messages';
-import { readUsage, contextTone } from '../utils/usage';
+import { mergeUsage, contextTone } from '../utils/usage';
 import { compactNumber } from '../utils/format';
 import { useApp } from '../hooks/app-store';
 import type { GatewayWs, ServerAsk } from '../lib/gateway-ws';
@@ -70,7 +70,7 @@ export const InfoSheet = forwardRef<
   useEffect(() => setDraft(title), [title]);
   // Usage arrives in two shapes (nested under session.info or flat from
   // session.usage) — one reader covers both, same as the composer strip.
-  const snap = readUsage(info?.usage) ?? readUsage(usage);
+  const snap = mergeUsage(info?.usage, usage);
   const ctxPct =
     snap?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(snap.contextPercent))) : null;
   const tone = ctxPct == null ? 'ok' : contextTone(ctxPct);

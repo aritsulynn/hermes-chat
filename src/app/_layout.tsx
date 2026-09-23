@@ -12,10 +12,13 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import {
   Activity,
+  Boxes,
+  ChevronDown,
   ChevronRight,
+  CircleUserRound,
   Clock,
   Ellipsis,
   Folder,
@@ -48,6 +51,7 @@ const NAV_ITEMS = [
 const MORE_NAV_ITEMS = [
   { name: 'kanban', label: 'Kanban', icon: Kanban },
   { name: 'skills', label: 'Skills', icon: Wrench },
+  { name: 'toolsets', label: 'Toolsets', icon: Boxes },
 ] as const;
 
 // Items shown inside the profile bar popover (above Settings / Log Out)
@@ -64,7 +68,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
   const drawerOpen = useDrawerStatus() === 'open';
   const {
-    authed, username, host, busy, sessionId, sessionKey, openingId, sessions, messages,
+    authed, username, host, busy, activeProfile, profiles, refreshProfiles, switchProfile, sessionId, sessionKey, openingId, sessions, messages,
     newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, logout, theme, deleteSessionById,
   } = useApp();
   // Hooks FIRST — no early return above this line (authed flips at
@@ -72,6 +76,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const insets = useSafeAreaInsets();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [profilePickerOpen, setProfilePickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState('');
   // Infinite scroll: render in pages of 50, grow on scroll-bottom. Network
@@ -81,6 +86,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   // manual Refresh item).
   useEffect(() => {
     if (drawerOpen) {
+      void refreshProfiles();
       void refreshSessions();
       if (MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`)) {
         setShowMoreMenu(true);
@@ -88,7 +94,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
     } else {
       setShowUserMenu(false);
     }
-  }, [drawerOpen, pathname, refreshSessions]);
+  }, [drawerOpen, pathname, refreshProfiles, refreshSessions]);
   // Inline filter replaces the removed /sessions page (drawer is the list now).
   // Memoized so every streamed token doesn't refilter + rebuild rows.
   // MUST stay above the `!authed` early return — hooks can't run after one.
@@ -125,13 +131,16 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   if (!authed) return null;
   const dark = theme === 'dark';
   const dimColor = dark ? '#a3a3a3' : '#555';
+  const activeItemClass = 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]';
   const close = () => props.navigation.closeDrawer();
   const onChat = pathname === '/chat';
   // session.list ids are STORED ids (sessionKey) while sessionId is the live
   // runtime id minted by resume/create — comparing stored vs live never
   // matches, so highlight must use the stored key.
   const activeId = sessionKey ?? sessionId;
-  const hasActiveRecent = sessions.some((s) => onChat && s.id === activeId);
+  const hasActiveRecent = sessions.some(
+    (s) => onChat && (s.profile ?? activeProfile) === activeProfile && s.id === activeId,
+  );
   const isNewChat = onChat && !hasActiveRecent && messages.length === 0;
   const isMoreActive = MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`);
   return (
@@ -168,7 +177,18 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
           </View>
         ) : (
           <View className="flex-row items-center px-4 pt-2">
-            <Text className="flex-1 text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
+            <Tap
+              testID="profile-selector"
+              accessibilityRole="button"
+              accessibilityLabel={`Switch profile. Active profile: ${activeProfile}`}
+              onPress={() => setProfilePickerOpen(true)}
+              hitSlop={8}
+              radius={12}
+              className="min-w-0 flex-1 flex-row items-center gap-2 px-1 py-1"
+            >
+              <Text className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
+              <ChevronDown size={17} color={dimColor} />
+            </Tap>
             <Tap onPress={() => setSearchOpen(true)} hitSlop={10} radius={18} className="p-2">
               <Search size={20} color={dimColor} />
             </Tap>
@@ -187,7 +207,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             }}
             radius={12}
             className={`flex-row items-center gap-3 px-3 py-3 ${
-              isNewChat ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+              isNewChat ? activeItemClass : ''
             } ${busy ? 'opacity-50' : ''}`}
           >
             <SquarePen size={20} color={isNewChat ? '#1a73e8' : dimColor} />
@@ -213,7 +233,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 }}
                 radius={12}
                 className={`flex-row items-center gap-3 px-3 py-3 ${
-                  active ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+                  active ? activeItemClass : ''
                 }`}
               >
                 <Icon size={20} color={active ? '#1a73e8' : dimColor} />
@@ -235,7 +255,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             onPress={() => setShowMoreMenu(!showMoreMenu)}
             radius={12}
             className={`flex-row items-center gap-3 px-3 py-3 ${
-              showMoreMenu || isMoreActive ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+              showMoreMenu || isMoreActive ? activeItemClass : ''
             }`}
           >
             <Ellipsis
@@ -268,7 +288,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                     }}
                     radius={12}
                     className={`flex-row items-center gap-3 px-3 py-2.5 ${
-                      active ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+                      active ? activeItemClass : ''
                     }`}
                   >
                     <Icon size={18} color={active ? '#1a73e8' : dimColor} />
@@ -297,10 +317,13 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             </Text>
           )}
           {visible.map((s) => {
-            const active = onChat && (s.id === activeId || s.id === openingId);
+            const active =
+              onChat &&
+              (s.profile ?? activeProfile) === activeProfile &&
+              (s.id === activeId || s.id === openingId);
             return (
               <Tap
-                key={s.id}
+                key={`${s.profile ?? activeProfile}:${s.id}`}
                 accessibilityRole="button"
                 accessibilityLabel={`Open chat ${s.title || '(untitled)'}`}
                 onPress={() => {
@@ -327,7 +350,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
                 delayLongPress={400}
                 radius={12}
                 className={`px-3 py-3 ${
-                  active ? 'bg-[#e8e8ec] dark:bg-[#272727]' : ''
+                  active ? activeItemClass : ''
                 }`}
               >
                 <Text
@@ -354,7 +377,99 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
         </View>
       </DrawerContentScrollView>
 
-      {/* Sticky footer: Profile Bar */}
+      <Modal
+        visible={profilePickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProfilePickerOpen(false)}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: dark ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.28)' }}
+          onPress={() => setProfilePickerOpen(false)}
+        >
+          <Pressable
+            className="mx-4 mt-14 rounded-2xl border border-neutral-200 bg-white p-2 dark:border-neutral-700 dark:bg-[#1c1c1e]"
+            onPress={(event) => event.stopPropagation()}
+          >
+            <View className="flex-row items-center justify-between px-3 py-2.5">
+              <View>
+                <Text className="text-base font-bold text-neutral-950 dark:text-neutral-100">Switch profile</Text>
+                <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                  Chat and toolsets use this profile
+                </Text>
+              </View>
+              <Tap
+                accessibilityRole="button"
+                accessibilityLabel="Close profile picker"
+                onPress={() => setProfilePickerOpen(false)}
+                hitSlop={8}
+                radius={16}
+                className="p-2"
+              >
+                <X size={18} color={dimColor} />
+              </Tap>
+            </View>
+            <ScrollView className="max-h-[420px]" nestedScrollEnabled showsVerticalScrollIndicator={false}>
+              {profiles.length === 0 ? (
+                <View className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
+                  <Text className="text-sm text-neutral-600 dark:text-neutral-300">{activeProfile}</Text>
+                </View>
+              ) : (
+                profiles.map((profile) => {
+                  const selected = profile.name === activeProfile;
+                  return (
+                    <Tap
+                      key={profile.name}
+                      testID={`profile-option-${profile.name}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      disabled={busy || selected}
+                      onPress={() => {
+                        setProfilePickerOpen(false);
+                        close();
+                        void switchProfile(profile.name);
+                      }}
+                      radius={12}
+                      className={`flex-row items-center gap-3 px-3 py-3 ${
+                        selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
+                      } ${busy && !selected ? 'opacity-50' : ''}`}
+                    >
+                      <View
+                        className={`h-9 w-9 items-center justify-center rounded-xl ${
+                          selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-neutral-100 dark:bg-neutral-900'
+                        }`}
+                      >
+                        <CircleUserRound
+                          size={17}
+                          color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor}
+                        />
+                      </View>
+                      <View className="min-w-0 flex-1">
+                        <Text
+                          numberOfLines={1}
+                          className={`text-sm font-semibold ${
+                            selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
+                          }`}
+                        >
+                          {profile.display_name || profile.name}
+                        </Text>
+                        {!!profile.description && (
+                          <Text numberOfLines={1} className="text-xs text-neutral-500 dark:text-neutral-400">
+                            {profile.description}
+                          </Text>
+                        )}
+                      </View>
+                      {selected && <Text className="text-xs font-semibold text-sky-700 dark:text-sky-300">Active</Text>}
+                    </Tap>
+                  );
+                })
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Sticky footer: Account bar */}
       <View
         className="border-t border-neutral-200 dark:border-neutral-800"
         style={{
@@ -565,6 +680,15 @@ function ThemedDrawer() {
           title: 'Skills',
           drawerLabel: 'Skills',
           drawerIcon: drawerIcon(Wrench),
+        }}
+      />
+      <Drawer.Screen
+        name="toolsets"
+        options={{
+          headerShown: false,
+          title: 'Toolsets',
+          drawerLabel: 'Toolsets',
+          drawerIcon: drawerIcon(Boxes),
         }}
       />
       <Drawer.Screen

@@ -39,6 +39,25 @@ export function readUsage(u: unknown): UsageSnapshot | null {
   return Object.values(snap).some((v) => v !== undefined) ? snap : null;
 }
 
+/**
+ * Merge usage snapshots in freshness order. Snapshots can be complementary:
+ * `session.info` may carry token counters while the `session.usage` RPC/event
+ * carries the context window (and vice versa on older gateways).
+ */
+export function mergeUsage(...values: unknown[]): UsageSnapshot | null {
+  const merged: UsageSnapshot = {};
+  let found = false;
+  for (const value of values) {
+    const snapshot = readUsage(value);
+    if (!snapshot) continue;
+    found = true;
+    for (const [key, field] of Object.entries(snapshot)) {
+      if (field !== undefined) (merged as Record<string, unknown>)[key] = field;
+    }
+  }
+  return found ? merged : null;
+}
+
 /** Bar colour bucket for a used-context percentage. */
 export function contextTone(percent: number): 'ok' | 'warn' | 'hot' {
   if (percent >= 85) return 'hot';

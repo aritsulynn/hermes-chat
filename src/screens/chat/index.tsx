@@ -1,6 +1,6 @@
 // Chat route — transcript + composer (was the 'chat' screen in App.tsx).
 // Header back opens the drawer; the native Drawer replaces NavDrawer/EdgeSwipe.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -24,6 +24,7 @@ import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Git
 import { useApp } from '../../hooks/app-store';
 import {
   FALLBACK_PROVIDERS,
+  applySlashCompletion,
   atToken,
   isSlashCommand,
   slashName,
@@ -35,7 +36,7 @@ import {
 } from '../../utils/messages';
 import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '../../utils/reasoning';
 import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
-import { contextTone, readUsage } from '../../utils/usage';
+import { contextTone, mergeUsage } from '../../utils/usage';
 import { isSlashSuggestion, skillUsage } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../lib/gateway-ws';
@@ -61,6 +62,183 @@ const FALLBACK_SLASH: SlashCompletionItem[] = [
   { text: '/review', display: '/review', meta: 'Run a reviewer subagent' },
   { text: '/goal', display: '/goal', meta: 'Set a standing goal' },
 ];
+
+function messageMatchesSearch(message: UiMessage, streamingText: string | undefined, query: string) {
+  if (message.role === 'thinking') return false;
+  const text = streamingText ? message.text + streamingText : message.text;
+  return text.toLowerCase().includes(query);
+}
+
+function ChatNormalHeader({
+  insetTop,
+  dark,
+  iconColor,
+  title,
+  contextPercent,
+  contextTone,
+  onOpenSearch,
+  onOpenMenu,
+  onOpenInfo,
+}: {
+  insetTop: number;
+  dark: boolean;
+  iconColor: string;
+  title: string;
+  contextPercent: number | null;
+  contextTone: 'ok' | 'warn' | 'hot';
+  onOpenSearch: () => void;
+  onOpenMenu: () => void;
+  onOpenInfo: () => void;
+}) {
+  return (
+    <View
+      style={{
+        height: insetTop + 52,
+        paddingTop: insetTop,
+        backgroundColor: dark ? '#000' : '#fff',
+      }}
+    >
+      <View className="h-[52px] flex-row items-center gap-1 px-2">
+        <View className="w-11 shrink-0 items-start">
+          <HamburgerBtn />
+        </View>
+        <Text
+          numberOfLines={1}
+          className="min-w-0 flex-1 px-1 text-[17px] font-semibold text-neutral-950 dark:text-neutral-100"
+        >
+          {title}
+        </Text>
+        <View className="flex-row items-center gap-1">
+          {contextPercent != null && (
+            <CtxRing pct={contextPercent} tone={contextTone} dark={dark} onPress={onOpenInfo} />
+          )}
+          <Tap
+            testID="search-open"
+            accessibilityRole="button"
+            accessibilityLabel="Search conversation"
+            onPress={onOpenSearch}
+            hitSlop={2}
+            radius={20}
+            className="h-10 w-10 items-center justify-center"
+          >
+            <Search size={20} color={iconColor} />
+          </Tap>
+          <Tap
+            testID="kebab-btn"
+            accessibilityRole="button"
+            accessibilityLabel="Chat menu"
+            onPress={onOpenMenu}
+            hitSlop={2}
+            radius={20}
+            className="h-10 w-10 items-center justify-center"
+          >
+            <MoreVertical size={20} color={iconColor} />
+          </Tap>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ChatSearchHeader({
+  insetTop,
+  dark,
+  iconColor,
+  query,
+  matchIndex,
+  matchCount,
+  onChangeQuery,
+  onPrevious,
+  onNext,
+  onClose,
+}: {
+  insetTop: number;
+  dark: boolean;
+  iconColor: string;
+  query: string;
+  matchIndex: number;
+  matchCount: number;
+  onChangeQuery: (value: string) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  const hasQuery = query.trim().length > 0;
+  const disabledColor = dark ? '#666' : '#aaa';
+  return (
+    <View
+      style={{
+        height: insetTop + 52,
+        paddingTop: insetTop,
+        backgroundColor: dark ? '#000' : '#fff',
+      }}
+    >
+      <View className="h-[52px] flex-row items-center gap-1 px-2">
+        <View className="min-w-0 flex-1 flex-row items-center gap-1">
+          <View className="h-11 min-w-0 flex-1 flex-row items-center rounded-xl border border-neutral-200 bg-[#f4f4f6] px-3 dark:border-neutral-700 dark:bg-[#212121]">
+            <Search size={18} color={dark ? '#aaa' : '#666'} />
+            <TextInput
+              testID="conversation-search"
+              accessibilityLabel="Search conversation"
+              className="ml-2 min-w-0 flex-1 bg-transparent px-0 py-0 text-[16px] text-neutral-950 dark:text-neutral-100"
+              value={query}
+              onChangeText={onChangeQuery}
+              placeholder="Search conversation…"
+              placeholderTextColor={dark ? '#888' : '#9ca3af'}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+              keyboardAppearance={dark ? 'dark' : 'light'}
+              returnKeyType="search"
+              selectionColor="#1a73e8"
+              onSubmitEditing={onNext}
+            />
+            {hasQuery && (
+              <Text className="ml-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                {matchCount ? matchIndex + 1 : 0}/{matchCount}
+              </Text>
+            )}
+          </View>
+          <Tap
+            testID="search-prev"
+            accessibilityRole="button"
+            accessibilityLabel="Previous search match"
+            onPress={onPrevious}
+            disabled={!matchCount}
+            hitSlop={2}
+            radius={16}
+            className="h-11 w-10 items-center justify-center"
+          >
+            <ChevronUp size={20} color={matchCount ? iconColor : disabledColor} />
+          </Tap>
+          <Tap
+            testID="search-next"
+            accessibilityRole="button"
+            accessibilityLabel="Next search match"
+            onPress={onNext}
+            disabled={!matchCount}
+            hitSlop={2}
+            radius={16}
+            className="h-11 w-10 items-center justify-center"
+          >
+            <ChevronDown size={20} color={matchCount ? iconColor : disabledColor} />
+          </Tap>
+        </View>
+        <Tap
+          testID="search-close"
+          accessibilityRole="button"
+          accessibilityLabel="Close conversation search"
+          onPress={onClose}
+          hitSlop={2}
+          radius={20}
+          className="h-11 w-10 items-center justify-center"
+        >
+          <X size={22} color={iconColor} />
+        </Tap>
+      </View>
+    </View>
+  );
+}
 
 export function ChatScreen() {
   const {
@@ -143,7 +321,7 @@ export function ChatScreen() {
   // Composer status strip: context window + tokens + subagents + cost. The
   // gateway publishes these under session.info.usage (and session.usage answers
   // the same numbers); tap opens the full Session info sheet.
-  const usage = readUsage(sessionInfo?.usage) ?? readUsage(usageInfo);
+  const usage = mergeUsage(sessionInfo?.usage, usageInfo);
   const ctxPct =
     usage?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(usage.contextPercent))) : null;
   const ctxTone = ctxPct == null ? 'ok' : contextTone(ctxPct);
@@ -273,7 +451,7 @@ export function ChatScreen() {
       const text = item.text || '';
       if (!text) return;
       if (completionKind === 'slash') {
-        setInput(`${input.slice(0, completionFrom)}${text.replace(/\s+$/, '')} `);
+        setInput(applySlashCompletion(input, text, completionFrom));
         setCompletions([]);
         return;
       }
@@ -355,23 +533,6 @@ export function ChatScreen() {
   );
   // Kebab menu + in-conversation search.
   const [kebabOpen, setKebabOpen] = useState(false);
-  // The dropdown is anchored to the kebab ICON, measured on open — a fixed
-  // `right-*` class drifts the moment the header button's padding changes.
-  const kebabRef = useRef<View>(null);
-  const [kebabAnchor, setKebabAnchor] = useState({ right: 12, top: 8 });
-  // Window coords (the menu lives in a transparent Modal). `measureInWindow`
-  // is relative to the app window (which starts below the status bar) while the
-  // Modal's origin is the top of the screen — add the top inset to line them up.
-  useEffect(() => {
-    if (!kebabOpen) return;
-    kebabRef.current?.measureInWindow((x, y, w, h) => {
-      if (w <= 0) return;
-      setKebabAnchor({
-        right: Math.max(8, Math.round(winW - (x + w))),
-        top: Math.round(y + h + 6 + insets.top),
-      });
-    });
-  }, [kebabOpen, winW, insets.top]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [matchIdx, setMatchIdx] = useState(0);
@@ -653,10 +814,7 @@ export function ChatScreen() {
     () =>
       searchOpen && sq
         ? messages
-            .map((m, i) => {
-              const t = streamingTexts[m.id] ? m.text + streamingTexts[m.id] : m.text;
-              return t.toLowerCase().includes(sq) ? i : -1;
-            })
+            .map((m, i) => (messageMatchesSearch(m, streamingTexts[m.id], sq) ? i : -1))
             .filter((i) => i >= 0)
         : [],
     [searchOpen, sq, messages, streamingTexts],
@@ -710,13 +868,12 @@ export function ChatScreen() {
       .filter((p) => (q ? (p.models?.length ?? 0) > 0 : true));
   }, [modelProviders, mq]);
   // Search highlight: precompute matched ids once instead of toLowerCase per bubble per render.
-  // Includes buffered streaming text so the live bubble highlights too.
+  // Includes buffered streaming text for searchable conversation messages.
   const highlightIds = useMemo(() => {
     if (!searchOpen || !sq) return null;
     const s = new Set<string>();
     for (const m of messages) {
-      const t = streamingTexts[m.id] ? m.text + streamingTexts[m.id] : m.text;
-      if (t.toLowerCase().includes(sq)) s.add(m.id);
+      if (messageMatchesSearch(m, streamingTexts[m.id], sq)) s.add(m.id);
     }
     return s;
   }, [searchOpen, sq, messages, streamingTexts]);
@@ -789,48 +946,26 @@ export function ChatScreen() {
     [expanded, highlightIds, copiedId, generating, lastAssistantId, dark, bubbleMax, streamingTexts],
   );
 
-  // Native Drawer header: live session title, hamburger, kebab menu.
-  // Android content height compacted 64→52 like sessions (iOS stays 44).
-  const navigation = useNavigation();
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setSearchOpen(false);
+    setSearchQuery('');
+  }, []);
+
+  // A room switch should not carry another conversation's search term/results.
   useEffect(() => {
-    navigation.setOptions({
-      title: sessionId ? (sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : '') : '',
-      headerStyle: {
-        backgroundColor: dark ? '#000' : '#fff',
-        ...(Platform.OS === 'android' ? { height: insets.top + 52 } : null),
-      },
-      headerTintColor: headerIcon,
-      headerTitleStyle: { color: headerIcon },
-      // Header buttons get a little breathing room from the screen edges.
-      headerLeft: () => (
-        <View className="pl-2">
-          <HamburgerBtn />
-        </View>
-      ),
-      headerRight: sessionId
-        ? () => (
-            <View className="flex-row items-center">
-              {ctxPct != null && (
-                <CtxRing pct={ctxPct} tone={ctxTone} dark={dark} onPress={() => void openInfo()} />
-              )}
-              <Tap
-                testID="kebab-btn"
-                accessibilityRole="button"
-                accessibilityLabel="Chat menu"
-                onPress={() => setKebabOpen((v) => !v)}
-                hitSlop={12}
-                radius={20}
-                className="h-10 w-10 items-center justify-center"
-              >
-                <View ref={kebabRef}>
-                  <MoreVertical size={20} color={headerIcon} />
-                </View>
-              </Tap>
-            </View>
-          )
-        : undefined,
-    });
-  }, [navigation, insets.top, sessionId, sessionTitle, dark, headerIcon, ctxPct, ctxTone, openInfo]);
+    closeSearch();
+  }, [closeSearch, sessionId]);
+
+  const searchVisible = Boolean(sessionId && searchOpen);
+
+  // The screen owns the full header row. Keeping React Navigation's native
+  // header mounted as well would overlay its session title and hamburger on
+  // top of the search row, especially on iOS.
+  const navigation = useNavigation();
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
 
   if (booting) {
     return (
@@ -848,6 +983,19 @@ export function ChatScreen() {
   if (!sessionId) {
     return (
       <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+        <View
+          style={{
+            height: insets.top + 52,
+            paddingTop: insets.top,
+            backgroundColor: dark ? '#000' : '#fff',
+          }}
+        >
+          <View className="h-[52px] flex-row items-center px-2">
+            <View className="w-11 items-start">
+              <HamburgerBtn />
+            </View>
+          </View>
+        </View>
         <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
           <StatusBar style="auto" />
           <View className="flex-1 items-center justify-center p-6">
@@ -897,6 +1045,36 @@ export function ChatScreen() {
       }
       style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}
     >
+      {searchVisible ? (
+        <ChatSearchHeader
+          insetTop={insets.top}
+          dark={dark}
+          iconColor={headerIcon}
+          query={searchQuery}
+          matchIndex={matchIdx}
+          matchCount={matchIndices.length}
+          onChangeQuery={setSearchQuery}
+          onPrevious={() => jumpToMatch(matchIdx - 1)}
+          onNext={() => jumpToMatch(matchIdx + 1)}
+          onClose={closeSearch}
+        />
+      ) : (
+        <ChatNormalHeader
+          insetTop={insets.top}
+          dark={dark}
+          iconColor={headerIcon}
+          title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
+          contextPercent={ctxPct}
+          contextTone={ctxTone}
+          onOpenSearch={() => {
+            setKebabOpen(false);
+            setSearchOpen(true);
+          }}
+          onOpenMenu={() => setKebabOpen((v) => !v)}
+          onOpenInfo={() => void openInfo()}
+        />
+      )}
+
       {/* No 'bottom' edge here: Composer already pads with insets.bottom
           itself when the keyboard is closed, and KeyboardAvoidingView lifts
           it when open. Keeping 'bottom' would double the gap above the
@@ -904,9 +1082,7 @@ export function ChatScreen() {
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
 
-      {/* Kebab dropdown — a transparent Modal so it can hang from the header
-          button (which sits above the screen content) and land exactly under
-          it in window coordinates. */}
+      {/* Kebab dropdown — anchored directly below the screen-owned 52pt header row. */}
       <Modal
         visible={kebabOpen}
         transparent
@@ -921,20 +1097,8 @@ export function ChatScreen() {
           />
           <View
             className="absolute w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
-            style={{ top: kebabAnchor.top, right: kebabAnchor.right }}
+            style={{ top: insets.top + 58, right: 12 }}
           >
-            <Tap
-              testID="menu-search"
-              onPress={() => {
-                setKebabOpen(false);
-                setSearchOpen(true);
-              }}
-              radius={10}
-              className="flex-row items-center gap-2.5 px-3 py-2.5"
-            >
-              <Search size={17} color={headerIcon} />
-              <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Search</Text>
-            </Tap>
             <Tap
               testID="menu-info"
               onPress={() => {
@@ -1085,44 +1249,6 @@ export function ChatScreen() {
           ignores the view's padding — the keyboard is handled explicitly above
           via kbH (dock bottom + list padding). */}
       <View className="flex-1">
-        {searchOpen && (
-          <View className="flex-row items-center gap-1.5 border-b border-neutral-100 px-2.5 py-1.5 dark:border-neutral-800">
-            <Search size={16} color={dark ? '#a3a3a3' : '#666'} />
-            <TextInput
-              className="flex-1 rounded-lg bg-[#f4f4f6] px-2.5 py-1.5 text-[14px] text-neutral-950 dark:bg-[#212121] dark:text-neutral-100"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search in conversation…"
-              placeholderTextColor={dark ? '#888' : '#9ca3af'}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              keyboardAppearance={dark ? 'dark' : 'light'}
-              returnKeyType="search"
-              onSubmitEditing={() => jumpToMatch(matchIdx)}
-            />
-            <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-              {sq ? `${matchIndices.length ? matchIdx + 1 : 0}/${matchIndices.length}` : ''}
-            </Text>
-            <Tap onPress={() => jumpToMatch(matchIdx - 1)} radius={16} className="p-1" hitSlop={8} disabled={!matchIndices.length}>
-              <ChevronUp size={18} color={matchIndices.length ? headerIcon : '#ccc'} />
-            </Tap>
-            <Tap onPress={() => jumpToMatch(matchIdx + 1)} radius={16} className="p-1" hitSlop={8} disabled={!matchIndices.length}>
-              <ChevronDown size={18} color={matchIndices.length ? headerIcon : '#ccc'} />
-            </Tap>
-            <Tap
-              onPress={() => {
-                setSearchOpen(false);
-                setSearchQuery('');
-              }}
-              radius={16}
-              className="p-1"
-              hitSlop={8}
-            >
-              <X size={18} color={headerIcon} />
-            </Tap>
-          </View>
-        )}
         <FlatList
           ref={listRef}
           data={messages}

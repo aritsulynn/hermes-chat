@@ -226,15 +226,68 @@ export interface ModelProviderOption {
   capabilities?: Record<string, { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean | null }> | null;
 }
 
+export interface ProfileSummary {
+  name: string;
+  display_name?: string;
+  description?: string;
+  model?: string | null;
+  provider?: string | null;
+  is_default?: boolean;
+  gateway_running?: boolean;
+  [key: string]: unknown;
+}
+
+function profileRows(payload: unknown): ProfileSummary[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as any)?.profiles)
+      ? (payload as any).profiles
+      : [];
+  return rows
+    .filter((row: any) => row && typeof row === 'object' && typeof row.name === 'string' && row.name.trim())
+    .map((row: any) => ({ ...row, name: String(row.name).trim() }));
+}
+
+export async function getProfiles(baseUrl: string, cookie: string): Promise<ProfileSummary[]> {
+  const base = normalizeBase(baseUrl);
+  const res = await fetchWithTimeout(
+    `${base}/api/profiles`,
+    cookie ? { headers: { Cookie: cookie } } : {},
+    20000,
+  );
+  if (!res.ok) throw new Error(`Profiles failed: HTTP ${res.status}`);
+  return profileRows(await res.json());
+}
+
+export async function getCurrentProfile(
+  baseUrl: string,
+  cookie: string,
+): Promise<{ active: string; current: string }> {
+  const base = normalizeBase(baseUrl);
+  const res = await fetchWithTimeout(
+    `${base}/api/profiles/active`,
+    cookie ? { headers: { Cookie: cookie } } : {},
+    20000,
+  );
+  if (!res.ok) throw new Error(`Active profile failed: HTTP ${res.status}`);
+  const body: any = await res.json();
+  return {
+    active: typeof body?.active === 'string' && body.active.trim() ? body.active.trim() : 'default',
+    current: typeof body?.current === 'string' && body.current.trim() ? body.current.trim() : 'default',
+  };
+}
+
 export async function getModelOptions(
   baseUrl: string,
   cookie: string,
-  opts: { refresh?: boolean; includeUnconfigured?: boolean } = {},
+  opts: { refresh?: boolean; includeUnconfigured?: boolean; profile?: string } = {},
 ): Promise<ModelProviderOption[]> {
   const base = normalizeBase(baseUrl);
   const q = new URLSearchParams();
   if (opts.refresh) q.set('refresh', 'true');
   if (opts.includeUnconfigured) q.set('include_unconfigured', 'true');
+  const profile = String(opts.profile ?? '').trim();
+  if (profile) q.set('profile', profile);
   const qs = q.toString() ? `?${q}` : '';
   const res = await fetchWithTimeout(`${base}/api/model/options${qs}`, { headers: { Cookie: cookie } }, 15000);
   if (!res.ok) throw new Error(`Model options failed: HTTP ${res.status}`);
@@ -256,10 +309,13 @@ export async function setMainModel(
   cookie: string,
   provider: string,
   model: string,
+  profile?: string,
 ): Promise<void> {
   const base = normalizeBase(baseUrl);
+  const selectedProfile = String(profile ?? '').trim();
+  const query = selectedProfile ? `?profile=${encodeURIComponent(selectedProfile)}` : '';
   const res = await fetchWithTimeout(
-    `${base}/api/model/set`,
+    `${base}/api/model/set${query}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: cookie },
@@ -391,11 +447,17 @@ export async function getSessionMessages(
   baseUrl: string,
   cookie: string,
   storedId: string,
+  profileOrLimit: string | number = 'default',
   limit = 200,
 ): Promise<RestHistoryItem[]> {
+  // The numeric fourth argument remains accepted for older callers.
+  const selectedProfile = (
+    typeof profileOrLimit === 'number' ? 'default' : String(profileOrLimit ?? '')
+  ).trim() || 'default';
+  const selectedLimit = typeof profileOrLimit === 'number' ? profileOrLimit : limit;
   // 5s in-memory TTL — toolRefresh + stampRowIds + resync often fire
   // back-to-back for the same session and each refetches 200 rows.
-  const cacheKey = `${normalizeBase(baseUrl)}|${storedId}|${limit}`;
+  const cacheKey = `${normalizeBase(baseUrl)}|${selectedProfile}|${storedId}|${selectedLimit}`;
   const now = Date.now();
   const hit = sessionMessagesCache.get(cacheKey);
   if (hit && now - hit.at < 5000) return hit.items;
@@ -404,7 +466,11 @@ export async function getSessionMessages(
     .split('/')
     .map((s) => encodeURIComponent(s))
     .join('/');
-  const qs = new URLSearchParams({ order: 'latest', limit: String(limit) });
+  const qs = new URLSearchParams({
+    order: 'latest',
+    limit: String(selectedLimit),
+    profile: selectedProfile,
+  });
   const res = await fetchWithTimeout(
     `${base}/api/sessions/${path}/messages?${qs}`,
     cookie ? { headers: { Cookie: cookie } } : {},

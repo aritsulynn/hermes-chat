@@ -11,9 +11,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar';
 import {
   Check,
+  CircleUserRound,
   Globe,
   Info,
   LogOut,
+  Monitor,
   Moon,
   Palette,
   Server,
@@ -27,7 +29,7 @@ import { notificationsSupported } from '../../lib/notifications';
 import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
 export function SettingsScreen() {
-  const { authed, username, host, conn, theme, setTheme, logout, sessionInfo, applyApprovalMode, diagnostics, notificationsEnabled, setNotifications } = useApp();
+  const { authed, username, host, conn, activeProfile, theme, themeMode, setTheme, logout, sessionInfo, applyApprovalMode, diagnostics, notificationsEnabled, setNotifications } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   const isReady = conn === 'ready';
@@ -94,18 +96,19 @@ export function SettingsScreen() {
               Theme Mode
             </Text>
             <Text className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
-              Choose your interface color theme
+              Follow your device or choose a fixed theme
             </Text>
 
-            <View className="flex-row gap-3">
+            <View className="flex-row gap-2">
               {/* Light Theme Card */}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Light theme"
+                accessibilityState={{ selected: themeMode === 'light' }}
                 onPress={() => setTheme('light')}
                 className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
-                  theme === 'light'
-                    ? 'border-[#1a73e8] bg-blue-50/70 dark:bg-blue-950/40'
+                  themeMode === 'light'
+                    ? 'border-amber-500 bg-amber-50 dark:bg-neutral-950'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
               >
@@ -114,15 +117,15 @@ export function SettingsScreen() {
                 </View>
                 <Text
                   className={`text-sm font-semibold ${
-                    theme === 'light' ? 'text-[#1a73e8] font-bold' : 'text-neutral-700 dark:text-neutral-300'
+                    themeMode === 'light' ? 'text-amber-700 font-bold dark:text-amber-300' : 'text-neutral-700 dark:text-neutral-300'
                   }`}
                 >
                   Light
                 </Text>
-                {theme === 'light' && (
+                {themeMode === 'light' && (
                   <View className="mt-1.5 flex-row items-center gap-1">
-                    <Check size={12} color="#1a73e8" />
-                    <Text className="text-[11px] font-semibold text-[#1a73e8]">Active</Text>
+                    <Check size={12} color="#b45309" />
+                    <Text className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">Active</Text>
                   </View>
                 )}
               </Pressable>
@@ -131,10 +134,11 @@ export function SettingsScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Dark theme"
+                accessibilityState={{ selected: themeMode === 'dark' }}
                 onPress={() => setTheme('dark')}
                 className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
-                  theme === 'dark'
-                    ? 'border-[#1a73e8] bg-blue-50/70 dark:bg-blue-950/40'
+                  themeMode === 'dark'
+                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
               >
@@ -143,15 +147,47 @@ export function SettingsScreen() {
                 </View>
                 <Text
                   className={`text-sm font-semibold ${
-                    theme === 'dark' ? 'text-[#1a73e8] dark:text-[#7aa7ff] font-bold' : 'text-neutral-700 dark:text-neutral-300'
+                    themeMode === 'dark' ? 'text-indigo-700 font-bold dark:text-indigo-300' : 'text-neutral-700 dark:text-neutral-300'
                   }`}
                 >
                   Dark
                 </Text>
-                {theme === 'dark' && (
+                {themeMode === 'dark' && (
                   <View className="mt-1.5 flex-row items-center gap-1">
-                    <Check size={12} color={dark ? '#7aa7ff' : '#1a73e8'} />
-                    <Text className="text-[11px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Active</Text>
+                    <Check size={12} color="#a5b4fc" />
+                    <Text className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">Active</Text>
+                  </View>
+                )}
+              </Pressable>
+
+              {/* Follow the device appearance. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="System theme"
+                accessibilityState={{ selected: themeMode === 'system' }}
+                onPress={() => setTheme('system')}
+                className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
+                  themeMode === 'system'
+                    ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/50'
+                    : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                }`}
+              >
+                <View className="mb-2 h-8 w-8 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/60">
+                  <Monitor size={18} color={dark ? '#38bdf8' : '#0284c7'} />
+                </View>
+                <Text
+                  className={`text-sm font-semibold ${
+                    themeMode === 'system'
+                      ? 'font-bold text-sky-700 dark:text-sky-300'
+                      : 'text-neutral-700 dark:text-neutral-300'
+                  }`}
+                >
+                  System
+                </Text>
+                {themeMode === 'system' && (
+                  <View className="mt-1.5 flex-row items-center gap-1">
+                    <Check size={12} color={dark ? '#7dd3fc' : '#0369a1'} />
+                    <Text className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</Text>
                   </View>
                 )}
               </Pressable>
@@ -181,10 +217,19 @@ export function SettingsScreen() {
                     {username || 'Hermes User'}
                   </Text>
                   <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Active Profile
+                    Account
                   </Text>
                 </View>
               </View>
+            </View>
+
+            {/* Active agent profile — switch from the Drawer. */}
+            <View className="flex-row items-center justify-between border-b border-neutral-200 py-2.5 dark:border-neutral-800">
+              <View className="flex-row items-center gap-2">
+                <CircleUserRound size={15} color={dark ? '#aaa' : '#666'} />
+                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Agent Profile</Text>
+              </View>
+              <Text className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">{activeProfile}</Text>
             </View>
 
             {/* Host row */}
