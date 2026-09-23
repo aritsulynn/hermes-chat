@@ -120,7 +120,7 @@ export interface GatewayEvents {
   onTool?: (sessionId: string, info: { name?: string; preview?: string; summary?: string; inlineDiff?: string; result?: unknown; args?: unknown; context?: string; toolId?: string; phase: 'start' | 'progress' | 'generating' | 'complete' }) => void;
   onComplete?: (sessionId: string, text: string, raw?: any) => void;
   onNotice?: (sessionId: string, text: string) => void;
-  onSessionInfo?: (info: any) => void;
+  onSessionInfo?: (sid: string, info: any) => void;
   /** Agent todo snapshot (`{todos, revision}`) — `todo.updated`. */
   onTodo?: (sessionId: string, payload: any) => void;
   /** After a reconnect, the replay ring had already dropped the gap — callers
@@ -761,7 +761,7 @@ export class GatewayWs {
         });
         break;
       case 'session.info':
-        this.events.onSessionInfo?.(body);
+        this.events.onSessionInfo?.(sid, body);
         break;
       case 'todo.updated':
         this.events.onTodo?.(sid, body);

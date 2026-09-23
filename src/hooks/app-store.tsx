@@ -805,7 +805,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         onNotice: (_sid, text) => {
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
         },
-        onSessionInfo: (info) => {
+        onSessionInfo: (sid, info) => {
+          if (!isCurrentSession(sid)) return;
           setSessionInfo(info);
           // Server truth wins when present (e.g. the global default changed on
           // desktop) — and persists for the next boot.
@@ -825,6 +826,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (sid === sessionIdRef.current) resyncRef.current();
         },
         onAsk: (a) => {
+          // A server ask carries the runtime session id; only the session on
+          // screen may raise an approval/clarify sheet (approving a background
+          // cron run's command from here would be a safety hazard).
+          if (a.sessionId && !isCurrentSession(a.sessionId)) return;
           setAsk(a);
           if (notifyRef.current) {
             const what =
@@ -1665,11 +1670,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [input, attachments, sessionId, host, setInput, setAttachments, beginTurn, runSlash, enqueueQueued]);
   sendRef.current = send;
 
+  // Release the local "a turn is running" latch without clearing the live
+  // assistant bubble id — a late message.complete can still finalize it. Used
+  // when an interrupt can't reach the server, so the composer never sticks.
+  const releaseLocalTurn = useCallback(() => {
+    liveThinkAid.current = null;
+    liveTurnTools.current = [];
+    generatingRef.current = false;
+    setGenerating(false);
+    setToolLine(null);
+    setMessages((prev) => prev.map((m) => (m.pending ? { ...m, pending: false } : m)));
+  }, []);
+
   const stop = useCallback(() => {
-    if (sessionId) gw.current?.interrupt(sessionId).catch(() => {});
     // An explicit halt parks the queue until the user queues again / taps Resume.
     setQueueParked(true);
-  }, [sessionId]);
+    const g = gw.current;
+    const sid = sessionId;
+    // No live socket/session, or the interrupt itself fails → the server will
+    // never emit the turn-end event, so clear the latch ourselves.
+    if (!g || !sid) {
+      releaseLocalTurn();
+      return;
+    }
+    g.interrupt(sid).catch(() => releaseLocalTurn());
+  }, [sessionId, releaseLocalTurn]);
   stopRef.current = stop;
 
   // ── Session details ────────────────────────────────────────────────────
