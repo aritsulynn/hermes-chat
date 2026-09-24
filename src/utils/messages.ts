@@ -185,26 +185,36 @@ export interface ClarifyQ {
   question: string;
   choices: string[];
   multiSelect: boolean;
+  /** Previously locked answer restored from a reconnect `open_requests` payload. */
+  lockedAnswer?: string;
 }
 
 export function parseClarify(ask: { params: Record<string, any> }): { single: boolean; questions: ClarifyQ[] } {
   const p = ask.params;
+  const locked = p?.answers && typeof p.answers === 'object' && !Array.isArray(p.answers)
+    ? p.answers as Record<string, unknown>
+    : {};
   if (Array.isArray(p.questions) && p.questions.length > 0) {
     return {
       single: false,
-      questions: p.questions.map((q: any, i: number) => ({
-        qid: String(q?.qid ?? `q${i}`),
-        question: String(q?.question ?? ''),
-        choices: Array.isArray(q?.choices) ? q.choices.map(String) : [],
-        multiSelect: q?.multi_select === true,
-      })),
+      questions: p.questions.map((q: any, i: number) => {
+        const qid = String(q?.qid ?? `q${i}`);
+        return {
+          qid,
+          question: String(q?.question ?? ''),
+          choices: Array.isArray(q?.choices) ? q.choices.map(String) : [],
+          multiSelect: q?.multi_select === true,
+          ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] } : {}),
+        };
+      }),
     };
   }
+  const qid = String(p.qid ?? p.question_id ?? 'q0');
   return {
     single: true,
     questions: [
       {
-        qid: String(p.qid ?? p.question_id ?? 'q0'),
+        qid,
         question: String(p.question ?? p.text ?? ''),
         choices: Array.isArray(p.choices)
           ? p.choices.map(String)
@@ -212,6 +222,7 @@ export function parseClarify(ask: { params: Record<string, any> }): { single: bo
             ? p.options.map(String)
             : [],
         multiSelect: p.multi_select === true,
+        ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] } : {}),
       },
     ],
   };

@@ -162,7 +162,11 @@ export async function passwordLogin(
 }
 
 /** Step 2: mint a single-use WS ticket (must be consumed within ~30s). */
-export async function mintWsTicket(baseUrl: string, cookie: string): Promise<string> {
+export async function mintWsTicket(
+  baseUrl: string,
+  cookie: string,
+  onCookie?: (nextCookie: string) => void,
+): Promise<string> {
   const base = normalizeBase(baseUrl);
   let res: Response;
   try {
@@ -180,6 +184,7 @@ export async function mintWsTicket(baseUrl: string, cookie: string): Promise<str
   }
   // Cookie may have rotated — caller should merge any Set-Cookie it carries.
   const rotated = mergeCookies(cookie, getSetCookies(res));
+  if (rotated !== cookie) onCookie?.(rotated);
   if (!res.ok) {
     const err: any = new Error(`WS ticket mint failed: HTTP ${res.status}`);
     err.cookie = rotated !== cookie ? rotated : undefined;

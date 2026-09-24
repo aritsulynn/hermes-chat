@@ -15,6 +15,7 @@ import * as SystemUI from 'expo-system-ui';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import {
   Activity,
+  BellRing,
   Boxes,
   ChevronDown,
   ChevronRight,
@@ -50,6 +51,7 @@ const NAV_ITEMS = [
 
 const MORE_NAV_ITEMS = [
   { name: 'kanban', label: 'Kanban', icon: Kanban },
+  { name: 'asks', label: 'Ask Inbox', icon: BellRing },
   { name: 'skills', label: 'Skills', icon: Wrench },
   { name: 'toolsets', label: 'Toolsets', icon: Boxes },
 ] as const;
@@ -68,7 +70,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
   const drawerOpen = useDrawerStatus() === 'open';
   const {
-    authed, username, host, busy, activeProfile, profiles, refreshProfiles, switchProfile, sessionId, sessionKey, openingId, sessions, messages,
+    authed, username, host, busy, activeProfile, profiles, refreshProfiles, switchProfile, sessionId, sessionKey, openingId, sessions, messages, pendingAskCount,
     newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, logout, theme, deleteSessionById,
   } = useApp();
   // Hooks FIRST — no early return above this line (authed flips at
@@ -263,7 +265,7 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
               color={(showMoreMenu || isMoreActive) ? '#1a73e8' : dimColor}
             />
             <Text
-              className={`text-[17px] ${
+              className={`flex-1 text-[17px] ${
                 (showMoreMenu || isMoreActive)
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                   : 'text-neutral-950 dark:text-neutral-100'
@@ -271,6 +273,11 @@ function HermesDrawerContent(props: DrawerContentComponentProps) {
             >
               More
             </Text>
+            {pendingAskCount > 0 && (
+              <View className="min-w-5 items-center rounded-full bg-red-500 px-1.5 py-0.5">
+                <Text className="text-[11px] font-bold text-white">{pendingAskCount > 99 ? '99+' : pendingAskCount}</Text>
+              </View>
+            )}
           </Tap>
 
           {/* Submenu for More */}
@@ -671,6 +678,15 @@ function ThemedDrawer() {
           title: 'Kanban',
           drawerLabel: 'Kanban',
           drawerIcon: drawerIcon(Kanban),
+        }}
+      />
+      <Drawer.Screen
+        name="asks"
+        options={{
+          headerShown: false,
+          title: 'Ask Inbox',
+          drawerLabel: 'Ask Inbox',
+          drawerIcon: drawerIcon(BellRing),
         }}
       />
       <Drawer.Screen

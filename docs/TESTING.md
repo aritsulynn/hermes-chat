@@ -8,13 +8,13 @@
 | `9c41242` | Fix session-state leaks and WS event cross-talk |
 | `89447b4` | Guard `stop()` against a stuck turn and filter all session events |
 
-`BUILD_ID` ล่าสุด: `2026-09-23#46-stop-and-ask-guards` (ดูได้ที่หน้า Login / Settings)
+`BUILD_ID` ล่าสุด: `2026-09-24#47-ask-inbox` (ดูได้ที่หน้า Login / Settings)
 
 ---
 
 ## 0. สิ่งที่ต้องเตรียม
 
-- Dev build (หรือ APK preview) ที่มีโค้ดล่าสุด — ตรวจ `BUILD_ID` ว่าเป็น `#46` ขึ้นไป
+- Dev build (หรือ APK preview) ที่มีโค้ดล่าสุด — ตรวจ `BUILD_ID` ว่าเป็น `#47` ขึ้นไป
 - Gateway (dashboard) ที่ต่อได้ + บัญชีที่ login ผ่าน
 - อุปกรณ์/เครื่องที่ 2 หรือ terminal สำหรับสั่งงานเบื้องหลัง (cron / แชทอีกเซสชัน)
 - ทางเลือกเสริม: เปิด Metro log เพื่อดู console
@@ -62,13 +62,29 @@
 | **ขั้นตอน** | ในแชทที่เปิดอยู่ สั่งให้ agent รันคำสั่งที่ต้องขออนุมัติ (เช่นคำสั่งที่ถูก flag ว่าอันตราย) |
 | **คาดหวัง** | เด้ง approval sheet ในแชทนั้น + กด Allow/Deny ได้ตามปกติ |
 
-### B2. ask ของเซสชันอื่นต้องไม่เด้ง
+### B2. ask ของเซสชันอื่นต้องไม่ hijack แชทปัจจุบัน แต่ต้องเข้า Inbox
 
 | | |
 | --- | --- |
-| **ขั้นตอน** | ขณะอยู่แชท A ให้ cron job ที่ต้องขออนุมัติทำงาน |
-| **คาดหวัง** | **ไม่** เด้ง approval sheet ในแชท A (งาน cron จะ timeout เองฝั่งเซิร์ฟเวอร์) |
-| **หมายเหตุ** | เป็นพฤติกรรมที่ตั้งใจ — กันการอนุมัติคำสั่งของเซสชันที่ผู้ใช้ไม่ได้ดูอยู่ |
+| **ขั้นตอน** | ขณะอยู่แชท A ให้ cron job หรือ background session ที่ต้องขออนุมัติ/ตอบคำถามทำงาน |
+| **คาดหวัง** | ไม่เปลี่ยน AskSheet ของแชท A; request ถูกเก็บใน More → Ask Inbox และแจ้งเตือนเมื่อแอปอยู่ background |
+| **ตอบจาก notification** | Allow once/Reject ใช้ request ID เดิม; ตอบซ้ำไม่ได้; action ผิด session ไม่ถูกส่ง |
+| **หมายเหตุ** | ถ้า profile/stored session ยัง resolve ไม่ได้ ระบบต้อง fail closed และให้เปิด inbox แทนการเดา session |
+
+### B3. Notification action ต้องผูกกับ request เดิม
+
+| | |
+| --- | --- |
+| **ขั้นตอน** | ให้ background session ขอ approval แล้วกด Allow once หรือ Reject จาก notification |
+| **คาดหวัง** | notification action เปิดแอปและขอ local authentication ก่อน; ส่ง JSON-RPC response ด้วย `srq-*` ID เดิม exactly once; inbox เปลี่ยนเป็น sent/answered; event ของ session อื่นไม่ปน |
+| **คาดหวังเมื่อ gateway ยังไม่พร้อม** | action ถูกเก็บชั่วคราว แล้วลองใหม่หลัง reconnect โดยไม่ตอบ request ผิด |
+
+### B4. Reconnect ต้องคืน open request
+
+| | |
+| --- | --- |
+| **ขั้นตอน** | เปิด Ask Inbox ให้มี request, ตัด network/ปิด socket แล้ว reconnect |
+| **คาดหวัง** | `open_requests` กลับมาใน inbox โดยไม่สร้างรายการซ้ำและไม่ส่ง notification ซ้ำ; locked clarify answers ถูก restore |
 
 ---
 
@@ -187,7 +203,9 @@ const isCurrentSession = (sid: string) => {
 - [ ] A2 งานเบื้องหลังไม่ปนแชท
 - [ ] A3 `session.info` ไม่ทับ model chip
 - [ ] B1 ask ของแชทปัจจุบันเด้ง
-- [ ] B2 ask ของเซสชันอื่นไม่เด้ง
+- [ ] B2 ask ของเซสชันอื่นไม่ hijack และเข้า Inbox
+- [ ] B3 notification action ผูกกับ request เดิมและตอบครั้งเดียว
+- [ ] B4 reconnect คืน open request และ locked clarify answer
 - [ ] C1 Stop → Send กลับมา
 - [ ] C2 Stop ตอนเน็ตหลุด → ไม่ค้าง
 - [ ] D todo restore อยู่

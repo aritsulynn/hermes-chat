@@ -4,7 +4,8 @@
 // one transcript. Navigation replaced setScreen() with expo-router routes.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useColorScheme as useSystemScheme } from 'react-native';
+import { AppState, useColorScheme as useSystemScheme } from 'react-native';
+import * as LocalAuth from 'expo-local-authentication';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { readAsStringAsync } from 'expo-file-system/legacy';
@@ -24,7 +25,32 @@ import {
 import type { ModelProviderOption } from '../lib/dashboard';
 import { clearCookie, getActiveProfile, getCookie, getLastSession, getModel, getNotifyEnabled, getPassword, getTheme, loadConnection, saveActiveProfile, saveCookie, saveHost, saveLastSession, saveModel, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
 import type { ResolvedTheme, Theme } from '../lib/connection';
-import { ensureAndroidChannel, onNotificationTap, pushNotification, requestNotifyPermission } from '../lib/notifications';
+import {
+  askNotificationCategory,
+  dismissNotification,
+  ensureAndroidChannel,
+  ensureNotificationCategories,
+  NOTIFICATION_ASK_ANSWER,
+  NOTIFICATION_ASK_APPROVE,
+  NOTIFICATION_ASK_OPEN,
+  NOTIFICATION_ASK_REJECT,
+  NOTIFICATION_DEFAULT_ACTION,
+  notifyPermissionGranted,
+  onNotificationResponse,
+  pushNotification,
+  requestNotifyPermission,
+} from '../lib/notifications';
+import {
+  askKey,
+  findAsk,
+  findAskByRpc,
+  pendingAsks,
+  setAskStatus,
+  setAskStatusByRpc,
+  upsertAsk,
+} from '../lib/ask-inbox';
+import type { AskInboxEntry, AskInboxInput, AskInboxStatus, AskOwner } from '../lib/ask-inbox';
+import type { HermesNotificationResponse } from '../lib/notifications';
 import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
 import { changedFilesFromDiff, inlineDiffFromDetail } from '../utils/diff';
@@ -101,6 +127,13 @@ export interface AppStore {
   usageLoading: boolean;
   toolLine: string | null;
   ask: ServerAsk | null;
+  /** All unresolved/settled server asks, newest first. */
+  askInbox: AskInboxEntry[];
+  pendingAskCount: number;
+  /** Open an inbox item in its owning chat when its profile is resolved. */
+  openAskEntry: (entry: AskInboxEntry) => Promise<void>;
+  answerInboxValue: (key: string, value: string) => boolean;
+  answerInboxApproval: (key: string, choice: string) => boolean;
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
@@ -153,7 +186,9 @@ export interface AppStore {
   pickModel: (providerSlug: string, modelId: string) => Promise<void>;
   copyText: (id: string, text: string) => Promise<void>;
   answerValue: (value: string) => void;
-  answerApproval: (choice: string) => void;
+  answerApproval: (choice: string) => boolean;
+  /** Reply to the current foreground ask with its method-specific result. */
+  answerAsk: (result: Record<string, unknown>) => boolean;
   dismissAsk: () => void;
   /** Effective theme after resolving `system`. */
   theme: ResolvedTheme;
@@ -233,6 +268,37 @@ async function discoverAgentProfiles(host: string, cookie: string): Promise<{ pr
 /** Durable session identity is profile + stored id; stored ids may collide across profiles. */
 function profileSessionKey(profile: string, storedId: string): string {
   return JSON.stringify([normalizeProfileName(profile), storedId]);
+}
+
+function parseProfileSessionKey(value: string): { profile: string; storedSessionId: string } | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed) || typeof parsed[0] !== 'string' || typeof parsed[1] !== 'string') return null;
+    return { profile: parsed[0], storedSessionId: parsed[1] };
+  } catch {
+    return null;
+  }
+}
+
+function serverAskFromInbox(entry: AskInboxEntry): ServerAsk {
+  return {
+    rpcId: entry.rpcId,
+    method: entry.method,
+    ...(entry.sessionId ? { sessionId: entry.sessionId } : {}),
+    params: entry.params,
+    replayed: entry.replayed,
+  };
+}
+
+function notificationResponseKey(response: HermesNotificationResponse): string {
+  const data = response.data ?? {};
+  return JSON.stringify([
+    String(data.connectionId ?? ''),
+    String(data.askKey ?? ''),
+    String(data.rpcId ?? ''),
+    response.actionIdentifier,
+    String(response.userText ?? ''),
+  ]);
 }
 
 /** Keep the raw gateway usage shape in state; `readUsage` normalizes at render. */
@@ -417,6 +483,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [conn, setConn] = useState<ConnState>('idle');
   const [activeProfile, setActiveProfile] = useState('default');
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const profilesRef = useRef<AgentProfile[]>([]);
+  profilesRef.current = profiles;
   const [authed, setAuthed] = useState(false);
   const [sessions, setSessions] = useState<ScopedSessionSummary[]>([]);
   const [sessionsLimit, setSessionsLimit] = useState(100);
@@ -500,6 +568,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const copyTimer = useRef<any>(null);
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [ask, setAsk] = useState<ServerAsk | null>(null);
+  const askRef = useRef<ServerAsk | null>(null);
+  askRef.current = ask;
+  const [askInbox, setAskInbox] = useState<AskInboxEntry[]>([]);
+  const askInboxRef = useRef<AskInboxEntry[]>([]);
+  askInboxRef.current = askInbox;
+  const pendingNotificationResponsesRef = useRef<HermesNotificationResponse[]>([]);
+  const notificationDrainRef = useRef<(() => void) | null>(null);
+  const notificationActionInFlightRef = useRef(false);
+  const askHydrationRef = useRef(0);
+  const handledNotificationResponsesRef = useRef<Set<string>>(new Set());
+  const queueNotificationResponse = useCallback((response: HermesNotificationResponse) => {
+    const key = notificationResponseKey(response);
+    if (handledNotificationResponsesRef.current.has(key)) return;
+    if (pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) === key)) return;
+    pendingNotificationResponsesRef.current = [...pendingNotificationResponsesRef.current, response];
+  }, []);
+  const clearQueuedNotificationResponse = useCallback((response?: HermesNotificationResponse) => {
+    if (!response) {
+      pendingNotificationResponsesRef.current = [];
+      return;
+    }
+    const key = notificationResponseKey(response);
+    pendingNotificationResponsesRef.current = pendingNotificationResponsesRef.current.filter(
+      (item) => notificationResponseKey(item) !== key,
+    );
+  }, []);
   const systemScheme = useSystemScheme();
   const systemTheme: ResolvedTheme = systemScheme === 'dark' ? 'dark' : 'light';
   // First install follows the device. An explicit saved Light/Dark choice wins.
@@ -508,6 +602,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Local notifications (turn complete / server asks while backgrounded).
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const { setColorScheme } = useNWColorScheme();
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || !notifyRef.current) return;
+      void notifyPermissionGranted().then((granted) => {
+        if (!granted && notifyRef.current) setNotifyEnabled(false);
+      });
+    });
+    return () => sub.remove();
+  }, []);
 
   const setTheme = useCallback(
     (t: Theme) => {
@@ -536,8 +640,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   activeProfileRef.current = activeProfile;
   const activeProfilePreferenceRef = useRef<string | null>(null);
   const profileEpochRef = useRef(0);
+  const connectionEpochRef = useRef(0);
+  const sessionOpenEpochRef = useRef(0);
   /** runtime session id → scoped durable owner (profile + stored id). */
   const runtimeOwners = useRef<Map<string, string>>(new Map());
+  /** Best-effort runtime → owner metadata, including unresolved background profiles. */
+  const runtimeAskOwners = useRef<Map<string, AskOwner>>(new Map());
   const refreshProfiles = useCallback(async () => {
     if (!host || !cookie.current) return;
     try {
@@ -569,6 +677,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const generatingRef = useRef(false);
   const queueParkedRef = useRef(false);
   const queuedRef = useRef<QueuedPrompt[]>([]);
+  const queueDrainInFlightRef = useRef(false);
   const sendRef = useRef<((text?: string) => Promise<void>) | null>(null);
   const drainRef = useRef<() => void>(() => {});
   // Live transcript, for handlers frozen in openWs (tool backfill name-checking).
@@ -582,6 +691,128 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
   const latest = useRef({ host, activeProfile, sessionKey });
   latest.current = { host, activeProfile, sessionKey };
+
+  const resolveAskOwner = useCallback(
+    (sessionIdValue?: string, params?: Record<string, unknown>): AskOwner => {
+      const runtimeSessionId = String(sessionIdValue ?? '');
+      const connectionId = latest.current.host;
+      const hintedProfile = typeof params?.profile === 'string'
+        ? normalizeProfileName(params.profile)
+        : typeof params?.profile_name === 'string'
+          ? normalizeProfileName(params.profile_name)
+          : '';
+      const scoped = runtimeSessionId ? runtimeOwners.current.get(runtimeSessionId) : undefined;
+      if (scoped) {
+        const parsed = parseProfileSessionKey(scoped);
+        if (parsed) {
+          return {
+            connectionId,
+            profile: parsed.profile,
+            storedSessionId: parsed.storedSessionId,
+            runtimeSessionId,
+            resolved: true,
+          };
+        }
+      }
+      const known = runtimeSessionId ? runtimeAskOwners.current.get(runtimeSessionId) : undefined;
+      if (known) {
+        if (known.resolved) return { ...known, connectionId: connectionId || known.connectionId };
+        const profile = hintedProfile || (profilesRef.current.length === 1 ? normalizeProfileName(latest.current.activeProfile) : '');
+        return {
+          ...known,
+          connectionId: connectionId || known.connectionId,
+          profile,
+          resolved: Boolean(profile && known.storedSessionId),
+        };
+      }
+      // A request from the live foreground session can be resolved even before
+      // the runtime-owner map has been populated (for example during resume).
+      if (runtimeSessionId && sessionIdRef.current === runtimeSessionId) {
+        return {
+          connectionId,
+          profile: normalizeProfileName(latest.current.activeProfile),
+          storedSessionId: latest.current.sessionKey ?? runtimeSessionId,
+          runtimeSessionId,
+          resolved: true,
+        };
+      }
+      if (hintedProfile) {
+        return {
+          connectionId,
+          profile: hintedProfile,
+          storedSessionId: '',
+          runtimeSessionId,
+          resolved: false,
+        };
+      }
+      // Background sessions may arrive before the app has ever opened them. Keep
+      // them in the inbox, but fail closed for profile-sensitive navigation.
+      return {
+        connectionId,
+        profile: '',
+        storedSessionId: '',
+        runtimeSessionId,
+        resolved: false,
+      };
+    },
+    [],
+  );
+
+  const applyAskInbox = useCallback((input: AskInboxInput) => {
+    const result = upsertAsk(askInboxRef.current, input);
+    askInboxRef.current = result.entries;
+    setAskInbox(result.entries);
+    return result;
+  }, []);
+
+  const dismissAskNotifications = useCallback((entries: AskInboxEntry[] = askInboxRef.current) => {
+    for (const entry of entries) void dismissNotification(`hermes-ask-${entry.rpcId}`);
+  }, []);
+
+  const markAskStatus = useCallback((key: string, status: AskInboxStatus) => {
+    const next = setAskStatus(askInboxRef.current, key, status);
+    askInboxRef.current = next;
+    setAskInbox(next);
+    if (status === 'sent' || status === 'answered' || status === 'cancelled' || status === 'stale') {
+      const entry = next.find((item) => item.key === key);
+      if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
+      if (askRef.current && askRef.current.rpcId === entry?.rpcId) {
+        setAsk(null);
+      }
+    }
+  }, []);
+
+  const markAskByRpc = useCallback(
+    (rpcId: string, status: AskInboxStatus) => {
+      const next = setAskStatusByRpc(askInboxRef.current, latest.current.host, rpcId, status);
+      askInboxRef.current = next;
+      setAskInbox(next);
+      if (status === 'cancelled' || status === 'answered' || status === 'stale') {
+        const entry = next.find((item) => item.owner.connectionId === latest.current.host && item.rpcId === rpcId);
+        if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
+      }
+      if (
+        status !== 'pending' &&
+        status !== 'answering' &&
+        askRef.current?.rpcId === rpcId
+      ) {
+        setAsk(null);
+      }
+    },
+    [],
+  );
+
+  const bindAskOwner = useCallback((runtimeSessionId: string, owner: AskOwner) => {
+    runtimeAskOwners.current.set(runtimeSessionId, owner);
+    const next = askInboxRef.current.map((entry) =>
+      entry.owner.runtimeSessionId === runtimeSessionId && !entry.owner.resolved
+        ? { ...entry, owner, key: askKey(owner, entry.rpcId) }
+        : entry,
+    );
+    askInboxRef.current = next;
+    setAskInbox(next);
+  }, []);
+
   // Tool RESULT fill from the REST transcript. The gateway's history projection
   // deliberately omits tool results (`name` + 80-char `context` + `args` only —
   // tui_gateway/session_history.py::_history_to_messages), and the live
@@ -595,6 +826,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const profile = latest.current.activeProfile;
     const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
+    const connectionEpoch = connectionEpochRef.current;
     const ck = cookie.current;
     // Web: the jar is empty (Set-Cookie is unreadable) but the browser cookie
     // still rides along via credentials:'include', so only host+key are required.
@@ -602,7 +834,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         const items = await getSessionMessages(h, ck, sk, profile);
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        if (
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch ||
+          connectionEpochRef.current !== connectionEpoch ||
+          latest.current.sessionKey !== sk
+        )
+          return;
         const restTools = items.filter((m) => m.role === 'tool' && m.content.trim());
         const liveTools = messagesRef.current.filter((m) => m.role === 'tool');
         if (restTools.length === 0 || liveTools.length === 0) return;
@@ -661,11 +899,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const profile = latest.current.activeProfile;
     const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
+    const connectionEpoch = connectionEpochRef.current;
     if (!h || !sk) return;
     void (async () => {
       try {
         const items = await getSessionMessages(h, cookie.current, sk, profile);
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        if (
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch ||
+          connectionEpochRef.current !== connectionEpoch ||
+          latest.current.sessionKey !== sk
+        )
+          return;
         const rest = items.filter(
           (m) => (m.role === 'user' || m.role === 'assistant') && m.rowId != null && m.content.trim(),
         );
@@ -694,11 +939,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const profile = latest.current.activeProfile;
     const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
-    if (!h || !sk) return;
+    const connectionEpoch = connectionEpochRef.current;
+    const runtime = sessionIdRef.current;
+    if (!h || !sk || !runtime) return;
     void (async () => {
       try {
         const hist = await getSessionMessages(h, cookie.current, sk, profile);
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        if (
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch ||
+          connectionEpochRef.current !== connectionEpoch ||
+          latest.current.sessionKey !== sk ||
+          sessionIdRef.current !== runtime
+        )
+          return;
         if (hist.length) {
           const items = historyToItems(hist);
           clearStreaming();
@@ -804,14 +1058,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const newSessionRef = useRef<() => Promise<void>>(async () => {});
   const stopRef = useRef<() => void>(() => {});
   const renameSessionRef = useRef<(t: string) => Promise<void>>(async () => {});
-  // Tapping a Hermes notification reopens the chat (works from home screen /
-  // anywhere outside the app — the silent reconnect restores the session).
+  // Notification taps/actions are routed through the ask inbox. The handler is
+  // installed below (after response helpers exist); a cold-start response is
+  // held until that handler is ready.
   useEffect(() => {
     void ensureAndroidChannel();
-    const unsub = onNotificationTap(() => {
-      try {
-        router.push('/chat');
-      } catch {}
+    void ensureNotificationCategories();
+    const unsub = onNotificationResponse((response) => {
+      queueNotificationResponse(response);
+      notificationDrainRef.current?.();
     });
     return () => unsub?.();
   }, []);
@@ -843,7 +1098,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } catch {}
         // Restore the local-notifications preference.
         const savedNotify = await getNotifyEnabled().catch(() => false);
-        if (!cancelled) setNotifyEnabled(savedNotify);
+        const effectiveNotify = savedNotify ? await notifyPermissionGranted() : false;
+        if (!cancelled) {
+          setNotifyEnabled(effectiveNotify);
+          if (savedNotify && !effectiveNotify) await saveNotifyEnabled(false);
+        }
         // Restore the last picked model so the composer chip survives restarts
         // (the server global default still governs actual runs).
         const savedModel = await getModel(activeProfileRef.current).catch(() => null);
@@ -951,7 +1210,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // of letting them lie forever. A still-live turn re-asserts on its next event.
   const confirmAfterReconnect = useCallback(async () => {
     if (parkedLiveRef.current.size === 0 && !generatingRef.current) return;
+    const connectionEpoch = connectionEpochRef.current;
     const working = await probeWorkingSessions();
+    if (connectionEpochRef.current !== connectionEpoch) return;
     if (!working) return; // can't confirm — leave everything, the watchdog still covers it
     for (const key of [...parkedLiveRef.current]) {
       if (!working.has(key)) parkedLiveRef.current.delete(key);
@@ -969,28 +1230,172 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [probeWorkingSessions]);
 
+  // Hydrate server asks from every live session that is waiting for input, but
+  // do not replay its transcript events into the visible chat. This is the
+  // background half of the owner model and is deliberately best-effort on
+  // older gateways without `session.active_list`.
+  const syncOpenRequests = useCallback(async (g: GatewayWs) => {
+    const connectionEpoch = connectionEpochRef.current;
+    const hydration = ++askHydrationRef.current;
+    try {
+      const ids = new Set<string>();
+    if (sessionIdRef.current) ids.add(sessionIdRef.current);
+    for (const entry of askInboxRef.current) {
+      if (
+        (entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent') &&
+        entry.owner.runtimeSessionId
+      ) {
+        ids.add(entry.owner.runtimeSessionId);
+      }
+    }
+    let activeListAvailable = false;
+    const unresolvedRows: Array<{ id: string; sessionKey: string }> = [];
+    try {
+      const active = await g.activeList(sessionIdRef.current ?? undefined);
+      activeListAvailable = true;
+      for (const row of active) {
+        if (!row.id) continue;
+        const currentStoredKey = latest.current.sessionKey;
+        const isCurrent =
+          row.id === sessionIdRef.current ||
+          (!!sessionIdRef.current && !!currentStoredKey && row.sessionKey === currentStoredKey);
+        if (row.status === 'waiting' || isCurrent) ids.add(row.id);
+        if (row.sessionKey) {
+          const hintedProfile = row.profile ? normalizeProfileName(row.profile) : '';
+          const profile = hintedProfile || (profilesRef.current.length === 1 ? normalizeProfileName(activeProfileRef.current) : '');
+          const owner: AskOwner = {
+            connectionId: latest.current.host,
+            profile: isCurrent ? normalizeProfileName(activeProfileRef.current) : profile,
+            storedSessionId: row.sessionKey,
+            runtimeSessionId: row.id,
+            resolved: Boolean(isCurrent || (profile && row.sessionKey)),
+          };
+          const existing = runtimeAskOwners.current.get(row.id);
+          if (!existing?.resolved) runtimeAskOwners.current.set(row.id, owner);
+          if (!isCurrent && !owner.resolved) unresolvedRows.push({ id: row.id, sessionKey: row.sessionKey });
+          const scopedOwner = owner.resolved ? profileSessionKey(owner.profile, row.sessionKey) : '';
+          if (isCurrent) {
+            runtimeOwners.current.set(row.id, profileSessionKey(activeProfileRef.current, row.sessionKey));
+            if (row.id !== sessionIdRef.current) {
+              // The gateway can remint a live runtime after a process restart.
+              // Adopt the new id only for the same durable room, then rebuild
+              // the foreground transcript from REST.
+              sessionIdRef.current = row.id;
+              setSessionId(row.id);
+              resyncRef.current();
+            }
+          } else if (scopedOwner && parkedLiveRef.current.has(scopedOwner)) runtimeOwners.current.set(row.id, scopedOwner);
+        }
+      }
+    } catch {
+      // Keep the known runtime owners when active_list is unavailable.
+    }
+    if (unresolvedRows.length > 0 && profilesRef.current.length > 0) {
+      for (const row of unresolvedRows) {
+        const matches: string[] = [];
+        for (const profile of profilesRef.current) {
+          try {
+            const rows = await g.listSessions(100, profile.name);
+            if (rows.some((item) => item.id === row.sessionKey)) matches.push(profile.name);
+          } catch {
+            // Try the next known profile; never guess from the stored id.
+          }
+        }
+        if (matches.length !== 1) continue;
+        const owner: AskOwner = {
+          connectionId: latest.current.host,
+          profile: matches[0],
+          storedSessionId: row.sessionKey,
+          runtimeSessionId: row.id,
+          resolved: true,
+        };
+        runtimeAskOwners.current.set(row.id, owner);
+        bindAskOwner(row.id, owner);
+      }
+    }
+      if (connectionEpochRef.current !== connectionEpoch) return;
+      if (!activeListAvailable) {
+        for (const runtime of runtimeOwners.current.keys()) ids.add(runtime);
+      }
+      if (ids.size > 0) await g.syncOpenRequests([...ids]);
+    } finally {
+      if (askHydrationRef.current === hydration) askHydrationRef.current = 0;
+      notificationDrainRef.current?.();
+    }
+  }, []);
+
   const openWs = useCallback(async (h: string): Promise<GatewayWs> => {
-    const ticket = await mintWsTicket(h, cookie.current);    // Events carry the runtime session id. Only the active profile's foreground
+    const connectionEpoch = connectionEpochRef.current;
+    const ticket = await mintWsTicket(h, cookie.current, (nextCookie) => {
+      cookie.current = nextCookie;
+      void saveCookie(nextCookie);
+    });    // Events carry the runtime session id. Only the active profile's foreground
     // runtime may touch the transcript. During a profile switch there is
     // intentionally no current runtime until session.create resolves, so every
     // session-scoped event is ignored during that gap.
     const isCurrentSession = (sid: string) =>
       !sid || (!!sessionIdRef.current && sid === sessionIdRef.current);
-    const ws = new GatewayWs({
+    let ws: GatewayWs;
+    ws = new GatewayWs({
       wsUrl: toWsUrl(h, ticket),
       refreshUrl: async () => {
-        const t = await mintWsTicket(h, cookie.current);
-        return toWsUrl(h, t);
+        try {
+          const t = await mintWsTicket(h, cookie.current, (nextCookie) => {
+            cookie.current = nextCookie;
+            void saveCookie(nextCookie);
+          });
+          return toWsUrl(h, t);
+        } catch (e: any) {
+          if (typeof e?.cookie === 'string' && e.cookie) {
+            cookie.current = e.cookie;
+            void saveCookie(e.cookie);
+          }
+          throw e;
+        }
       },
       // Replay missed events only for the session the app is showing.
       replaySessions: () => (sessionIdRef.current ? [sessionIdRef.current] : []),
       events: {
         onState: (s) => {
+          if (connectionEpochRef.current !== connectionEpoch) return;
           setConn(s);
-          if (s === 'ready') void confirmAfterReconnect();
+          if (s === 'auth-expired') {
+            connectionEpochRef.current += 1;
+            setAuthed(false);
+            setError('Gateway session expired — sign in again.');
+            dismissAskNotifications();
+            askInboxRef.current = [];
+            setAskInbox([]);
+            pendingNotificationResponsesRef.current = [];
+            askHydrationRef.current = 0;
+            handledNotificationResponsesRef.current.clear();
+            askRef.current = null;
+            setAsk(null);
+            sessionIdRef.current = null;
+            setSessionId(null);
+            setSessionKey(null);
+            setMessages([]);
+            setSessions([]);
+            setUsageInfo(null);
+            setSessionInfo(null);
+            setGenerating(false);
+            runtimeOwners.current.clear();
+            runtimeAskOwners.current.clear();
+            turnOwnerRef.current.clear();
+            parkedLiveRef.current.clear();
+            void clearCookie();
+            router.replace('/login');
+            return;
+          }
+          if (s === 'ready') {
+            void (async () => {
+              await syncOpenRequests(ws);
+              await confirmAfterReconnect();
+            })();
+          }
         },
         onToken: (sid, delta) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           const aid = liveAid.current;
           if (!aid || !delta) return;
           lastTurnEventAt.current = Date.now();
@@ -1001,7 +1406,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setStreamingTexts(next);
         },
         onReasoning: (sid, delta) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           let aid = liveThinkAid.current;
           if (!aid) {
             aid = nid();
@@ -1025,7 +1430,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setStreamingTexts(next);
         },
         onInterim: (sid, text) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           lastTurnEventAt.current = Date.now();
           // Interim status belongs ABOVE the streaming answer chronologically —
           // pin it before the pending bubble (same as thinking), else it lands
@@ -1039,7 +1444,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         },
         onTool: (sid, info) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           lastTurnEventAt.current = Date.now();
           if (info.phase === 'complete') {
             setToolLine(null);
@@ -1115,6 +1520,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         },
         onComplete: (sid, text) => {
+          if (connectionEpochRef.current !== connectionEpoch) return;
           // Background turn finished — drop its parked latch (the visible room is untouched).
           const owner = turnOwnerRef.current.get(sid);
           turnOwnerRef.current.delete(sid);
@@ -1125,7 +1531,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               profileSessionKey(latest.current.activeProfile, latest.current.sessionKey),
             );
           }
-          if (!isCurrentSession(sid)) return;
+          if (!isCurrentSession(sid)) {
+            if (notifyRef.current) {
+              void pushNotification('Hermes finished', 'Background turn complete');
+            }
+            return;
+          }
           const aid = liveAid.current;
           const thinkId = liveThinkAid.current;
           liveAid.current = null;
@@ -1201,15 +1612,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // Refresh the status strip's context/token numbers.
           usageRefreshRef.current();
           if (notifyRef.current) {
-            void pushNotification('Hermes finished', (text || '').trim().slice(0, 160) || 'Turn complete');
+            void pushNotification('Hermes finished', 'Turn complete');
           }
         },
         onNotice: (sid, text) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
         },
         onSessionInfo: (sid, info) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           setSessionInfo(info);
           if (info?.usage) setUsageInfo((prev: any) => mergeUsageState(prev, info.usage));
           if (contextPendingSidRef.current === sid && gw.current) {
@@ -1225,24 +1636,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         },
         onUsage: (sid, usage) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           setUsageInfo((prev: any) => mergeUsageState(prev, usage));
         },
         onTodo: (sid, payload) => {
-          if (!isCurrentSession(sid)) return;
+          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
           setTodos(normalizeTodos(payload));
         },
         onReplayTruncated: (sid) => {
+          if (connectionEpochRef.current !== connectionEpoch) return;
           // Only the session on screen shares our transcript state.
           if (sid === sessionIdRef.current) resyncRef.current();
         },
         onAsk: (a) => {
-          // A server ask carries the runtime session id; only the session on
-          // screen may raise an approval/clarify sheet (approving a background
-          // cron run's command from here would be a safety hazard).
-          if (a.sessionId && !isCurrentSession(a.sessionId)) return;
-          setAsk(a);
-          if (notifyRef.current) {
+          if (connectionEpochRef.current !== connectionEpoch) return;
+          const owner = resolveAskOwner(a.sessionId, a.params);
+          const result = applyAskInbox({
+            rpcId: a.rpcId,
+            method: a.method,
+            sessionId: a.sessionId,
+            params: a.params,
+            owner,
+            replayed: a.replayed === true,
+          });
+          const isCurrent = !a.sessionId || isCurrentSession(a.sessionId);
+          // Never hijack the visible room with a background request. Also do
+          // not resurrect a settled card from a late/replayed frame.
+          if (
+            isCurrent &&
+            (result.entry.status === 'pending' || result.entry.status === 'answering')
+          ) {
+            setAsk(a);
+          } else if (isCurrent && askRef.current?.rpcId === a.rpcId) {
+            setAsk(null);
+          }
+          if (notifyRef.current && result.added && !a.replayed) {
             const what =
               a.method === 'approval'
                 ? 'Command approval needed'
@@ -1255,18 +1683,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
                       : a.method.startsWith('vault.')
                         ? 'Vault unlock required'
                         : 'Hermes needs input';
-            void pushNotification('Hermes', what);
+            void pushNotification('Hermes', what, {
+              identifier: `hermes-ask-${result.entry.rpcId}`,
+              categoryIdentifier: askNotificationCategory(a.method),
+              data: {
+                kind: 'ask',
+                connectionId: result.entry.owner.connectionId,
+                askKey: result.entry.key,
+                rpcId: result.entry.rpcId,
+                method: result.entry.method,
+                runtimeSessionId: result.entry.owner.runtimeSessionId,
+                storedSessionId: result.entry.owner.storedSessionId,
+                profile: result.entry.owner.profile,
+              },
+            });
+          }
+          // A cold-start notification action can arrive before its open request
+          // has been rehydrated. Drain it after every ask delivery.
+          notificationDrainRef.current?.();
+        },
+        onAskCancel: (rpcId, info) => {
+          if (connectionEpochRef.current !== connectionEpoch) return;
+          markAskByRpc(rpcId, 'cancelled');
+          if (
+            askRef.current?.rpcId === rpcId &&
+            (!info?.sessionId || !askRef.current.sessionId || info.sessionId === askRef.current.sessionId)
+          ) {
+            setAsk(null);
           }
         },
-        onAskCancel: (rpcId) => {
-          setAsk((cur) =>
-            cur?.rpcId === rpcId && (!cur.sessionId || isCurrentSession(cur.sessionId)) ? null : cur,
-          );
+        onAskSnapshot: (sid, rpcIds, snapshotAt) => {
+          if (connectionEpochRef.current !== connectionEpoch) return;
+          const open = new Set(rpcIds);
+          const next = askInboxRef.current.map((entry) => {
+            const belongs = entry.owner.runtimeSessionId === sid || entry.sessionId === sid;
+            const wasPresentAtSnapshot = entry.receivedAt <= snapshotAt;
+            return (
+              belongs &&
+              wasPresentAtSnapshot &&
+              (entry.status === 'pending' ||
+                entry.status === 'answering' ||
+                entry.status === 'sent') &&
+              !open.has(entry.rpcId)
+            )
+              ? { ...entry, status: entry.status === 'sent' ? ('answered' as const) : ('cancelled' as const) }
+              : entry;
+          });
+          for (const before of askInboxRef.current) {
+            const after = next.find((entry) => entry.rpcId === before.rpcId && entry.owner.connectionId === before.owner.connectionId);
+            if (after && (after.status === 'cancelled' || after.status === 'stale') && before.status !== after.status) {
+              void dismissNotification(`hermes-ask-${before.rpcId}`);
+            }
+          }
+          askInboxRef.current = next;
+          setAskInbox(next);
+          if (askRef.current?.sessionId === sid && !open.has(askRef.current.rpcId)) setAsk(null);
         },
       },
     });
     return ws;
-  }, [hydrateSessionContext]);
+  }, [hydrateSessionContext, confirmAfterReconnect, syncOpenRequests, resolveAskOwner, applyAskInbox, markAskByRpc]);
 
   const refreshSessions = useCallback(async (limit?: number): Promise<ScopedSessionSummary[]> => {
     const g = gw.current;
@@ -1538,6 +2014,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(
     async (h: string, user: string, pw: string) => {
+      connectionEpochRef.current += 1;
+      if (latest.current.host && latest.current.host !== h.trim()) {
+        dismissAskNotifications();
+        handledNotificationResponsesRef.current.clear();
+        pendingNotificationResponsesRef.current = [];
+        askHydrationRef.current = 0;
+        notificationActionInFlightRef.current = false;
+        askInboxRef.current = [];
+        setAskInbox([]);
+        setAsk(null);
+        runtimeOwners.current.clear();
+        runtimeAskOwners.current.clear();
+        turnOwnerRef.current.clear();
+        parkedLiveRef.current.clear();
+      }
       setBusy(true);
       setError(null);
       try {
@@ -1625,7 +2116,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [host, username, password, connect]);
 
   const logout = useCallback(async () => {
+    connectionEpochRef.current += 1;
     gw.current?.close();
+    gw.current?.clearAskRecords();
     gw.current = null;
     cookie.current = '';
     liveThinkAid.current = null;
@@ -1635,6 +2128,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     parkedLiveRef.current.clear();
     turnOwnerRef.current.clear();
     runtimeOwners.current.clear();
+    runtimeAskOwners.current.clear();
     profileEpochRef.current += 1;
     sessionsFetchRef.current = null;
     sessionsFetchProfileRef.current = null;
@@ -1651,12 +2145,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUsageInfo(null);
     setGenerating(false);
     setAsk(null);
+    askRef.current = null;
+    dismissAskNotifications();
+    handledNotificationResponsesRef.current.clear();
+    askInboxRef.current = [];
+    setAskInbox([]);
+    pendingNotificationResponsesRef.current = [];
+    askHydrationRef.current = 0;
     setToolLine(null);
     setTodos([]);
     setSubagents([]);
     setProviders(null);
     queuedRef.current = [];
     setQueued([]);
+    queueParkedRef.current = false;
     setQueueParked(false);
     setAttachments([]);
     editRowRef.current = null;
@@ -1673,15 +2175,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError('Not connected — please login again');
       return;
     }
+    const connectionEpoch = connectionEpochRef.current;
     const profile = normalizeProfileName(s.profile ?? activeProfileRef.current);
     const epoch = profileEpochRef.current;
+    const openEpoch = ++sessionOpenEpochRef.current;
+    const isLatestOpen = () => openEpoch === sessionOpenEpochRef.current;
+    const isSameConnection = () => connectionEpochRef.current === connectionEpoch && gw.current === g;
+    const previousRuntimeId = sessionIdRef.current;
+    const previousSessionKey = latest.current.sessionKey;
+    const previousMessages = messagesRef.current;
+    const previousAsk = askRef.current;
+    const previousGenerating = generatingRef.current;
+    const previousLiveAid = liveAid.current;
+    const previousLiveThinkAid = liveThinkAid.current;
     if (activeProfileRef.current !== profile) return;
-    setOpeningId(s.id);
-    setError(null);
+    // The ask slot is foreground-only; pending requests remain in the inbox.
+    askRef.current = null;
+    setAsk(null);
     // Leaving a mid-turn session strands the latch: the old turn's onComplete
     // is filtered by isCurrentSession, so park it (restored on return) and
     // reset the local Stop/Send state. The server turn keeps running.
     parkLiveTurn();
+    // Fence the old runtime while resume/history is in flight. Otherwise a late
+    // event from the old room can mutate the room being opened.
+    sessionIdRef.current = null;
+    setSessionId(null);
+    setOpeningId(s.id);
+    setError(null);
     liveAid.current = null;
     liveThinkAid.current = null;
     liveTools.current.clear();
@@ -1699,7 +2219,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         omit_messages: false,
       });
       const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : s.id;
-      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       const resumeInfo =
         r?.info && typeof r.info === 'object' && !Array.isArray(r.info) ? r.info : null;
       // Resume carries the session's todo snapshot; restore the checklist.
@@ -1716,9 +2236,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         hist = [];
       }
       if (hist.length === 0) hist = await g.history(liveId);
-      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       const owner = profileSessionKey(profile, s.id);
       runtimeOwners.current.set(liveId, owner);
+      bindAskOwner(liveId, {
+        connectionId: latest.current.host,
+        profile,
+        storedSessionId: s.id,
+        runtimeSessionId: liveId,
+        resolved: true,
+      });
       setSessionKey(s.id);
       void saveLastSession(s.id, profile);
       sessionIdRef.current = liveId;
@@ -1726,6 +2253,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       draftKeyRef.current = owner;
       setInputRaw(draftsRef.current.get(owner) ?? '');
       setAttachments([]);
+      const pendingRoomAsk = askInboxRef.current.find(
+        (entry) =>
+          entry.owner.profile === profile &&
+          entry.owner.storedSessionId === s.id &&
+          (entry.status === 'pending' || entry.status === 'answering'),
+      );
+      if (pendingRoomAsk) setAsk(serverAskFromInbox(pendingRoomAsk));
       // A live resume already returns the authoritative runtime info. Applying
       // it here avoids depending on a later session.info broadcast, which can
       // race the REST transcript load while the previous runtime is still current.
@@ -1735,7 +2269,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void g
         .usage(liveId)
         .then((info) => {
-          if (sessionIdRef.current === liveId) setUsageInfo((prev: any) => mergeUsageState(prev, info));
+          if (isLatestOpen() && isSameConnection() && sessionIdRef.current === liveId) {
+            setUsageInfo((prev: any) => mergeUsageState(prev, info));
+          }
         })
         .catch(() => {});
       hydrateSessionContext(g, liveId);
@@ -1743,7 +2279,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // restore it as a thinking bubble above its answer, like the live view.
       const items = historyToItems(hist);
       clearStreaming();
-      if (parkedLiveRef.current.has(owner)) {
+      const resumedRunning =
+        r?.running === true ||
+        r?.status === 'working' ||
+        (r?.inflight != null && typeof r.inflight === 'object');
+      if (parkedLiveRef.current.has(owner) || resumedRunning) {
         // Back in a room whose turn is still live — re-anchor streaming to the
         // transcript tail and re-arm Stop.
         setMessages(reanchorLiveTurn(items));
@@ -1755,13 +2295,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       queuedRef.current = [];
       setQueued([]);
+      queueParkedRef.current = false;
       setQueueParked(false);
       editRowRef.current = null;
       setEditingRowId(null);
       setSubagents([]);
       router.push('/chat');
     } catch (e) {
-      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      sessionIdRef.current = previousRuntimeId;
+      setSessionId(previousRuntimeId);
+      if (previousSessionKey) setSessionKey(previousSessionKey);
+      messagesRef.current = previousMessages;
+      setMessages(previousMessages);
+      askRef.current = previousAsk;
+      setAsk(previousAsk);
+      generatingRef.current = previousGenerating;
+      setGenerating(previousGenerating);
+      liveAid.current = previousLiveAid;
+      liveThinkAid.current = previousLiveThinkAid;
       const msg = errMsg(e);
       if (/not.?found/i.test(msg)) {
         // Stale entry — the session is gone server-side (pruned/deleted).
@@ -1772,20 +2324,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError(msg);
       }
     } finally {
-      if (activeProfileRef.current === profile) setOpeningId(null);
+      if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile) setOpeningId(null);
     }
-  }, [host, hydrateSessionContext]);
+  }, [host, hydrateSessionContext, bindAskOwner]);
   openSessionRef.current = openSession;
 
   const newSession = useCallback(async () => {
     const g = gw.current;
     if (!g) return;
+    const connectionEpoch = connectionEpochRef.current;
     const profile = activeProfileRef.current;
     const epoch = profileEpochRef.current;
+    const openEpoch = ++sessionOpenEpochRef.current;
+    const isLatestOpen = () => openEpoch === sessionOpenEpochRef.current;
+    const isSameConnection = () => connectionEpochRef.current === connectionEpoch && gw.current === g;
+    const previousRuntimeId = sessionIdRef.current;
+    const previousSessionKey = latest.current.sessionKey;
+    const previousMessages = messagesRef.current;
+    const previousAsk = askRef.current;
+    const previousGenerating = generatingRef.current;
+    askRef.current = null;
+    setAsk(null);
     setBusy(true);
     setError(null);
     // Same stranded-latch guard as openSession (see above).
     parkLiveTurn();
+    sessionIdRef.current = null;
+    setSessionId(null);
     liveAid.current = null;
     liveThinkAid.current = null;
     setGenerating(false);
@@ -1801,9 +2366,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sid = String(result?.session_id ?? '');
       const storedSessionId = String(result?.stored_session_id ?? sid);
       if (!sid) throw new Error('Profile session creation returned no session id');
-      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       const owner = profileSessionKey(profile, storedSessionId || sid);
       runtimeOwners.current.set(sid, owner);
+      bindAskOwner(sid, {
+        connectionId: latest.current.host,
+        profile,
+        storedSessionId: storedSessionId || sid,
+        runtimeSessionId: sid,
+        resolved: true,
+      });
       setSessionKey(storedSessionId || sid);
       void saveLastSession(storedSessionId || sid, profile);
       sessionIdRef.current = sid;
@@ -1813,6 +2385,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clearStreaming();
       queuedRef.current = [];
       setQueued([]);
+      queueParkedRef.current = false;
       setQueueParked(false);
       editRowRef.current = null;
       setEditingRowId(null);
@@ -1827,15 +2400,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       liveToolAid.current = null;
       router.push('/chat');
     } catch (e) {
-      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+      if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+        sessionIdRef.current = previousRuntimeId;
+        setSessionId(previousRuntimeId);
+        if (previousSessionKey) setSessionKey(previousSessionKey);
+        messagesRef.current = previousMessages;
+        setMessages(previousMessages);
+        askRef.current = previousAsk;
+        setAsk(previousAsk);
+        generatingRef.current = previousGenerating;
+        setGenerating(previousGenerating);
         setError(errMsg(e));
       }
     } finally {
-      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+      if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile && profileEpochRef.current === epoch) {
         setBusy(false);
       }
     }
-  }, [model, modelProvider, effort]);
+  }, [model, modelProvider, effort, bindAskOwner]);
   newSessionRef.current = newSession;
 
   const switchProfile = useCallback(
@@ -1945,6 +2527,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const sid = sessionId;
     const profile = activeProfileRef.current;
     const epoch = profileEpochRef.current;
+    const connectionEpoch = connectionEpochRef.current;
     if (!g || !sid) return;
     // Branching abandons the live runtime — same stranded-latch guard as openSession.
     parkLiveTurn();
@@ -1957,7 +2540,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r: any = await g.branchSession(sid);
       const liveId = String(r?.session_id ?? '');
       if (!liveId) return;
-      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (connectionEpochRef.current !== connectionEpoch || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       const hist: HistoryMessage[] = (Array.isArray(r?.messages) ? r.messages : []).map((m: any) => ({
         role: String(m?.role ?? ''),
         content: String(m?.text ?? m?.content ?? ''),
@@ -1969,6 +2552,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const branchKey = String(r?.stored_session_id || liveId);
       const owner = profileSessionKey(profile, branchKey);
       runtimeOwners.current.set(liveId, owner);
+      bindAskOwner(liveId, {
+        connectionId: latest.current.host,
+        profile,
+        storedSessionId: branchKey,
+        runtimeSessionId: liveId,
+        resolved: true,
+      });
       setSessionKey(branchKey);
       void saveLastSession(branchKey, profile);
       sessionIdRef.current = liveId;
@@ -1990,7 +2580,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void g
         .usage(liveId)
         .then((info) => {
-          if (sessionIdRef.current === liveId) setUsageInfo((prev: any) => mergeUsageState(prev, info));
+          if (connectionEpochRef.current === connectionEpoch && sessionIdRef.current === liveId) {
+            setUsageInfo((prev: any) => mergeUsageState(prev, info));
+          }
         })
         .catch(() => {});
       hydrateSessionContext(g, liveId);
@@ -1998,7 +2590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setInputRaw(draftsRef.current.get(owner) ?? '');
       router.push('/chat');
     } catch (e: any) {
-      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+      if (connectionEpochRef.current === connectionEpoch && activeProfileRef.current === profile && profileEpochRef.current === epoch) {
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
       }
     }
@@ -2021,11 +2613,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sid = sessionId;
       const profile = activeProfile;
       const epoch = profileEpochRef.current;
+      const connectionEpoch = connectionEpochRef.current;
       if (!g || !sid) return;
       const submitOpts = rewindRowId != null ? { rewindRowId, ...(confirmEmptyTruncate ? { confirmEmptyTruncate: true } : {}) } : {};
-      const owner = profileSessionKey(profile, sessionKey ?? sid);
+      const roomKey = sessionKey ?? sid ?? '';
+      const owner = profileSessionKey(profile, roomKey);
+      const sameRoom = () => {
+        if (
+          connectionEpochRef.current !== connectionEpoch ||
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch
+        )
+          return false;
+        const currentRuntime = sessionIdRef.current;
+        if (!currentRuntime) return false;
+        return runtimeOwners.current.get(currentRuntime) === owner || latest.current.sessionKey === roomKey;
+      };
       turnOwnerRef.current.set(sid, owner);
       runtimeOwners.current.set(sid, owner);
+      bindAskOwner(sid, {
+        connectionId: latest.current.host,
+        profile,
+        storedSessionId: sessionKey ?? sid,
+        runtimeSessionId: sid,
+        resolved: true,
+      });
       // Rewind: the server cuts history at that user row, so drop the matching
       // local tail first (and re-echo the user line for regenerate, which passes
       // no explicit echo).
@@ -2067,10 +2679,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastTurnEventAt.current = Date.now();
       try {
         const status = await g.submit(sid, submitText, submitOpts);
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        if (!sameRoom()) return;
         if (status === 'queued') setToolLine('queued — will run after the live turn…');
       } catch (e: any) {
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        if (!sameRoom()) return;
         let msg = e?.message ?? String(e);
         let code = e?.code;
         // Live runtime expired server-side (orphan-reaped / evicted / idle TTL) —
@@ -2082,20 +2694,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
               session_id: sessionKey,
               omit_messages: false,
             });
-            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+            if (!sameRoom()) return;
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
             runtimeOwners.current.set(liveId, owner);
+            bindAskOwner(liveId, {
+              connectionId: latest.current.host,
+              profile,
+              storedSessionId: sessionKey,
+              runtimeSessionId: liveId,
+              resolved: true,
+            });
             sessionIdRef.current = liveId;
             setSessionId(liveId);
             turnOwnerRef.current.delete(sid);
             turnOwnerRef.current.set(liveId, owner);
             runtimeOwners.current.set(liveId, owner);
             const status = await g.submit(liveId, submitText, submitOpts);
-            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+            if (!sameRoom()) return;
             if (status === 'queued') setToolLine('queued — will run after the live turn…');
             return;
           } catch (e2: any) {
-            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+            if (!sameRoom()) return;
             msg = e2?.message ?? String(e2);
             code = e2?.code;
           }
@@ -2125,10 +2744,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sid = sessionId;
       const profile = activeProfile;
       const epoch = profileEpochRef.current;
+      const connectionEpoch = connectionEpochRef.current;
+      const roomKey = sessionKey ?? sid ?? '';
       const full = raw.trim();
       if (!g || !sid || generating || !full) return;
       const current = () =>
-        activeProfileRef.current === profile && profileEpochRef.current === epoch;
+        connectionEpochRef.current === connectionEpoch &&
+        activeProfileRef.current === profile &&
+        profileEpochRef.current === epoch &&
+        (sessionIdRef.current === sid ||
+          runtimeOwners.current.get(sessionIdRef.current ?? '') === profileSessionKey(profile, roomKey));
       setMessages((prev) => [...prev, { id: nid(), role: 'user', text: full }]);
       const show = (text: string) => {
         if (current()) setMessages((prev) => [...prev, { id: nid(), role: 'assistant', text }]);
@@ -2211,7 +2836,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setToolLine(null);
       if (d) await handle(d);
     },
-    [activeProfile, sessionId, generating, beginTurn, setInput],
+    [activeProfile, sessionId, sessionKey, generating, beginTurn, setInput],
   );
 
   // ── Prompt queue ─────────────────────────────────────────────────────────
@@ -2230,6 +2855,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (text: string) => {
       const t = text.trim();
       if (!t) return;
+      queueParkedRef.current = false;
       setQueueParked(false); // queueing lifts a park
       setQueue((prev) => [...prev, { id: nid(), text: t }]);
       // Idle (parked/unparked) → start immediately; mid-turn → waits for onComplete.
@@ -2240,14 +2866,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const removeQueued = useCallback((id: string) => setQueue((prev) => prev.filter((q) => q.id !== id)), [setQueue]);
   const clearQueue = useCallback(() => {
     setQueue(() => []);
+    queueParkedRef.current = false;
     setQueueParked(false);
   }, [setQueue]);
   const resumeQueue = useCallback(() => {
+    queueParkedRef.current = false;
     setQueueParked(false);
-    drainRef.current();
+    queueMicrotask(() => drainRef.current());
   }, []);
   const sendQueuedNow = useCallback(
     (id: string) => {
+      queueParkedRef.current = false;
       setQueueParked(false);
       if (generatingRef.current) {
         // Busy — move it to the front; the drain picks it up at turn end.
@@ -2267,11 +2896,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Fresh closure each render so the once-created onComplete handler always
   // drains against current queue/generating state.
   drainRef.current = () => {
-    if (queueParkedRef.current || generatingRef.current) return;
+    if (queueParkedRef.current || generatingRef.current || queueDrainInFlightRef.current) return;
     const next = queuedRef.current[0];
     if (!next) return;
-    setQueue((prev) => prev.filter((q) => q.id !== next.id));
-    void sendRef.current?.(next.text);
+    queueDrainInFlightRef.current = true;
+    let submitted = false;
+    void Promise.resolve(sendRef.current?.(next.text))
+      .then(() => {
+        submitted = true;
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (submitted) setQueue((prev) => prev.filter((q) => q.id !== next.id));
+        queueDrainInFlightRef.current = false;
+        if (submitted && !queueParkedRef.current && !generatingRef.current) drainRef.current();
+      });
   };
 
   // ── Edit / regenerate (rewind) ────────────────────────────────────────────
@@ -2470,10 +3109,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGenerating(false);
     setToolLine(null);
     setMessages((prev) => prev.map((m) => (m.pending ? { ...m, pending: false } : m)));
+    queueMicrotask(() => {
+      if (!queueParkedRef.current) drainRef.current();
+    });
   }, []);
 
   const stop = useCallback(() => {
     // An explicit halt parks the queue until the user queues again / taps Resume.
+    queueParkedRef.current = true;
     setQueueParked(true);
     const g = gw.current;
     const sid = sessionId;
@@ -2486,7 +3129,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
     g.interrupt(sid).catch(() => {
-      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+      if (
+        activeProfileRef.current === profile &&
+        profileEpochRef.current === epoch &&
+        sessionIdRef.current === sid
+      ) {
         releaseLocalTurn();
       }
     });
@@ -2499,10 +3146,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // liveAid stays, so a late message.complete still finalizes the transcript.
   useEffect(() => {
     if (!generating || !sessionId) return;
+    const watchedSessionId = sessionId;
+    const watchedSessionKey = sessionKey;
     const t = setInterval(() => {
       if (!generatingRef.current) return;
       if (Date.now() - lastTurnEventAt.current < 180000) return;
       void (async () => {
+        if (sessionIdRef.current !== watchedSessionId || latest.current.sessionKey !== watchedSessionKey) return;
         const working = await probeWorkingSessions();
         const sk = latest.current.sessionKey;
         const runtime = sessionIdRef.current;
@@ -2525,7 +3175,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })();
     }, 10000);
     return () => clearInterval(t);
-  }, [generating, sessionId, releaseLocalTurn, probeWorkingSessions]);
+  }, [generating, sessionId, sessionKey, releaseLocalTurn, probeWorkingSessions]);
   stopRef.current = stop;
 
   // ── Session details ────────────────────────────────────────────────────
@@ -2553,25 +3203,297 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Ask replies ──────────────────────────────────────────────────────────
 
+  const respondToInbox = useCallback(
+    (key: string, result: Record<string, unknown>) => {
+      const entry = findAsk(askInboxRef.current, key);
+      const g = gw.current;
+      if (!entry || !g || entry.owner.connectionId !== latest.current.host) return false;
+      if (entry.status !== 'pending' && entry.status !== 'answering') return false;
+      if (!g.replyToAsk(entry.rpcId, result)) return false;
+      markAskStatus(entry.key, 'sent');
+      // JSON-RPC has no positive acknowledgement. Give the gateway a moment
+      // to settle the request, then reconcile against open_requests.
+      if (entry.sessionId) {
+        setTimeout(() => {
+          if (gw.current === g) void g.syncOpenRequests([entry.sessionId as string]);
+        }, 500);
+      }
+      return true;
+    },
+    [markAskStatus],
+  );
+
+  const answerInboxValue = useCallback(
+    (key: string, value: string) => respondToInbox(key, { value }),
+    [respondToInbox],
+  );
+
+  const answerInboxApproval = useCallback(
+    (key: string, choice: string) => respondToInbox(key, { choice }),
+    [respondToInbox],
+  );
+
+  const openAskEntry = useCallback(async (entry: AskInboxEntry) => {
+    if (!entry) return;
+    if (entry.status === 'sent') {
+      setError('This response was sent but not confirmed yet. Reconnect or refresh Ask Inbox.');
+      return;
+    }
+    if (entry.status !== 'pending' && entry.status !== 'answering') return;
+    if (!entry.owner.resolved || !entry.owner.storedSessionId) {
+      setError('This background request has no resolved profile yet. Open its session to answer it safely.');
+      router.push('/asks');
+      return;
+    }
+    if (entry.owner.profile !== activeProfileRef.current) {
+      setError(`Switch to profile “${entry.owner.profile}” before answering this request.`);
+      return;
+    }
+    try {
+      await openSessionRef.current({
+        id: entry.owner.storedSessionId,
+        title: '',
+        preview: '',
+        messageCount: 0,
+        source: 'ask-inbox',
+        startedAt: Date.now() / 1000,
+        profile: entry.owner.profile,
+      });
+      // openSession may have restored a fresh runtime id; show the same
+      // pending request only after the target room is actually active.
+      const activeOwner = sessionIdRef.current
+        ? parseProfileSessionKey(runtimeOwners.current.get(sessionIdRef.current) ?? '')
+        : null;
+      if (
+        activeOwner?.profile !== entry.owner.profile ||
+        activeOwner?.storedSessionId !== entry.owner.storedSessionId
+      ) {
+        setError('Could not open the owning session; the request remains in Ask Inbox.');
+        return;
+      }
+      const refreshed = findAskByRpc(askInboxRef.current, latest.current.host, entry.rpcId) ?? entry;
+      setAsk(serverAskFromInbox(refreshed));
+      router.push('/chat');
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }, []);
+
+  const answerAsk = useCallback(
+    (result: Record<string, unknown>) => {
+      const current = askRef.current;
+      if (!current || !gw.current) return false;
+      const entry = askInboxRef.current.find(
+        (item) => item.owner.connectionId === latest.current.host && item.rpcId === current.rpcId,
+      );
+      return entry ? respondToInbox(entry.key, result) : false;
+    },
+    [respondToInbox],
+  );
+
   const answerValue = useCallback(
     (value: string) => {
-      if (!ask || !gw.current) return;
-      gw.current.replyToAsk(ask.rpcId, { value });
-      setAsk(null);
+      answerAsk({ value });
     },
-    [ask],
+    [answerAsk],
   );
 
   const answerApproval = useCallback(
-    (choice: string) => {
-      if (!ask || !gw.current) return;
-      gw.current.replyToAsk(ask.rpcId, { choice });
-      setAsk(null);
-    },
-    [ask],
+    (choice: string) => answerAsk({ choice }),
+    [answerAsk],
   );
 
   const dismissAsk = useCallback(() => setAsk(null), []);
+
+  const confirmSensitiveNotification = useCallback(async (): Promise<boolean> => {
+    try {
+      const [hasHardware, enrolled] = await Promise.all([
+        LocalAuth.hasHardwareAsync(),
+        LocalAuth.isEnrolledAsync(),
+      ]);
+      if (!hasHardware || !enrolled) return false;
+      const result = await LocalAuth.authenticateAsync({ promptMessage: 'Confirm Hermes request' });
+      return result.success === true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const handleNotificationResponse = useCallback(
+    (response: HermesNotificationResponse) => {
+      const data = response.data;
+      const responseKey = notificationResponseKey(response);
+      if (handledNotificationResponsesRef.current.has(responseKey)) return;
+      if (
+        typeof data.connectionId === 'string' &&
+        latest.current.host &&
+        data.connectionId !== latest.current.host
+      ) {
+        return;
+      }
+      if (!latest.current.host || !gw.current || askHydrationRef.current > 0) {
+        queueNotificationResponse(response);
+        return;
+      }
+      const key = typeof data.askKey === 'string' ? data.askKey : '';
+      const rpcId = typeof data.rpcId === 'string' ? data.rpcId : '';
+      const entry =
+        (key ? findAsk(askInboxRef.current, key) : undefined) ??
+        (rpcId ? findAskByRpc(askInboxRef.current, latest.current.host, rpcId) : undefined);
+      if (!entry) {
+        if (!key && !rpcId) {
+          if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) {
+            handledNotificationResponsesRef.current.add(responseKey);
+            router.push('/chat');
+          }
+          return;
+        }
+        queueNotificationResponse(response);
+        router.push('/asks');
+        return;
+      }
+
+      if (response.actionIdentifier === NOTIFICATION_ASK_APPROVE) {
+        const choices = Array.isArray(entry.params.choices) ? entry.params.choices.map(String) : [];
+        if (!choices.includes('once')) {
+          handledNotificationResponsesRef.current.add(responseKey);
+          void openAskEntry(entry);
+          return;
+        }
+        if (notificationActionInFlightRef.current) return;
+        notificationActionInFlightRef.current = true;
+        void (async () => {
+          try {
+            if (!(await confirmSensitiveNotification())) {
+              handledNotificationResponsesRef.current.add(responseKey);
+              router.push('/asks');
+              return;
+            }
+            const current = findAskByRpc(askInboxRef.current, latest.current.host, entry.rpcId);
+            if (!current) {
+              queueNotificationResponse(response);
+              return;
+            }
+            if (answerInboxApproval(current.key, 'once')) {
+              handledNotificationResponsesRef.current.add(responseKey);
+            } else {
+              queueNotificationResponse(response);
+              router.push('/asks');
+            }
+          } finally {
+            notificationActionInFlightRef.current = false;
+            const queued = pendingNotificationResponsesRef.current.find(
+              (item) => notificationResponseKey(item) === responseKey,
+            );
+            if (handledNotificationResponsesRef.current.has(responseKey)) {
+              if (queued) clearQueuedNotificationResponse(queued);
+            } else if (pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)) {
+              notificationDrainRef.current?.();
+            }
+          }
+        })();
+        return;
+      }
+
+      if (response.actionIdentifier === NOTIFICATION_ASK_REJECT) {
+        const choices = Array.isArray(entry.params.choices) ? entry.params.choices.map(String) : [];
+        if (choices.length > 0 && !choices.includes('deny')) {
+          handledNotificationResponsesRef.current.add(responseKey);
+          void openAskEntry(entry);
+          return;
+        }
+        if (notificationActionInFlightRef.current) return;
+        notificationActionInFlightRef.current = true;
+        void (async () => {
+          try {
+            if (!(await confirmSensitiveNotification())) {
+              handledNotificationResponsesRef.current.add(responseKey);
+              router.push('/asks');
+              return;
+            }
+            const current = findAskByRpc(askInboxRef.current, latest.current.host, entry.rpcId);
+            if (!current) {
+              queueNotificationResponse(response);
+              return;
+            }
+            if (answerInboxApproval(current.key, 'deny')) {
+              handledNotificationResponsesRef.current.add(responseKey);
+            } else {
+              queueNotificationResponse(response);
+              router.push('/asks');
+            }
+          } finally {
+            notificationActionInFlightRef.current = false;
+            const queued = pendingNotificationResponsesRef.current.find(
+              (item) => notificationResponseKey(item) === responseKey,
+            );
+            if (handledNotificationResponsesRef.current.has(responseKey)) {
+              if (queued) clearQueuedNotificationResponse(queued);
+            } else if (pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)) {
+              notificationDrainRef.current?.();
+            }
+          }
+        })();
+        return;
+      }
+
+      if (response.actionIdentifier === NOTIFICATION_ASK_ANSWER) {
+        const text = String(response.userText ?? '').trim();
+        if (!text) {
+          handledNotificationResponsesRef.current.add(responseKey);
+          void openAskEntry(entry);
+          return;
+        }
+        if (entry.method === 'clarify') {
+          if (Array.isArray(entry.params.questions) && entry.params.questions.length > 0) {
+            handledNotificationResponsesRef.current.add(responseKey);
+            void openAskEntry(entry);
+            return;
+          }
+          if (respondToInbox(entry.key, { answer: text })) {
+            handledNotificationResponsesRef.current.add(responseKey);
+          } else {
+            queueNotificationResponse(response);
+            router.push('/asks');
+          }
+        } else if (answerInboxValue(entry.key, text)) {
+          handledNotificationResponsesRef.current.add(responseKey);
+        } else {
+          queueNotificationResponse(response);
+          router.push('/asks');
+        }
+        return;
+      }
+
+      if (response.actionIdentifier === NOTIFICATION_ASK_OPEN) {
+        handledNotificationResponsesRef.current.add(responseKey);
+        void openAskEntry(entry);
+        return;
+      }
+      if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) {
+        handledNotificationResponsesRef.current.add(responseKey);
+        router.push('/asks');
+      }
+    },
+    [answerInboxApproval, answerInboxValue, confirmSensitiveNotification, openAskEntry, respondToInbox],
+  );
+
+  const drainPendingNotificationResponse = useCallback(() => {
+    if (notificationActionInFlightRef.current) return;
+    const pending = pendingNotificationResponsesRef.current[0];
+    if (!pending) return;
+    pendingNotificationResponsesRef.current = pendingNotificationResponsesRef.current.slice(1);
+    void handleNotificationResponse(pending);
+  }, [handleNotificationResponse]);
+  notificationDrainRef.current = drainPendingNotificationResponse;
+  useEffect(() => {
+    drainPendingNotificationResponse();
+    return () => {
+      if (notificationDrainRef.current === drainPendingNotificationResponse) {
+        notificationDrainRef.current = null;
+      }
+    };
+  }, [drainPendingNotificationResponse]);
 
   // ── Session management / steering / model defaults ─────────────────────
 
@@ -2600,6 +3522,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const g = gw.current;
       const profile = activeProfileRef.current;
       const epoch = profileEpochRef.current;
+      const connectionEpoch = connectionEpochRef.current;
       if (!g) return;
       try {
         await g.deleteSession(storedId, profile);
@@ -2616,6 +3539,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
       const ownerKey = profileSessionKey(profile, storedId);
+      const nextAskInbox = askInboxRef.current.map((entry) =>
+        entry.owner.profile === profile && entry.owner.storedSessionId === storedId
+          ? { ...entry, status: 'stale' as const }
+          : entry,
+      );
+      askInboxRef.current = nextAskInbox;
+      setAskInbox(nextAskInbox);
       setSessions((prev) => prev.filter((s) => s.id !== storedId));
       draftsRef.current.delete(ownerKey);
       parkedLiveRef.current.delete(ownerKey);
@@ -2624,6 +3554,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       for (const [runtime, owner] of runtimeOwners.current) {
         if (owner === ownerKey) runtimeOwners.current.delete(runtime);
+      }
+      for (const [runtime, owner] of runtimeAskOwners.current) {
+        if (owner.storedSessionId === storedId) runtimeAskOwners.current.delete(runtime);
       }
       if (sessionKey === storedId) {
         setSessionKey(null);
@@ -2660,10 +3593,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await g.closeSession(sessionId);
     const owner = runtimeOwners.current.get(sessionId);
     runtimeOwners.current.delete(sessionId);
+    runtimeAskOwners.current.delete(sessionId);
     if (owner) {
       parkedLiveRef.current.delete(owner);
       turnOwnerRef.current.delete(sessionId);
+      const parsed = parseProfileSessionKey(owner);
+      if (parsed) {
+        const nextAskInbox = askInboxRef.current.map((entry) =>
+          entry.owner.profile === parsed.profile && entry.owner.storedSessionId === parsed.storedSessionId
+            ? { ...entry, status: 'stale' as const }
+            : entry,
+        );
+        askInboxRef.current = nextAskInbox;
+        setAskInbox(nextAskInbox);
+      }
     }
+    setAsk(null);
   }, [sessionId]);
 
   const redirectLive = useCallback(
@@ -2672,11 +3617,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const t = text.trim();
       const profile = activeProfileRef.current;
       const epoch = profileEpochRef.current;
-      if (!g || !sessionId || !t) return;
+      const connectionEpoch = connectionEpochRef.current;
+      const sid = sessionId;
+      if (!g || !sid || !t) return;
+      const sameRoom = () =>
+        connectionEpochRef.current === connectionEpoch &&
+        activeProfileRef.current === profile &&
+        profileEpochRef.current === epoch &&
+        (sessionIdRef.current === sid ||
+          runtimeOwners.current.get(sessionIdRef.current ?? '') === profileSessionKey(profile, sessionKey ?? sid));
       setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `↪ steer: ${t.slice(0, 120)}` }]);
       try {
-        const r: any = await g.redirect(sessionId, t);
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        const r: any = await g.redirect(sid, t);
+        if (!sameRoom()) return;
         // The turn was already past its steerable point, so the server keeps
         // the text as the next user turn instead of dropping it.
         if (r?.status === 'queued') {
@@ -2686,7 +3639,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ]);
         }
       } catch (e: any) {
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        if (!sameRoom()) return;
         const msg = e?.message ?? String(e);
         // Live runtime expired server-side — same recovery as send().
         if ((e?.code === 4001 || /not.?found/i.test(msg)) && sessionKey) {
@@ -2696,15 +3649,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
               session_id: sessionKey,
               omit_messages: false,
             });
-            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+            if (!sameRoom()) return;
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
             runtimeOwners.current.set(liveId, profileSessionKey(profile, sessionKey));
+            bindAskOwner(liveId, {
+              connectionId: latest.current.host,
+              profile,
+              storedSessionId: sessionKey,
+              runtimeSessionId: liveId,
+              resolved: true,
+            });
             sessionIdRef.current = liveId;
             setSessionId(liveId);
             await g.redirect(liveId, t);
             return;
           } catch (e2) {
-            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+            if (!sameRoom()) return;
             setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Steer failed: ${errMsg(e2)}` }]);
             return;
           }
@@ -2773,6 +3733,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : recentId;
         const owner = profileSessionKey(profile, recentId);
         runtimeOwners.current.set(liveId, owner);
+        bindAskOwner(liveId, {
+          connectionId: latest.current.host,
+          profile,
+          storedSessionId: recentId,
+          runtimeSessionId: liveId,
+          resolved: true,
+        });
         parkLiveTurn();
         liveAid.current = null;
         liveThinkAid.current = null;
@@ -2814,9 +3781,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       provider: modelProvider,
       effort,
       queued: queued.length,
+      pendingAsks: pendingAsks(askInbox).length,
       ws: gw.current?.wsDebug() ?? null,
     }),
-    [conn, host, activeProfile, profiles, sessionId, sessionKey, model, modelProvider, effort, queued.length],
+    [conn, host, activeProfile, profiles, sessionId, sessionKey, model, modelProvider, effort, queued.length, askInbox],
   );
   const getCookie = useCallback(() => cookie.current, []);
 
@@ -2874,6 +3842,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     usageLoading,
     toolLine,
     ask,
+    askInbox,
+    pendingAskCount: pendingAsks(askInbox).length,
+    openAskEntry,
+    answerInboxValue,
+    answerInboxApproval,
     connect,
     login,
     logout,
@@ -2911,6 +3884,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     copyText,
     answerValue,
     answerApproval,
+    answerAsk,
     dismissAsk,
     theme,
     themeMode,
@@ -2929,7 +3903,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     getCookie,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [booting, authed, busy, error, host, username, password, conn, activeProfile, profiles, refreshProfiles, switchProfile, sessions, openingId, sessionId, sessionKey, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, connect, login, logout, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, dismissAsk, theme, themeMode, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
+    [booting, authed, busy, error, host, username, password, conn, activeProfile, profiles, refreshProfiles, switchProfile, sessions, openingId, sessionId, sessionKey, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, askInbox, openAskEntry, answerInboxValue, answerInboxApproval, connect, login, logout, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, answerAsk, dismissAsk, theme, themeMode, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

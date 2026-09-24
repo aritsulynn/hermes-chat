@@ -113,6 +113,14 @@ export interface ServerAsk {
   method: string; // e.g. "clarify", "approval", "sudo", "secret", "vault.unlock_prompt"
   sessionId?: string;
   params: Record<string, any>;
+  /** True when restored from `open_requests` after a reconnect. */
+  replayed?: boolean;
+}
+
+export interface AskCancelInfo {
+  method?: string;
+  reason?: string;
+  sessionId?: string;
 }
 
 export interface GatewayEvents {
@@ -132,7 +140,9 @@ export interface GatewayEvents {
    *  should reload the transcript instead of trusting the partial replay. */
   onReplayTruncated?: (sessionId: string) => void;
   onAsk?: (ask: ServerAsk) => void;
-  onAskCancel?: (rpcId: string) => void;
+  onAskCancel?: (rpcId: string, info?: AskCancelInfo) => void;
+  /** Snapshot of open requests for a session, including an empty list. */
+  onAskSnapshot?: (sessionId: string, rpcIds: string[], snapshotAt: number) => void;
   onEvent?: (type: string, params: any) => void;
 }
 
@@ -160,6 +170,14 @@ export interface WsDebug {
 const PING_MS = 15000;
 
 let nextId = 1;
+const SUPPORTED_SERVER_ASK_METHODS = new Set([
+  'clarify',
+  'approval',
+  'sudo',
+  'secret',
+  'vault.unlock_prompt',
+  'vault.code',
+]);
 
 export class GatewayWs {
   private ws: WebSocket | null = null;
@@ -169,20 +187,27 @@ export class GatewayWs {
   private replaySessions?: () => string[];
   private heartbeatMs: number;
   private maxBackoffMs: number;
-  private pending = new Map<number | string, { ok: (r: any) => void; fail: (e: RpcError) => void; timer: ReturnType<typeof setTimeout> }>();
+  private pending = new Map<number | string, { ok: (r: any) => void; fail: (e: RpcError) => void; timer: ReturnType<typeof setTimeout>; generation: number }>();
   private state: ConnState = 'idle';
   private closed = false;
   private backoff = 1000;
   private pingTimer: any = null;
   private reconnectTimer: any = null;
+  private reconnectScheduled = false;
   private readyResolve: ((v: boolean) => void) | null = null;
   private dbg: WsDebug = { opens: 0, errors: 0, closes: [], lastEvent: null };
   // Reconnect replay: highest seq seen per session, the backend's process epoch,
   // and the live-frame hold used while a replay fetch is in flight.
   private lastSeq = new Map<string, number>();
   private replayEpoch: string | null = null;
+  private replayGeneration = 0;
   private replaying = false;
+  private replayOverflow = false;
   private replayHold: Array<{ type: string; params: any }> | null = null;
+  // Server requests are one-shot. Keep their responder state across socket
+  // generations so a reconnect replay cannot create a second wire response.
+  private socketGeneration = 0;
+  private askRecords = new Map<string, { generation: number; sent: boolean; cancelled: boolean }>();
   // Token coalescing — deltas arrive ~30Hz; flushing per frame = setState storm.
   // Buffer per session and flush at most every 50ms (or on turn end).
   private tokenBuf = new Map<string, string>();
@@ -229,12 +254,16 @@ export class GatewayWs {
 
   close() {
     this.closed = true;
-    this.flushBuffers();
+    // Closing a connection invalidates buffered deltas; never flush them into
+    // the next account/session after logout or a reconnect.
+    this.tokenBuf.clear();
+    this.reasoningBuf.clear();
     this.clearTimers();
     try {
       (this.ws as any)?.close?.();
     } catch {}
     this.ws = null;
+    this.askRecords.clear();
     this.failAllPending({ code: -32000, message: 'client closed' });
     // Unblock a connect() that is still waiting for gateway.ready.
     this.readyResolve?.(false);
@@ -249,10 +278,20 @@ export class GatewayWs {
     this.pingTimer = null;
     this.reconnectTimer = null;
     this.flushTimer = null;
+    this.reconnectScheduled = false;
   }
 
   private dial() {
     if (this.closed) return;
+    this.reconnectScheduled = false;
+    const generation = ++this.socketGeneration;
+    this.failPendingForGeneration(generation - 1, { code: -32000, message: 'socket generation replaced' });
+    this.replayGeneration = generation;
+    this.replaying = false;
+    this.replayOverflow = false;
+    this.replayHold = null;
+    this.tokenBuf.clear();
+    this.reasoningBuf.clear();
     this.setState(this.backoff > 1000 ? 'reconnecting' : 'connecting');
     let ws: WebSocket;
     try {
@@ -260,13 +299,16 @@ export class GatewayWs {
     } catch {
       return this.scheduleReconnect();
     }
-    // Never orphan the prior socket — close it before replacing.
-    try {
-      (this.ws as any)?.close?.();
-    } catch {}
+    // Swap ownership before closing the prior socket so its late callbacks
+    // cannot clear timers or schedule a second reconnect.
+    const previous = this.ws;
     this.ws = ws;
+    try {
+      (previous as any)?.close?.();
+    } catch {}
 
     ws.onopen = () => {
+      if (this.ws !== ws || this.closed) return;
       this.backoff = 1000;
       this.dbg.opens++;
       this.startHeartbeat();
@@ -276,6 +318,7 @@ export class GatewayWs {
     };
 
     ws.onmessage = (ev: any) => {
+      if (this.ws !== ws || generation !== this.socketGeneration) return;
       let msg: any;
       try {
         msg = JSON.parse(String(ev.data));
@@ -286,11 +329,13 @@ export class GatewayWs {
     };
 
     ws.onerror = () => {
+      if (this.ws !== ws || generation !== this.socketGeneration) return;
       // onclose follows with the real outcome; count it for diagnostics.
       this.dbg.errors++;
     };
 
     ws.onclose = (ev: any) => {
+      if (this.ws !== ws || generation !== this.socketGeneration) return;
       this.clearTimers();
       this.dbg.closes.push({ code: typeof ev?.code === 'number' ? ev.code : undefined, reason: ev?.reason ? String(ev.reason) : undefined });
       if (this.dbg.closes.length > 5) this.dbg.closes.shift();
@@ -308,7 +353,8 @@ export class GatewayWs {
   }
 
   private async scheduleReconnect() {
-    if (this.closed) return;
+    if (this.closed || this.reconnectScheduled) return;
+    this.reconnectScheduled = true;
     this.setState('reconnecting');
     if (this.refreshUrl) {
       try {
@@ -319,10 +365,17 @@ export class GatewayWs {
         // surfaces as auth-expired when the app re-logs-in.
       }
     }
-    if (this.closed) return;
+    if (this.closed) {
+      this.reconnectScheduled = false;
+      return;
+    }
     const wait = Math.min(this.backoff, this.maxBackoffMs);
     this.backoff = Math.min(this.backoff * 2, this.maxBackoffMs);
-    this.reconnectTimer = setTimeout(() => this.dial(), wait);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnectScheduled = false;
+      this.dial();
+    }, wait);
   }
 
   private startHeartbeat() {
@@ -348,6 +401,17 @@ export class GatewayWs {
     this.pending.clear();
   }
 
+  private failPendingForGeneration(generation: number, err: RpcError) {
+    for (const [id, p] of [...this.pending.entries()]) {
+      if (p.generation !== generation) continue;
+      this.pending.delete(id);
+      try {
+        clearTimeout(p.timer);
+        p.fail(err);
+      } catch {}
+    }
+  }
+
   // ── RPC ────────────────────────────────────────────────────────────────
 
   call(method: string, params: Record<string, any> = {}, timeoutMs = 120000): Promise<any> {
@@ -369,6 +433,10 @@ export class GatewayWs {
       this.pending.set(id, {
         ok: (r) => {
           clearTimeout(timer);
+          // session.resume / session.events.since return unanswered server
+          // requests in `open_requests`; re-deliver them over this socket
+          // before resolving the caller (same contract as the shared channel).
+          this.deliverOpenRequests(r);
           resolve(r);
         },
         fail: (e) => {
@@ -376,6 +444,7 @@ export class GatewayWs {
           reject(e);
         },
         timer,
+        generation: this.socketGeneration,
       });
       try {
         this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
@@ -390,11 +459,106 @@ export class GatewayWs {
     });
   }
 
-  /** Reply to a server→client ask (id "srq-..."). */
-  replyToAsk(rpcId: string, result: Record<string, any>) {
+  /** Reply once to a server→client ask (id "srq-..."). */
+  replyToAsk(rpcId: string, result: Record<string, any>): boolean {
+    const record = this.askRecords.get(rpcId);
+    if (!record || record.sent || record.cancelled || record.generation !== this.socketGeneration) return false;
+    const ws = this.ws;
+    if (!ws || (ws as any).readyState !== 1) return false;
     try {
-      this.ws?.send(JSON.stringify({ jsonrpc: '2.0', id: rpcId, result }));
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id: rpcId, result }));
+      record.sent = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Forget all request responder state when the app logs out. */
+  clearAskRecords(): void {
+    this.askRecords.clear();
+  }
+
+  /**
+   * Hydrate unanswered asks without replaying transcript events. This is
+   * intentionally separate from `replaySessions`: background sessions must
+   * contribute pending requests to the inbox, not tokens/tools to the visible
+   * transcript.
+   */
+  async syncOpenRequests(sessionIds: string[]): Promise<void> {
+    const seen = new Set<string>();
+    for (const sid of sessionIds) {
+      const id = String(sid ?? '').trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const snapshotAt = Date.now();
+      try {
+        // `call` delivers open_requests from the response. This path does not
+        // dispatch the returned events, so it may use a zero watermark safely.
+        const result = await this.call(
+          'session.events.since',
+          { session_id: id, last_seen: this.lastSeq.get(id) ?? 0 },
+          20000,
+        );
+        if (Array.isArray(result?.open_requests)) {
+          this.events.onAskSnapshot?.(
+            id,
+            result.open_requests
+              .map((request: any) => String(request?.id ?? ''))
+              .filter((rpcId: string) => Boolean(rpcId)),
+            snapshotAt,
+          );
+        }
+      } catch {
+        // Older gateways or a just-closed session simply have nothing to add.
+      }
+    }
+  }
+
+  private failUnsupportedAsk(ask: ServerAsk): void {
+    try {
+      this.ws?.send(JSON.stringify({
+        jsonrpc: '2.0',
+        id: ask.rpcId,
+        error: { code: -32601, message: `unsupported server request: ${ask.method}` },
+      }));
     } catch {}
+  }
+
+  private registerAsk(ask: ServerAsk, replayed: boolean): boolean {
+    if (!SUPPORTED_SERVER_ASK_METHODS.has(ask.method)) {
+      this.failUnsupportedAsk(ask);
+      return false;
+    }
+    const previous = this.askRecords.get(ask.rpcId);
+    if (previous?.cancelled) return false;
+    if (previous?.sent && !replayed) return false;
+    this.askRecords.set(ask.rpcId, {
+      generation: this.socketGeneration,
+      sent: false,
+      cancelled: false,
+    });
+    this.events.onAsk?.({ ...ask, replayed });
+    return true;
+  }
+
+  private deliverOpenRequests(result: any): void {
+    const rows = Array.isArray(result?.open_requests) ? result.open_requests : [];
+    for (const req of rows) {
+      const id = String(req?.id ?? '');
+      const method = String(req?.method ?? '');
+      if (!id || !method) continue;
+      const params = (req?.params ?? {}) as Record<string, any>;
+      this.registerAsk(
+        {
+          rpcId: id,
+          method,
+          sessionId: typeof params?.session_id === 'string' ? params.session_id : undefined,
+          params,
+        },
+        true,
+      );
+    }
   }
 
   // ── Session methods (thin wrappers; result shapes per methods_session.py) ─
@@ -676,7 +840,7 @@ export class GatewayWs {
    */
   activeList(
     currentSessionId?: string,
-  ): Promise<Array<{ id: string; sessionKey: string; status: string }>> {
+  ): Promise<Array<{ id: string; sessionKey: string; status: string; profile?: string }>> {
     return this.call(
       'session.active_list',
       currentSessionId ? { current_session_id: currentSessionId } : {},
@@ -687,6 +851,11 @@ export class GatewayWs {
         id: String(s?.id ?? ''),
         sessionKey: String(s?.session_key ?? ''),
         status: String(s?.status ?? ''),
+        ...(typeof s?.profile === 'string' && s.profile
+          ? { profile: s.profile }
+          : typeof s?.profile_name === 'string' && s.profile_name
+            ? { profile: s.profile_name }
+            : {}),
       }));
     });
   }
@@ -713,6 +882,7 @@ export class GatewayWs {
       if (p) {
         this.pending.delete(msg.id);
         clearTimeout(p.timer);
+        if (p.generation !== this.socketGeneration) return;
         if (msg.error) p.fail(msg.error as RpcError);
         else p.ok(msg.result);
       }
@@ -720,12 +890,15 @@ export class GatewayWs {
     }
     // 2. Server→client ask (has BOTH id "srq-*" and method) — must be answered.
     if (msg?.id !== undefined && typeof msg?.method === 'string' && String(msg.id).startsWith('srq-')) {
-      this.events.onAsk?.({
-        rpcId: String(msg.id),
-        method: String(msg.method),
-        sessionId: msg?.params?.session_id,
-        params: (msg?.params ?? {}) as Record<string, any>,
-      });
+      this.registerAsk(
+        {
+          rpcId: String(msg.id),
+          method: String(msg.method),
+          sessionId: msg?.params?.session_id,
+          params: (msg?.params ?? {}) as Record<string, any>,
+        },
+        false,
+      );
       return;
     }
     // 3. Plain event notification.
@@ -750,12 +923,19 @@ export class GatewayWs {
    * replaying another would corrupt its transcript.
    */
   private async replayMissed(): Promise<void> {
-    if (this.replaying) return;
-    const named = this.replaySessions?.() ?? [];
-    const targets = named.filter((s) => !!s && this.lastSeq.has(s));
+    const generation = this.socketGeneration;
+    if (this.replaying && this.replayGeneration === generation) return;
+    const named = (this.replaySessions?.() ?? []).filter((s) => !!s);
+    const targets = named.filter((s) => this.lastSeq.has(s));
+    for (const sid of named) {
+      if (!targets.includes(sid)) this.events.onReplayTruncated?.(sid);
+    }
     if (targets.length === 0) return;
     this.replaying = true;
+    this.replayGeneration = generation;
+    this.replayOverflow = false;
     this.replayHold = [];
+    let replayFailed = false;
     try {
       for (const sid of targets) {
         const lastSeen = this.lastSeq.get(sid) ?? 0;
@@ -763,7 +943,8 @@ export class GatewayWs {
         try {
           r = await this.call('session.events.since', { session_id: sid, last_seen: lastSeen }, 20000);
         } catch {
-          continue;
+          replayFailed = true;
+          break;
         }
         const events = Array.isArray(r?.events) ? r.events : [];
         for (const ev of events) {
@@ -777,28 +958,23 @@ export class GatewayWs {
           }
           this.dispatch(t, evSid, (ev?.payload ?? {}) as Record<string, any>);
         }
-        if (r?.truncated) this.events.onReplayTruncated?.(sid);
-        // Server→client asks still waiting on this session ride the answer, not
-        // the event ring (see json-rpc-channel deliverOpenRequests).
-        if (Array.isArray(r?.open_requests)) {
-          for (const req of r.open_requests) {
-            const id = String(req?.id ?? '');
-            const method = String(req?.method ?? '');
-            if (!id || !method) continue;
-            const params = (req?.params ?? {}) as Record<string, any>;
-            this.events.onAsk?.({
-              rpcId: id,
-              method,
-              sessionId: params?.session_id ?? sid,
-              params,
-            });
-          }
+        if (r?.truncated) {
+          this.lastSeq.delete(sid);
+          this.events.onReplayTruncated?.(sid);
         }
+        // `call` already re-delivers `open_requests` before resolving. Do not
+        // dispatch them a second time here; the app inbox dedupes replayed
+        // requests by connection + rpc id.
       }
     } finally {
+      if (this.replayGeneration !== generation) return;
       const held = this.replayHold ?? [];
       this.replayHold = null;
       this.replaying = false;
+      if (replayFailed || this.replayOverflow) {
+        for (const sid of named) this.events.onReplayTruncated?.(sid);
+        return;
+      }
       for (const h of held) {
         const seq = typeof h.params?.seq === 'number' ? h.params.seq : undefined;
         const hsid = this.sidOf(h.params);
@@ -821,6 +997,8 @@ export class GatewayWs {
       if (this.replaying) {
         if (this.replayHold && this.replayHold.length < 500) {
           this.replayHold?.push({ type, params });
+        } else {
+          this.replayOverflow = true;
         }
         return;
       }
@@ -871,7 +1049,12 @@ export class GatewayWs {
         // seq numbering reset, so our watermarks are meaningless — drop them.
         const epoch = strOf(body?.replay_epoch);
         if (epoch) {
-          if (this.replayEpoch && epoch !== this.replayEpoch) this.lastSeq.clear();
+          if (this.replayEpoch && epoch !== this.replayEpoch) {
+            this.lastSeq.clear();
+            for (const sid of this.replaySessions?.() ?? []) {
+              if (sid) this.events.onReplayTruncated?.(sid);
+            }
+          }
           this.replayEpoch = epoch;
         }
         this.setState('ready');
@@ -938,7 +1121,15 @@ export class GatewayWs {
         break;
       case 'request.cancel': {
         const id = String(body?.id ?? '');
-        if (id) this.events.onAskCancel?.(id);
+        if (id) {
+          const record = this.askRecords.get(id);
+          if (record) record.cancelled = true;
+          this.events.onAskCancel?.(id, {
+            method: strOf(body?.method) || undefined,
+            reason: strOf(body?.reason) || undefined,
+            sessionId: sid || undefined,
+          });
+        }
         break;
       }
       case 'error':

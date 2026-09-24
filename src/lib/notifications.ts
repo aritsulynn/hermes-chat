@@ -10,6 +10,31 @@
 import { AppState, Platform } from 'react-native';
 
 let cached: any = null;
+let browserResponseHandler: ((response: HermesNotificationResponse) => void) | null = null;
+
+export interface HermesNotificationOptions {
+  data?: Record<string, unknown>;
+  categoryIdentifier?: string;
+  identifier?: string;
+}
+
+export interface HermesNotificationResponse {
+  actionIdentifier: string;
+  data: Record<string, unknown>;
+  userText?: string;
+}
+
+export const NOTIFICATION_DEFAULT_ACTION = 'expo.modules.notifications.actions.DEFAULT';
+export const NOTIFICATION_LEGACY_DEFAULT_ACTION = 'default';
+export const NOTIFICATION_ASK_APPROVE = 'hermes.ask.approve';
+export const NOTIFICATION_ASK_REJECT = 'hermes.ask.reject';
+export const NOTIFICATION_ASK_ANSWER = 'hermes.ask.answer';
+export const NOTIFICATION_ASK_OPEN = 'hermes.ask.open';
+
+const ASK_CATEGORY_APPROVAL = 'hermes.ask.approval.v1';
+const ASK_CATEGORY_CLARIFY = 'hermes.ask.clarify.v1';
+const ASK_CATEGORY_INPUT = 'hermes.ask.input.v1';
+let categoriesReady = false;
 
 /** Expo Go (SDK 53+) removed push-notification support entirely — even
  *  `require('expo-notifications')` throws an uncaught redbox, so never touch
@@ -56,6 +81,75 @@ function nativeNotifications(): any {
 export function notificationsSupported(): boolean {
   if (Platform.OS === 'web') return typeof (globalThis as any).Notification !== 'undefined';
   return !!nativeNotifications();
+}
+
+/**
+ * Register native ask actions once. The web Notification API has no category
+ * buttons, so web falls back to opening the in-app Ask Inbox.
+ */
+export async function ensureNotificationCategories(): Promise<void> {
+  if (Platform.OS === 'web' || categoriesReady) return;
+  const N = nativeNotifications();
+  if (!N?.setNotificationCategoryAsync) return;
+  try {
+    await Promise.all([
+      N.setNotificationCategoryAsync(ASK_CATEGORY_APPROVAL, [
+        {
+          identifier: NOTIFICATION_ASK_APPROVE,
+          buttonTitle: 'Allow once',
+          options: { opensAppToForeground: true, isAuthenticationRequired: true },
+        },
+        {
+          identifier: NOTIFICATION_ASK_REJECT,
+          buttonTitle: 'Reject',
+          options: {
+            opensAppToForeground: true,
+            isDestructive: true,
+            isAuthenticationRequired: true,
+          },
+        },
+        {
+          identifier: NOTIFICATION_ASK_OPEN,
+          buttonTitle: 'Open Hermes',
+          options: { opensAppToForeground: true },
+        },
+      ]),
+      N.setNotificationCategoryAsync(ASK_CATEGORY_CLARIFY, [
+        {
+          identifier: NOTIFICATION_ASK_ANSWER,
+          buttonTitle: 'Answer',
+          options: {
+            opensAppToForeground: true,
+            textInput: {
+              submitButtonTitle: 'Send',
+              placeholder: 'Type your answer…',
+            },
+          },
+        },
+        {
+          identifier: NOTIFICATION_ASK_OPEN,
+          buttonTitle: 'Open Hermes',
+          options: { opensAppToForeground: true },
+        },
+      ]),
+      // Secrets and vault codes must never be entered from a lock-screen
+      // notification. The only safe action is opening the authenticated app.
+      N.setNotificationCategoryAsync(ASK_CATEGORY_INPUT, [
+        {
+          identifier: NOTIFICATION_ASK_OPEN,
+          buttonTitle: 'Open Hermes',
+          options: { opensAppToForeground: true },
+        },
+      ]),
+    ]);
+    categoriesReady = true;
+  } catch {}
+}
+
+export function askNotificationCategory(method?: string): string {
+  if (method === 'approval') return ASK_CATEGORY_APPROVAL;
+  if (method === 'clarify') return ASK_CATEGORY_CLARIFY;
+  return ASK_CATEGORY_INPUT;
 }
 
 export async function notifyPermissionGranted(): Promise<boolean> {
@@ -121,34 +215,95 @@ export function isAppForeground(): boolean {
 
 /** Show a local notification — a no-op when the app is foregrounded or the
  *  permission was never granted. */
-export async function pushNotification(title: string, body: string): Promise<void> {
-  if (isAppForeground()) return;
+export async function pushNotification(
+  title: string,
+  body: string,
+  options: HermesNotificationOptions = {},
+): Promise<string | null> {
+  if (isAppForeground()) return null;
   try {
     if (Platform.OS === 'web') {
       const N = (globalThis as any).Notification;
-      if (!N || N.permission !== 'granted') return;
+      if (!N || N.permission !== 'granted') return null;
       // eslint-disable-next-line no-new
-      new N(title, { body });
-      return;
+      const notification = new N(title, { body, data: options.data });
+      notification.onclick = () => {
+        try {
+          (globalThis as any).window?.focus?.();
+        } catch {}
+        browserResponseHandler?.({
+          actionIdentifier: NOTIFICATION_DEFAULT_ACTION,
+          data: options.data ?? {},
+        });
+      };
+      return null;
     }
     const N = nativeNotifications();
-    if (!N) return;
+    if (!N) return null;
     await ensureAndroidChannel();
-    await N.scheduleNotificationAsync({
-      content: { title, body },
+    if (options.categoryIdentifier) await ensureNotificationCategories();
+    return (await N.scheduleNotificationAsync({
+      ...(options.identifier ? { identifier: options.identifier } : {}),
+      content: {
+        title,
+        body,
+        ...(options.data ? { data: options.data } : {}),
+        ...(options.categoryIdentifier ? { categoryIdentifier: options.categoryIdentifier } : {}),
+      },
       trigger: Platform.OS === 'android' ? { channelId: 'hermes-alerts' } : null,
-    });
+    })) as string;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove a scheduled notification by its stable identifier. */
+export async function dismissNotification(identifier?: string): Promise<void> {
+  if (!identifier || Platform.OS === 'web') return;
+  try {
+    const N = nativeNotifications();
+    await N?.dismissNotificationAsync?.(identifier);
   } catch {}
 }
 
-/** Run `cb` when the user taps one of our notifications (opens the chat).
- *  Returns an unsubscribe fn (or null on web / without the module). */
-export function onNotificationTap(cb: () => void): (() => void) | null {
+function normalizeNotificationResponse(response: any): HermesNotificationResponse | null {
+  if (!response) return null;
+  const data = response?.notification?.request?.content?.data;
+  const rawAction = String(response?.actionIdentifier ?? NOTIFICATION_DEFAULT_ACTION);
+  const actionIdentifier =
+    rawAction === NOTIFICATION_LEGACY_DEFAULT_ACTION ? NOTIFICATION_DEFAULT_ACTION : rawAction;
+  return {
+    actionIdentifier,
+    data: data && typeof data === 'object' ? data : {},
+    ...(typeof response?.userText === 'string' ? { userText: response.userText } : {}),
+  };
+}
+
+/**
+ * Observe notification taps/actions. Also consumes the last response so an app
+ * launched from a notification action can handle the action after the gateway
+ * reconnects. Returns an unsubscribe function.
+ */
+export function onNotificationResponse(
+  cb: (response: HermesNotificationResponse) => void,
+): (() => void) | null {
   try {
-    if (Platform.OS === 'web') return null;
+    if (Platform.OS === 'web') {
+      browserResponseHandler = cb;
+      return () => {
+        if (browserResponseHandler === cb) browserResponseHandler = null;
+      };
+    }
     const N = nativeNotifications();
     if (!N?.addNotificationResponseReceivedListener) return null;
-    const sub = N.addNotificationResponseReceivedListener(() => cb());
+    const deliver = (response: any) => {
+      const normalized = normalizeNotificationResponse(response);
+      if (normalized) cb(normalized);
+    };
+    const sub = N.addNotificationResponseReceivedListener(deliver);
+    // Cold-start path. The API is async in SDK 57; older builds simply do not
+    // expose it and the listener remains the fallback.
+    void N.getLastNotificationResponseAsync?.().then?.(deliver).catch?.(() => {});
     return () => {
       try {
         sub?.remove?.();
@@ -157,4 +312,11 @@ export function onNotificationTap(cb: () => void): (() => void) | null {
   } catch {
     return null;
   }
+}
+
+/** Backwards-compatible helper for callers that only need the default tap. */
+export function onNotificationTap(cb: () => void): (() => void) | null {
+  return onNotificationResponse((response) => {
+    if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) cb();
+  });
 }

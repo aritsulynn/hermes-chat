@@ -196,23 +196,24 @@ export const AskSheet = forwardRef<
   {
     ask: ServerAsk | null;
     onValue: (v: string) => void;
-    onApproval: (c: string) => void;
+    onApproval: (c: string) => boolean;
+    onAskResult: (result: Record<string, unknown>) => boolean;
     onDismiss: () => void;
     gw: GatewayWs | null;
     /** Which chat this ask belongs to (the approval acts on the open chat). */
     contextLabel?: string;
   }
->(function AskSheet({ ask, onValue, onApproval, onDismiss, gw, contextLabel }, ref) {
+>(function AskSheet({ ask, onValue, onApproval, onAskResult, onDismiss, gw, contextLabel }, ref) {
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   // Which button was tapped — keeps the sheet from answering twice.
   const [sent, setSent] = useState<string | null>(null);
   const [cmdCopied, setCmdCopied] = useState(false);
-  const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lockTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
-      if (lockTimer.current) clearTimeout(lockTimer.current);
+      for (const timer of Object.values(lockTimers.current)) clearTimeout(timer);
       if (copyTimer.current) clearTimeout(copyTimer.current);
     },
     [],
@@ -222,8 +223,15 @@ export const AskSheet = forwardRef<
   const dark = theme === 'dark';
 
   useEffect(() => {
-    setText('');
-    setPicked({});
+    for (const timer of Object.values(lockTimers.current)) clearTimeout(timer);
+    lockTimers.current = {};
+    const parsed = ask?.method === 'clarify' ? parseClarify(ask) : null;
+    const restored: Record<string, string[]> = {};
+    for (const question of parsed?.questions ?? []) {
+      if (question.lockedAnswer) restored[question.qid] = [question.lockedAnswer];
+    }
+    setText(parsed?.single ? parsed.questions[0]?.lockedAnswer ?? '' : '');
+    setPicked(restored);
     setSent(null);
     setCmdCopied(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,8 +256,8 @@ export const AskSheet = forwardRef<
             : [choice];
           const nextAll = { ...prev, [qid]: next };
           const rpcId = ask.rpcId;
-          if (lockTimer.current) clearTimeout(lockTimer.current);
-          lockTimer.current = setTimeout(() => {
+          if (lockTimers.current[qid]) clearTimeout(lockTimers.current[qid]);
+          lockTimers.current[qid] = setTimeout(() => {
             const payload = nextAll[qid]?.join(', ') ?? '';
             gw?.call('clarify.lock', { request_id: rpcId, question_id: qid, answer: payload }).catch(() => {});
           }, 300);
@@ -258,16 +266,17 @@ export const AskSheet = forwardRef<
       };
       const submitAll = () => {
         if (!gw) return;
+        let result: Record<string, unknown>;
         if (single) {
           const q = questions[0];
           const ans = picked[q.qid]?.join(', ') ?? text.trim();
-          gw.replyToAsk(ask.rpcId, { answer: ans });
+          result = { answer: ans };
         } else {
           const answers: Record<string, string> = {};
           for (const q of questions) answers[q.qid] = picked[q.qid]?.join(', ') ?? '';
-          gw.replyToAsk(ask.rpcId, { answers });
+          result = { answers };
         }
-        onDismiss();
+        if (onAskResult(result)) onDismiss();
       };
       return (
         <>
@@ -330,8 +339,7 @@ export const AskSheet = forwardRef<
       const description = ask.params.description ? String(ask.params.description) : '';
       const answer = (c: string) => {
         if (sent) return;
-        setSent(c);
-        onApproval(c);
+        if (onApproval(c)) setSent(c);
       };
       const copyCmd = () => {
         if (!cmd) return;

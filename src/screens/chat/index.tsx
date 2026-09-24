@@ -299,6 +299,7 @@ export function ChatScreen() {
     copyText,
     answerValue,
     answerApproval,
+    answerAsk,
     dismissAsk,
     getGw,
     theme,
@@ -1581,6 +1582,7 @@ export function ChatScreen() {
         ask={ask}
         onValue={answerValue}
         onApproval={answerApproval}
+        onAskResult={answerAsk}
         onDismiss={onAskSheetDismiss}
         gw={getGw()}
         contextLabel={sessionTitle || undefined}

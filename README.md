@@ -50,6 +50,7 @@ username + password → Connect.
 
 - `app/_layout.tsx` — expo-router `Drawer` root (native header, custom drawer content, bottom-sheet provider, splash gate)
 - `app/login.tsx`, `app/sessions.tsx`, `app/chat.tsx` — routes (auth-guarded, redirect to `/login` when logged out)
+- `app/asks.tsx` + `src/screens/asks/` — background Ask Inbox under Drawer → More
 - `src/store.tsx` — global state: connection, gateway WS, sessions, transcript, model picker, ask sheets
 - `src/ui.tsx` — shared UI: Composer, Field, bottom sheets (`@gorhom/bottom-sheet`: Info/Ask/menus), TypingDots, markdown styles
 - `src/models.ts` — message/attachment types + pure helpers
