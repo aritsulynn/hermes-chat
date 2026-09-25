@@ -48,12 +48,7 @@ import type { ConnState, HistoryMessage, SessionSummary } from '../lib/gateway-w
 import { changedFilesFromDiff } from '../utils/diff';
 import { formatToolCommand, formatToolResult } from '../utils/toolResult';
 import { errMsg, isSlashCommand, nid, parseSlashCommand, utf8ToBase64 } from '../utils/messages';
-import {
-  rememberCommandsCatalog,
-  slashBlockedMessage,
-  slashMobileAction,
-  slashMobileHint,
-} from '../utils/slash-commands';
+import { slashBlockedMessage, slashMobileAction, slashMobileHint } from '../utils/slash-commands';
 import type { Attachment, UiMessage } from '../utils/messages';
 import { normalizeTodos } from '../utils/messages';
 import type { Role } from '../utils/messages';
@@ -84,6 +79,7 @@ import { useAskRepliesSlice } from '../store/slices/useAskReplies';
 import { useNotificationResponsesSlice } from '../store/slices/useNotificationResponses';
 import { useToolRefreshSlice } from '../store/slices/useToolRefresh';
 import { useLiveTurnSlice } from '../store/slices/useLiveTurn';
+import { useCommandsSlice } from '../store/slices/useCommands';
 import { useStoreRuntime } from '../store/runtime';
 
 const AppContext = createContext<AppStore | null>(null);
@@ -132,9 +128,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
   const [sessionTitle, setSessionTitle] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([]);
-  // `commands.catalog` dispositions live in ./slash-commands (module cache); this
-  // counter only forces a re-render once the live table lands so the wheel re-filters.
-  const [, setCatalogVersion] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [toolLine, setToolLine] = useState<string | null>(null);
   const { themeMode, theme, setTheme, hydrateTheme } = useThemeSlice();
@@ -163,6 +156,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = runtime;
   activeProfileRef.current = activeProfile;
   const { todos, setTodos, subagents, setSubagents } = useLiveRosterSlice({ runtime, generating, sessionId });
+  const { catalogAtRef, loadCommandsCatalog } = useCommandsSlice({ runtime, sessionId });
   const {
     sessions,
     setSessions,
@@ -1244,28 +1238,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [hydrateSessionContext, confirmAfterReconnect, syncOpenRequests, resolveAskOwner, applyAskInbox, markAskByRpc],
   );
-
-  const catalogAtRef = useRef(0);
-
-  // ── Slash command catalog ──────────────────────────────────────────────
-  // `commands.catalog` is the live authority for each command's `desktop=`
-  // disposition (offered / terminal-only / picker-owned) and the alias map, so
-  // the "/" wheel curates itself from the backend with no code change. Failure
-  // is fine — ./slash-commands keeps the shipped registry as the cold fallback.
-
-  const loadCommandsCatalog = useCallback(async () => {
-    const g = gw.current;
-    if (!g) return;
-    // 60s TTL — sessionId effect fires often, catalog barely changes.
-    if (Date.now() - catalogAtRef.current < 60000) return;
-    try {
-      rememberCommandsCatalog(await g.commandsCatalog(sessionId ?? undefined));
-      catalogAtRef.current = Date.now();
-      setCatalogVersion((v) => v + 1);
-    } catch {
-      // Older backend without commands.catalog — keep the static registry.
-    }
-  }, [sessionId]);
 
   const connect = useCallback(
     async (h: string, user: string, pw: string) => {
