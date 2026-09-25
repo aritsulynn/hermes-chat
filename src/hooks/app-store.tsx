@@ -7,7 +7,6 @@ import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
 import * as LocalAuth from 'expo-local-authentication';
 import { router } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
 import {
   checkMe,
   clearSessionMessagesCache,
@@ -102,6 +101,7 @@ import { useQueueSlice } from '../store/slices/useQueue';
 import { useModelsSlice } from '../store/slices/useModels';
 import { useSessionInfoSlice } from '../store/slices/useSessionInfo';
 import { useLiveRosterSlice } from '../store/slices/useLiveRoster';
+import { useComposerSlice } from '../store/slices/useComposer';
 import { useStoreRuntime } from '../store/runtime';
 
 const AppContext = createContext<AppStore | null>(null);
@@ -194,14 +194,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     liveAid.current = rea;
     return [...items, { id: rea, role: 'assistant', text: '', pending: true }];
   }, []);
-  const [inputRaw, setInputRaw] = useState('');
   // `commands.catalog` dispositions live in ./slash-commands (module cache); this
   // counter only forces a re-render once the live table lands so the wheel re-filters.
   const [, setCatalogVersion] = useState(0);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [generating, setGenerating] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const copyTimer = useRef<any>(null);
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [ask, setAsk] = useState<ServerAsk | null>(null);
   const askRef = useRef<ServerAsk | null>(null);
@@ -693,23 +689,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
 
-  // Per-session composer drafts — switching rooms no longer wipes typing.
-  const draftsRef = useRef<Map<string, string>>(new Map());
-  const draftKeyRef = useRef<string>('__none__');
-  useEffect(() => {
-    const id = sessionKey ?? sessionId;
-    draftKeyRef.current = id ? profileSessionKey(activeProfile, id) : `${activeProfile}::__none__`;
-  }, [activeProfile, sessionKey, sessionId]);
-  const setInput = useCallback((v: string) => {
-    draftsRef.current.set(draftKeyRef.current, v);
-    // Bound the per-session draft map — one entry per visited session otherwise.
-    if (draftsRef.current.size > 50) {
-      const oldest = draftsRef.current.keys().next().value;
-      if (oldest !== undefined && oldest !== draftKeyRef.current) draftsRef.current.delete(oldest);
-    }
-    setInputRaw(v);
-  }, []);
-  const input = inputRaw;
+  const {
+    input,
+    inputRaw,
+    setInput,
+    setInputRaw,
+    draftsRef,
+    draftKeyRef,
+    attachments,
+    setAttachments,
+    copiedId,
+    copyText,
+  } = useComposerSlice({ activeProfile, sessionKey, sessionId });
   const [booting, setBooting] = useState(true);
   // Stable handle for the boot-time silent reconnect (connect is defined below).
   const connectRef = useRef<(h: string, user: string, pw: string) => Promise<void>>(async () => {});
@@ -792,23 +783,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Connect pipeline ─────────────────────────────────────────────────────
 
-  // Cleanup pending timers on unmount so token/tool/copy timeouts can't fire late.
+  // Cleanup the tool-refresh timer on unmount so it can't fire late.
   useEffect(
     () => () => {
-      if (copyTimer.current) clearTimeout(copyTimer.current);
       if (toolRefreshTimer.current) clearTimeout(toolRefreshTimer.current);
     },
     [],
   );
-
-  const copyText = useCallback(async (id: string, text: string) => {
-    try {
-      await Clipboard.setStringAsync(text);
-      setCopiedId(id);
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => setCopiedId(null), 1500);
-    } catch {}
-  }, []);
 
   const ensureCookie = useCallback(
     async (h: string, user: string, pw: string, isCurrent: () => boolean = () => true): Promise<string> => {
