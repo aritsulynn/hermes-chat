@@ -7,7 +7,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "node --experimental-strip-types --test src/lib/*.test.mjs src/utils/*.test.mjs",
+    "test": "node --experimental-strip-types --test src/lib/*.test.mjs src/utils/*.test.mjs src/screens/*/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
