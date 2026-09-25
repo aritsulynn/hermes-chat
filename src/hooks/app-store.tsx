@@ -120,8 +120,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [conn, setConn] = useState<ConnState>('idle');
   const [activeProfile, setActiveProfile] = useState(DEFAULT_PROFILE);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
-  const profilesRef = useRef<AgentProfile[]>([]);
-  profilesRef.current = profiles;
   const [authed, setAuthed] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -153,8 +151,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sendRef,
     drainRef,
     messagesRef,
+    profilesRef,
+    sessionIdRef,
+    editingRowRef: editRowRef,
+    uploadingRef: uploading,
+    contextHydrateCancelRef,
+    contextPendingSidRef,
+    stampRowIdsRef,
+    resyncRef,
+    connectRef,
+    openSessionRef,
+    newSessionRef,
+    stopRef,
+    renameSessionRef,
   } = runtime;
   activeProfileRef.current = activeProfile;
+  profilesRef.current = profiles;
   const { todos, setTodos, subagents, setSubagents } = useLiveRosterSlice({ runtime, generating, sessionId });
   const { catalogAtRef, loadCommandsCatalog } = useCommandsSlice({ runtime, sessionId });
   const {
@@ -212,9 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setProfiles(discovered.profiles);
     } catch {}
   }, [acceptRotatedCookie, host, username]);
-  const uploading = useRef(false); // send() re-entrancy guard while bytes go up
   // Live runtime session id for callbacks frozen in openWs (reconnect replay).
-  const sessionIdRef = useRef<string | null>(null);
   sessionIdRef.current = sessionId;
   const {
     infoOpen,
@@ -230,8 +240,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     usageRefreshRef,
     openInfo,
   } = useSessionInfoSlice({ runtime, activeProfile, sessionId, sessionIdRef });
-  const contextHydrateCancelRef = useRef<(() => void) | null>(null);
-  const contextPendingSidRef = useRef<string | null>(null);
   const {
     queued,
     queueParked,
@@ -324,7 +332,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   // Stamp durable row ids onto live messages (edit/rewind targets) by aligning
   // the REST transcript tail with the local transcript from the end.
-  const stampRowIdsRef = useRef<() => void>(() => {});
   stampRowIdsRef.current = () => {
     const h = latest.current.host;
     const profile = latest.current.activeProfile;
@@ -373,7 +380,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   // Post-reconnect resync: the replay ring had already dropped the gap, so the
   // transcript must be rebuilt from REST rather than trusted piecemeal.
-  const resyncRef = useRef<() => void>(() => {});
   resyncRef.current = () => {
     const h = latest.current.host;
     const profile = latest.current.activeProfile;
@@ -446,17 +452,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     copyText,
   } = useComposerSlice({ activeProfile, sessionKey, sessionId });
   const [booting, setBooting] = useState(true);
-  // Stable handle for the boot-time silent reconnect (connect is defined below).
-  const connectRef = useRef<(h: string, user: string, pw: string) => Promise<void>>(async () => {});
-  // openSession is defined below connect — indirect through a ref so the
-  // connect callback (created first) never hits the TDZ.
-  const openSessionRef = useRef<(s: SessionSummary) => Promise<void>>(async () => {});
-  // Same reason as openSessionRef: send() must stay referentially stable for
-  // Composer's memo(), so the mobile-local slash actions (/new, /stop, /title)
-  // reach the latest handlers through refs instead of the deps array.
-  const newSessionRef = useRef<() => Promise<void>>(async () => {});
-  const stopRef = useRef<() => void>(() => {});
-  const renameSessionRef = useRef<(t: string) => Promise<void>>(async () => {});
   const {
     respondToInbox,
     answerInboxValue,
@@ -2229,7 +2224,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // "Edit & resend" rewinds history to that user row and resubmits the edited
   // text; "Regenerate" reruns the last user turn. Both need the durable row id
   // (ordinal-only cuts are refused for durable sessions).
-  const editRowRef = useRef<number | null>(null);
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
 
   const editMessage = useCallback(

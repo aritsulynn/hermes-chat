@@ -8,8 +8,9 @@ import { useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import type { AskOwner } from '../lib/ask-inbox';
 import { DEFAULT_PROFILE } from '../lib/constants';
-import type { GatewayWs } from '../lib/gateway-ws';
+import type { GatewayWs, SessionSummary } from '../lib/gateway-ws';
 import type { UiMessage } from '../utils/messages';
+import type { AgentProfile } from './types';
 
 export interface StoreRuntime {
   gw: MutableRefObject<GatewayWs | null>;
@@ -30,6 +31,20 @@ export interface StoreRuntime {
   sendRef: MutableRefObject<((text?: string) => Promise<void>) | null>;
   drainRef: MutableRefObject<() => void>;
   messagesRef: MutableRefObject<UiMessage[]>;
+  // ── Orchestrator refs ──────────────────────────────────────────────────
+  profilesRef: MutableRefObject<AgentProfile[]>;
+  sessionIdRef: MutableRefObject<string | null>;
+  editingRowRef: MutableRefObject<number | null>;
+  uploadingRef: MutableRefObject<boolean>;
+  contextHydrateCancelRef: MutableRefObject<(() => void) | null>;
+  contextPendingSidRef: MutableRefObject<string | null>;
+  stampRowIdsRef: MutableRefObject<() => void>;
+  resyncRef: MutableRefObject<() => void>;
+  connectRef: MutableRefObject<(h: string, user: string, pw: string) => Promise<void>>;
+  openSessionRef: MutableRefObject<(s: SessionSummary) => Promise<void>>;
+  newSessionRef: MutableRefObject<() => Promise<void>>;
+  stopRef: MutableRefObject<() => void>;
+  renameSessionRef: MutableRefObject<(t: string) => Promise<void>>;
 }
 
 export function useStoreRuntime(): StoreRuntime {
@@ -50,5 +65,18 @@ export function useStoreRuntime(): StoreRuntime {
     sendRef: useRef<((text?: string) => Promise<void>) | null>(null),
     drainRef: useRef<() => void>(() => {}),
     messagesRef: useRef<UiMessage[]>([]),
+    profilesRef: useRef<AgentProfile[]>([]),
+    sessionIdRef: useRef<string | null>(null),
+    editingRowRef: useRef<number | null>(null),
+    uploadingRef: useRef(false),
+    contextHydrateCancelRef: useRef<(() => void) | null>(null),
+    contextPendingSidRef: useRef<string | null>(null),
+    stampRowIdsRef: useRef<() => void>(() => {}),
+    resyncRef: useRef<() => void>(() => {}),
+    connectRef: useRef<(h: string, user: string, pw: string) => Promise<void>>(async () => {}),
+    openSessionRef: useRef<(s: SessionSummary) => Promise<void>>(async () => {}),
+    newSessionRef: useRef<() => Promise<void>>(async () => {}),
+    stopRef: useRef<() => void>(() => {}),
+    renameSessionRef: useRef<(t: string) => Promise<void>>(async () => {}),
   };
 }
