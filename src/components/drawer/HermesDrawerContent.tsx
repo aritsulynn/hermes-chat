@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
-import { usePathname, useRouter } from 'expo-router';
+import { usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronDown,
@@ -23,7 +23,6 @@ import { Tap } from '../../components';
 import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
 
 export function HermesDrawerContent(props: DrawerContentComponentProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const drawerOpen = useDrawerStatus() === 'open';
   const {

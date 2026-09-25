@@ -4,11 +4,10 @@
 // one transcript. Navigation replaced setScreen() with expo-router routes.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AppState, Platform, useColorScheme as useSystemScheme } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as LocalAuth from 'expo-local-authentication';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { useColorScheme as useNWColorScheme } from 'nativewind';
 import {
   checkMe,
   clearSessionMessagesCache,
@@ -44,10 +43,8 @@ import {
   saveModel,
   saveNotifyEnabled,
   savePassword,
-  saveTheme,
 } from '../lib/connection';
 import { clearMediaCaches } from '../lib/media-cache';
-import type { ResolvedTheme, Theme } from '../lib/connection';
 import { DEFAULT_PROFILE } from '../lib/constants';
 import {
   askNotificationCategory,
@@ -105,6 +102,7 @@ import {
   withTimeout,
 } from '../store/helpers';
 import type { AgentProfile, AppStore, ScopedSessionSummary } from '../store/types';
+import { useThemeSlice } from '../store/slices/useTheme';
 
 const AppContext = createContext<AppStore | null>(null);
 
@@ -255,14 +253,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (item) => notificationResponseKey(item) !== key,
     );
   }, []);
-  const systemScheme = useSystemScheme();
-  const systemTheme: ResolvedTheme = systemScheme === 'dark' ? 'dark' : 'light';
-  // First install follows the device. An explicit saved Light/Dark choice wins.
-  const [themeMode, setThemeMode] = useState<Theme>('system');
-  const theme: ResolvedTheme = themeMode === 'system' ? systemTheme : themeMode;
+  const { themeMode, theme, setTheme, hydrateTheme } = useThemeSlice();
   // Local notifications (turn complete / server asks while backgrounded).
   const [notifyEnabled, setNotifyEnabled] = useState(false);
-  const { setColorScheme } = useNWColorScheme();
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -273,24 +266,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     return () => sub.remove();
   }, []);
-
-  const setTheme = useCallback(
-    (t: Theme) => {
-      setThemeMode(t);
-      // Resolve immediately to avoid a one-frame flash; the effect below keeps
-      // NativeWind synced if the device appearance changes later.
-      try {
-        setColorScheme(t === 'system' ? systemTheme : t);
-      } catch {}
-      void saveTheme(t);
-    },
-    [setColorScheme, systemTheme],
-  );
-  useEffect(() => {
-    try {
-      setColorScheme(theme);
-    } catch {}
-  }, [setColorScheme, theme]);
 
   const gw = useRef<GatewayWs | null>(null);
   const cookie = useRef<string>('');
@@ -813,10 +788,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Restore the saved preference before releasing the splash gate.
         const savedTheme = await getTheme().catch(() => null);
         if (cancelled) return;
-        if (savedTheme) setThemeMode(savedTheme);
-        try {
-          setColorScheme(savedTheme === 'system' || !savedTheme ? systemTheme : savedTheme);
-        } catch {}
+        hydrateTheme(savedTheme);
         // Restore the local-notifications preference.
         const savedNotify = await getNotifyEnabled().catch(() => false);
         const effectiveNotify = savedNotify ? await notifyPermissionGranted() : false;
