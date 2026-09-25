@@ -4,7 +4,7 @@
 // one transcript. Navigation replaced setScreen() with expo-router routes.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AppState, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import * as LocalAuth from 'expo-local-authentication';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -32,7 +32,6 @@ import {
   getCookie as getStoredCookie,
   getLastSession,
   getModel,
-  getNotifyEnabled,
   getPassword,
   getTheme,
   loadConnection,
@@ -41,7 +40,6 @@ import {
   saveHost,
   saveLastSession,
   saveModel,
-  saveNotifyEnabled,
   savePassword,
 } from '../lib/connection';
 import { clearMediaCaches } from '../lib/media-cache';
@@ -56,10 +54,8 @@ import {
   NOTIFICATION_ASK_OPEN,
   NOTIFICATION_ASK_REJECT,
   NOTIFICATION_DEFAULT_ACTION,
-  notifyPermissionGranted,
   onNotificationResponse,
   pushNotification,
-  requestNotifyPermission,
 } from '../lib/notifications';
 import {
   askKey,
@@ -103,6 +99,7 @@ import {
 } from '../store/helpers';
 import type { AgentProfile, AppStore, ScopedSessionSummary } from '../store/types';
 import { useThemeSlice } from '../store/slices/useTheme';
+import { useNotificationsSlice } from '../store/slices/useNotifications';
 
 const AppContext = createContext<AppStore | null>(null);
 
@@ -255,17 +252,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
   const { themeMode, theme, setTheme, hydrateTheme } = useThemeSlice();
   // Local notifications (turn complete / server asks while backgrounded).
-  const [notifyEnabled, setNotifyEnabled] = useState(false);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' || !notifyRef.current) return;
-      void notifyPermissionGranted().then((granted) => {
-        if (!granted && notifyRef.current) setNotifyEnabled(false);
-      });
-    });
-    return () => sub.remove();
-  }, []);
+  const { notifyEnabled, notifyRef, setNotifications, loadNotifications } = useNotificationsSlice();
 
   const gw = useRef<GatewayWs | null>(null);
   const cookie = useRef<string>('');
@@ -349,12 +336,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const drainRef = useRef<() => void>(() => {});
   // Live transcript, for handlers frozen in openWs (tool backfill name-checking).
   const messagesRef = useRef<UiMessage[]>([]);
-  const notifyRef = useRef(false);
   generatingRef.current = generating;
   queueParkedRef.current = queueParked;
   queuedRef.current = queued;
   messagesRef.current = messages;
-  notifyRef.current = notifyEnabled;
   // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
   const latest = useRef({ host, username, activeProfile, sessionKey });
   latest.current = { host, username, activeProfile, sessionKey };
@@ -790,12 +775,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         hydrateTheme(savedTheme);
         // Restore the local-notifications preference.
-        const savedNotify = await getNotifyEnabled().catch(() => false);
-        const effectiveNotify = savedNotify ? await notifyPermissionGranted() : false;
-        if (!cancelled) {
-          setNotifyEnabled(effectiveNotify);
-          if (savedNotify && !effectiveNotify) await saveNotifyEnabled(false);
-        }
+        await loadNotifications(() => cancelled);
         // Restore the last picked model so the composer chip survives restarts
         // (the server global default still governs actual runs).
         const savedModel = await getModel(activeProfileRef.current, accountScope).catch(() => null);
@@ -1797,18 +1777,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [activeProfile, sessionId],
   );
-
-  // Local notifications: request permission on enable (web needs the gesture).
-  const setNotifications = useCallback(async (on: boolean) => {
-    if (!on) {
-      setNotifyEnabled(false);
-      await saveNotifyEnabled(false);
-      return;
-    }
-    const ok = await requestNotifyPermission();
-    setNotifyEnabled(ok);
-    await saveNotifyEnabled(ok);
-  }, []);
 
   const connect = useCallback(
     async (h: string, user: string, pw: string) => {
