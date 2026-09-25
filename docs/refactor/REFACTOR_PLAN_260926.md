@@ -107,11 +107,28 @@ As a safe, behaviour-preserving finish, the orchestrator body was relocated verb
 ### Final shape
 ```
 src/hooks/app-store.tsx      # 7 lines — entry, re-exports useApp/AppProvider
-src/store/useAppStore.tsx    # orchestrator (connection/session/turn/gateway wiring)
-src/store/runtime.ts         # shared refs
+src/store/useAppStore.tsx    # ~1230 lines — composition + context value only
+src/store/runtime.ts         # shared refs (incl. orchestrator refs)
 src/store/helpers.ts         # pure helpers
 src/store/types.ts           # AppStore contract + profile/session types
-src/store/slices/*           # 14 domain slices
+src/store/slices/*           # 20 slices
 ```
+
+The orchestrator was fully split using the "slice owns state/refs, provider
+passes a deps object, refs returned for direct writes" technique. The 20 slices:
+
+**Leaf/domain:** theme, notifications, queue, models, sessionInfo, liveRoster,
+composer, sessions, askInbox, askReplies, notificationResponses, toolRefresh,
+liveTurn, commands.
+
+**Orchestrator:** gateway (openWs + WS helpers), connection (connect/login/
+logout), sessionOps (openSession/newSession), profileOps (switchProfile/
+branchSession), turn (beginTurn/send/stop/runSlash/pasteLarge/…),
+sessionMisc (rename/delete/redirect/setGlobalModel).
+
+Cross-cutting refs (`sessionIdRef`, `connectRef`, `openSessionRef`,
+`releaseLocalTurnRef`, …) live in `store/runtime.ts` to break ordering cycles.
+`useAppStore` now only declares hook state, calls the slices, wires the
+boot/watchdog effects, and builds the context value.
 - [x] Tests — added `src/utils/format.test.mjs` plus `helpers.test.mjs` for logs/cron/usage; extended the `test` glob to `src/screens/*/*.test.mjs`. Suite is 71 passing (was 57).
 - [ ] Phase 5
