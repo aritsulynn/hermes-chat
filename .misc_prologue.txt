@@ -1,0 +1,120 @@
+// Session-misc slice — renameSession / deleteSessionById / redirectLive /
+// setGlobalModel.
+import { useCallback } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { router } from 'expo-router';
+import { setMainModel } from '../../lib/dashboard';
+import { connectionScope, saveModel } from '../../lib/connection';
+import type { ServerAsk } from '../../lib/gateway-ws';
+import type { AskInboxEntry, AskOwner } from '../../lib/ask-inbox';
+import { errMsg, nid } from '../../utils/messages';
+import type { SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
+import { profileSessionKey } from '../helpers';
+import type { ScopedSessionSummary } from '../types';
+import type { StoreRuntime } from '../runtime';
+
+type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
+
+export interface SessionMiscSliceDeps {
+  runtime: StoreRuntime;
+  latest: LatestRef;
+  activeProfile: string;
+  sessionId: string | null;
+  sessionKey: string | null;
+  host: string;
+  username: string;
+  acceptRotatedCookie: (
+    nextCookie: string,
+    host: string,
+    username: string,
+    connectionEpoch: number,
+    profileEpoch: number,
+  ) => Promise<void>;
+  bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
+  clearStreaming: () => void;
+  askInboxRef: MutableRefObject<AskInboxEntry[]>;
+  setAskInbox: Dispatch<SetStateAction<AskInboxEntry[]>>;
+  draftsRef: MutableRefObject<Map<string, string>>;
+  setInputRaw: (value: string) => void;
+  queuedRef: MutableRefObject<any[]>;
+  setQueued: Dispatch<SetStateAction<any[]>>;
+  setQueueParked: Dispatch<SetStateAction<boolean>>;
+  setModel: Dispatch<SetStateAction<string>>;
+  setModelProvider: Dispatch<SetStateAction<string>>;
+  setSessionKey: Dispatch<SetStateAction<string | null>>;
+  setSessionId: Dispatch<SetStateAction<string | null>>;
+  setSessionTitle: Dispatch<SetStateAction<string>>;
+  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
+  setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
+  setSessionInfo: Dispatch<SetStateAction<any>>;
+  setUsageInfo: Dispatch<SetStateAction<any>>;
+  setTodos: Dispatch<SetStateAction<TodoItem[]>>;
+  setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
+  setAsk: Dispatch<SetStateAction<ServerAsk | null>>;
+  setToolLine: Dispatch<SetStateAction<string | null>>;
+  setGenerating: Dispatch<SetStateAction<boolean>>;
+  setEditingRowId: Dispatch<SetStateAction<number | null>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+}
+
+export interface SessionMiscSlice {
+  renameSession: (title: string) => Promise<void>;
+  deleteSessionById: (storedId: string) => Promise<void>;
+  redirectLive: (text: string) => Promise<void>;
+  setGlobalModel: (providerSlug: string, modelId: string) => Promise<void>;
+}
+
+export function useSessionMiscSlice(deps: SessionMiscSliceDeps): SessionMiscSlice {
+  const {
+    runtime,
+    latest,
+    activeProfile,
+    sessionId,
+    sessionKey,
+    host,
+    username,
+    acceptRotatedCookie,
+    bindAskOwner,
+    clearStreaming,
+    askInboxRef,
+    setAskInbox,
+    draftsRef,
+    setInputRaw,
+    queuedRef,
+    setQueued,
+    setQueueParked,
+    setModel,
+    setModelProvider,
+    setSessionKey,
+    setSessionId,
+    setSessionTitle,
+    setMessages,
+    setSessions,
+    setSessionInfo,
+    setUsageInfo,
+    setTodos,
+    setSubagents,
+    setAsk,
+    setToolLine,
+    setGenerating,
+    setEditingRowId,
+    setError,
+  } = deps;
+  const {
+    gw,
+    cookie,
+    activeProfileRef,
+    profileEpochRef,
+    connectionEpochRef,
+    sessionIdRef,
+    runtimeOwners,
+    runtimeAskOwners,
+    turnOwnerRef,
+    parkedLiveRef,
+    liveAid,
+    liveThinkAid,
+    generatingRef,
+    editingRowRef: editRowRef,
+    renameSessionRef,
+  } = runtime;
+
