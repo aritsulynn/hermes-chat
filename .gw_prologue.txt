@@ -1,0 +1,174 @@
+// Gateway slice — the gateway WS wiring: the active-list probe, reconnect
+// reconcile, server-ask hydration, and the long-lived openWs() factory.
+// Extracted from store/useAppStore.tsx.
+import { useCallback } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { router } from 'expo-router';
+import { GatewayWs } from '../../lib/gateway-ws';
+import type { ConnState, ServerAsk } from '../../lib/gateway-ws';
+import { clearSessionMessagesCache, mintWsTicket, toWsUrl } from '../../lib/dashboard';
+import type { ModelProviderOption } from '../../lib/dashboard';
+import { connectionScope, forgetAll, saveCookie, saveModel } from '../../lib/connection';
+import { clearMediaCaches } from '../../lib/media-cache';
+import { DEFAULT_PROFILE } from '../../lib/constants';
+import { askNotificationCategory, dismissNotification, pushNotification } from '../../lib/notifications';
+import type { HermesNotificationResponse } from '../../lib/notifications';
+import { upsertAsk } from '../../lib/ask-inbox';
+import type { AskInboxEntry, AskInboxInput, AskInboxStatus, AskOwner } from '../../lib/ask-inbox';
+import { changedFilesFromDiff } from '../../utils/diff';
+import { formatToolCommand, formatToolResult } from '../../utils/toolResult';
+import { nid, normalizeTodos } from '../../utils/messages';
+import type { Attachment, QueuedPrompt, Role, TodoItem, UiMessage } from '../../utils/messages';
+import { mergeUsageState, normalizeProfileName, profileSessionKey } from '../helpers';
+import type { AgentProfile, ScopedSessionSummary } from '../types';
+import type { StoreRuntime } from '../runtime';
+
+type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
+
+export interface GatewaySliceDeps {
+  runtime: StoreRuntime;
+  latest: LatestRef;
+  hydrateSessionContext: (g: GatewayWs, sid: string) => void;
+  releaseLocalTurn: () => void;
+  askHydrationRef: MutableRefObject<number>;
+  notificationDrainRef: MutableRefObject<(() => void) | null>;
+  pendingNotificationResponsesRef: MutableRefObject<HermesNotificationResponse[]>;
+  handledNotificationResponsesRef: MutableRefObject<Set<string>>;
+  askInboxRef: MutableRefObject<AskInboxEntry[]>;
+  askRef: MutableRefObject<ServerAsk | null>;
+  setAskInbox: Dispatch<SetStateAction<AskInboxEntry[]>>;
+  setAsk: Dispatch<SetStateAction<ServerAsk | null>>;
+  bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
+  resolveAskOwner: (sessionIdValue?: string, params?: Record<string, unknown>) => AskOwner;
+  applyAskInbox: (input: AskInboxInput) => ReturnType<typeof upsertAsk>;
+  markAskByRpc: (rpcId: string, status: AskInboxStatus) => void;
+  dismissAskNotifications: (entries?: AskInboxEntry[]) => void;
+  draftsRef: MutableRefObject<Map<string, string>>;
+  setInputRaw: Dispatch<SetStateAction<string>>;
+  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
+  queuedRef: MutableRefObject<QueuedPrompt[]>;
+  setQueued: Dispatch<SetStateAction<QueuedPrompt[]>>;
+  queueParkedRef: MutableRefObject<boolean>;
+  setQueueParked: Dispatch<SetStateAction<boolean>>;
+  liveAid: MutableRefObject<string | null>;
+  liveThinkAid: MutableRefObject<string | null>;
+  liveTools: MutableRefObject<Map<string, string>>;
+  liveToolAid: MutableRefObject<string | null>;
+  liveTurnTools: MutableRefObject<string[]>;
+  liveTurnDiffs: MutableRefObject<string[]>;
+  streamingRef: MutableRefObject<Record<string, string>>;
+  setStreamingTexts: Dispatch<SetStateAction<Record<string, string>>>;
+  turnOwnerRef: MutableRefObject<Map<string, string>>;
+  parkedLiveRef: MutableRefObject<Set<string>>;
+  lastTurnEventAt: MutableRefObject<number>;
+  notifyRef: MutableRefObject<boolean>;
+  usageRefreshRef: MutableRefObject<() => void>;
+  setUsageInfo: Dispatch<SetStateAction<any>>;
+  setSessionInfo: Dispatch<SetStateAction<any>>;
+  toolRefreshRef: MutableRefObject<() => void>;
+  scheduleToolRefresh: () => void;
+  setTodos: Dispatch<SetStateAction<TodoItem[]>>;
+  setModel: Dispatch<SetStateAction<string>>;
+  setModelProvider: Dispatch<SetStateAction<string>>;
+  setConn: Dispatch<SetStateAction<ConnState>>;
+  setAuthed: Dispatch<SetStateAction<boolean>>;
+  setProfiles: Dispatch<SetStateAction<AgentProfile[]>>;
+  setActiveProfile: Dispatch<SetStateAction<string>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+  setToolLine: Dispatch<SetStateAction<string | null>>;
+  setSessionId: Dispatch<SetStateAction<string | null>>;
+  setSessionKey: Dispatch<SetStateAction<string | null>>;
+  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
+  setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
+  setGenerating: Dispatch<SetStateAction<boolean>>;
+  setPassword: Dispatch<SetStateAction<string>>;
+  setProviders: Dispatch<SetStateAction<ModelProviderOption[] | null>>;
+}
+
+export interface GatewaySlice {
+  probeWorkingSessions: () => Promise<Set<string> | null>;
+  confirmAfterReconnect: () => Promise<void>;
+  syncOpenRequests: (g: GatewayWs) => Promise<void>;
+  openWs: (h: string, user: string) => Promise<GatewayWs>;
+}
+
+export function useGatewaySlice(deps: GatewaySliceDeps): GatewaySlice {
+  const {
+    runtime,
+    latest,
+    hydrateSessionContext,
+    releaseLocalTurn,
+    askHydrationRef,
+    notificationDrainRef,
+    pendingNotificationResponsesRef,
+    handledNotificationResponsesRef,
+    askInboxRef,
+    askRef,
+    setAskInbox,
+    setAsk,
+    bindAskOwner,
+    resolveAskOwner,
+    applyAskInbox,
+    markAskByRpc,
+    dismissAskNotifications,
+    draftsRef,
+    setInputRaw,
+    setAttachments,
+    queuedRef,
+    setQueued,
+    queueParkedRef,
+    setQueueParked,
+    liveAid,
+    liveThinkAid,
+    liveTools,
+    liveToolAid,
+    liveTurnTools,
+    liveTurnDiffs,
+    streamingRef,
+    setStreamingTexts,
+    turnOwnerRef,
+    parkedLiveRef,
+    lastTurnEventAt,
+    notifyRef,
+    usageRefreshRef,
+    setUsageInfo,
+    setSessionInfo,
+    toolRefreshRef,
+    scheduleToolRefresh,
+    setTodos,
+    setModel,
+    setModelProvider,
+    setConn,
+    setAuthed,
+    setProfiles,
+    setActiveProfile,
+    setError,
+    setToolLine,
+    setSessionId,
+    setSessionKey,
+    setMessages,
+    setSessions,
+    setGenerating,
+    setPassword,
+    setProviders,
+  } = deps;
+  const {
+    gw,
+    cookie,
+    cookieScope,
+    activeProfileRef,
+    activeProfilePreferenceRef,
+    profileEpochRef,
+    connectionEpochRef,
+    connectRequestRef,
+    logoutCleanupRef,
+    runtimeOwners,
+    runtimeAskOwners,
+    generatingRef,
+    messagesRef,
+    sessionIdRef,
+    resyncRef,
+    drainRef,
+    stampRowIdsRef,
+  } = runtime;
+

@@ -45,6 +45,7 @@ export interface StoreRuntime {
   newSessionRef: MutableRefObject<() => Promise<void>>;
   stopRef: MutableRefObject<() => void>;
   renameSessionRef: MutableRefObject<(t: string) => Promise<void>>;
+  releaseLocalTurnRef: MutableRefObject<() => void>;
 }
 
 export function useStoreRuntime(): StoreRuntime {
@@ -78,5 +79,6 @@ export function useStoreRuntime(): StoreRuntime {
     newSessionRef: useRef<() => Promise<void>>(async () => {}),
     stopRef: useRef<() => void>(() => {}),
     renameSessionRef: useRef<(t: string) => Promise<void>>(async () => {}),
+    releaseLocalTurnRef: useRef<() => void>(() => {}),
   };
 }
