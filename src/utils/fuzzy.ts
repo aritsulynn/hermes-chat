@@ -124,10 +124,6 @@ export function fuzzyScore(target: string, query: string): FuzzyMatch | null {
  * must match (AND semantics); the result aggregates per-token scores and the
  * union of matched positions. Returns null if any token fails to match.
  */
-export function fuzzyScoreMulti(target: string, query: string): FuzzyMatch | null {
-  return fuzzyScoreMultiTokens(target, query.trim().toLowerCase().split(/\s+/).filter(Boolean));
-}
-
 /** Tokenized variant — pre-split the query once when scoring many targets. */
 export function fuzzyScoreMultiTokens(target: string, tokens: string[]): FuzzyMatch | null {
   if (!tokens.length) {
@@ -152,39 +148,4 @@ export function fuzzyScoreMultiTokens(target: string, tokens: string[]): FuzzyMa
   }
 
   return { score, positions: [...positionSet].sort((a, b) => a - b) }
-}
-
-export interface RankedItem<T> {
-  item: T
-  score: number
-  positions: number[]
-}
-
-/**
- * Filter + rank a list by a fuzzy query against a derived text key. Non-matching
- * items are dropped; matches are sorted by score (descending), ties broken by
- * the original index so ordering is stable for equal scores. An empty query
- * returns every item in original order with no positions.
- */
-export function fuzzyRank<T>(items: readonly T[], query: string, toText: (item: T) => string): RankedItem<T>[] {
-  const trimmed = query.trim()
-
-  if (!trimmed) {
-    return items.map(item => ({ item, score: 0, positions: [] }))
-  }
-
-  const tokens = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
-  const ranked: Array<RankedItem<T> & { index: number }> = []
-
-  items.forEach((item, index) => {
-    const match = fuzzyScoreMultiTokens(toText(item), tokens)
-
-    if (match) {
-      ranked.push({ item, score: match.score, positions: match.positions, index })
-    }
-  })
-
-  ranked.sort((a, b) => b.score - a.score || a.index - b.index)
-
-  return ranked.map(({ item, score, positions }) => ({ item, score, positions }))
 }

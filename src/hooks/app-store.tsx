@@ -126,7 +126,6 @@ export interface AppStore {
   model: string;
   modelProvider: string;
   effort: string;
-  setEffort: (v: string) => void;
   /** Apply a thinking-effort level to the live session (and the next create). */
   applyEffort: (level: string) => Promise<void>;
   /** Toggle fast mode on the live session. */
@@ -151,7 +150,6 @@ export interface AppStore {
   pendingAskCount: number;
   /** Open an inbox item in its owning chat when its profile is resolved. */
   openAskEntry: (entry: AskInboxEntry) => Promise<void>;
-  answerInboxValue: (key: string, value: string) => boolean;
   answerInboxApproval: (key: string, choice: string) => boolean;
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
@@ -214,19 +212,14 @@ export interface AppStore {
   /** Persisted user preference: light, dark, or follow the device. */
   themeMode: Theme;
   setTheme: (t: Theme) => void;
-  toggleTheme: () => void;
   renameSession: (title: string) => Promise<void>;
   deleteSessionById: (storedId: string) => Promise<void>;
-  closeCurrent: () => Promise<void>;
   redirectLive: (text: string) => Promise<void>;
   setGlobalModel: (providerSlug: string, modelId: string) => Promise<void>;
-  jumpToRecent: () => Promise<void>;
   opsGet: (path: string) => Promise<any>;
   opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>;
   /** Session cookie — media components need it to load authed URLs. */
   getCookie: () => string;
-  /** Monotonic connection generation for fencing stale screen requests. */
-  getConnectionEpoch: () => number;
   /** Connection + profile generation for auth-scoped REST screens. */
   getAuthScope: () => string;
 }
@@ -680,9 +673,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [setColorScheme, systemTheme],
   );
-  const toggleTheme = useCallback(() => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  }, [theme, setTheme]);
   useEffect(() => {
     try {
       setColorScheme(theme);
@@ -4006,30 +3996,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [sessionKey],
   );
 
-  const closeCurrent = useCallback(async () => {
-    const g = gw.current;
-    if (!g || !sessionId) return;
-    await g.closeSession(sessionId);
-    const owner = runtimeOwners.current.get(sessionId);
-    runtimeOwners.current.delete(sessionId);
-    runtimeAskOwners.current.delete(sessionId);
-    if (owner) {
-      parkedLiveRef.current.delete(owner);
-      turnOwnerRef.current.delete(sessionId);
-      const parsed = parseProfileSessionKey(owner);
-      if (parsed) {
-        const nextAskInbox = askInboxRef.current.map((entry) =>
-          entry.owner.profile === parsed.profile && entry.owner.storedSessionId === parsed.storedSessionId
-            ? { ...entry, status: 'stale' as const }
-            : entry,
-        );
-        askInboxRef.current = nextAskInbox;
-        setAskInbox(nextAskInbox);
-      }
-    }
-    setAsk(null);
-  }, [sessionId]);
-
   const redirectLive = useCallback(
     async (text: string) => {
       const g = gw.current;
@@ -4148,71 +4114,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [acceptRotatedCookie, activeProfile, host, username],
   );
 
-  const jumpToRecent = useCallback(async () => {
-    const g = gw.current;
-    const profile = activeProfileRef.current;
-    const epoch = profileEpochRef.current;
-    if (!g) return;
-    setBusy(true);
-    try {
-      const recentId = await g.mostRecent(profile);
-      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-      if (!recentId) {
-        await refreshSessions();
-        return;
-      }
-      const known = sessions.find((s) => s.id === recentId);
-      if (known) {
-        await openSession(known);
-        return;
-      }
-      await refreshSessions();
-      // List may use a different id space — resume directly as fallback.
-      try {
-        const r: any = await g.call('session.resume', {
-          profile,
-          session_id: recentId,
-          omit_messages: false,
-        });
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-        const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : recentId;
-        const owner = profileSessionKey(profile, recentId);
-        runtimeOwners.current.set(liveId, owner);
-        bindAskOwner(liveId, {
-          connectionId: connectionScope(latest.current.host, latest.current.username),
-          profile,
-          storedSessionId: recentId,
-          runtimeSessionId: liveId,
-          resolved: true,
-        });
-        parkLiveTurn();
-        liveAid.current = null;
-        liveThinkAid.current = null;
-        setGenerating(false);
-        generatingRef.current = false;
-        setToolLine(null);
-        setSessionKey(recentId);
-        draftKeyRef.current = owner;
-        setInputRaw(draftsRef.current.get(owner) ?? '');
-        sessionIdRef.current = liveId;
-        setSessionId(liveId);
-        setSessionTitle('');
-        setMessages([]);
-        clearStreaming();
-        router.push('/chat');
-      } catch (e) {
-        if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
-          setError(errMsg(e));
-        }
-      }
-    } finally {
-      if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
-        setBusy(false);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, refreshSessions]);
-
   const getGw = useCallback(() => gw.current, []);
   const diagnostics = useCallback(
     () => ({
@@ -4232,7 +4133,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [conn, host, activeProfile, profiles, sessionId, sessionKey, model, modelProvider, effort, queued.length, askInbox],
   );
   const getCookie = useCallback(() => cookie.current, []);
-  const getConnectionEpoch = useCallback(() => connectionEpochRef.current, []);
   const getAuthScope = useCallback(() => `${connectionEpochRef.current}:${profileEpochRef.current}`, []);
 
   const opsGet = useCallback(
@@ -4301,7 +4201,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       model,
       modelProvider,
       effort,
-      setEffort,
       applyEffort,
       applyFast,
       providers,
@@ -4322,7 +4221,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       askInbox,
       pendingAskCount: pendingAsks(askInbox).length,
       openAskEntry,
-      answerInboxValue,
       answerInboxApproval,
       connect,
       login,
@@ -4366,19 +4264,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       theme,
       themeMode,
       setTheme,
-      toggleTheme,
       renameSession,
       deleteSessionById,
-      closeCurrent,
       redirectLive,
       setGlobalModel,
-      jumpToRecent,
       opsGet,
       opsMut,
       getGw,
       diagnostics,
       getCookie,
-      getConnectionEpoch,
       getAuthScope,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4424,7 +4318,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ask,
       askInbox,
       openAskEntry,
-      answerInboxValue,
       answerInboxApproval,
       connect,
       login,
@@ -4468,19 +4361,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       theme,
       themeMode,
       setTheme,
-      toggleTheme,
       renameSession,
       deleteSessionById,
-      closeCurrent,
       redirectLive,
       setGlobalModel,
-      jumpToRecent,
       opsGet,
       opsMut,
       getGw,
       diagnostics,
       getCookie,
-      getConnectionEpoch,
       getAuthScope,
     ],
   );

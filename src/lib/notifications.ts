@@ -317,9 +317,3 @@ export function onNotificationResponse(cb: (response: HermesNotificationResponse
   }
 }
 
-/** Backwards-compatible helper for callers that only need the default tap. */
-export function onNotificationTap(cb: () => void): (() => void) | null {
-  return onNotificationResponse((response) => {
-    if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) cb();
-  });
-}
