@@ -13,31 +13,25 @@ import {
   checkMe,
   clearSessionMessagesCache,
   getSessionMessages,
-  logoutDashboard,
   opsGet as dashboardOpsGet,
   opsMut as dashboardOpsMut,
   passwordLogin,
-  probeStatus,
   setMainModel,
 } from '../lib/dashboard';
 import {
   clearCookie,
   clearPassword,
   connectionScope,
-  forgetAll,
   getActiveProfile,
   getCookie as getStoredCookie,
-  getLastSession,
   getModel,
   getPassword,
   getTheme,
   loadConnection,
   saveActiveProfile,
   saveCookie,
-  saveHost,
   saveLastSession,
   saveModel,
-  savePassword,
 } from '../lib/connection';
 import { clearMediaCaches } from '../lib/media-cache';
 import { DEFAULT_PROFILE } from '../lib/constants';
@@ -45,7 +39,7 @@ import { dismissNotification } from '../lib/notifications';
 import { askKey, pendingAsks } from '../lib/ask-inbox';
 import type { AskInboxEntry, AskOwner } from '../lib/ask-inbox';
 import { GatewayWs } from '../lib/gateway-ws';
-import type { ConnState, HistoryMessage, SessionSummary } from '../lib/gateway-ws';
+import type { ConnState, HistoryMessage } from '../lib/gateway-ws';
 import { errMsg, isSlashCommand, nid, parseSlashCommand, utf8ToBase64 } from '../utils/messages';
 import { slashBlockedMessage, slashMobileAction, slashMobileHint } from '../utils/slash-commands';
 import type { Attachment, UiMessage } from '../utils/messages';
@@ -81,6 +75,7 @@ import { useLiveTurnSlice } from './slices/useLiveTurn';
 import { useCommandsSlice } from './slices/useCommands';
 import { useStoreRuntime } from './runtime';
 import { useGatewaySlice } from './slices/useGateway';
+import { useConnectionSlice } from './slices/useConnection';
 
 const AppContext = createContext<AppStore | null>(null);
 
@@ -128,6 +123,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [generating, setGenerating] = useState(false);
   const [toolLine, setToolLine] = useState<string | null>(null);
+  const [editingRowId, setEditingRowId] = useState<number | null>(null);
   const { themeMode, theme, setTheme, hydrateTheme } = useThemeSlice();
   // Local notifications (turn complete / server asks while backgrounded).
   const { notifyEnabled, notifyRef, setNotifications, loadNotifications } = useNotificationsSlice();
@@ -669,238 +665,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProviders,
   });
 
-  const connect = useCallback(
-    async (h: string, user: string, pw: string) => {
-      const requestId = ++connectRequestRef.current;
-      await logoutCleanupRef.current.catch(() => {});
-      if (requestId !== connectRequestRef.current) return;
-      const nextHost = h.trim();
-      const nextUser = user.trim();
-      const nextScope = connectionScope(nextHost, nextUser);
-      const connectionEpoch = ++connectionEpochRef.current;
-      let profileEpoch = profileEpochRef.current;
-      const isCurrent = () =>
-        connectionEpochRef.current === connectionEpoch && profileEpochRef.current === profileEpoch;
-      const previousScope = latest.current.host ? connectionScope(latest.current.host, latest.current.username) : '';
-      // Boot/login can enter connect before the next render commits host/user;
-      // keep frozen WS callbacks scoped to this attempt immediately.
-      latest.current = { ...latest.current, host: nextHost, username: nextUser };
-
-      if (cookieScope.current !== nextScope) {
-        cookie.current = '';
-        cookieScope.current = '';
-      }
-      if (previousScope && previousScope !== nextScope) {
-        profileEpoch = ++profileEpochRef.current;
-        clearMediaCaches();
-        clearSessionMessagesCache();
-        dismissAskNotifications();
-        handledNotificationResponsesRef.current.clear();
-        pendingNotificationResponsesRef.current = [];
-        askHydrationRef.current = 0;
-        notificationActionInFlightRef.current = false;
-        askInboxRef.current = [];
-        setAskInbox([]);
-        setAsk(null);
-        runtimeOwners.current.clear();
-        runtimeAskOwners.current.clear();
-        turnOwnerRef.current.clear();
-        parkedLiveRef.current.clear();
-        draftsRef.current.clear();
-        setInputRaw('');
-        setPassword('');
-        queuedRef.current = [];
-        setQueued([]);
-        queueParkedRef.current = false;
-        setQueueParked(false);
-        setProviders(null);
-        providersRef.current = null;
-        setProfiles([]);
-        activeProfilePreferenceRef.current = null;
-        activeProfileRef.current = DEFAULT_PROFILE;
-        setActiveProfile(DEFAULT_PROFILE);
-      }
-      setBusy(true);
-      setError(null);
-      try {
-        const probe = await probeStatus(nextHost);
-        if (!isCurrent()) throw new Error('Connection superseded');
-        if (!probe.authRequired) {
-          throw new Error('Dashboard has no auth gate (loopback?) — this app needs a gated dashboard with basic auth.');
-        }
-        if (!probe.providers.includes('basic')) {
-          throw new Error(`Dashboard auth providers [${probe.providers.join(',')}] — basic not offered.`);
-        }
-        await ensureCookie(nextHost, nextUser, pw, isCurrent);
-        if (!isCurrent()) throw new Error('Connection superseded');
-        const discovered = await discoverAgentProfiles(nextHost, cookie.current, async (nextCookie) => {
-          if (!isCurrent()) return;
-          await acceptRotatedCookie(nextCookie, nextHost, nextUser, connectionEpoch, profileEpoch);
-        });
-        if (!isCurrent()) throw new Error('Connection superseded');
-        setProfiles(discovered.profiles);
-        const preferred = activeProfilePreferenceRef.current;
-        const selected =
-          preferred && discovered.profiles.some((profile) => profile.name === preferred)
-            ? preferred
-            : discovered.current;
-        activeProfilePreferenceRef.current = selected;
-        activeProfileRef.current = selected;
-        setActiveProfile(selected);
-        void saveActiveProfile(selected, nextScope);
-        const selectedInfo = discovered.profiles.find((profile) => profile.name === selected);
-        const rememberedModel = await getModel(selected, nextScope).catch(() => null);
-        if (!isCurrent()) throw new Error('Connection superseded');
-        setModel(String(rememberedModel?.model ?? selectedInfo?.model ?? ''));
-        setModelProvider(String(rememberedModel?.provider ?? selectedInfo?.provider ?? ''));
-        gw.current?.close();
-        const ws = await openWs(nextHost, nextUser);
-        if (!isCurrent()) {
-          ws.close();
-          throw new Error('Connection superseded');
-        }
-        gw.current = ws;
-        const ok = await ws.connect();
-        if (!isCurrent()) {
-          ws.close();
-          return;
-        }
-        if (!ok) {
-          // Stop the background reconnect loop — the user retries explicitly.
-          const d = ws.wsDebug();
-          ws.close();
-          if (gw.current === ws) gw.current = null;
-          const closes = d.closes.map((c) => `${c.code ?? '?'}${c.reason ? `:${c.reason}` : ''}`).join(',') || 'none';
-          throw new Error(
-            `WS not ready in 15s (opens=${d.opens} errors=${d.errors} closes=[${closes}] lastEvent=${d.lastEvent ?? 'none'}) — REST ok but the socket never became ready. Check the dashboard log for /api/ws rejections.`,
-          );
-        }
-        await saveHost(nextHost, nextUser);
-        if (!isCurrent()) return;
-        // Never persist the basic-auth password in browser storage. Native keeps
-        // the existing opt-in SecureStore behaviour.
-        if (rememberPw && pw && Platform.OS !== 'web') {
-          await savePassword(pw, nextHost, nextUser);
-        }
-        // Bounded waits — a wedged dashboard must never trap boot on a
-        // spinner: list/open each get a ceiling, then we land on chat.
-        let list: SessionSummary[] = [];
-        try {
-          list = await withTimeout(refreshSessions(), 30000);
-        } catch {
-          list = [];
-        }
-        if (!isCurrent()) return;
-        setAuthed(true);
-        if (list.length > 0) {
-          // Restore the chat the user was last viewing, else the most recent.
-          let target = list[0];
-          try {
-            const saved = await getLastSession(activeProfileRef.current, connectionScope(nextHost, nextUser));
-            const found = saved ? list.find((s) => s.id === saved) : undefined;
-            if (found) target = found;
-          } catch {}
-          try {
-            await withTimeout(openSessionRef.current(target), 25000);
-          } catch {
-            if (isCurrent()) router.replace('/chat');
-          }
-          return;
-        }
-        if (isCurrent()) router.replace('/chat');
-      } catch (e) {
-        if (isCurrent() && errMsg(e) !== 'Connection superseded') setError(errMsg(e));
-      } finally {
-        if (isCurrent()) setBusy(false);
-      }
-    },
-    [acceptRotatedCookie, ensureCookie, openWs, rememberPw, refreshSessions],
-  );
+  const { connect, login, logout } = useConnectionSlice({
+    runtime,
+    latest,
+    providersRef,
+    acceptRotatedCookie,
+    ensureCookie,
+    openWs,
+    refreshSessions,
+    rememberPw,
+    passwordScopeRef,
+    host,
+    username,
+    password,
+    dismissAskNotifications,
+    setAskInbox,
+    setAsk,
+    askRef,
+    askInboxRef,
+    handledNotificationResponsesRef,
+    pendingNotificationResponsesRef,
+    askHydrationRef,
+    notificationActionInFlightRef,
+    turnOwnerRef,
+    parkedLiveRef,
+    draftsRef,
+    queuedRef,
+    queueParkedRef,
+    liveAid,
+    liveThinkAid,
+    clearStreaming,
+    sessionsFetchRef,
+    sessionsFetchProfileRef,
+    setInputRaw,
+    setPassword,
+    setQueued,
+    setQueueParked,
+    setProviders,
+    setProfiles,
+    setActiveProfile,
+    setBusy,
+    setError,
+    setModel,
+    setModelProvider,
+    setAuthed,
+    setConn,
+    setSessionId,
+    setSessionKey,
+    setMessages,
+    setSessions,
+    setSessionInfo,
+    setUsageInfo,
+    setGenerating,
+    setToolLine,
+    setTodos,
+    setSubagents,
+    setAttachments,
+    setEditingRowId,
+    setInfoOpen,
+  });
   connectRef.current = connect;
-
-  const login = useCallback(async () => {
-    const scope = connectionScope(host, username);
-    const enteredPassword = passwordScopeRef.current === scope ? password : '';
-    const pw = enteredPassword || (await getPassword(host, username)) || '';
-    if (!host.trim() || !username.trim() || !pw) {
-      setError('Fill host, username and password');
-      return;
-    }
-    await connect(host.trim(), username.trim(), pw);
-  }, [host, username, password, connect]);
-
-  const logout = useCallback(async () => {
-    const logoutHost = host;
-    const logoutUser = username;
-    const logoutCookie = cookie.current;
-    connectionEpochRef.current += 1;
-    connectRequestRef.current += 1;
-    gw.current?.close();
-    gw.current?.clearAskRecords();
-    gw.current = null;
-    cookie.current = '';
-    cookieScope.current = '';
-    liveThinkAid.current = null;
-    liveAid.current = null;
-    generatingRef.current = false;
-    draftsRef.current.clear();
-    parkedLiveRef.current.clear();
-    turnOwnerRef.current.clear();
-    runtimeOwners.current.clear();
-    runtimeAskOwners.current.clear();
-    profileEpochRef.current += 1;
-    sessionsFetchRef.current = null;
-    sessionsFetchProfileRef.current = null;
-    setInputRaw('');
-    clearMediaCaches();
-    clearSessionMessagesCache();
-    setPassword('');
-    setAuthed(false);
-    setConn('idle');
-    setProfiles([]);
-    activeProfilePreferenceRef.current = null;
-    activeProfileRef.current = DEFAULT_PROFILE;
-    setActiveProfile(DEFAULT_PROFILE);
-    sessionIdRef.current = null;
-    setSessionId(null);
-    setSessionKey(null);
-    setMessages([]);
-    clearStreaming();
-    setSessions([]);
-    setSessionInfo(null);
-    setUsageInfo(null);
-    setGenerating(false);
-    setAsk(null);
-    askRef.current = null;
-    dismissAskNotifications();
-    handledNotificationResponsesRef.current.clear();
-    askInboxRef.current = [];
-    setAskInbox([]);
-    pendingNotificationResponsesRef.current = [];
-    askHydrationRef.current = 0;
-    setToolLine(null);
-    setTodos([]);
-    setSubagents([]);
-    setProviders(null);
-    queuedRef.current = [];
-    setQueued([]);
-    queueParkedRef.current = false;
-    setQueueParked(false);
-    setAttachments([]);
-    editRowRef.current = null;
-    setEditingRowId(null);
-    setInfoOpen(false);
-    router.replace('/login');
-
-    const cleanup = (async () => {
-      try {
-        await logoutDashboard(logoutHost, logoutCookie);
-        await forgetAll(logoutHost, logoutUser);
-      } catch {}
-    })();
-    logoutCleanupRef.current = cleanup;
-    await cleanup;
-  }, [host, username]);
 
   // ── Sessions ─────────────────────────────────────────────────────────────
 
@@ -1659,7 +1483,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // "Edit & resend" rewinds history to that user row and resubmits the edited
   // text; "Regenerate" reruns the last user turn. Both need the durable row id
   // (ordinal-only cuts are refused for durable sessions).
-  const [editingRowId, setEditingRowId] = useState<number | null>(null);
 
   const editMessage = useCallback(
     (id: string) => {
