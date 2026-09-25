@@ -42,6 +42,7 @@ import type { SessionSummary } from '../../lib/gateway-ws';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
 import * as api from '../../lib/api';
+import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
 
 export interface CronJobItem {
   id: string;
@@ -107,69 +108,6 @@ function getScheduleExpr(job: CronJobItem): string {
     return job.schedule.expr;
   }
   return '';
-}
-
-function formatDateTime(iso?: string | null): string {
-  if (!iso) return '—';
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return String(iso);
-    return d.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return String(iso);
-  }
-}
-
-function toEpochMs(ts: number | string | null | undefined): number | null {
-  if (ts === null || ts === undefined || ts === '') return null;
-  if (typeof ts === 'number') return ts < 1e11 ? ts * 1000 : ts;
-  const n = Number(ts);
-  if (!isNaN(n)) return n < 1e11 ? n * 1000 : n;
-  const d = new Date(ts).getTime();
-  return isNaN(d) ? null : d;
-}
-
-function formatRunTime(ts?: number | string | null): string {
-  if (!ts) return '—';
-  try {
-    const ms = toEpochMs(ts);
-    if (ms === null) return String(ts);
-    const date = new Date(ms);
-    if (isNaN(date.getTime())) return String(ts);
-    return date.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  } catch {
-    return String(ts);
-  }
-}
-
-function formatRunDuration(started?: number | string | null, ended?: number | string | null): string | null {
-  if (!started || !ended) return null;
-  const s = toEpochMs(started);
-  const e = toEpochMs(ended);
-  if (s === null || e === null || isNaN(s) || isNaN(e) || e < s) return null;
-  const diffSec = Math.round((e - s) / 1000);
-  if (diffSec < 60) return `${diffSec}s`;
-  const m = Math.floor(diffSec / 60);
-  const remSec = diffSec % 60;
-  return remSec > 0 ? `${m}m ${remSec}s` : `${m}m`;
-}
-
-function formatTokensCount(n?: number | null): string {
-  if (n == null || isNaN(n) || n === 0) return '0';
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
 }
 
 function parseMessageContent(content: any): string {
@@ -1186,7 +1124,7 @@ export function CronScreen() {
                         {totalTokens > 0 && (
                           <View className="flex-row items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
                             <Text className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300">
-                              {formatTokensCount(totalTokens)} tok
+                              {compactNumber(totalTokens)} tok
                             </Text>
                           </View>
                         )}

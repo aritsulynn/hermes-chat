@@ -48,6 +48,7 @@ import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
 import * as api from '../../lib/api';
+import { formatBytes, formatDate } from '../../utils/format';
 
 export interface ManagedFileEntry {
   name: string;
@@ -76,29 +77,6 @@ export interface ManagedFileReadResponse {
   root: string | null;
   locked_root: string | null;
   can_change_path: boolean;
-}
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined) return '-';
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-function formatDate(mtime: number): string {
-  if (!Number.isFinite(mtime) || mtime <= 0) return '-';
-  const d = new Date(mtime * 1000);
-  const now = new Date();
-  const isThisYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    ...(isThisYear ? {} : { year: 'numeric' }),
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function getFileCategory(

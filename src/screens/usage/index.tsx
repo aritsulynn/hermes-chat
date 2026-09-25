@@ -19,37 +19,13 @@ import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
 import * as api from '../../lib/api';
+import { compactNumber, formatCost, formatDayLabel } from '../../utils/format';
 
 const PERIOD_OPTIONS = [
   { label: '7 Days', days: 7 },
   { label: '30 Days', days: 30 },
   { label: '90 Days', days: 90 },
 ] as const;
-
-function formatTokens(n: number | undefined | null): string {
-  if (!n) return '0';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toLocaleString();
-}
-
-function formatCost(usd: number | undefined | null): string {
-  if (usd === undefined || usd === null || usd === 0) return '$0.00';
-  if (usd < 0.01) return '<$0.01';
-  return `$${usd.toFixed(2)}`;
-}
-
-function formatDayLabel(dayStr: string): string {
-  try {
-    const parts = dayStr.split('-');
-    if (parts.length === 3) {
-      return `${parts[2]}/${parts[1]}`;
-    }
-    return dayStr;
-  } catch {
-    return dayStr;
-  }
-}
 
 // Memo bar — selecting one day shouldn't re-render the other 89 bars.
 const DayBar = memo(function DayBar({
@@ -329,7 +305,7 @@ export function UsageScreen() {
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</Text>
                   </View>
                   <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
-                    {formatTokens(totalTokens)}
+                    {compactNumber(totalTokens)}
                   </Text>
                   <Text className="mt-0.5 text-[11px] text-neutral-400">in {days} days</Text>
                 </View>
@@ -462,7 +438,7 @@ export function UsageScreen() {
                   {selectedDay && (
                     <Text className="text-xs font-mono text-[#1a73e8] dark:text-[#7aa7ff]">
                       {selectedDay.day}:{' '}
-                      {formatTokens((selectedDay.input_tokens || 0) + (selectedDay.output_tokens || 0))} tokens (
+                      {compactNumber((selectedDay.input_tokens || 0) + (selectedDay.output_tokens || 0))} tokens (
                       {selectedDay.sessions || 0} sess)
                     </Text>
                   )}
@@ -519,7 +495,7 @@ export function UsageScreen() {
                             </View>
                             <View className="items-end">
                               <Text className="text-sm font-bold font-mono text-neutral-950 dark:text-neutral-100">
-                                {formatTokens(mTokens)}
+                                {compactNumber(mTokens)}
                               </Text>
                               {Boolean(m.estimated_cost) && (
                                 <Text className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
@@ -530,8 +506,8 @@ export function UsageScreen() {
                           </View>
 
                           <View className="mt-2.5 flex-row items-center justify-between border-t border-neutral-100 pt-2 dark:border-neutral-900">
-                            <Text className="text-[11px] text-neutral-500">In: {formatTokens(m.input_tokens)}</Text>
-                            <Text className="text-[11px] text-neutral-500">Out: {formatTokens(m.output_tokens)}</Text>
+                            <Text className="text-[11px] text-neutral-500">In: {compactNumber(m.input_tokens)}</Text>
+                            <Text className="text-[11px] text-neutral-500">Out: {compactNumber(m.output_tokens)}</Text>
                           </View>
                         </View>
                       );

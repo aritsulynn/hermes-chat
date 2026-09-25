@@ -91,7 +91,7 @@ src/
 
 ## Progress log
 - [x] Phase 1 — removed `screens/ops`, `fuzzyScoreMulti`/`fuzzyRank`, `onNotificationTap`, and 6 unused store keys (`setEffort`/`toggleTheme`/`closeCurrent`/`jumpToRecent`/`getConnectionEpoch` as public API; `answerInboxValue` exposure). A5 (un-export) deferred as low value.
-- [ ] Phase 2
+- [x] Phase 2 — centralized display formatters in `utils/format.ts` (`formatBytes`, `formatDate`, `toEpochMs`, `formatDateTime`, `formatRunTime`, `formatRunDuration`, `formatCost`, `formatDayLabel`); usage/cron number formatters now use `compactNumber`.
 - [ ] Phase 3
 - [ ] Phase 4
 - [ ] Phase 5
