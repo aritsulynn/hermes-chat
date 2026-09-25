@@ -95,5 +95,6 @@ src/
 - [ ] Phase 3
 - [x] Phase 3 — split chat (1842→1645), cron (1335→1114), and files (1174→926) into `components/`, `helpers.ts`, `types.ts`. usage (589→507), kanban (651→561), logs (593→537) split too; _layout drawer extraction still pending.
 - [x] Phase 4a/4b — extracted `AppStore`/`AgentProfile`/`ScopedSessionSummary` to `src/store/types.ts` and all module-level helpers to `src/store/helpers.ts`; `app-store.tsx` 4489→3978.
-- [~] Phase 4c — started: extracted `useThemeSlice` (`src/store/slices/useTheme.ts`). Remaining slices (queue/attachments/asks/models/sessions/transcript/gateway) are tightly coupled through shared refs (`gw`, `cookie`, epochs, `runtimeOwners`) and lifecycle resets; extracting them needs a shared-runtime module (`store/runtime.ts`) plus runtime testing, so it is deferred to a focused pass. Pattern is established in `useTheme.ts`.
+- [~] Phase 4c — extracted `useThemeSlice` and `useNotificationsSlice` (`src/store/slices/`). The remaining slices (queue/attachments/asks/models/sessions/transcript/gateway) are tightly coupled through shared refs (`gw`, `cookie`, epochs, `runtimeOwners`, `sendRef`/`drainRef`) and lifecycle resets; they need a shared-runtime module (`store/runtime.ts`) plus runtime testing, so they are deferred to a focused pass.
+- [x] Tests — added `src/utils/format.test.mjs` plus `helpers.test.mjs` for logs/cron/usage; extended the `test` glob to `src/screens/*/*.test.mjs`. Suite is 71 passing (was 57).
 - [ ] Phase 5

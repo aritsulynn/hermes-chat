@@ -79,7 +79,7 @@ import {
   slashMobileAction,
   slashMobileHint,
 } from '../utils/slash-commands';
-import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
+import type { Attachment, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
 import { normalizeSubagents, normalizeTodos } from '../utils/messages';
 import type { Role } from '../utils/messages';
 import {
@@ -100,6 +100,7 @@ import {
 import type { AgentProfile, AppStore, ScopedSessionSummary } from '../store/types';
 import { useThemeSlice } from '../store/slices/useTheme';
 import { useNotificationsSlice } from '../store/slices/useNotifications';
+import { useQueueSlice } from '../store/slices/useQueue';
 
 const AppContext = createContext<AppStore | null>(null);
 
@@ -203,11 +204,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [, setCatalogVersion] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [generating, setGenerating] = useState(false);
-  // Client-side prompt queue (text-only) — prompts typed while the agent is
-  // mid-turn, drained one per turn end. `queueParked` is set by an explicit
-  // Stop and lifted by queueing again / Resume (desktop parity).
-  const [queued, setQueued] = useState<QueuedPrompt[]>([]);
-  const [queueParked, setQueueParked] = useState(false);
   // The agent's live todo list (`todo.updated`), shown above the composer.
   const [todos, setTodos] = useState<TodoItem[]>([]);
   // Live child agents (polled from `subagent.list` while a turn runs).
@@ -329,16 +325,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Queue plumbing reads the freshest values from inside the once-created WS
   // event handlers (onComplete drains the queue before React re-renders).
   const generatingRef = useRef(false);
-  const queueParkedRef = useRef(false);
-  const queuedRef = useRef<QueuedPrompt[]>([]);
-  const queueDrainInFlightRef = useRef(false);
   const sendRef = useRef<((text?: string) => Promise<void>) | null>(null);
   const drainRef = useRef<() => void>(() => {});
+  const {
+    queued,
+    queueParked,
+    queuedRef,
+    queueParkedRef,
+    setQueued,
+    setQueueParked,
+    setQueue,
+    enqueueQueued,
+    removeQueued,
+    clearQueue,
+    resumeQueue,
+    sendQueuedNow,
+  } = useQueueSlice({ generatingRef, sendRef, drainRef });
   // Live transcript, for handlers frozen in openWs (tool backfill name-checking).
   const messagesRef = useRef<UiMessage[]>([]);
   generatingRef.current = generating;
-  queueParkedRef.current = queueParked;
-  queuedRef.current = queued;
   messagesRef.current = messages;
   // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
   const latest = useRef({ host, username, activeProfile, sessionKey });
@@ -2763,80 +2768,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [activeProfile, sessionId, sessionKey, generating, beginTurn, setInput],
   );
-
-  // ── Prompt queue ─────────────────────────────────────────────────────────
-  // Prompts typed while a turn is running are held here (client-side) and drained
-  // one per turn end — see drainRef / onComplete. An explicit Stop parks the
-  // queue until the user queues again or taps Resume (desktop parity).
-  //
-  // The ref is authoritative (mutated synchronously) and state mirrors it: two
-  // drains firing before a re-render must not both pick up the same head.
-  const setQueue = useCallback((update: (prev: QueuedPrompt[]) => QueuedPrompt[]) => {
-    queuedRef.current = update(queuedRef.current);
-    setQueued(queuedRef.current);
-  }, []);
-
-  const enqueueQueued = useCallback(
-    (text: string) => {
-      const t = text.trim();
-      if (!t) return;
-      queueParkedRef.current = false;
-      setQueueParked(false); // queueing lifts a park
-      setQueue((prev) => [...prev, { id: nid(), text: t }]);
-      // Idle (parked/unparked) → start immediately; mid-turn → waits for onComplete.
-      queueMicrotask(() => drainRef.current());
-    },
-    [setQueue],
-  );
-  const removeQueued = useCallback((id: string) => setQueue((prev) => prev.filter((q) => q.id !== id)), [setQueue]);
-  const clearQueue = useCallback(() => {
-    setQueue(() => []);
-    queueParkedRef.current = false;
-    setQueueParked(false);
-  }, [setQueue]);
-  const resumeQueue = useCallback(() => {
-    queueParkedRef.current = false;
-    setQueueParked(false);
-    queueMicrotask(() => drainRef.current());
-  }, []);
-  const sendQueuedNow = useCallback(
-    (id: string) => {
-      queueParkedRef.current = false;
-      setQueueParked(false);
-      if (generatingRef.current) {
-        // Busy — move it to the front; the drain picks it up at turn end.
-        setQueue((prev) => {
-          const item = prev.find((q) => q.id === id);
-          return item ? [item, ...prev.filter((q) => q.id !== id)] : prev;
-        });
-        return;
-      }
-      const item = queuedRef.current.find((q) => q.id === id);
-      if (!item) return;
-      setQueue((prev) => prev.filter((q) => q.id !== id));
-      void sendRef.current?.(item.text);
-    },
-    [setQueue],
-  );
-  // Fresh closure each render so the once-created onComplete handler always
-  // drains against current queue/generating state.
-  drainRef.current = () => {
-    if (queueParkedRef.current || generatingRef.current || queueDrainInFlightRef.current) return;
-    const next = queuedRef.current[0];
-    if (!next) return;
-    queueDrainInFlightRef.current = true;
-    let submitted = false;
-    void Promise.resolve(sendRef.current?.(next.text))
-      .then(() => {
-        submitted = true;
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (submitted) setQueue((prev) => prev.filter((q) => q.id !== next.id));
-        queueDrainInFlightRef.current = false;
-        if (submitted && !queueParkedRef.current && !generatingRef.current) drainRef.current();
-      });
-  };
 
   // ── Edit / regenerate (rewind) ────────────────────────────────────────────
   // "Edit & resend" rewinds history to that user row and resubmits the edited
