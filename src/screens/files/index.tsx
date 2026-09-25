@@ -21,25 +21,18 @@ import {
   AlertCircle,
   ArrowUp,
   Check,
-  ChevronRight,
   Code2,
   Copy,
   File,
-  FileArchive,
-  FileCode,
-  FileImage,
-  FileText,
   Folder,
   FolderPlus,
   HardDrive,
   Image as ImageIcon,
-  Music,
   Plus,
   RefreshCw,
   Search,
   Trash2,
   Upload,
-  Video,
   X,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -48,233 +41,10 @@ import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
 import * as api from '../../lib/api';
-import { formatBytes, formatDate } from '../../utils/format';
-
-export interface ManagedFileEntry {
-  name: string;
-  path: string;
-  is_directory: boolean;
-  size: number | null;
-  mtime: number;
-  mime_type: string | null;
-}
-
-export interface ManagedFilesResponse {
-  root: string | null;
-  path: string;
-  parent: string | null;
-  locked_root: string | null;
-  can_change_path: boolean;
-  entries: ManagedFileEntry[];
-}
-
-export interface ManagedFileReadResponse {
-  name: string;
-  path: string;
-  size: number;
-  mime_type: string;
-  data_url: string;
-  root: string | null;
-  locked_root: string | null;
-  can_change_path: boolean;
-}
-
-function getFileCategory(
-  name: string,
-  mime?: string | null,
-): {
-  icon: typeof File;
-  color: string;
-  bgColor: string;
-  isImage: boolean;
-  isText: boolean;
-} {
-  const lower = name.toLowerCase();
-  const ext = lower.split('.').pop() || '';
-
-  if (mime?.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
-    return {
-      icon: FileImage,
-      color: '#10b981',
-      bgColor: '#10b98118',
-      isImage: true,
-      isText: false,
-    };
-  }
-  if (
-    [
-      'js',
-      'jsx',
-      'ts',
-      'tsx',
-      'py',
-      'json',
-      'html',
-      'css',
-      'scss',
-      'sh',
-      'bash',
-      'yml',
-      'yaml',
-      'toml',
-      'sql',
-      'rs',
-      'go',
-      'c',
-      'cpp',
-      'java',
-      'kt',
-    ].includes(ext)
-  ) {
-    return {
-      icon: FileCode,
-      color: '#3b82f6',
-      bgColor: '#3b82f618',
-      isImage: false,
-      isText: true,
-    };
-  }
-  if (mime?.startsWith('video/') || ['mp4', 'mov', 'mkv', 'webm', 'avi'].includes(ext)) {
-    return {
-      icon: Video,
-      color: '#f59e0b',
-      bgColor: '#f59e0b18',
-      isImage: false,
-      isText: false,
-    };
-  }
-  if (mime?.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a', 'flac'].includes(ext)) {
-    return {
-      icon: Music,
-      color: '#8b5cf6',
-      bgColor: '#8b5cf618',
-      isImage: false,
-      isText: false,
-    };
-  }
-  if (['zip', 'tar', 'gz', 'tgz', 'rar', '7z', 'bz2', 'xz'].includes(ext)) {
-    return {
-      icon: FileArchive,
-      color: '#ec4899',
-      bgColor: '#ec489918',
-      isImage: false,
-      isText: false,
-    };
-  }
-  if (
-    mime?.startsWith('text/') ||
-    ['txt', 'md', 'log', 'env', 'csv', 'tsv', 'xml', 'conf', 'ini', 'cfg'].includes(ext)
-  ) {
-    return {
-      icon: FileText,
-      color: '#6366f1',
-      bgColor: '#6366f118',
-      isImage: false,
-      isText: true,
-    };
-  }
-  return {
-    icon: File,
-    color: '#6b7280',
-    bgColor: '#6b728018',
-    isImage: false,
-    isText: false,
-  };
-}
-
-function joinPath(dir: string, name: string): string {
-  if (!dir || dir === '/') return `/${name}`;
-  return `${dir.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`;
-}
-
-// Memoized row — the old ScrollView.map rebuilt every icon/date/bytes per keystroke.
-const FileRow = memo(function FileRow({
-  entry,
-  dark,
-  onOpen,
-  onDelete,
-}: {
-  entry: ManagedFileEntry;
-  dark: boolean;
-  onOpen: (e: ManagedFileEntry) => void;
-  onDelete: (path: string, isDir: boolean, name: string) => void;
-}) {
-  const category = getFileCategory(entry.name, entry.mime_type);
-  const isDir = entry.is_directory;
-  const Icon = isDir ? Folder : category.icon;
-  const iconColor = isDir ? '#f59e0b' : category.color;
-  const iconBg = isDir ? '#f59e0b18' : category.bgColor;
-  return (
-    <Pressable
-      onPress={() => onOpen(entry)}
-      onLongPress={() => onDelete(entry.path, entry.is_directory, entry.name)}
-      className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-2.5 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
-    >
-      <View className="h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: iconBg }}>
-        <Icon size={20} color={iconColor} />
-      </View>
-      <View className="flex-1 justify-center">
-        <Text numberOfLines={1} className="font-mono text-sm font-medium text-neutral-900 dark:text-neutral-100">
-          {entry.name}
-        </Text>
-        <View className="mt-0.5 flex-row items-center gap-2">
-          <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">
-            {isDir ? 'Folder' : formatBytes(entry.size)}
-          </Text>
-          <Text className="text-[11px] text-neutral-400 dark:text-neutral-600">·</Text>
-          <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">{formatDate(entry.mtime)}</Text>
-        </View>
-      </View>
-      {isDir ? <ChevronRight size={17} color={dark ? '#666' : '#aaa'} /> : null}
-    </Pressable>
-  );
-});
-
-const TEXT_MIME_RE = /^(text\/|application\/(json|xml|yaml|x-yaml|javascript|csv|toml|x-sh))/i;
-const TEXT_EXTS = new Set([
-  'txt',
-  'md',
-  'markdown',
-  'log',
-  'env',
-  'csv',
-  'tsv',
-  'json',
-  'xml',
-  'yaml',
-  'yml',
-  'ini',
-  'cfg',
-  'conf',
-  'toml',
-  'sh',
-  'bash',
-  'js',
-  'jsx',
-  'ts',
-  'tsx',
-  'py',
-  'html',
-  'htm',
-  'css',
-  'scss',
-  'sql',
-  'rs',
-  'go',
-  'c',
-  'cpp',
-  'h',
-  'java',
-  'kt',
-  'rb',
-  'php',
-  'svg',
-]);
-function isTextReadable(mime: string | null | undefined, name: string): boolean {
-  if (mime && TEXT_MIME_RE.test(mime)) return true;
-  const ext = (name.split('.').pop() || '').toLowerCase();
-  return TEXT_EXTS.has(ext);
-}
+import { formatBytes } from '../../utils/format';
+import { FileRow } from './components/FileRow';
+import { isTextReadable, joinPath } from './helpers';
+import type { ManagedFileEntry, ManagedFilesResponse, ManagedFileReadResponse } from './types';
 
 export function FilesScreen() {
   const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();
