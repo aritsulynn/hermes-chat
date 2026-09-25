@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -19,7 +19,10 @@ import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
 import * as api from '../../lib/api';
-import { compactNumber, formatCost, formatDayLabel } from '../../utils/format';
+import { compactNumber, formatCost } from '../../utils/format';
+import { DayBar } from './components/DayBar';
+import { normalizeToolSkillList } from './helpers';
+import type { ToolSkillItem } from './helpers';
 
 const PERIOD_OPTIONS = [
   { label: '7 Days', days: 7 },
@@ -27,88 +30,6 @@ const PERIOD_OPTIONS = [
   { label: '90 Days', days: 90 },
 ] as const;
 
-// Memo bar — selecting one day shouldn't re-render the other 89 bars.
-const DayBar = memo(function DayBar({
-  day,
-  tokens,
-  maxTokens,
-  selected,
-  onSelect,
-}: {
-  day: string;
-  tokens: number;
-  maxTokens: number;
-  selected: boolean;
-  onSelect: (day: string) => void;
-}) {
-  const hasTokens = tokens > 0;
-  const heightPercent = hasTokens ? Math.max(12, Math.round((tokens / maxTokens) * 100)) : 4;
-  return (
-    <Pressable onPress={() => onSelect(day)} className="items-center justify-end w-7 h-full">
-      <View
-        className={`w-full rounded-t-sm ${
-          selected
-            ? 'bg-blue-600 dark:bg-blue-500'
-            : hasTokens
-              ? 'bg-[#1a73e8] dark:bg-[#7aa7ff]'
-              : 'bg-neutral-200 dark:bg-neutral-800'
-        }`}
-        style={{ height: `${heightPercent}%` }}
-      />
-      <Text
-        className={`mt-1.5 font-mono text-[9px] ${
-          selected
-            ? 'font-bold text-blue-600 dark:text-blue-400'
-            : hasTokens
-              ? 'text-neutral-700 dark:text-neutral-300 font-medium'
-              : 'text-neutral-400 dark:text-neutral-600'
-        }`}
-      >
-        {formatDayLabel(day)}
-      </Text>
-    </Pressable>
-  );
-});
-
-interface ToolSkillItem {
-  name: string;
-  count: number;
-  percentage?: number;
-}
-
-function normalizeToolSkillList(raw: any, keyField: 'tool' | 'skill'): ToolSkillItem[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw.map((item, idx) => {
-      if (typeof item === 'string') {
-        return { name: item, count: 1 };
-      }
-      if (typeof item === 'object' && item !== null) {
-        const name = String(item[keyField] ?? item.name ?? item.id ?? item.key ?? `Item ${idx + 1}`);
-        const count = typeof item.count === 'number' ? item.count : Number(item.count || item.total || item.calls || 0);
-        const percentage = typeof item.percentage === 'number' ? item.percentage : undefined;
-        return { name, count, percentage };
-      }
-      return { name: String(item), count: 1 };
-    });
-  }
-  if (typeof raw === 'object' && raw !== null) {
-    return Object.entries(raw).map(([key, val]) => {
-      if (typeof val === 'number') {
-        return { name: key, count: val };
-      }
-      if (typeof val === 'object' && val !== null) {
-        const item = val as any;
-        const name = String(item[keyField] ?? item.name ?? key);
-        const count = typeof item.count === 'number' ? item.count : Number(item.count || item.total || item.calls || 0);
-        const percentage = typeof item.percentage === 'number' ? item.percentage : undefined;
-        return { name, count, percentage };
-      }
-      return { name: key, count: Number(val) || 0 };
-    });
-  }
-  return [];
-}
 
 export function UsageScreen() {
   const { authed, opsGet, theme, getAuthScope } = useApp();
