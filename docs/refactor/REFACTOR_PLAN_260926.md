@@ -97,6 +97,21 @@ src/
 - [x] Phase 4a/4b — extracted `AppStore`/`AgentProfile`/`ScopedSessionSummary` to `src/store/types.ts` and all module-level helpers to `src/store/helpers.ts`; `app-store.tsx` 4489→3978.
 - [~] Phase 4c — added `src/store/runtime.ts` (`useStoreRuntime`) centralizing the cross-slice refs, destructured back into the provider under the same names. Extracted slices (14): theme, notifications, queue, models, sessionInfo, liveRoster, composer, sessions, askInbox, askReplies, notificationResponses, toolRefresh, liveTurn, commands. The "slice owns refs/setters, provider gets them back for direct writes" technique keeps lifecycle resets untouched. `app-store.tsx` is down to ~2.97k (from 4489, −34%).
 
-Residual = the **orchestrator**: `connect`/`login`/`logout`, `switchProfile`, session management (`openSession`/`newSession`/`branchSession`/`renameSession`/`deleteSessionById`/`redirectLive`/`setGlobalModel`), the turn engine (`beginTurn`/`send`/`stop`/`runSlash`/`pasteLarge`/`releaseLocalTurn`/edit/regenerate), and `openWs` (~477 lines). These are not leaf concerns and have **circular ordering constraints** — e.g. `activeProfile`/`profiles` are read at line ~146 (before the slice that would own them could be called, since `refreshProfiles` needs `acceptRotatedCookie` defined later), and the functions break cycles today via `openSessionRef`/`connectRef`/… So a slice-per-orchestrator cut requires a coordinated rewrite of the provider's declaration order, and each function would take a 25–40-entry deps object. **Do this as a dedicated pass with the app running**, not incrementally blind.
+Residual = the **orchestrator** — `connect`/`login`/`logout`, `switchProfile`, session management, the turn engine, and `openWs` (~477 lines). Two concrete reasons it was not split further:
+
+1. **Leaf slices depend on orchestrator state**, so the orchestrator must create them (e.g. `useModelsSlice` needs `host`/`sessionId`/`setMessages`; `useSessionInfoSlice` needs `sessionId`). Pulling the orchestrator into its own hook means the leaf slices move with it.
+2. **`openWs` closes over ~50 symbols** (every setter + ref + the ask/notification/live-turn callbacks). Its `useCallback` deps are only the 6 stable callbacks, because everything else is a stable setter/ref — but extracting it would require a ~50-entry deps object. This is not "organizing", it is trading a long file for a very wide interface; the right fix is a redesign where mutable state lives behind a shared `store` object (refs + setters) that slices read, instead of threading deps.
+
+As a safe, behaviour-preserving finish, the orchestrator body was relocated verbatim from `hooks/app-store.tsx` to `store/useAppStore.tsx`, and `hooks/app-store.tsx` is now a 7-line entry that re-exports `useApp`/`AppProvider` (import paths unchanged for all callers).
+
+### Final shape
+```
+src/hooks/app-store.tsx      # 7 lines — entry, re-exports useApp/AppProvider
+src/store/useAppStore.tsx    # orchestrator (connection/session/turn/gateway wiring)
+src/store/runtime.ts         # shared refs
+src/store/helpers.ts         # pure helpers
+src/store/types.ts           # AppStore contract + profile/session types
+src/store/slices/*           # 14 domain slices
+```
 - [x] Tests — added `src/utils/format.test.mjs` plus `helpers.test.mjs` for logs/cron/usage; extended the `test` glob to `src/screens/*/*.test.mjs`. Suite is 71 passing (was 57).
 - [ ] Phase 5
