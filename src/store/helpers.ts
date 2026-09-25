@@ -2,12 +2,12 @@
 // timeouts, profile/session keys, usage merging, context hydration, attachment
 // uploads, and history→transcript conversion.
 import { readAsStringAsync } from 'expo-file-system/legacy';
-import * as api from '../lib/api';
-import { opsGet as dashboardOpsGet } from '../lib/dashboard';
-import { DEFAULT_PROFILE, MAX_UPLOAD_BYTES } from '../lib/constants';
-import type { AskInboxEntry } from '../lib/ask-inbox';
-import type { HermesNotificationResponse } from '../lib/notifications';
-import type { GatewayWs, HistoryMessage, ServerAsk } from '../lib/gateway-ws';
+import * as api from '../services/api';
+import { opsGet as dashboardOpsGet } from '../services/dashboard';
+import { DEFAULT_PROFILE, MAX_UPLOAD_BYTES } from '../services/constants';
+import type { AskInboxEntry } from '../services/ask-inbox';
+import type { HermesNotificationResponse } from '../services/notifications';
+import type { GatewayWs, HistoryMessage, ServerAsk } from '../services/gateway-ws';
 import { cleanThinking, nid } from '../utils/messages';
 import type { Attachment, UiMessage } from '../utils/messages';
 import { formatToolResult } from '../utils/toolResult';
@@ -149,7 +149,7 @@ export function scheduleContextHydration(
 // ── Attachment upload ───────────────────────────────────────────────────────
 // prompt.submit is text-only, so bytes are staged through session-scoped
 // file.attach/image.attach_bytes RPCs and the agent is handed the returned ref.
-// MAX_UPLOAD_BYTES lives in ../lib/constants (the 1.4x check below accounts for
+// MAX_UPLOAD_BYTES lives in ../services/constants (the 1.4x check below accounts for
 // the JSON base64 inflation).
 
 export const isImageAttachment = (a: Attachment) =>

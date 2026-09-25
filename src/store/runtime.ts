@@ -6,9 +6,9 @@
 // provider threading a dozen individual refs into every slice call.
 import { useRef } from 'react';
 import type { MutableRefObject } from 'react';
-import type { AskOwner } from '../lib/ask-inbox';
-import { DEFAULT_PROFILE } from '../lib/constants';
-import type { GatewayWs, SessionSummary } from '../lib/gateway-ws';
+import type { AskOwner } from '../services/ask-inbox';
+import { DEFAULT_PROFILE } from '../services/constants';
+import type { GatewayWs, SessionSummary } from '../services/gateway-ws';
 import type { UiMessage } from '../utils/messages';
 import type { AgentProfile } from './types';
 

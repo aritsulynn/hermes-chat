@@ -11,7 +11,7 @@ import { parseClarify } from '../utils/messages';
 import { mergeUsage, contextTone } from '../utils/usage';
 import { compactNumber } from '../utils/format';
 import { useApp } from '../hooks/app-store';
-import type { GatewayWs, ServerAsk } from '../lib/gateway-ws';
+import type { GatewayWs, ServerAsk } from '../services/gateway-ws';
 import { Tap } from './bits';
 
 export const renderBackdrop = (props: any) => (

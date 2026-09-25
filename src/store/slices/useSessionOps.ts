@@ -2,12 +2,12 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { router } from 'expo-router';
-import type { GatewayWs, HistoryMessage, ServerAsk } from '../../lib/gateway-ws';
-import { getSessionMessages } from '../../lib/dashboard';
-import { connectionScope, saveLastSession } from '../../lib/connection';
+import type { GatewayWs, HistoryMessage, ServerAsk } from '../../services/gateway-ws';
+import { getSessionMessages } from '../../services/dashboard';
+import { connectionScope, saveLastSession } from '../../services/connection';
 import { errMsg, normalizeTodos } from '../../utils/messages';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
-import type { AskInboxEntry, AskOwner } from '../../lib/ask-inbox';
+import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
 import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey, serverAskFromInbox } from '../helpers';
 import type { ScopedSessionSummary } from '../types';
 import type { StoreRuntime } from '../runtime';

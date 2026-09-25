@@ -38,10 +38,10 @@ import {
   X,
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
-import type { SessionSummary } from '../../lib/gateway-ws';
+import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
-import * as api from '../../lib/api';
+import * as api from '../../services/api';
 import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
 import { JobPromptPreview } from './components/JobPromptPreview';
 import { SCHEDULE_PRESETS, getScheduleExpr, parseMessageContent, scopedRunKey } from './helpers';

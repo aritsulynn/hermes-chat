@@ -20,8 +20,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useApp } from '../../hooks/app-store';
-import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../lib/connection';
-import * as api from '../../lib/api';
+import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
+import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn, Tap } from '../../components';
 import { CardChips } from './components/CardChips';

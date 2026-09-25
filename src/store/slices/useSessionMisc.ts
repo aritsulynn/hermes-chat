@@ -3,10 +3,10 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { router } from 'expo-router';
-import { setMainModel } from '../../lib/dashboard';
-import { connectionScope, saveModel } from '../../lib/connection';
-import type { ServerAsk } from '../../lib/gateway-ws';
-import type { AskInboxEntry, AskOwner } from '../../lib/ask-inbox';
+import { setMainModel } from '../../services/dashboard';
+import { connectionScope, saveModel } from '../../services/connection';
+import type { ServerAsk } from '../../services/gateway-ws';
+import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
 import { errMsg, nid } from '../../utils/messages';
 import type { SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
 import { profileSessionKey } from '../helpers';

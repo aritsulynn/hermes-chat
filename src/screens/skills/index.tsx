@@ -21,8 +21,8 @@ import * as Clipboard from 'expo-clipboard';
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
-import { getSkillContent, getSkills, setSkillEnabled } from '../../lib/skills';
-import type { SkillInfo } from '../../lib/skills';
+import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
+import type { SkillInfo } from '../../services/skills';
 
 export function SkillsScreen() {
   const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();

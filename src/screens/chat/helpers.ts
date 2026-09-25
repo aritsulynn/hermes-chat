@@ -1,5 +1,5 @@
 // Pure helpers for the chat screen (no React/JSX).
-import type { SlashCompletionItem } from '../../lib/gateway-ws';
+import type { SlashCompletionItem } from '../../services/gateway-ws';
 import type { UiMessage } from '../../utils/messages';
 
 // Offline fallback for the "/" wheel when the gateway predates `complete.slash`.

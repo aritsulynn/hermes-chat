@@ -20,8 +20,8 @@ import { Boxes, RefreshCw, Search } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components';
 import { errMsg } from '../../utils/messages';
-import { getToolsets, setToolsetEnabled } from '../../lib/toolsets';
-import type { ToolsetInfo } from '../../lib/toolsets';
+import { getToolsets, setToolsetEnabled } from '../../services/toolsets';
+import type { ToolsetInfo } from '../../services/toolsets';
 
 // Same presentation-only curation as Hermes Desktop's Toolsets tab.
 const HIDDEN_TOOLSETS = new Set(['discord', 'discord_admin', 'yuanbao', 'context_engine', 'moa']);

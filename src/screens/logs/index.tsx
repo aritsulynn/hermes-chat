@@ -30,7 +30,7 @@ import {
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
-import * as api from '../../lib/api';
+import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
 import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
 

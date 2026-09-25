@@ -5,9 +5,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { router } from 'expo-router';
-import { findAsk, findAskByRpc } from '../../lib/ask-inbox';
-import type { AskInboxEntry } from '../../lib/ask-inbox';
-import { connectionScope } from '../../lib/connection';
+import { findAsk, findAskByRpc } from '../../services/ask-inbox';
+import type { AskInboxEntry } from '../../services/ask-inbox';
+import { connectionScope } from '../../services/connection';
 import {
   ensureAndroidChannel,
   ensureNotificationCategories,
@@ -17,8 +17,8 @@ import {
   NOTIFICATION_ASK_REJECT,
   NOTIFICATION_DEFAULT_ACTION,
   onNotificationResponse,
-} from '../../lib/notifications';
-import type { HermesNotificationResponse } from '../../lib/notifications';
+} from '../../services/notifications';
+import type { HermesNotificationResponse } from '../../services/notifications';
 import { normalizeProfileName, notificationResponseKey } from '../helpers';
 import type { StoreRuntime } from '../runtime';
 

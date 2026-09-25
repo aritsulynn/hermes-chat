@@ -3,11 +3,11 @@
 // WS handlers, ask replies and logout also read/write them.
 import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { askKey, setAskStatus, setAskStatusByRpc, upsertAsk } from '../../lib/ask-inbox';
-import type { AskInboxEntry, AskInboxInput, AskInboxStatus, AskOwner } from '../../lib/ask-inbox';
-import { connectionScope } from '../../lib/connection';
-import type { ServerAsk } from '../../lib/gateway-ws';
-import { dismissNotification } from '../../lib/notifications';
+import { askKey, setAskStatus, setAskStatusByRpc, upsertAsk } from '../../services/ask-inbox';
+import type { AskInboxEntry, AskInboxInput, AskInboxStatus, AskOwner } from '../../services/ask-inbox';
+import { connectionScope } from '../../services/connection';
+import type { ServerAsk } from '../../services/gateway-ws';
+import { dismissNotification } from '../../services/notifications';
 import { normalizeProfileName, parseProfileSessionKey } from '../helpers';
 import type { AgentProfile } from '../types';
 import type { StoreRuntime } from '../runtime';

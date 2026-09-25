@@ -3,7 +3,7 @@
 // backend route change meant grepping the whole tree. Every builder here
 // reproduces the exact string its call site used to inline.
 //
-// Pair with `opsGet` / `opsMut` (src/lib/dashboard.ts) — these only build
+// Pair with `opsGet` / `opsMut` (src/services/dashboard.ts) — these only build
 // paths, they do no I/O. Route shapes follow the hermes-agent dashboard API.
 //
 // NOTE: this module deliberately has no imports. It is loaded directly by

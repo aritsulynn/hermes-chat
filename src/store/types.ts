@@ -1,10 +1,10 @@
 // Store types — the public `AppStore` contract plus profile/session shapes.
 // Extracted from hooks/app-store.tsx so the context contract is readable in
 // one place instead of buried above a 4k-line provider.
-import type { AskInboxEntry } from '../lib/ask-inbox';
-import type { ResolvedTheme, Theme } from '../lib/connection';
-import type { ModelProviderOption } from '../lib/dashboard';
-import type { ConnState, GatewayWs, ServerAsk, SessionSummary } from '../lib/gateway-ws';
+import type { AskInboxEntry } from '../services/ask-inbox';
+import type { ResolvedTheme, Theme } from '../services/connection';
+import type { ModelProviderOption } from '../services/dashboard';
+import type { ConnState, GatewayWs, ServerAsk, SessionSummary } from '../services/gateway-ws';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
 
 export interface AgentProfile {

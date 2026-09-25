@@ -13,7 +13,7 @@
  *  React state all derive from it. */
 export const DEFAULT_PROFILE = 'default';
 
-// ── HTTP (src/lib/dashboard.ts) ─────────────────────────────────────────────
+// ── HTTP (src/services/dashboard.ts) ────────────────────────────────────────
 
 /** Default ceiling for a single dashboard REST call. */
 export const HTTP_TIMEOUT_MS = 15000;
@@ -39,7 +39,7 @@ export const SESSION_MESSAGES_LIMIT = 200;
 /** Bounded so long sessions don't grow the map without limit. */
 export const SESSION_MESSAGES_CACHE_MAX = 20;
 
-// ── Gateway WebSocket (src/lib/gateway-ws.ts) ───────────────────────────────
+// ── Gateway WebSocket (src/services/gateway-ws.ts) ──────────────────────────
 
 /** gateway.ping heartbeat. */
 export const WS_HEARTBEAT_MS = 15000;

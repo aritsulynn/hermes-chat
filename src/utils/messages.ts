@@ -1,7 +1,7 @@
 // Shared chat models + pure helpers (no React imports).
 // Split out of the old monolithic App.tsx so the expo-router screens,
 // the global store and the shared UI components all use one definition.
-import type { ModelProviderOption } from '../lib/dashboard';
+import type { ModelProviderOption } from '../services/dashboard';
 
 export type Role = 'user' | 'assistant' | 'notice' | 'interim' | 'thinking' | 'tool' | 'summary';
 

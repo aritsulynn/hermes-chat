@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useColorScheme as useSystemScheme } from 'react-native';
 import { useColorScheme as useNWColorScheme } from 'nativewind';
-import { saveTheme } from '../../lib/connection';
-import type { ResolvedTheme, Theme } from '../../lib/connection';
+import { saveTheme } from '../../services/connection';
+import type { ResolvedTheme, Theme } from '../../services/connection';
 
 export interface ThemeSlice {
   themeMode: Theme;

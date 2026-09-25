@@ -26,7 +26,7 @@ import {
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn, UpdatePanel } from '../../components';
-import { notificationsSupported } from '../../lib/notifications';
+import { notificationsSupported } from '../../services/notifications';
 import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
 export function SettingsScreen() {

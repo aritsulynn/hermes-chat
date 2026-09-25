@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { inlineDiffFromDetail } from '../../utils/diff';
-import { connectionScope } from '../../lib/connection';
-import { getSessionMessages } from '../../lib/dashboard';
+import { connectionScope } from '../../services/connection';
+import { getSessionMessages } from '../../services/dashboard';
 import { formatToolResult } from '../../utils/toolResult';
 import type { UiMessage } from '../../utils/messages';
 import type { StoreRuntime } from '../runtime';

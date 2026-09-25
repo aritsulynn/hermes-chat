@@ -4,10 +4,10 @@ import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { Platform } from 'react-native';
 import { router } from 'expo-router';
-import type { GatewayWs } from '../../lib/gateway-ws';
-import type { ConnState, ServerAsk, SessionSummary } from '../../lib/gateway-ws';
-import { clearSessionMessagesCache, logoutDashboard, probeStatus } from '../../lib/dashboard';
-import type { ModelProviderOption } from '../../lib/dashboard';
+import type { GatewayWs } from '../../services/gateway-ws';
+import type { ConnState, ServerAsk, SessionSummary } from '../../services/gateway-ws';
+import { clearSessionMessagesCache, logoutDashboard, probeStatus } from '../../services/dashboard';
+import type { ModelProviderOption } from '../../services/dashboard';
 import {
   connectionScope,
   forgetAll,
@@ -17,11 +17,11 @@ import {
   saveActiveProfile,
   saveHost,
   savePassword,
-} from '../../lib/connection';
-import { clearMediaCaches } from '../../lib/media-cache';
-import { DEFAULT_PROFILE } from '../../lib/constants';
-import type { AskInboxEntry } from '../../lib/ask-inbox';
-import type { HermesNotificationResponse } from '../../lib/notifications';
+} from '../../services/connection';
+import { clearMediaCaches } from '../../services/media-cache';
+import { DEFAULT_PROFILE } from '../../services/constants';
+import type { AskInboxEntry } from '../../services/ask-inbox';
+import type { HermesNotificationResponse } from '../../services/notifications';
 import { errMsg } from '../../utils/messages';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
 import { discoverAgentProfiles, withTimeout } from '../helpers';

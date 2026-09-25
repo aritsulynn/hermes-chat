@@ -14,7 +14,7 @@ import {
   opsGet as dashboardOpsGet,
   opsMut as dashboardOpsMut,
   passwordLogin,
-} from '../lib/dashboard';
+} from '../services/dashboard';
 import {
   clearCookie,
   clearPassword,
@@ -26,13 +26,13 @@ import {
   getTheme,
   loadConnection,
   saveCookie,
-} from '../lib/connection';
-import { DEFAULT_PROFILE } from '../lib/constants';
-import { dismissNotification } from '../lib/notifications';
-import { askKey, pendingAsks } from '../lib/ask-inbox';
-import type { AskInboxEntry, AskOwner } from '../lib/ask-inbox';
-import { GatewayWs } from '../lib/gateway-ws';
-import type { ConnState, HistoryMessage } from '../lib/gateway-ws';
+} from '../services/connection';
+import { DEFAULT_PROFILE } from '../services/constants';
+import { dismissNotification } from '../services/notifications';
+import { askKey, pendingAsks } from '../services/ask-inbox';
+import type { AskInboxEntry, AskOwner } from '../services/ask-inbox';
+import { GatewayWs } from '../services/gateway-ws';
+import type { ConnState, HistoryMessage } from '../services/gateway-ws';
 import { errMsg, nid } from '../utils/messages';
 import type { Attachment, UiMessage } from '../utils/messages';
 import type { Role } from '../utils/messages';

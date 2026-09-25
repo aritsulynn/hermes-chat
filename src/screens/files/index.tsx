@@ -40,7 +40,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
-import * as api from '../../lib/api';
+import * as api from '../../services/api';
 import { formatBytes } from '../../utils/format';
 import { FileRow } from './components/FileRow';
 import { isTextReadable, joinPath } from './helpers';

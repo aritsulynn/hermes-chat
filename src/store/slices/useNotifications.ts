@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { AppState } from 'react-native';
-import { getNotifyEnabled, saveNotifyEnabled } from '../../lib/connection';
-import { notifyPermissionGranted, requestNotifyPermission } from '../../lib/notifications';
+import { getNotifyEnabled, saveNotifyEnabled } from '../../services/connection';
+import { notifyPermissionGranted, requestNotifyPermission } from '../../services/notifications';
 
 export interface NotificationsSlice {
   notifyEnabled: boolean;

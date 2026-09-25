@@ -18,7 +18,7 @@ import * as LocalAuth from 'expo-local-authentication';
 import { useApp } from '../../hooks/app-store';
 import { Field } from '../../components';
 import { BUILD_ID } from '../../build';
-import { getPassword } from '../../lib/connection';
+import { getPassword } from '../../services/connection';
 
 export function LoginScreen() {
   const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login, theme } =

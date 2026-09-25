@@ -18,7 +18,7 @@ import {
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
-import * as api from '../../lib/api';
+import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
 import { normalizeToolSkillList } from './helpers';

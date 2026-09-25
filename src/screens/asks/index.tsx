@@ -19,7 +19,7 @@ import {
 
 import { HamburgerBtn } from '../../components';
 import { useApp } from '../../hooks/app-store';
-import type { AskInboxEntry } from '../../lib/ask-inbox';
+import type { AskInboxEntry } from '../../services/ask-inbox';
 import { errMsg } from '../../utils/messages';
 
 function methodLabel(method: string): string {

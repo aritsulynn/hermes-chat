@@ -40,11 +40,11 @@ import {
   ratioCache,
   serverFileCache,
   serverFilePending,
-} from '../lib/media-cache';
-import { buildImageSource, shouldAttachDashboardCookie } from '../lib/media-policy';
+} from '../services/media-cache';
+import { buildImageSource, shouldAttachDashboardCookie } from '../services/media-policy';
 import { deleteAsync, writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
-import * as api from '../lib/api';
-import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../lib/constants';
+import * as api from '../services/api';
+import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../services/constants';
 
 const REMOTE = /^(https?:|data:|blob:)/i;
 // Routes the dashboard serves itself (cookie auth) — no files read needed.

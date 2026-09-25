@@ -5,9 +5,9 @@
 // resume and logout also touch them.
 import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { getModelOptions } from '../../lib/dashboard';
-import type { ModelProviderOption } from '../../lib/dashboard';
-import { connectionScope, saveModel } from '../../lib/connection';
+import { getModelOptions } from '../../services/dashboard';
+import type { ModelProviderOption } from '../../services/dashboard';
+import { connectionScope, saveModel } from '../../services/connection';
 import { errMsg, nid } from '../../utils/messages';
 import type { UiMessage } from '../../utils/messages';
 import type { StoreRuntime } from '../runtime';

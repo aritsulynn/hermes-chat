@@ -39,7 +39,7 @@ import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
 import { contextTone, mergeUsage } from '../../utils/usage';
 import { isSlashSuggestion, skillUsage } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
-import type { SlashCompletionItem } from '../../lib/gateway-ws';
+import type { SlashCompletionItem } from '../../services/gateway-ws';
 import { AskSheet, Composer, CtxRing, HamburgerBtn, InfoSheet, MessageBubble, Tap, formatBubbleTime } from '../../components';
 import type { AnchorMeasure, AnchorRect } from '../../components';
 import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
