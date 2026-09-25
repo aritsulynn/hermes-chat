@@ -5,7 +5,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
-import * as LocalAuth from 'expo-local-authentication';
 import { router } from 'expo-router';
 import {
   checkMe,
@@ -79,7 +78,6 @@ import {
   mergeUsageState,
   normalizeProfileName,
   notificationResponseKey,
-  parseProfileSessionKey,
   profileSessionKey,
   scheduleContextHydration,
   serverAskFromInbox,
@@ -96,6 +94,7 @@ import { useLiveRosterSlice } from '../store/slices/useLiveRoster';
 import { useComposerSlice } from '../store/slices/useComposer';
 import { useSessionsSlice } from '../store/slices/useSessions';
 import { useAskInboxSlice } from '../store/slices/useAskInbox';
+import { useAskRepliesSlice } from '../store/slices/useAskReplies';
 import { useStoreRuntime } from '../store/runtime';
 
 const AppContext = createContext<AppStore | null>(null);
@@ -606,6 +605,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const newSessionRef = useRef<() => Promise<void>>(async () => {});
   const stopRef = useRef<() => void>(() => {});
   const renameSessionRef = useRef<(t: string) => Promise<void>>(async () => {});
+  const {
+    respondToInbox,
+    answerInboxValue,
+    answerInboxApproval,
+    openAskEntry,
+    answerAsk,
+    answerValue,
+    answerApproval,
+    dismissAsk,
+    confirmSensitiveNotification,
+  } = useAskRepliesSlice({
+    runtime,
+    askRef,
+    askInboxRef,
+    setAsk,
+    markAskStatus,
+    latest,
+    sessionIdRef,
+    openSessionRef,
+    setError,
+  });
   // Notification taps/actions are routed through the ask inbox. The handler is
   // installed below (after response helpers exist); a cold-start response is
   // held until that handler is ready.
@@ -2641,121 +2661,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   stopRef.current = stop;
 
   // ── Ask replies ──────────────────────────────────────────────────────────
-
-  const respondToInbox = useCallback(
-    (key: string, result: Record<string, unknown>) => {
-      const entry = findAsk(askInboxRef.current, key);
-      const g = gw.current;
-      if (!entry || !g || entry.owner.connectionId !== connectionScope(latest.current.host, latest.current.username)) return false;
-      if (entry.owner.profile !== normalizeProfileName(activeProfileRef.current)) return false;
-      if (entry.status !== 'pending' && entry.status !== 'answering') return false;
-      if (!g.replyToAsk(entry.rpcId, result)) return false;
-      markAskStatus(entry.key, 'sent');
-      // JSON-RPC has no positive acknowledgement. Give the gateway a moment
-      // to settle the request, then reconcile against open_requests.
-      if (entry.sessionId) {
-        setTimeout(() => {
-          if (gw.current === g) void g.syncOpenRequests([entry.sessionId as string]);
-        }, 500);
-      }
-      return true;
-    },
-    [markAskStatus],
-  );
-
-  const answerInboxValue = useCallback(
-    (key: string, value: string) => respondToInbox(key, { value }),
-    [respondToInbox],
-  );
-
-  const answerInboxApproval = useCallback(
-    (key: string, choice: string) => respondToInbox(key, { choice }),
-    [respondToInbox],
-  );
-
-  const openAskEntry = useCallback(async (entry: AskInboxEntry) => {
-    if (!entry) return;
-    if (entry.status === 'sent') {
-      setError('This response was sent but not confirmed yet. Reconnect or refresh Ask Inbox.');
-      return;
-    }
-    if (entry.status !== 'pending' && entry.status !== 'answering') return;
-    if (!entry.owner.resolved || !entry.owner.storedSessionId) {
-      setError('This background request has no resolved profile yet. Open its session to answer it safely.');
-      router.push('/asks' as any);
-      return;
-    }
-    if (entry.owner.profile !== activeProfileRef.current) {
-      setError(`Switch to profile “${entry.owner.profile}” before answering this request.`);
-      return;
-    }
-    try {
-      await openSessionRef.current({
-        id: entry.owner.storedSessionId,
-        title: '',
-        preview: '',
-        messageCount: 0,
-        source: 'ask-inbox',
-        startedAt: Date.now() / 1000,
-        profile: entry.owner.profile,
-      });
-      // openSession may have restored a fresh runtime id; show the same
-      // pending request only after the target room is actually active.
-      const activeOwner = sessionIdRef.current
-        ? parseProfileSessionKey(runtimeOwners.current.get(sessionIdRef.current) ?? '')
-        : null;
-      if (
-        activeOwner?.profile !== entry.owner.profile ||
-        activeOwner?.storedSessionId !== entry.owner.storedSessionId
-      ) {
-        setError('Could not open the owning session; the request remains in Ask Inbox.');
-        return;
-      }
-      const refreshed = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId) ?? entry;
-      setAsk(serverAskFromInbox(refreshed));
-      router.push('/chat');
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
-
-  const answerAsk = useCallback(
-    (result: Record<string, unknown>) => {
-      const current = askRef.current;
-      if (!current || !gw.current) return false;
-      const entry = askInboxRef.current.find(
-        (item) =>
-          item.owner.connectionId === connectionScope(latest.current.host, latest.current.username) &&
-          item.rpcId === current.rpcId,
-      );
-      return entry ? respondToInbox(entry.key, result) : false;
-    },
-    [respondToInbox],
-  );
-
-  const answerValue = useCallback(
-    (value: string) => {
-      answerAsk({ value });
-    },
-    [answerAsk],
-  );
-
-  const answerApproval = useCallback((choice: string) => answerAsk({ choice }), [answerAsk]);
-
-  const dismissAsk = useCallback(() => setAsk(null), []);
-
-  const confirmSensitiveNotification = useCallback(async (): Promise<boolean> => {
-    try {
-      const [hasHardware, enrolled] = await Promise.all([LocalAuth.hasHardwareAsync(), LocalAuth.isEnrolledAsync()]);
-      if (!hasHardware || !enrolled) return false;
-      const result = await LocalAuth.authenticateAsync({
-        promptMessage: 'Confirm Hermes request',
-      });
-      return result.success === true;
-    } catch {
-      return false;
-    }
-  }, []);
 
   const handleNotificationResponse = useCallback(
     (response: HermesNotificationResponse) => {
