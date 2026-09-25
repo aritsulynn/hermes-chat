@@ -77,8 +77,8 @@ import {
   slashMobileAction,
   slashMobileHint,
 } from '../utils/slash-commands';
-import type { Attachment, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
-import { normalizeSubagents, normalizeTodos } from '../utils/messages';
+import type { Attachment, UiMessage } from '../utils/messages';
+import { normalizeTodos } from '../utils/messages';
 import type { Role } from '../utils/messages';
 import {
   cutsWholeTranscript,
@@ -101,6 +101,7 @@ import { useNotificationsSlice } from '../store/slices/useNotifications';
 import { useQueueSlice } from '../store/slices/useQueue';
 import { useModelsSlice } from '../store/slices/useModels';
 import { useSessionInfoSlice } from '../store/slices/useSessionInfo';
+import { useLiveRosterSlice } from '../store/slices/useLiveRoster';
 import { useStoreRuntime } from '../store/runtime';
 
 const AppContext = createContext<AppStore | null>(null);
@@ -199,10 +200,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [, setCatalogVersion] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [generating, setGenerating] = useState(false);
-  // The agent's live todo list (`todo.updated`), shown above the composer.
-  const [todos, setTodos] = useState<TodoItem[]>([]);
-  // Live child agents (polled from `subagent.list` while a turn runs).
-  const [subagents, setSubagents] = useState<SubagentRow[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<any>(null);
   const [toolLine, setToolLine] = useState<string | null>(null);
@@ -258,6 +255,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     messagesRef,
   } = runtime;
   activeProfileRef.current = activeProfile;
+  const { todos, setTodos, subagents, setSubagents } = useLiveRosterSlice({ runtime, generating, sessionId });
   const acceptRotatedCookie = useCallback(
     async (
       nextCookie: string,
@@ -695,44 +693,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
 
-  // Live subagent roster — polled while a turn runs (subagent.list is scoped to
-  // this session). Cheap: the RPC returns a small snapshot.
-  useEffect(() => {
-    const g = gw.current;
-    if (!generating || !sessionId || !g) return;
-    let live = true;
-    const sameRows = (a: SubagentRow[], b: SubagentRow[]) => {
-      if (a.length !== b.length) return false;
-      for (let i = 0; i < a.length; i++) {
-        const x = a[i];
-        const y = b[i];
-        if (
-          x.subagent_id !== y.subagent_id ||
-          x.status !== y.status ||
-          x.tool_count !== y.tool_count ||
-          x.last_tool !== y.last_tool
-        )
-          return false;
-      }
-      return true;
-    };
-    const tick = () => {
-      g.subagents(sessionId)
-        .then((r) => {
-          if (!live) return;
-          const next = normalizeSubagents(r);
-          // New array every tick re-renders the dock even when nothing changed.
-          setSubagents((prev) => (sameRows(prev, next) ? prev : next));
-        })
-        .catch(() => {});
-    };
-    tick();
-    const t = setInterval(tick, 3500);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, [generating, sessionId]);
   // Per-session composer drafts — switching rooms no longer wipes typing.
   const draftsRef = useRef<Map<string, string>>(new Map());
   const draftKeyRef = useRef<string>('__none__');
