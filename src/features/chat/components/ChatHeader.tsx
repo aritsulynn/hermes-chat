@@ -2,7 +2,7 @@
 // Extracted from index.tsx to keep the screen focused on orchestration.
 import { Text, TextInput, View } from 'react-native';
 import { ChevronDown, ChevronUp, MoreVertical, Search, X } from 'lucide-react-native';
-import { CtxRing, HamburgerBtn, Tap } from '../../../components';
+import { CtxRing, HamburgerBtn, Tap } from '../../../components/ui/bits';
 
 export function ChatNormalHeader({
   insetTop,

@@ -16,7 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AlertCircle, Fingerprint } from 'lucide-react-native';
 import * as LocalAuth from 'expo-local-authentication';
 import { useApp } from '../../hooks/app-store';
-import { Field } from '../../components';
+import { Field } from '../../components/ui/bits';
 import { BUILD_ID } from '../../build';
 import { getPassword } from '../../services/connection';
 

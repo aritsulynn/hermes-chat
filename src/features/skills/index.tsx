@@ -20,7 +20,7 @@ import { RefreshCw, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components';
+import { HamburgerBtn } from '../../components/ui/bits';
 import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
 

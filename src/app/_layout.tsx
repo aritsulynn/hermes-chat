@@ -24,7 +24,7 @@ import {
   Wrench,
 } from 'lucide-react-native';
 import { AppProvider, useApp } from '../hooks/app-store';
-import { FilePreviewHost } from '../components';
+import { FilePreviewHost } from '../components/chat/media';
 import { HermesDrawerContent } from '../components/drawer/HermesDrawerContent';
 import { drawerIcon } from '../components/drawer/nav-config';
 

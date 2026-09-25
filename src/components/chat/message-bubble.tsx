@@ -3,10 +3,10 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { Brain, Check, Cog, Copy, Ellipsis, FileText, RotateCcw } from 'lucide-react-native';
-import { cleanThinking, flattenLists, renderMediaTags } from '../utils/messages';
-import type { UiMessage } from '../utils/messages';
-import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../utils/diff';
-import { TypingDots, Tap } from './bits';
+import { cleanThinking, flattenLists, renderMediaTags } from '../../utils/messages';
+import type { UiMessage } from '../../utils/messages';
+import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../../utils/diff';
+import { TypingDots, Tap } from '../ui/bits';
 import type { AnchorMeasure } from './composer';
 import { mdAi, mdAiDark, mdUser, mdUserDark, makeSelectableRules } from './markdown';
 

@@ -7,11 +7,11 @@ import {
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 import { Check, Copy, Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react-native';
-import { parseClarify } from '../utils/messages';
-import { mergeUsage, contextTone } from '../utils/usage';
-import { compactNumber } from '../utils/format';
-import { useApp } from '../hooks/app-store';
-import type { GatewayWs, ServerAsk } from '../services/gateway-ws';
+import { parseClarify } from '../../utils/messages';
+import { mergeUsage, contextTone } from '../../utils/usage';
+import { compactNumber } from '../../utils/format';
+import { useApp } from '../../hooks/app-store';
+import type { GatewayWs, ServerAsk } from '../../services/gateway-ws';
 import { Tap } from './bits';
 
 export const renderBackdrop = (props: any) => (

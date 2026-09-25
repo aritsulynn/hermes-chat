@@ -26,10 +26,10 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../hooks/app-store';
-import { errMsg } from '../utils/messages';
+import { useApp } from '../../hooks/app-store';
+import { errMsg } from '../../utils/messages';
 import { Tap } from './bits';
-import * as api from '../services/api';
+import * as api from '../../services/api';
 import {
   actionOutcomeLabel,
   actionOutcomeTone,
@@ -43,7 +43,7 @@ import {
   type UpdateCheck,
   type UpdateReceiptSummary,
   type UpdateTone,
-} from '../services/hermes-update';
+} from '../../services/hermes-update';
 
 const UPDATE_ACTION = 'hermes-update';
 const LOG_LINES = 400;

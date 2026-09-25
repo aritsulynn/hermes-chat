@@ -32,19 +32,19 @@ import {
 import type { StyleProp, TextStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, ImageOff, Share2, X } from 'lucide-react-native';
-import { useApp } from '../hooks/app-store';
-import { base64ToUtf8, mediaPathFromHref } from '../utils/messages';
+import { useApp } from '../../hooks/app-store';
+import { base64ToUtf8, mediaPathFromHref } from '../../utils/messages';
 import {
   getMediaCacheGeneration,
   mediaCacheKey,
   ratioCache,
   serverFileCache,
   serverFilePending,
-} from '../services/media-cache';
-import { buildImageSource, shouldAttachDashboardCookie } from '../services/media-policy';
+} from '../../services/media-cache';
+import { buildImageSource, shouldAttachDashboardCookie } from '../../services/media-policy';
 import { deleteAsync, writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
-import * as api from '../services/api';
-import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../services/constants';
+import * as api from '../../services/api';
+import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../../services/constants';
 
 const REMOTE = /^(https?:|data:|blob:)/i;
 // Routes the dashboard serves itself (cookie auth) — no files read needed.

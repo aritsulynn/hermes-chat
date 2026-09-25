@@ -39,7 +39,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
-import { HamburgerBtn } from '../../components';
+import { HamburgerBtn } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { formatBytes } from '../../utils/format';
 import { FileRow } from './components/FileRow';

@@ -10,9 +10,9 @@ import {
   X,
 } from 'lucide-react-native';
 
-import type { Attachment } from '../utils/messages';
-import { reasoningLabel } from '../utils/reasoning';
-import { Tap } from './bits';
+import type { Attachment } from '../../utils/messages';
+import { reasoningLabel } from '../../utils/reasoning';
+import { Tap } from '../ui/bits';
 
 // How a control reports its position for a screen-level popover. The popover
 // lives in the chat screen (not here) so it can float above the list and still

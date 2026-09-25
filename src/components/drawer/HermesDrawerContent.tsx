@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
-import { Tap } from '../../components';
+import { Tap } from '../ui/bits';
 import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
 
 export function HermesDrawerContent(props: DrawerContentComponentProps) {

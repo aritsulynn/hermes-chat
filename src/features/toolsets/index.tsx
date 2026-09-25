@@ -18,7 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
 import { Boxes, RefreshCw, Search } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
-import { HamburgerBtn } from '../../components';
+import { HamburgerBtn } from '../../components/ui/bits';
 import { errMsg } from '../../utils/messages';
 import { getToolsets, setToolsetEnabled } from '../../services/toolsets';
 import type { ToolsetInfo } from '../../services/toolsets';

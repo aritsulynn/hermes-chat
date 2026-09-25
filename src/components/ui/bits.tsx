@@ -5,7 +5,7 @@ import type { PressableProps, StyleProp, ViewStyle } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
-import { useApp } from '../hooks/app-store';
+import { useApp } from '../../hooks/app-store';
 
 // Circular context-window ring for the chat header — sits left of the kebab,
 // taps into Session info for the exact numbers.

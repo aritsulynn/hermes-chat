@@ -23,7 +23,7 @@ import { useApp } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn, Tap } from '../../components';
+import { HamburgerBtn, Tap } from '../../components/ui/bits';
 import { CardChips } from './components/CardChips';
 import { asTask, dotOf } from './helpers';
 import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';

@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react-native';
 
-import { HamburgerBtn } from '../../components';
+import { HamburgerBtn } from '../../components/ui/bits';
 import { useApp } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
 import { errMsg } from '../../utils/messages';

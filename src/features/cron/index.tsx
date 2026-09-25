@@ -40,7 +40,7 @@ import {
 import { useApp } from '../../hooks/app-store';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components';
+import { HamburgerBtn } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
 import { JobPromptPreview } from './components/JobPromptPreview';

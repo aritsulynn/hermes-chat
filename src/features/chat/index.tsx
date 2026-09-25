@@ -40,8 +40,11 @@ import { contextTone, mergeUsage } from '../../utils/usage';
 import { isSlashSuggestion, skillUsage } from '../../utils/slash-commands';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../services/gateway-ws';
-import { AskSheet, Composer, CtxRing, HamburgerBtn, InfoSheet, MessageBubble, Tap, formatBubbleTime } from '../../components';
-import type { AnchorMeasure, AnchorRect } from '../../components';
+import { Composer } from '../../components/chat/composer';
+import type { AnchorMeasure, AnchorRect } from '../../components/chat/composer';
+import { MessageBubble, formatBubbleTime } from '../../components/chat/message-bubble';
+import { AskSheet, InfoSheet } from '../../components/ui/sheets';
+import { CtxRing, HamburgerBtn, Tap } from '../../components/ui/bits';
 import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
 import { FALLBACK_SLASH, messageMatchesSearch } from './helpers';
 
