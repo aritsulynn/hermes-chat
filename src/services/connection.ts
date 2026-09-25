@@ -38,8 +38,24 @@ const K_MODEL_PREFIX = 'hermes.ui.model.profile';
 const K_MODEL_PROVIDER = 'hermes.ui.modelProvider';
 const K_MODEL_PROVIDER_PREFIX = 'hermes.ui.modelProvider.profile';
 
+/**
+ * SecureStore (Android) only accepts `[A-Za-z0-9._-]` in keys and throws on
+ * anything else (expo-secure-store build/SecureStore.js — "Invalid key").
+ * `encodeURIComponent` emits `%XX`, which is invalid, so every scoped write
+ * (cookie, password, profile, model, session, board) silently failed on
+ * Android and the app asked for login again after each reload.
+ * Hex is a strict subset of the allowed charset on every platform.
+ */
+function hexEncode(value: string): string {
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    out += value.charCodeAt(i).toString(16).padStart(4, '0');
+  }
+  return out;
+}
+
 function scopedSecretKey(kind: 'password' | 'cookie', host: string, username: string): string {
-  return `${K_SCOPED_SECRET_PREFIX}${kind}.${encodeURIComponent(connectionScope(host, username))}`;
+  return `${K_SCOPED_SECRET_PREFIX}${kind}.${hexEncode(connectionScope(host, username))}`;
 }
 
 function normalizeProfile(profile: string | null | undefined): string {
@@ -47,13 +63,13 @@ function normalizeProfile(profile: string | null | undefined): string {
 }
 
 function profileStorageKey(prefix: string, profile: string): string {
-  return `${prefix}.${encodeURIComponent(normalizeProfile(profile))}`;
+  return `${prefix}.${hexEncode(normalizeProfile(profile))}`;
 }
 
 function accountProfileStorageKey(prefix: string, profile: string, scope: string): string {
   const normalizedScope = String(scope ?? '').trim();
   return normalizedScope
-    ? `${prefix}.account.${encodeURIComponent(normalizedScope)}.profile.${encodeURIComponent(normalizeProfile(profile))}`
+    ? `${prefix}.account.${hexEncode(normalizedScope)}.profile.${hexEncode(normalizeProfile(profile))}`
     : profileStorageKey(prefix, profile);
 }
 
@@ -128,14 +144,14 @@ const K_KANBAN_BOARD = 'hermes.ui.kanbanBoard';
 /** Remember the selected kanban board across restarts. */
 export async function saveKanbanBoard(slug: string, scope = ''): Promise<void> {
   if (scope) {
-    await set(`${K_KANBAN_BOARD}.account.${encodeURIComponent(scope)}`, slug ?? '');
+    await set(`${K_KANBAN_BOARD}.account.${hexEncode(scope)}`, slug ?? '');
     return;
   }
   await set(K_KANBAN_BOARD, slug ?? '');
 }
 
 export async function getKanbanBoard(scope = ''): Promise<string | null> {
-  if (scope) return get(`${K_KANBAN_BOARD}.account.${encodeURIComponent(scope)}`);
+  if (scope) return get(`${K_KANBAN_BOARD}.account.${hexEncode(scope)}`);
   return get(K_KANBAN_BOARD);
 }
 
@@ -171,8 +187,11 @@ function queueStorageWrite(key: string, write: () => Promise<void>): Promise<voi
     .then(async () => {
       try {
         await write();
-      } catch {
+      } catch (e) {
         // Storage is best-effort (e.g. private mode) — never fail login over it.
+        // But stay loud in dev: a silently-failing write is how the invalid
+        // SecureStore key went unnoticed and forced a login on every reload.
+        if (__DEV__) console.warn(`[storage] write failed for "${key}"`, e);
       }
     });
   storageTails.set(key, current);
