@@ -92,7 +92,6 @@ src/
 ## Progress log
 - [x] Phase 1 — removed `screens/ops`, `fuzzyScoreMulti`/`fuzzyRank`, `onNotificationTap`, and 6 unused store keys (`setEffort`/`toggleTheme`/`closeCurrent`/`jumpToRecent`/`getConnectionEpoch` as public API; `answerInboxValue` exposure). A5 (un-export) deferred as low value.
 - [x] Phase 2 — centralized display formatters in `utils/format.ts` (`formatBytes`, `formatDate`, `toEpochMs`, `formatDateTime`, `formatRunTime`, `formatRunDuration`, `formatCost`, `formatDayLabel`); usage/cron number formatters now use `compactNumber`.
-- [ ] Phase 3
 - [x] Phase 3 — split chat (1842→1645), cron (1335→1114), and files (1174→926) into `components/`, `helpers.ts`, `types.ts`. usage (589→507), kanban (651→561), logs (593→537) split too; _layout drawer extraction still pending.
 - [x] Phase 4a/4b — extracted `AppStore`/`AgentProfile`/`ScopedSessionSummary` to `src/store/types.ts` and all module-level helpers to `src/store/helpers.ts`; `app-store.tsx` 4489→3978.
 - [~] Phase 4c — added `src/store/runtime.ts` (`useStoreRuntime`) centralizing the cross-slice refs, destructured back into the provider under the same names. Extracted slices (14): theme, notifications, queue, models, sessionInfo, liveRoster, composer, sessions, askInbox, askReplies, notificationResponses, toolRefresh, liveTurn, commands. The "slice owns refs/setters, provider gets them back for direct writes" technique keeps lifecycle resets untouched. `app-store.tsx` is down to ~2.97k (from 4489, −34%).
@@ -131,4 +130,4 @@ Cross-cutting refs (`sessionIdRef`, `connectRef`, `openSessionRef`,
 `useAppStore` now only declares hook state, calls the slices, wires the
 boot/watchdog effects, and builds the context value.
 - [x] Tests — added `src/utils/format.test.mjs` plus `helpers.test.mjs` for logs/cron/usage; extended the `test` glob to `src/screens/*/*.test.mjs`. Suite is 71 passing (was 57).
-- [ ] Phase 5
+- [x] Phase 5 — `lib`→`services`, `screens`→`features`, and `components` split into `ui/` (bits, sheets, update-panel) + `chat/` (composer, message-bubble, markdown, media); `drawer/` kept as its own concern. Dropped the `components/index.ts` barrel (B3) in favour of direct imports. All relative import specifiers and the `test` glob were updated; external `apps/desktop/...` references in comments left untouched. typecheck green, 71 tests pass.
