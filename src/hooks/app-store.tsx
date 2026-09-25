@@ -54,19 +54,11 @@ import {
   onNotificationResponse,
   pushNotification,
 } from '../lib/notifications';
-import {
-  askKey,
-  findAsk,
-  findAskByRpc,
-  pendingAsks,
-  setAskStatus,
-  setAskStatusByRpc,
-  upsertAsk,
-} from '../lib/ask-inbox';
-import type { AskInboxEntry, AskInboxInput, AskInboxStatus, AskOwner } from '../lib/ask-inbox';
+import { askKey, findAsk, findAskByRpc, pendingAsks } from '../lib/ask-inbox';
+import type { AskInboxEntry, AskOwner } from '../lib/ask-inbox';
 import type { HermesNotificationResponse } from '../lib/notifications';
 import { GatewayWs } from '../lib/gateway-ws';
-import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
+import type { ConnState, HistoryMessage, SessionSummary } from '../lib/gateway-ws';
 import { changedFilesFromDiff, inlineDiffFromDetail } from '../utils/diff';
 import { formatToolCommand, formatToolResult } from '../utils/toolResult';
 import { errMsg, isSlashCommand, nid, parseSlashCommand, utf8ToBase64 } from '../utils/messages';
@@ -103,6 +95,7 @@ import { useSessionInfoSlice } from '../store/slices/useSessionInfo';
 import { useLiveRosterSlice } from '../store/slices/useLiveRoster';
 import { useComposerSlice } from '../store/slices/useComposer';
 import { useSessionsSlice } from '../store/slices/useSessions';
+import { useAskInboxSlice } from '../store/slices/useAskInbox';
 import { useStoreRuntime } from '../store/runtime';
 
 const AppContext = createContext<AppStore | null>(null);
@@ -189,12 +182,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [, setCatalogVersion] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [toolLine, setToolLine] = useState<string | null>(null);
-  const [ask, setAsk] = useState<ServerAsk | null>(null);
-  const askRef = useRef<ServerAsk | null>(null);
-  askRef.current = ask;
-  const [askInbox, setAskInbox] = useState<AskInboxEntry[]>([]);
-  const askInboxRef = useRef<AskInboxEntry[]>([]);
-  askInboxRef.current = askInbox;
   const pendingNotificationResponsesRef = useRef<HermesNotificationResponse[]>([]);
   const notificationDrainRef = useRef<(() => void) | null>(null);
   const notificationActionInFlightRef = useRef(false);
@@ -382,121 +369,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToolLine,
     latest,
   });
-
-  const resolveAskOwner = useCallback((sessionIdValue?: string, params?: Record<string, unknown>): AskOwner => {
-    const runtimeSessionId = String(sessionIdValue ?? '');
-    const connectionId = connectionScope(latest.current.host, latest.current.username);
-    const hintedProfile =
-      typeof params?.profile === 'string'
-        ? normalizeProfileName(params.profile)
-        : typeof params?.profile_name === 'string'
-          ? normalizeProfileName(params.profile_name)
-          : '';
-    const scoped = runtimeSessionId ? runtimeOwners.current.get(runtimeSessionId) : undefined;
-    if (scoped) {
-      const parsed = parseProfileSessionKey(scoped);
-      if (parsed) {
-        return {
-          connectionId,
-          profile: parsed.profile,
-          storedSessionId: parsed.storedSessionId,
-          runtimeSessionId,
-          resolved: true,
-        };
-      }
-    }
-    const known = runtimeSessionId ? runtimeAskOwners.current.get(runtimeSessionId) : undefined;
-    if (known) {
-      if (known.resolved) return { ...known, connectionId: connectionId || known.connectionId };
-      const profile =
-        hintedProfile || (profilesRef.current.length === 1 ? normalizeProfileName(latest.current.activeProfile) : '');
-      return {
-        ...known,
-        connectionId: connectionId || known.connectionId,
-        profile,
-        resolved: Boolean(profile && known.storedSessionId),
-      };
-    }
-    // A request from the live foreground session can be resolved even before
-    // the runtime-owner map has been populated (for example during resume).
-    if (runtimeSessionId && sessionIdRef.current === runtimeSessionId) {
-      return {
-        connectionId,
-        profile: normalizeProfileName(latest.current.activeProfile),
-        storedSessionId: latest.current.sessionKey ?? runtimeSessionId,
-        runtimeSessionId,
-        resolved: true,
-      };
-    }
-    if (hintedProfile) {
-      return {
-        connectionId,
-        profile: hintedProfile,
-        storedSessionId: '',
-        runtimeSessionId,
-        resolved: false,
-      };
-    }
-    // Background sessions may arrive before the app has ever opened them. Keep
-    // them in the inbox, but fail closed for profile-sensitive navigation.
-    return {
-      connectionId,
-      profile: '',
-      storedSessionId: '',
-      runtimeSessionId,
-      resolved: false,
-    };
-  }, []);
-
-  const applyAskInbox = useCallback((input: AskInboxInput) => {
-    const result = upsertAsk(askInboxRef.current, input);
-    askInboxRef.current = result.entries;
-    setAskInbox(result.entries);
-    return result;
-  }, []);
-
-  const dismissAskNotifications = useCallback((entries: AskInboxEntry[] = askInboxRef.current) => {
-    for (const entry of entries) void dismissNotification(`hermes-ask-${entry.rpcId}`);
-  }, []);
-
-  const markAskStatus = useCallback((key: string, status: AskInboxStatus) => {
-    const next = setAskStatus(askInboxRef.current, key, status);
-    askInboxRef.current = next;
-    setAskInbox(next);
-    if (status === 'sent' || status === 'answered' || status === 'cancelled' || status === 'stale') {
-      const entry = next.find((item) => item.key === key);
-      if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
-      if (askRef.current && askRef.current.rpcId === entry?.rpcId) {
-        setAsk(null);
-      }
-    }
-  }, []);
-
-  const markAskByRpc = useCallback((rpcId: string, status: AskInboxStatus) => {
-    const next = setAskStatusByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), rpcId, status);
-    askInboxRef.current = next;
-    setAskInbox(next);
-    if (status === 'cancelled' || status === 'answered' || status === 'stale') {
-      const entry = next.find(
-        (item) => item.owner.connectionId === connectionScope(latest.current.host, latest.current.username) && item.rpcId === rpcId,
-      );
-      if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
-    }
-    if (status !== 'pending' && status !== 'answering' && askRef.current?.rpcId === rpcId) {
-      setAsk(null);
-    }
-  }, []);
-
-  const bindAskOwner = useCallback((runtimeSessionId: string, owner: AskOwner) => {
-    runtimeAskOwners.current.set(runtimeSessionId, owner);
-    const next = askInboxRef.current.map((entry) =>
-      entry.owner.runtimeSessionId === runtimeSessionId && !entry.owner.resolved
-        ? { ...entry, owner, key: askKey(owner, entry.rpcId) }
-        : entry,
-    );
-    askInboxRef.current = next;
-    setAskInbox(next);
-  }, []);
+  const {
+    ask,
+    setAsk,
+    askRef,
+    askInbox,
+    setAskInbox,
+    askInboxRef,
+    resolveAskOwner,
+    applyAskInbox,
+    dismissAskNotifications,
+    markAskStatus,
+    markAskByRpc,
+    bindAskOwner,
+  } = useAskInboxSlice({ runtime, profilesRef, latest, sessionIdRef });
 
   // Tool RESULT fill from the REST transcript. The gateway's history projection
   // deliberately omits tool results (`name` + 80-char `context` + `args` only —
