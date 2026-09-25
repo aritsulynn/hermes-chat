@@ -1,0 +1,155 @@
+// Store types — the public `AppStore` contract plus profile/session shapes.
+// Extracted from hooks/app-store.tsx so the context contract is readable in
+// one place instead of buried above a 4k-line provider.
+import type { AskInboxEntry } from '../lib/ask-inbox';
+import type { ResolvedTheme, Theme } from '../lib/connection';
+import type { ModelProviderOption } from '../lib/dashboard';
+import type { ConnState, GatewayWs, ServerAsk, SessionSummary } from '../lib/gateway-ws';
+import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
+
+export interface AgentProfile {
+  name: string;
+  display_name?: string;
+  description?: string;
+  model?: string | null;
+  provider?: string | null;
+  is_default?: boolean;
+  gateway_running?: boolean;
+  [key: string]: unknown;
+}
+
+export interface ScopedSessionSummary extends SessionSummary {
+  profile?: string;
+}
+
+export interface AppStore {
+  booting: boolean;
+  authed: boolean;
+  busy: boolean;
+  error: string | null;
+  host: string;
+  setHost: (v: string) => void;
+  username: string;
+  setUsername: (v: string) => void;
+  password: string;
+  setPassword: (v: string) => void;
+  conn: ConnState;
+  /** Gateway profile currently selected for Chat and profile-aware screens. */
+  activeProfile: string;
+  profiles: AgentProfile[];
+  refreshProfiles: () => Promise<void>;
+  switchProfile: (profile: string) => Promise<void>;
+  sessions: ScopedSessionSummary[];
+  openingId: string | null;
+  sessionId: string | null;
+  /** Stored DB id (session.list id) — stable across resumes, used for highlight. */
+  sessionKey: string | null;
+  sessionTitle: string;
+  messages: UiMessage[];
+  /** Live streaming deltas by bubble id — kept outside `messages` so per-token
+   *  updates are O(1) instead of mapping the whole transcript. Merged into
+   *  `messages` once on turn end (desktop parity: hot state local, durable
+   *  transcript appended, not rewritten). */
+  streamingTexts: Record<string, string>;
+  input: string;
+  setInput: (v: string) => void;
+  model: string;
+  modelProvider: string;
+  effort: string;
+  /** Apply a thinking-effort level to the live session (and the next create). */
+  applyEffort: (level: string) => Promise<void>;
+  /** Toggle fast mode on the live session. */
+  applyFast: (on: boolean) => Promise<void>;
+  providers: ModelProviderOption[] | null;
+  providersLoading: boolean;
+  providersError: string | null;
+  attachments: Attachment[];
+  setAttachments: (v: Attachment[]) => void;
+  generating: boolean;
+  copiedId: string | null;
+  infoOpen: boolean;
+  setInfoOpen: (v: boolean) => void;
+  infoSeq: number;
+  sessionInfo: any;
+  usageInfo: any;
+  usageLoading: boolean;
+  toolLine: string | null;
+  ask: ServerAsk | null;
+  /** All unresolved/settled server asks, newest first. */
+  askInbox: AskInboxEntry[];
+  pendingAskCount: number;
+  /** Open an inbox item in its owning chat when its profile is resolved. */
+  openAskEntry: (entry: AskInboxEntry) => Promise<void>;
+  answerInboxApproval: (key: string, choice: string) => boolean;
+  connect: (h: string, user: string, pw: string) => Promise<void>;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  refreshSessions: (limit?: number) => Promise<ScopedSessionSummary[]>;
+  /** Fetch the next page (limit+100) — used by drawer infinite scroll. */
+  loadMoreSessions: () => Promise<ScopedSessionSummary[]>;
+  sessionsHasMore: boolean;
+  sessionsLoadingMore: boolean;
+  openSession: (s: ScopedSessionSummary) => Promise<void>;
+  newSession: () => Promise<void>;
+  send: () => Promise<void>;
+  stop: () => void;
+  openInfo: () => Promise<void>;
+  getGw: () => GatewayWs | null;
+  /** Connection + WS diagnostics snapshot (Settings → Diagnostics). */
+  diagnostics: () => Record<string, unknown>;
+  loadProviders: () => Promise<void>;
+  loadCommandsCatalog: () => Promise<void>;
+  /** Prompts typed mid-turn, drained one per turn end. */
+  queued: QueuedPrompt[];
+  /** True after an explicit Stop — the queue waits for Resume/re-queue. */
+  queueParked: boolean;
+  enqueueQueued: (text: string) => void;
+  removeQueued: (id: string) => void;
+  clearQueue: () => void;
+  resumeQueue: () => void;
+  sendQueuedNow: (id: string) => void;
+  /** Row id of the message being edited (rewind target), or null. */
+  editingRowId: number | null;
+  /** Put a user message back in the composer for edit & resend. */
+  editMessage: (id: string) => void;
+  cancelEdit: () => void;
+  /** Rerun the last user turn (rewind + resubmit). */
+  regenerate: () => void;
+  /** Spill a large paste to a server file and insert its placeholder. */
+  pasteLarge: (text: string) => void;
+  /** Set the persistent dangerous-command approval mode. */
+  applyApprovalMode: (mode: 'manual' | 'smart' | 'off') => Promise<void>;
+  /** Fork the current session into a copy and open it. */
+  branchSession: () => Promise<void>;
+  /** Local notifications (turn complete / asks while backgrounded). */
+  notificationsEnabled: boolean;
+  setNotifications: (on: boolean) => Promise<void>;
+  /** Agent's live todo list (`todo.updated`), for the checklist above the composer. */
+  todos: TodoItem[];
+  /** Live child agents (polled from `subagent.list` while a turn runs). */
+  subagents: SubagentRow[];
+  /** Re-fetch tool results from the REST transcript (fills expanded tool bubbles). */
+  refreshToolResults: () => void;
+  pickModel: (providerSlug: string, modelId: string) => Promise<void>;
+  copyText: (id: string, text: string) => Promise<void>;
+  answerValue: (value: string) => void;
+  answerApproval: (choice: string) => boolean;
+  /** Reply to the current foreground ask with its method-specific result. */
+  answerAsk: (result: Record<string, unknown>) => boolean;
+  dismissAsk: () => void;
+  /** Effective theme after resolving `system`. */
+  theme: ResolvedTheme;
+  /** Persisted user preference: light, dark, or follow the device. */
+  themeMode: Theme;
+  setTheme: (t: Theme) => void;
+  renameSession: (title: string) => Promise<void>;
+  deleteSessionById: (storedId: string) => Promise<void>;
+  redirectLive: (text: string) => Promise<void>;
+  setGlobalModel: (providerSlug: string, modelId: string) => Promise<void>;
+  opsGet: (path: string) => Promise<any>;
+  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>;
+  /** Session cookie — media components need it to load authed URLs. */
+  getCookie: () => string;
+  /** Connection + profile generation for auth-scoped REST screens. */
+  getAuthScope: () => string;
+}

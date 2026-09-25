@@ -1,0 +1,269 @@
+// Store helpers — pure, non-React logic extracted from hooks/app-store.tsx:
+// timeouts, profile/session keys, usage merging, context hydration, attachment
+// uploads, and history→transcript conversion.
+import { readAsStringAsync } from 'expo-file-system/legacy';
+import * as api from '../lib/api';
+import { opsGet as dashboardOpsGet } from '../lib/dashboard';
+import { DEFAULT_PROFILE, MAX_UPLOAD_BYTES } from '../lib/constants';
+import type { AskInboxEntry } from '../lib/ask-inbox';
+import type { HermesNotificationResponse } from '../lib/notifications';
+import type { GatewayWs, HistoryMessage, ServerAsk } from '../lib/gateway-ws';
+import { cleanThinking, nid } from '../utils/messages';
+import type { Attachment, UiMessage } from '../utils/messages';
+import { formatToolResult } from '../utils/toolResult';
+import type { AgentProfile } from './types';
+
+// Rejecting timeout so a wedged server can never trap the UI on a spinner.
+export function withTimeout<T>(p: Promise<T>, ms: number, what = 'timed out'): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(what)), ms);
+  });
+  return Promise.race([
+    p.then(
+      (v) => {
+        if (t) clearTimeout(t);
+        return v;
+      },
+      (e) => {
+        if (t) clearTimeout(t);
+        throw e;
+      },
+    ),
+    timeout,
+  ]);
+}
+
+export function normalizeProfileName(name: string | null | undefined): string {
+  const value = String(name ?? '').trim();
+  return value || DEFAULT_PROFILE;
+}
+
+export function profilesOf(payload: unknown): AgentProfile[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as any)?.profiles)
+      ? (payload as any).profiles
+      : [];
+  return rows
+    .filter((row: any) => row && typeof row === 'object' && typeof row.name === 'string' && row.name.trim())
+    .map((row: any) => ({ ...row, name: normalizeProfileName(row.name) }));
+}
+
+export async function discoverAgentProfiles(
+  host: string,
+  cookie: string,
+  onCookie?: (nextCookie: string) => void | Promise<void>,
+): Promise<{ profiles: AgentProfile[]; current: string }> {
+  const [listResult, currentResult] = await Promise.allSettled([
+    dashboardOpsGet(host, cookie, api.profiles(), onCookie),
+    dashboardOpsGet(host, cookie, api.activeProfile(), onCookie),
+  ]);
+  const rows = listResult.status === 'fulfilled' ? profilesOf(listResult.value) : [];
+  const currentPayload = currentResult.status === 'fulfilled' ? currentResult.value : null;
+  const current = normalizeProfileName(
+    typeof currentPayload?.current === 'string' ? currentPayload.current : rows[0]?.name,
+  );
+  return { profiles: rows, current };
+}
+
+/** Durable session identity is profile + stored id; stored ids may collide across profiles. */
+export function profileSessionKey(profile: string, storedId: string): string {
+  return JSON.stringify([normalizeProfileName(profile), storedId]);
+}
+
+export function parseProfileSessionKey(value: string): { profile: string; storedSessionId: string } | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed) || typeof parsed[0] !== 'string' || typeof parsed[1] !== 'string') return null;
+    return { profile: parsed[0], storedSessionId: parsed[1] };
+  } catch {
+    return null;
+  }
+}
+
+export function serverAskFromInbox(entry: AskInboxEntry): ServerAsk {
+  return {
+    rpcId: entry.rpcId,
+    method: entry.method,
+    ...(entry.sessionId ? { sessionId: entry.sessionId } : {}),
+    params: entry.params,
+    replayed: entry.replayed,
+  };
+}
+
+export function notificationResponseKey(response: HermesNotificationResponse): string {
+  const data = response.data ?? {};
+  return JSON.stringify([
+    String(data.connectionId ?? ''),
+    String(data.askKey ?? ''),
+    String(data.rpcId ?? ''),
+    response.actionIdentifier,
+    String(response.userText ?? ''),
+  ]);
+}
+
+/** Keep the raw gateway usage shape in state; `readUsage` normalizes at render. */
+export function mergeUsageState(previous: unknown, patch: unknown): any {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return previous;
+  const base =
+    previous && typeof previous === 'object' && !Array.isArray(previous) ? (previous as Record<string, unknown>) : {};
+  return { ...base, ...(patch as Record<string, unknown>) };
+}
+
+// A cold resume builds its agent off the response path. The breakdown RPC is
+// intentionally no-wait, so retry briefly until that build can reconstruct
+// context occupancy from the restored transcript.
+export const CONTEXT_WAKEUP_DELAYS_MS = [0, 200, 600, 1500, 3000];
+
+export function scheduleContextHydration(
+  gateway: GatewayWs,
+  sessionId: string,
+  isCurrent: () => boolean,
+  publish: (snapshot: any) => void,
+  delays = CONTEXT_WAKEUP_DELAYS_MS,
+): () => void {
+  let stopped = false;
+  const attempt = (index: number) => {
+    setTimeout(async () => {
+      if (stopped || !isCurrent()) return;
+      try {
+        const snapshot = await gateway.contextBreakdown(sessionId);
+        if (stopped || !isCurrent()) return;
+        if (typeof snapshot?.context_max === 'number' && snapshot.context_max > 0) {
+          publish(snapshot);
+          return;
+        }
+      } catch {
+        return;
+      }
+      if (index + 1 < delays.length) attempt(index + 1);
+    }, delays[index]);
+  };
+  attempt(0);
+  return () => {
+    stopped = true;
+  };
+}
+
+// ── Attachment upload ───────────────────────────────────────────────────────
+// prompt.submit is text-only, so bytes are staged through session-scoped
+// file.attach/image.attach_bytes RPCs and the agent is handed the returned ref.
+// MAX_UPLOAD_BYTES lives in ../lib/constants (the 1.4x check below accounts for
+// the JSON base64 inflation).
+
+export const isImageAttachment = (a: Attachment) =>
+  (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp)$/i.test(a.name);
+
+export async function blobToBase64(uri: string): Promise<string> {
+  const blob = await (await fetch(uri)).blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.onload = () => {
+      const s = String(reader.result ?? '');
+      const comma = s.indexOf(',');
+      resolve(comma >= 0 ? s.slice(comma + 1) : '');
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function attachmentBytes(a: Attachment): Promise<string> {
+  try {
+    // file:// (or content://) URI straight off the picker.
+    return await readAsStringAsync(a.uri, { encoding: 'base64' });
+  } catch {
+    return blobToBase64(a.uri); // blob: URIs (web)
+  }
+}
+
+export async function uploadAttachments(
+  files: Attachment[],
+  gateway: GatewayWs,
+  sessionId: string,
+): Promise<{ name: string; path: string; image: boolean }[]> {
+  // Parallel with cap 3 — old serial for..await took N x latency.
+  const out: { name: string; path: string; image: boolean }[] = new Array(files.length);
+  let cursor = 0;
+  const uploadOne = async (index: number) => {
+    const f = files[index];
+    const name = f.name.replace(/[\\/]/g, '_') || `upload-${Date.now()}-${index}`;
+    const image = isImageAttachment(f);
+    const b64 = await attachmentBytes(f);
+    if (!b64) throw new Error(`${name}: could not read the file`);
+    if (b64.length > MAX_UPLOAD_BYTES * 1.4) throw new Error(`${name}: too large (10 MB max)`);
+    const dataUrl = `data:${f.mime || 'application/octet-stream'};base64,${b64}`;
+    const result: any = image
+      ? await gateway.call('image.attach_bytes', {
+          session_id: sessionId,
+          content_base64: b64,
+          filename: name,
+        })
+      : await gateway.call('file.attach', {
+          session_id: sessionId,
+          name,
+          data_url: dataUrl,
+        });
+    const path =
+      typeof result?.path === 'string' && result.path
+        ? result.path
+        : typeof result?.ref_text === 'string' && result.ref_text
+          ? result.ref_text
+          : name;
+    out[index] = { name, path, image };
+  };
+  const workers = Array.from({ length: Math.min(3, files.length) }, async () => {
+    while (cursor < files.length) {
+      const i = cursor++;
+      await uploadOne(i);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/** True when rewinding to this message wipes the whole durable transcript (the
+ *  target is the first row-id-bearing turn) — the server then requires
+ *  `confirm_empty_truncate` on top of `confirm_truncate`. Scoped to real
+ *  turns only: thinking/tool/summary/notice rows carry no durable ids. */
+export function cutsWholeTranscript(list: UiMessage[], targetId: string): boolean {
+  const idx = list.findIndex((m) => m.id === targetId);
+  if (idx < 0) return false;
+  return !list.slice(0, idx).some((m) => (m.role === 'user' || m.role === 'assistant') && m.rowId != null);
+}
+
+/** Turn a REST/WS history transcript into transcript items — shared by opening a
+ *  session and by the post-reconnect resync. */
+export function historyToItems(hist: HistoryMessage[]): UiMessage[] {
+  const items: UiMessage[] = [];
+  for (const m of hist) {
+    if (m.role === 'assistant' && m.reasoning?.trim()) {
+      items.push({
+        id: nid(),
+        role: 'thinking',
+        text: cleanThinking(m.reasoning),
+      });
+    }
+    if (m.role === 'tool' && (m.content.trim() || m.name)) {
+      const label = m.name || m.content;
+      items.push({
+        id: nid(),
+        role: 'tool',
+        text: label,
+        ...(m.content.trim() ? { output: formatToolResult(m.content) } : {}),
+        ...(m.command ? { command: m.command } : {}),
+      });
+    }
+    if ((m.role === 'user' || m.role === 'assistant') && m.content.trim() !== '') {
+      items.push({
+        id: nid(),
+        role: m.role as 'user' | 'assistant',
+        text: m.content,
+        ...(m.rowId != null ? { rowId: m.rowId } : {}),
+        ...(m.ts != null ? { ts: m.ts } : {}),
+      });
+    }
+  }
+  return items;
+}

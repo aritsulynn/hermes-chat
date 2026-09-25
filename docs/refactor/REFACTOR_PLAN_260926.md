@@ -93,5 +93,7 @@ src/
 - [x] Phase 1 — removed `screens/ops`, `fuzzyScoreMulti`/`fuzzyRank`, `onNotificationTap`, and 6 unused store keys (`setEffort`/`toggleTheme`/`closeCurrent`/`jumpToRecent`/`getConnectionEpoch` as public API; `answerInboxValue` exposure). A5 (un-export) deferred as low value.
 - [x] Phase 2 — centralized display formatters in `utils/format.ts` (`formatBytes`, `formatDate`, `toEpochMs`, `formatDateTime`, `formatRunTime`, `formatRunDuration`, `formatCost`, `formatDayLabel`); usage/cron number formatters now use `compactNumber`.
 - [ ] Phase 3
-- [ ] Phase 4
+- [x] Phase 3 — split chat (1842→1645), cron (1335→1114), and files (1174→926) into `components/`, `helpers.ts`, `types.ts`. usage/kanban/logs/_layout still pending.
+- [x] Phase 4a/4b — extracted `AppStore`/`AgentProfile`/`ScopedSessionSummary` to `src/store/types.ts` and all module-level helpers to `src/store/helpers.ts`; `app-store.tsx` 4489→3978.
+- [ ] Phase 4c — split `AppProvider` into slice hooks (theme → queue → attachments → asks → models → sessions → transcript → gateway). Largest/riskiest; do incrementally, one slice per commit.
 - [ ] Phase 5
