@@ -13,7 +13,25 @@
 // RN fetch/XHR has no shared cookie jar on all platforms the way OkHttp does,
 // so this module keeps `Cookie` headers explicitly and passes them per request.
 import { Platform } from 'react-native';
+import { normalizeConnectionBase } from './connection-scope';
 import { formatToolCommand } from '../utils/toolResult';
+import {
+  DEFAULT_PROFILE,
+  HTTP_API_TIMEOUT_MS,
+  HTTP_LOGIN_TIMEOUT_MS,
+  HTTP_LOGOUT_TIMEOUT_MS,
+  HTTP_MODEL_OPTIONS_TIMEOUT_MS,
+  HTTP_PROBE_TIMEOUT_MS,
+  HTTP_PROFILES_TIMEOUT_MS,
+  HTTP_SESSION_CHECK_TIMEOUT_MS,
+  HTTP_SESSION_MESSAGES_TIMEOUT_MS,
+  HTTP_TICKET_TIMEOUT_MS,
+  HTTP_TIMEOUT_MS,
+  SESSION_MESSAGES_CACHE_MAX,
+  SESSION_MESSAGES_LIMIT,
+  SESSION_MESSAGES_TTL_MS,
+} from './constants';
+import * as api from './api';
 
 export type AuthMode = 'basic' | 'token' | 'unreachable';
 
@@ -23,7 +41,11 @@ export interface ProbeResult {
 }
 
 export function normalizeBase(baseUrl: string): string {
-  return baseUrl.trim().replace(/\/+$/, '');
+  const raw = baseUrl.trim();
+  if (!raw) return '';
+  const normalized = normalizeConnectionBase(raw);
+  if (!normalized) throw new Error('Dashboard URL userinfo is not allowed');
+  return normalized;
 }
 
 /** fetch with a hard timeout so the UI never hangs forever on an
@@ -31,13 +53,25 @@ export function normalizeBase(baseUrl: string): string {
  *  RN supports AbortController. `credentials: include` lets the session
  *  cookie flow on web once the dashboard CORS-allows our origin
  *  (no-op for same-origin and native). */
-async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 15000): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  ms = HTTP_TIMEOUT_MS,
+): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
     // no-store: a cached /api/status hit would fake a passing probe while
     // the network is actually down, sending POSTs into a raw TypeError.
-    return await fetch(url, { credentials: 'include', cache: 'no-store', ...init, signal: ctrl.signal });
+    return await fetch(url, {
+      credentials: 'include',
+      cache: 'no-store',
+      // Never follow an authenticated redirect to another origin with the
+      // dashboard Cookie header. Callers can opt out explicitly if needed.
+      redirect: 'manual',
+      ...init,
+      signal: ctrl.signal,
+    });
   } catch (e: any) {
     if (e?.name === 'AbortError') throw new Error(`Request timed out (${ms / 1000}s): ${url}`);
     throw e;
@@ -89,13 +123,17 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
   const base = normalizeBase(baseUrl);
   let res: Response;
   try {
-    res = await fetchWithTimeout(`${base}/api/status`, {}, 8000);
+    res = await fetchWithTimeout(`${base}${api.status()}`, {}, HTTP_PROBE_TIMEOUT_MS);
   } catch (e) {
     // Browsers hide the reason (CORS vs TCP) behind TypeError. A no-cors
     // probe distinguishes them: opaque response = reachable but CORS-blocked.
     if (Platform.OS === 'web') {
       try {
-        const probe = await fetchWithTimeout(`${base}/api/status`, { mode: 'no-cors' } as RequestInit, 8000);
+        const probe = await fetchWithTimeout(
+          `${base}${api.status()}`,
+          { mode: 'no-cors' } as RequestInit,
+          HTTP_PROBE_TIMEOUT_MS,
+        );
         if ((probe as any)?.type === 'opaque') {
           throw new Error(
             'Dashboard reachable but the browser blocked the request (CORS) — allow this origin on the dashboard, or use the Expo Go native app instead',
@@ -120,29 +158,28 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
   const body = (await res.json()) as any;
   return {
     authRequired: body?.auth_required === true,
-    providers: Array.isArray(body?.auth_providers)
-      ? body.auth_providers.map(String)
-      : [],
+    providers: Array.isArray(body?.auth_providers) ? body.auth_providers.map(String) : [],
   };
 }
 
 /** Step 1: password login → session cookie string. Throws with server message. */
-export async function passwordLogin(
-  baseUrl: string,
-  username: string,
-  password: string,
-): Promise<string> {
+export async function passwordLogin(baseUrl: string, username: string, password: string): Promise<string> {
   const base = normalizeBase(baseUrl);
   let res: Response;
   try {
     res = await fetchWithTimeout(
-      `${base}/auth/password-login`,
+      `${base}${api.passwordLogin()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'basic', username, password, next: '' }),
+        body: JSON.stringify({
+          provider: 'basic',
+          username,
+          password,
+          next: '',
+        }),
       },
-      15000,
+      HTTP_LOGIN_TIMEOUT_MS,
     );
   } catch (e) {
     throw new Error(`Login request failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -171,13 +208,13 @@ export async function mintWsTicket(
   let res: Response;
   try {
     res = await fetchWithTimeout(
-      `${base}/api/auth/ws-ticket`,
+      `${base}${api.wsTicket()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: '{}',
       },
-      10000,
+      HTTP_TICKET_TIMEOUT_MS,
     );
   } catch (e) {
     throw new Error(`Ticket request failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -187,6 +224,7 @@ export async function mintWsTicket(
   if (rotated !== cookie) onCookie?.(rotated);
   if (!res.ok) {
     const err: any = new Error(`WS ticket mint failed: HTTP ${res.status}`);
+    err.status = res.status;
     err.cookie = rotated !== cookie ? rotated : undefined;
     throw err;
   }
@@ -196,21 +234,61 @@ export async function mintWsTicket(
   return ticket;
 }
 
+type CookieUpdater = (nextCookie: string) => void | Promise<void>;
+
+async function fetchAuthed(
+  url: string,
+  init: RequestInit,
+  cookie: string,
+  ms: number,
+  onCookie?: CookieUpdater,
+): Promise<Response> {
+  const res = await fetchWithTimeout(url, init, ms);
+  const rotated = mergeCookies(cookie, getSetCookies(res));
+  if (rotated !== cookie) await onCookie?.(rotated);
+  return res;
+}
+
 /** Optional: verify the session cookie still works. */
-export async function checkMe(baseUrl: string, cookie: string): Promise<boolean> {
+export async function checkMe(baseUrl: string, cookie: string, onCookie?: CookieUpdater): Promise<boolean> {
   const base = normalizeBase(baseUrl);
   try {
-    const res = await fetchWithTimeout(`${base}/api/auth/me`, { headers: { Cookie: cookie } }, 8000);
+    const res = await fetchAuthed(
+      `${base}${api.authMe()}`,
+      { headers: { Cookie: cookie } },
+      cookie,
+      HTTP_SESSION_CHECK_TIMEOUT_MS,
+      onCookie,
+    );
     return res.ok;
   } catch {
     return false;
   }
 }
 
+/** Best-effort server-side logout; local cleanup must continue if this fails. */
+export async function logoutDashboard(baseUrl: string, cookie: string): Promise<void> {
+  const base = normalizeBase(baseUrl);
+  if (!base) return;
+  try {
+    await fetchWithTimeout(
+      `${base}${api.logout()}`,
+      {
+        method: 'POST',
+        ...(cookie ? { headers: { Cookie: cookie } } : {}),
+        redirect: 'manual',
+      },
+      HTTP_LOGOUT_TIMEOUT_MS,
+    );
+  } catch {
+    // Logout is still completed locally when the dashboard is unreachable.
+  }
+}
+
 export function toWsUrl(baseUrl: string, ticket: string): string {
   const base = normalizeBase(baseUrl);
   const ws = base.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
-  return `${ws}/api/ws?ticket=${encodeURIComponent(ticket)}`;
+  return `${ws}${api.ws(ticket)}`;
 }
 
 // ── Model picker ─────────────────────────────────────────────────────────
@@ -228,7 +306,14 @@ export interface ModelProviderOption {
   authenticated?: boolean;
   /** Per-model capability rows (`hermes_cli/inventory.py::_apply_capabilities`) —
    *  `{model: {fast, reasoning, can_disable_reasoning?}}`. Missing on old gateways. */
-  capabilities?: Record<string, { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean | null }> | null;
+  capabilities?: Record<
+    string,
+    {
+      fast?: boolean;
+      reasoning?: boolean;
+      can_disable_reasoning?: boolean | null;
+    }
+  > | null;
 }
 
 export interface ProfileSummary {
@@ -253,12 +338,18 @@ function profileRows(payload: unknown): ProfileSummary[] {
     .map((row: any) => ({ ...row, name: String(row.name).trim() }));
 }
 
-export async function getProfiles(baseUrl: string, cookie: string): Promise<ProfileSummary[]> {
+export async function getProfiles(
+  baseUrl: string,
+  cookie: string,
+  onCookie?: CookieUpdater,
+): Promise<ProfileSummary[]> {
   const base = normalizeBase(baseUrl);
-  const res = await fetchWithTimeout(
-    `${base}/api/profiles`,
+  const res = await fetchAuthed(
+    `${base}${api.profiles()}`,
     cookie ? { headers: { Cookie: cookie } } : {},
-    20000,
+    cookie,
+    HTTP_PROFILES_TIMEOUT_MS,
+    onCookie,
   );
   if (!res.ok) throw new Error(`Profiles failed: HTTP ${res.status}`);
   return profileRows(await res.json());
@@ -267,34 +358,46 @@ export async function getProfiles(baseUrl: string, cookie: string): Promise<Prof
 export async function getCurrentProfile(
   baseUrl: string,
   cookie: string,
+  onCookie?: CookieUpdater,
 ): Promise<{ active: string; current: string }> {
   const base = normalizeBase(baseUrl);
-  const res = await fetchWithTimeout(
-    `${base}/api/profiles/active`,
+  const res = await fetchAuthed(
+    `${base}${api.activeProfile()}`,
     cookie ? { headers: { Cookie: cookie } } : {},
-    20000,
+    cookie,
+    HTTP_PROFILES_TIMEOUT_MS,
+    onCookie,
   );
   if (!res.ok) throw new Error(`Active profile failed: HTTP ${res.status}`);
   const body: any = await res.json();
   return {
-    active: typeof body?.active === 'string' && body.active.trim() ? body.active.trim() : 'default',
-    current: typeof body?.current === 'string' && body.current.trim() ? body.current.trim() : 'default',
+    active:
+      typeof body?.active === 'string' && body.active.trim() ? body.active.trim() : DEFAULT_PROFILE,
+    current:
+      typeof body?.current === 'string' && body.current.trim()
+        ? body.current.trim()
+        : DEFAULT_PROFILE,
   };
 }
 
 export async function getModelOptions(
   baseUrl: string,
   cookie: string,
-  opts: { refresh?: boolean; includeUnconfigured?: boolean; profile?: string } = {},
+  opts: {
+    refresh?: boolean;
+    includeUnconfigured?: boolean;
+    profile?: string;
+  } = {},
+  onCookie?: CookieUpdater,
 ): Promise<ModelProviderOption[]> {
   const base = normalizeBase(baseUrl);
-  const q = new URLSearchParams();
-  if (opts.refresh) q.set('refresh', 'true');
-  if (opts.includeUnconfigured) q.set('include_unconfigured', 'true');
-  const profile = String(opts.profile ?? '').trim();
-  if (profile) q.set('profile', profile);
-  const qs = q.toString() ? `?${q}` : '';
-  const res = await fetchWithTimeout(`${base}/api/model/options${qs}`, { headers: { Cookie: cookie } }, 15000);
+  const res = await fetchAuthed(
+    `${base}${api.modelOptions(opts)}`,
+    { headers: { Cookie: cookie } },
+    cookie,
+    HTTP_MODEL_OPTIONS_TIMEOUT_MS,
+    onCookie,
+  );
   if (!res.ok) throw new Error(`Model options failed: HTTP ${res.status}`);
   const body = (await res.json()) as any;
   const rows = Array.isArray(body?.providers) ? body.providers : [];
@@ -315,18 +418,19 @@ export async function setMainModel(
   provider: string,
   model: string,
   profile?: string,
+  onCookie?: CookieUpdater,
 ): Promise<void> {
   const base = normalizeBase(baseUrl);
-  const selectedProfile = String(profile ?? '').trim();
-  const query = selectedProfile ? `?profile=${encodeURIComponent(selectedProfile)}` : '';
-  const res = await fetchWithTimeout(
-    `${base}/api/model/set${query}`,
+  const res = await fetchAuthed(
+    `${base}${api.modelSet(profile)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: cookie },
       body: JSON.stringify({ scope: 'main', provider, model }),
     },
-    15000,
+    cookie,
+    HTTP_MODEL_OPTIONS_TIMEOUT_MS,
+    onCookie,
   );
   if (!res.ok) throw new Error(`Set model failed: HTTP ${res.status}`);
 }
@@ -334,9 +438,15 @@ export async function setMainModel(
 // ── Generic authed REST helper (ops screens) ─────────────────────────────
 // Cookie auth, NO Authorization header (dashboard 401s it in gated mode).
 
-export async function apiGet(baseUrl: string, cookie: string, path: string): Promise<any> {
+export async function apiGet(baseUrl: string, cookie: string, path: string, onCookie?: CookieUpdater): Promise<any> {
   const base = normalizeBase(baseUrl);
-  const res = await fetchWithTimeout(`${base}${path}`, { headers: { Cookie: cookie } }, 20000);
+  const res = await fetchAuthed(
+    `${base}${path}`,
+    { headers: { Cookie: cookie } },
+    cookie,
+    HTTP_API_TIMEOUT_MS,
+    onCookie,
+  );
   if (!res.ok) throw new Error(`GET ${path} → HTTP ${res.status}`);
   try {
     return await res.json();
@@ -351,16 +461,19 @@ export async function apiMut(
   path: string,
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
+  onCookie?: CookieUpdater,
 ): Promise<any> {
   const base = normalizeBase(baseUrl);
-  const res = await fetchWithTimeout(
+  const res = await fetchAuthed(
     `${base}${path}`,
     {
       method,
       headers: { 'Content-Type': 'application/json', Cookie: cookie },
       body: body === undefined ? undefined : JSON.stringify(body),
     },
-    20000,
+    cookie,
+    HTTP_API_TIMEOUT_MS,
+    onCookie,
   );
   if (!res.ok) {
     let detail = '';
@@ -448,38 +561,43 @@ function restReasoning(row: Record<string, unknown>): string {
 
 const sessionMessagesCache = new Map<string, { at: number; items: RestHistoryItem[] }>();
 
+export function clearSessionMessagesCache(): void {
+  sessionMessagesCache.clear();
+}
+
 export async function getSessionMessages(
   baseUrl: string,
   cookie: string,
   storedId: string,
-  profileOrLimit: string | number = 'default',
-  limit = 200,
+  profileOrLimit: string | number = DEFAULT_PROFILE,
+  limit = SESSION_MESSAGES_LIMIT,
+  accountScope = '',
+  onCookie?: CookieUpdater,
 ): Promise<RestHistoryItem[]> {
   // The numeric fourth argument remains accepted for older callers.
-  const selectedProfile = (
-    typeof profileOrLimit === 'number' ? 'default' : String(profileOrLimit ?? '')
-  ).trim() || 'default';
+  const selectedProfile =
+    (typeof profileOrLimit === 'number' ? DEFAULT_PROFILE : String(profileOrLimit ?? '')).trim() ||
+    DEFAULT_PROFILE;
   const selectedLimit = typeof profileOrLimit === 'number' ? profileOrLimit : limit;
-  // 5s in-memory TTL — toolRefresh + stampRowIds + resync often fire
+  // Short in-memory TTL — toolRefresh + stampRowIds + resync often fire
   // back-to-back for the same session and each refetches 200 rows.
-  const cacheKey = `${normalizeBase(baseUrl)}|${selectedProfile}|${storedId}|${selectedLimit}`;
+  const cacheKey = JSON.stringify([
+    normalizeBase(baseUrl),
+    accountScope || cookie,
+    selectedProfile,
+    storedId,
+    selectedLimit,
+  ]);
   const now = Date.now();
   const hit = sessionMessagesCache.get(cacheKey);
-  if (hit && now - hit.at < 5000) return hit.items;
+  if (hit && now - hit.at < SESSION_MESSAGES_TTL_MS) return hit.items;
   const base = normalizeBase(baseUrl);
-  const path = storedId
-    .split('/')
-    .map((s) => encodeURIComponent(s))
-    .join('/');
-  const qs = new URLSearchParams({
-    order: 'latest',
-    limit: String(selectedLimit),
-    profile: selectedProfile,
-  });
-  const res = await fetchWithTimeout(
-    `${base}/api/sessions/${path}/messages?${qs}`,
+  const res = await fetchAuthed(
+    `${base}${api.sessionMessages(storedId, { limit: selectedLimit, profile: selectedProfile })}`,
     cookie ? { headers: { Cookie: cookie } } : {},
-    20000,
+    cookie,
+    HTTP_SESSION_MESSAGES_TIMEOUT_MS,
+    onCookie,
   );
   if (!res.ok) throw new Error(`Session messages failed: HTTP ${res.status}`);
   const body = (await res.json()) as any;
@@ -535,7 +653,7 @@ export async function getSessionMessages(
       });
     }
   }
-  if (sessionMessagesCache.size > 20) {
+  if (sessionMessagesCache.size > SESSION_MESSAGES_CACHE_MAX) {
     const oldest = sessionMessagesCache.keys().next().value;
     if (oldest !== undefined) sessionMessagesCache.delete(oldest);
   }

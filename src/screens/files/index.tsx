@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Redirect } from 'expo-router';
 import {
   AlertCircle,
   ArrowUp,
@@ -46,6 +47,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
+import * as api from '../../lib/api';
 
 export interface ManagedFileEntry {
   name: string;
@@ -99,7 +101,10 @@ function formatDate(mtime: number): string {
   });
 }
 
-function getFileCategory(name: string, mime?: string | null): {
+function getFileCategory(
+  name: string,
+  mime?: string | null,
+): {
   icon: typeof File;
   color: string;
   bgColor: string;
@@ -109,41 +114,94 @@ function getFileCategory(name: string, mime?: string | null): {
   const lower = name.toLowerCase();
   const ext = lower.split('.').pop() || '';
 
-  if (
-    mime?.startsWith('image/') ||
-    ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)
-  ) {
-    return { icon: FileImage, color: '#10b981', bgColor: '#10b98118', isImage: true, isText: false };
+  if (mime?.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
+    return {
+      icon: FileImage,
+      color: '#10b981',
+      bgColor: '#10b98118',
+      isImage: true,
+      isText: false,
+    };
   }
   if (
-    ['js', 'jsx', 'ts', 'tsx', 'py', 'json', 'html', 'css', 'scss', 'sh', 'bash', 'yml', 'yaml', 'toml', 'sql', 'rs', 'go', 'c', 'cpp', 'java', 'kt'].includes(ext)
+    [
+      'js',
+      'jsx',
+      'ts',
+      'tsx',
+      'py',
+      'json',
+      'html',
+      'css',
+      'scss',
+      'sh',
+      'bash',
+      'yml',
+      'yaml',
+      'toml',
+      'sql',
+      'rs',
+      'go',
+      'c',
+      'cpp',
+      'java',
+      'kt',
+    ].includes(ext)
   ) {
-    return { icon: FileCode, color: '#3b82f6', bgColor: '#3b82f618', isImage: false, isText: true };
+    return {
+      icon: FileCode,
+      color: '#3b82f6',
+      bgColor: '#3b82f618',
+      isImage: false,
+      isText: true,
+    };
   }
-  if (
-    mime?.startsWith('video/') ||
-    ['mp4', 'mov', 'mkv', 'webm', 'avi'].includes(ext)
-  ) {
-    return { icon: Video, color: '#f59e0b', bgColor: '#f59e0b18', isImage: false, isText: false };
+  if (mime?.startsWith('video/') || ['mp4', 'mov', 'mkv', 'webm', 'avi'].includes(ext)) {
+    return {
+      icon: Video,
+      color: '#f59e0b',
+      bgColor: '#f59e0b18',
+      isImage: false,
+      isText: false,
+    };
   }
-  if (
-    mime?.startsWith('audio/') ||
-    ['mp3', 'wav', 'ogg', 'm4a', 'flac'].includes(ext)
-  ) {
-    return { icon: Music, color: '#8b5cf6', bgColor: '#8b5cf618', isImage: false, isText: false };
+  if (mime?.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a', 'flac'].includes(ext)) {
+    return {
+      icon: Music,
+      color: '#8b5cf6',
+      bgColor: '#8b5cf618',
+      isImage: false,
+      isText: false,
+    };
   }
-  if (
-    ['zip', 'tar', 'gz', 'tgz', 'rar', '7z', 'bz2', 'xz'].includes(ext)
-  ) {
-    return { icon: FileArchive, color: '#ec4899', bgColor: '#ec489918', isImage: false, isText: false };
+  if (['zip', 'tar', 'gz', 'tgz', 'rar', '7z', 'bz2', 'xz'].includes(ext)) {
+    return {
+      icon: FileArchive,
+      color: '#ec4899',
+      bgColor: '#ec489918',
+      isImage: false,
+      isText: false,
+    };
   }
   if (
     mime?.startsWith('text/') ||
     ['txt', 'md', 'log', 'env', 'csv', 'tsv', 'xml', 'conf', 'ini', 'cfg'].includes(ext)
   ) {
-    return { icon: FileText, color: '#6366f1', bgColor: '#6366f118', isImage: false, isText: true };
+    return {
+      icon: FileText,
+      color: '#6366f1',
+      bgColor: '#6366f118',
+      isImage: false,
+      isText: true,
+    };
   }
-  return { icon: File, color: '#6b7280', bgColor: '#6b728018', isImage: false, isText: false };
+  return {
+    icon: File,
+    color: '#6b7280',
+    bgColor: '#6b728018',
+    isImage: false,
+    isText: false,
+  };
 }
 
 function joinPath(dir: string, name: string): string {
@@ -195,7 +253,45 @@ const FileRow = memo(function FileRow({
 });
 
 const TEXT_MIME_RE = /^(text\/|application\/(json|xml|yaml|x-yaml|javascript|csv|toml|x-sh))/i;
-const TEXT_EXTS = new Set(['txt','md','markdown','log','env','csv','tsv','json','xml','yaml','yml','ini','cfg','conf','toml','sh','bash','js','jsx','ts','tsx','py','html','htm','css','scss','sql','rs','go','c','cpp','h','java','kt','rb','php','svg']);
+const TEXT_EXTS = new Set([
+  'txt',
+  'md',
+  'markdown',
+  'log',
+  'env',
+  'csv',
+  'tsv',
+  'json',
+  'xml',
+  'yaml',
+  'yml',
+  'ini',
+  'cfg',
+  'conf',
+  'toml',
+  'sh',
+  'bash',
+  'js',
+  'jsx',
+  'ts',
+  'tsx',
+  'py',
+  'html',
+  'htm',
+  'css',
+  'scss',
+  'sql',
+  'rs',
+  'go',
+  'c',
+  'cpp',
+  'h',
+  'java',
+  'kt',
+  'rb',
+  'php',
+  'svg',
+]);
 function isTextReadable(mime: string | null | undefined, name: string): boolean {
   if (mime && TEXT_MIME_RE.test(mime)) return true;
   const ext = (name.split('.').pop() || '').toLowerCase();
@@ -203,7 +299,7 @@ function isTextReadable(mime: string | null | undefined, name: string): boolean 
 }
 
 export function FilesScreen() {
-  const { authed, opsGet, opsMut, theme } = useApp();
+  const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
 
@@ -243,6 +339,22 @@ export function FilesScreen() {
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   useEffect(() => {
+    if (authed) return;
+    setListing(null);
+    setCurrentPath('~');
+    setSearchInput('');
+    setSelectedFile(null);
+    setFileTextContent('');
+    setPreviewModalOpen(false);
+    setPathModalOpen(false);
+    setNewFolderModalOpen(false);
+    setNewFileModalOpen(false);
+    setNewFolderName('');
+    setNewFileName('');
+    setNewFileContent('');
+    setError(null);
+  }, [authed]);
+  useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchInput.trim().toLowerCase()), 150);
     return () => clearTimeout(t);
   }, [searchInput]);
@@ -265,28 +377,30 @@ export function FilesScreen() {
   const load = useCallback(
     async (path?: string, isRefresh = false) => {
       const seq = ++loadSeq.current;
+      const scope = getAuthScope();
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
       try {
         const targetPath = (path !== undefined ? path : currentPathRef.current || '~').trim();
-        const query = targetPath ? `?path=${encodeURIComponent(targetPath)}` : '';
-        const res: ManagedFilesResponse = await opsGet(`/api/files${query}`);
-        if (seq !== loadSeq.current) return;
+        const res: ManagedFilesResponse = await opsGet(
+          targetPath ? api.files(targetPath) : api.filesRoot(),
+        );
+        if (seq !== loadSeq.current || getAuthScope() !== scope) return;
         setListing(res);
         setCurrentPath(res.path);
         currentPathRef.current = res.path;
         setPathInput(res.path);
       } catch (e) {
-        if (seq !== loadSeq.current) return;
+        if (seq !== loadSeq.current || getAuthScope() !== scope) return;
         setError(errMsg(e));
       } finally {
-        if (seq !== loadSeq.current) return;
+        if (seq !== loadSeq.current || getAuthScope() !== scope) return;
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [opsGet],
+    [getAuthScope, opsGet],
   );
 
   useEffect(() => {
@@ -330,25 +444,31 @@ export function FilesScreen() {
             text: 'Delete',
             style: 'destructive',
             onPress: async () => {
+              const scope = getAuthScope();
               try {
-                await opsMut('/api/files', 'DELETE', { path: targetPath, recursive: isDir });
+                await opsMut(api.filesRoot(), 'DELETE', {
+                  path: targetPath,
+                  recursive: isDir,
+                });
+                if (getAuthScope() !== scope) return;
                 if (previewModalOpen) {
                   setPreviewModalOpen(false);
                   setSelectedFile(null);
                 }
                 await load(activeDirectory);
               } catch (e) {
-                Alert.alert('Delete Failed', errMsg(e));
+                if (getAuthScope() === scope) Alert.alert('Delete Failed', errMsg(e));
               }
             },
           },
         ],
       );
     },
-    [opsMut, previewModalOpen, load, activeDirectory],
+    [getAuthScope, opsMut, previewModalOpen, load, activeDirectory],
   );
 
   const handleOpenEntry = async (entry: ManagedFileEntry) => {
+    const scope = getAuthScope();
     if (entry.is_directory) {
       setSearchQuery('');
       await load(entry.path);
@@ -356,9 +476,8 @@ export function FilesScreen() {
       setReadingFile(true);
       setError(null);
       try {
-        const res: ManagedFileReadResponse = await opsGet(
-          `/api/files/read?path=${encodeURIComponent(entry.path)}`,
-        );
+        const res: ManagedFileReadResponse = await opsGet(api.fileRead(entry.path));
+        if (getAuthScope() !== scope) return;
         setSelectedFile(res);
         setIsEditingFile(false);
         if (res.data_url && res.data_url.includes(';base64,')) {
@@ -369,9 +488,9 @@ export function FilesScreen() {
         }
         setPreviewModalOpen(true);
       } catch (e) {
-        Alert.alert('Cannot Open File', errMsg(e));
+        if (getAuthScope() === scope) Alert.alert('Cannot Open File', errMsg(e));
       } finally {
-        setReadingFile(false);
+        if (getAuthScope() === scope) setReadingFile(false);
       }
     }
   };
@@ -394,68 +513,74 @@ export function FilesScreen() {
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
     if (!name) return;
+    const scope = getAuthScope();
     setCreatingFolder(true);
     try {
       const target = joinPath(activeDirectory, name);
-      await opsMut('/api/files/mkdir', 'POST', { path: target });
+      await opsMut(api.filesMkdir(), 'POST', { path: target });
+      if (getAuthScope() !== scope) return;
       setNewFolderName('');
       setNewFolderModalOpen(false);
       await load(activeDirectory);
     } catch (e) {
-      Alert.alert('Create Folder Failed', errMsg(e));
+      if (getAuthScope() === scope) Alert.alert('Create Folder Failed', errMsg(e));
     } finally {
-      setCreatingFolder(false);
+      if (getAuthScope() === scope) setCreatingFolder(false);
     }
   };
 
   const handleCreateFile = async () => {
     const name = newFileName.trim();
     if (!name) return;
+    const scope = getAuthScope();
     setCreatingFile(true);
     try {
       const target = joinPath(activeDirectory, name);
       const b64 = utf8ToBase64(newFileContent);
       const dataUrl = `data:text/plain;charset=utf-8;base64,${b64}`;
-      await opsMut('/api/files/upload', 'POST', {
+      await opsMut(api.filesUpload(), 'POST', {
         path: target,
         data_url: dataUrl,
         overwrite: true,
       });
+      if (getAuthScope() !== scope) return;
       setNewFileName('');
       setNewFileContent('');
       setNewFileModalOpen(false);
       await load(activeDirectory);
     } catch (e) {
-      Alert.alert('Create File Failed', errMsg(e));
+      if (getAuthScope() === scope) Alert.alert('Create File Failed', errMsg(e));
     } finally {
-      setCreatingFile(false);
+      if (getAuthScope() === scope) setCreatingFile(false);
     }
   };
 
   const handleSaveEditedFile = async () => {
     if (!selectedFile) return;
+    const scope = getAuthScope();
     setSavingFile(true);
     try {
       const b64 = utf8ToBase64(fileTextContent);
       const mime = selectedFile.mime_type || 'text/plain';
       const dataUrl = `data:${mime};charset=utf-8;base64,${b64}`;
-      await opsMut('/api/files/upload', 'POST', {
+      await opsMut(api.filesUpload(), 'POST', {
         path: selectedFile.path,
         data_url: dataUrl,
         overwrite: true,
       });
+      if (getAuthScope() !== scope) return;
       setIsEditingFile(false);
       Alert.alert('Saved', 'File saved successfully.');
       await load(activeDirectory);
     } catch (e) {
-      Alert.alert('Save Failed', errMsg(e));
+      if (getAuthScope() === scope) Alert.alert('Save Failed', errMsg(e));
     } finally {
-      setSavingFile(false);
+      if (getAuthScope() === scope) setSavingFile(false);
     }
   };
 
-
   const handlePickAndUploadImage = async () => {
+    const scope = getAuthScope();
     try {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
@@ -471,18 +596,19 @@ export function FilesScreen() {
         const target = joinPath(activeDirectory, filename);
         const dataUrl = `data:${mime};base64,${asset.base64}`;
 
-        await opsMut('/api/files/upload', 'POST', {
+        await opsMut(api.filesUpload(), 'POST', {
           path: target,
           data_url: dataUrl,
           overwrite: true,
         });
+        if (getAuthScope() !== scope) return;
 
         await load(activeDirectory);
       }
     } catch (e) {
-      Alert.alert('Upload Failed', errMsg(e));
+      if (getAuthScope() === scope) Alert.alert('Upload Failed', errMsg(e));
     } finally {
-      setUploading(false);
+      if (getAuthScope() === scope) setUploading(false);
     }
   };
 
@@ -503,9 +629,18 @@ export function FilesScreen() {
       if (e.is_directory) folders++;
       else files++;
     }
-    if (!debouncedQuery) return { filteredEntries: entries, folderCount: folders, fileCount: files };
+    if (!debouncedQuery)
+      return {
+        filteredEntries: entries,
+        folderCount: folders,
+        fileCount: files,
+      };
     const filtered = entries.filter((item) => item.name.toLowerCase().includes(debouncedQuery));
-    return { filteredEntries: filtered, folderCount: folders, fileCount: files };
+    return {
+      filteredEntries: filtered,
+      folderCount: folders,
+      fileCount: files,
+    };
   }, [listing?.entries, debouncedQuery]);
 
   const handleOpenEntryStable = useCallback(
@@ -530,571 +665,510 @@ export function FilesScreen() {
     setIsEditingFile(false);
   }, []);
 
+  if (!authed) return <Redirect href="/login" />;
+
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
-    {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
-    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-      <StatusBar style="auto" />
+      {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
+      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
+        <StatusBar style="auto" />
 
-      {/* Header Bar */}
-      <View
-        className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-4 dark:border-neutral-800"
-        style={{ paddingTop: insets.top + 10 }}
-      >
-        <View className="flex-row items-center gap-3">
-          <HamburgerBtn />
-          <View>
-            <Text className="text-xl font-bold text-neutral-900 dark:text-white">Files</Text>
-            <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-              {loading
-                ? 'Loading...'
-                : `${folderCount} folders · ${fileCount} files`}
-            </Text>
+        {/* Header Bar */}
+        <View
+          className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-4 dark:border-neutral-800"
+          style={{ paddingTop: insets.top + 10 }}
+        >
+          <View className="flex-row items-center gap-3">
+            <HamburgerBtn />
+            <View>
+              <Text className="text-xl font-bold text-neutral-900 dark:text-white">Files</Text>
+              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                {loading ? 'Loading...' : `${folderCount} folders · ${fileCount} files`}
+              </Text>
+            </View>
+          </View>
+
+          <View className="flex-row items-center gap-1">
+            <Pressable
+              onPress={() => setNewFolderModalOpen(true)}
+              hitSlop={8}
+              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
+            </Pressable>
+
+            <Pressable
+              onPress={() => setNewFileModalOpen(true)}
+              hitSlop={8}
+              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
+            </Pressable>
+
+            <Pressable
+              onPress={handlePickAndUploadImage}
+              disabled={uploading}
+              hitSlop={8}
+              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              {uploading ? (
+                <ActivityIndicator size="small" color="#1a73e8" />
+              ) : (
+                <Upload size={19} color={dark ? '#e5e5e5' : '#333'} />
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={() => void load(activeDirectory, true)}
+              hitSlop={8}
+              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+            </Pressable>
           </View>
         </View>
 
-        <View className="flex-row items-center gap-1">
-          <Pressable
-            onPress={() => setNewFolderModalOpen(true)}
-            hitSlop={8}
-            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+        {/* Path Bar & Breadcrumbs */}
+        <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="flex-1 mr-2"
+            contentContainerStyle={{ alignItems: 'center' }}
           >
-            <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => setNewFileModalOpen(true)}
-            hitSlop={8}
-            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
-          >
-            <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
-          </Pressable>
-
-          <Pressable
-            onPress={handlePickAndUploadImage}
-            disabled={uploading}
-            hitSlop={8}
-            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
-          >
-            {uploading ? (
-              <ActivityIndicator size="small" color="#1a73e8" />
-            ) : (
-              <Upload size={19} color={dark ? '#e5e5e5' : '#333'} />
-            )}
-          </Pressable>
-
-          <Pressable
-            onPress={() => void load(activeDirectory, true)}
-            hitSlop={8}
-            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
-          >
-            <RefreshCw
-              size={18}
-              color={dark ? '#e5e5e5' : '#333'}
-              className={refreshing ? 'animate-spin' : ''}
-            />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Path Bar & Breadcrumbs */}
-      <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          className="flex-1 mr-2"
-          contentContainerStyle={{ alignItems: 'center' }}
-        >
-          <View className="flex-row items-center gap-1">
-            <HardDrive size={14} color="#1a73e8" />
-            {breadcrumbs.map((crumb, idx) => {
-              const isLast = idx === breadcrumbs.length - 1;
-              return (
-                <View key={crumb.path} className="flex-row items-center">
-                  <Pressable
-                    disabled={isLast}
-                    onPress={() => {
-                      setSearchQuery('');
-                      void load(crumb.path);
-                    }}
-                    className={`rounded px-1.5 py-0.5 ${
-                      isLast
-                        ? 'bg-neutral-200/60 dark:bg-neutral-800'
-                        : 'active:bg-neutral-200 dark:active:bg-neutral-800'
-                    }`}
-                  >
-                    <Text
-                      numberOfLines={1}
-                      className={`font-mono text-xs ${
+            <View className="flex-row items-center gap-1">
+              <HardDrive size={14} color="#1a73e8" />
+              {breadcrumbs.map((crumb, idx) => {
+                const isLast = idx === breadcrumbs.length - 1;
+                return (
+                  <View key={crumb.path} className="flex-row items-center">
+                    <Pressable
+                      disabled={isLast}
+                      onPress={() => {
+                        setSearchQuery('');
+                        void load(crumb.path);
+                      }}
+                      className={`rounded px-1.5 py-0.5 ${
                         isLast
-                          ? 'font-bold text-neutral-900 dark:text-neutral-100'
-                          : 'text-[#1a73e8] dark:text-blue-400'
+                          ? 'bg-neutral-200/60 dark:bg-neutral-800'
+                          : 'active:bg-neutral-200 dark:active:bg-neutral-800'
                       }`}
                     >
-                      {crumb.label}
-                    </Text>
-                  </Pressable>
-                  {!isLast && (
-                    <Text className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </ScrollView>
+                      <Text
+                        numberOfLines={1}
+                        className={`font-mono text-xs ${
+                          isLast
+                            ? 'font-bold text-neutral-900 dark:text-neutral-100'
+                            : 'text-[#1a73e8] dark:text-blue-400'
+                        }`}
+                      >
+                        {crumb.label}
+                      </Text>
+                    </Pressable>
+                    {!isLast && <Text className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</Text>}
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
 
-        <Pressable
-          onPress={() => {
-            setPathInput(activeDirectory);
-            setPathModalOpen(true);
-          }}
-          className="rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
-        >
-          <Text className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">
-            Change
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Search / Filter Bar */}
-      <View className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-        <View className="flex-row items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
-          <Search size={15} color={dark ? '#888' : '#9ca3af'} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search in this folder..."
-            placeholderTextColor={dark ? '#777' : '#9ca3af'}
-            className="flex-1 text-sm text-neutral-900 dark:text-neutral-100"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {searchQuery ? (
-            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-              <X size={14} color={dark ? '#888' : '#9ca3af'} />
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-
-      {/* Error Alert */}
-      {error && (
-        <View className="m-3 flex-row items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-950 dark:bg-red-950/30">
-          <AlertCircle size={17} color="#dc2626" />
-          <Text className="flex-1 text-xs text-red-600 dark:text-red-400">{error}</Text>
-          <Pressable onPress={() => void load(activeDirectory)}>
-            <Text className="text-xs font-semibold text-red-700 dark:text-red-300">Retry</Text>
+          <Pressable
+            onPress={() => {
+              setPathInput(activeDirectory);
+              setPathModalOpen(true);
+            }}
+            className="rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
+          >
+            <Text className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</Text>
           </Pressable>
         </View>
-      )}
 
-      {/* File List — virtualized so large folders don't mount every row. */}
-      <FlatList
-        className="flex-1"
-        data={filteredEntries}
-        keyExtractor={fileKeyExtractor}
-        renderItem={renderFileRow}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24, flexGrow: 1 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void load(activeDirectory, true)} />
-        }
-        initialNumToRender={20}
-        maxToRenderPerBatch={20}
-        windowSize={7}
-        updateCellsBatchingPeriod={60}
-        removeClippedSubviews
-        ListHeaderComponent={
-          listing?.parent ? (
-            <Pressable
-              onPress={handleGoUp}
-              className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
-            >
-              <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
-                <ArrowUp size={18} color="#f59e0b" />
-              </View>
-              <View className="flex-1">
-                <Text className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</Text>
-                <Text className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</Text>
-              </View>
-            </Pressable>
-          ) : null
-        }
-        ListEmptyComponent={
-          loading && !refreshing ? (
-            <View className="items-center justify-center py-16">
-              <ActivityIndicator size="large" color="#1a73e8" />
-              <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</Text>
-            </View>
-          ) : !loading ? (
-            <View className="items-center justify-center py-20 px-6">
-              <View className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
-                <Folder size={28} color={dark ? '#666' : '#999'} />
-              </View>
-              <Text className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                {searchInput ? 'No matching files' : 'Folder is empty'}
-              </Text>
-              <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-                {searchInput
-                  ? `No files or folders matching "${searchInput}"`
-                  : 'Upload files or create folders using the top buttons.'}
-              </Text>
-            </View>
-          ) : null
-        }
-      />
-
-      {/* Reading File Overlay */}
-      {readingFile && (
-        <View className="absolute inset-0 z-50 items-center justify-center bg-black/40">
-          <View className="items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
-            <ActivityIndicator size="large" color="#1a73e8" />
-            <Text className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">
-              Opening file...
-            </Text>
+        {/* Search / Filter Bar */}
+        <View className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+          <View className="flex-row items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
+            <Search size={15} color={dark ? '#888' : '#9ca3af'} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search in this folder..."
+              placeholderTextColor={dark ? '#777' : '#9ca3af'}
+              className="flex-1 text-sm text-neutral-900 dark:text-neutral-100"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery ? (
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+                <X size={14} color={dark ? '#888' : '#9ca3af'} />
+              </Pressable>
+            ) : null}
           </View>
         </View>
-      )}
 
-      {/* File Preview Modal */}
-      <Modal
-        visible={previewModalOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closePreview}
-      >
-        <SafeAreaView className="flex-1 bg-white dark:bg-neutral-950">
-          <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <View className="flex-1 pr-3">
-              <Text
-                numberOfLines={1}
-                className="font-mono text-base font-bold text-neutral-900 dark:text-white"
+        {/* Error Alert */}
+        {error && (
+          <View className="m-3 flex-row items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-950 dark:bg-red-950/30">
+            <AlertCircle size={17} color="#dc2626" />
+            <Text className="flex-1 text-xs text-red-600 dark:text-red-400">{error}</Text>
+            <Pressable onPress={() => void load(activeDirectory)}>
+              <Text className="text-xs font-semibold text-red-700 dark:text-red-300">Retry</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* File List — virtualized so large folders don't mount every row. */}
+        <FlatList
+          className="flex-1"
+          data={filteredEntries}
+          keyExtractor={fileKeyExtractor}
+          renderItem={renderFileRow}
+          contentContainerStyle={{
+            paddingBottom: insets.bottom + 24,
+            flexGrow: 1,
+          }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(activeDirectory, true)} />}
+          initialNumToRender={20}
+          maxToRenderPerBatch={20}
+          windowSize={7}
+          updateCellsBatchingPeriod={60}
+          removeClippedSubviews
+          ListHeaderComponent={
+            listing?.parent ? (
+              <Pressable
+                onPress={handleGoUp}
+                className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
               >
-                {selectedFile?.name}
-              </Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                {formatBytes(selectedFile?.size)} · {selectedFile?.mime_type || 'Unknown type'}
-              </Text>
+                <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
+                  <ArrowUp size={18} color="#f59e0b" />
+                </View>
+                <View className="flex-1">
+                  <Text className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</Text>
+                  <Text className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</Text>
+                </View>
+              </Pressable>
+            ) : null
+          }
+          ListEmptyComponent={
+            loading && !refreshing ? (
+              <View className="items-center justify-center py-16">
+                <ActivityIndicator size="large" color="#1a73e8" />
+                <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</Text>
+              </View>
+            ) : !loading ? (
+              <View className="items-center justify-center py-20 px-6">
+                <View className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
+                  <Folder size={28} color={dark ? '#666' : '#999'} />
+                </View>
+                <Text className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {searchInput ? 'No matching files' : 'Folder is empty'}
+                </Text>
+                <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                  {searchInput
+                    ? `No files or folders matching "${searchInput}"`
+                    : 'Upload files or create folders using the top buttons.'}
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+
+        {/* Reading File Overlay */}
+        {readingFile && (
+          <View className="absolute inset-0 z-50 items-center justify-center bg-black/40">
+            <View className="items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+              <ActivityIndicator size="large" color="#1a73e8" />
+              <Text className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</Text>
             </View>
+          </View>
+        )}
 
-            <View className="flex-row items-center gap-2">
-              {fileTextContent && !isEditingFile ? (
-                <Pressable
-                  onPress={handleCopyText}
-                  className="flex-row items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
-                >
-                  {copied ? (
-                    <>
-                      <Check size={14} color="#10b981" />
-                      <Text className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                        Copied
-                      </Text>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={14} color={dark ? '#ccc' : '#444'} />
-                      <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        Copy
-                      </Text>
-                    </>
-                  )}
-                </Pressable>
-              ) : null}
+        {/* File Preview Modal */}
+        <Modal
+          visible={previewModalOpen}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={closePreview}
+        >
+          <SafeAreaView className="flex-1 bg-white dark:bg-neutral-950">
+            <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <View className="flex-1 pr-3">
+                <Text numberOfLines={1} className="font-mono text-base font-bold text-neutral-900 dark:text-white">
+                  {selectedFile?.name}
+                </Text>
+                <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {formatBytes(selectedFile?.size)} · {selectedFile?.mime_type || 'Unknown type'}
+                </Text>
+              </View>
 
-              {/* Edit Toggle for Text Files */}
-              {fileTextContent && !selectedFile?.mime_type?.startsWith('image/') ? (
-                isEditingFile ? (
+              <View className="flex-row items-center gap-2">
+                {fileTextContent && !isEditingFile ? (
                   <Pressable
-                    onPress={handleSaveEditedFile}
-                    disabled={savingFile}
-                    className="rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
+                    onPress={handleCopyText}
+                    className="flex-row items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
                   >
-                    {savingFile ? (
-                      <ActivityIndicator size="small" color="#fff" />
+                    {copied ? (
+                      <>
+                        <Check size={14} color="#10b981" />
+                        <Text className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Copied</Text>
+                      </>
                     ) : (
-                      <Text className="text-xs font-bold text-white">Save</Text>
+                      <>
+                        <Copy size={14} color={dark ? '#ccc' : '#444'} />
+                        <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Copy</Text>
+                      </>
                     )}
                   </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={() => setIsEditingFile(true)}
-                    className="rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
-                  >
-                    <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                      Edit
-                    </Text>
-                  </Pressable>
-                )
-              ) : null}
+                ) : null}
 
-              {selectedFile && !isEditingFile ? (
+                {/* Edit Toggle for Text Files */}
+                {fileTextContent && !selectedFile?.mime_type?.startsWith('image/') ? (
+                  isEditingFile ? (
+                    <Pressable
+                      onPress={handleSaveEditedFile}
+                      disabled={savingFile}
+                      className="rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
+                    >
+                      {savingFile ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text className="text-xs font-bold text-white">Save</Text>
+                      )}
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      onPress={() => setIsEditingFile(true)}
+                      className="rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
+                    >
+                      <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</Text>
+                    </Pressable>
+                  )
+                ) : null}
+
+                {selectedFile && !isEditingFile ? (
+                  <Pressable
+                    onPress={() => handleDeleteEntry(selectedFile.path, false, selectedFile.name)}
+                    hitSlop={8}
+                    className="rounded-lg p-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                  >
+                    <Trash2 size={18} color="#ef4444" />
+                  </Pressable>
+                ) : null}
+
                 <Pressable
-                  onPress={() =>
-                    handleDeleteEntry(selectedFile.path, false, selectedFile.name)
-                  }
+                  onPress={closePreview}
                   hitSlop={8}
                   className="rounded-lg p-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
                 >
-                  <Trash2 size={18} color="#ef4444" />
+                  <X size={20} color={dark ? '#eee' : '#333'} />
                 </Pressable>
-              ) : null}
-
-              <Pressable
-                onPress={closePreview}
-                hitSlop={8}
-                className="rounded-lg p-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-              >
-                <X size={20} color={dark ? '#eee' : '#333'} />
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Preview Content */}
-          <View className="flex-1 bg-neutral-50 dark:bg-black">
-            {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
-              <View className="flex-1 items-center justify-center p-4">
-                <Image
-                  source={{ uri: selectedFile.data_url }}
-                  resizeMode="contain"
-                  className="h-full w-full"
-                />
               </View>
-            ) : isEditingFile ? (
-              <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                className="flex-1"
-              >
-                <TextInput
-                  value={fileTextContent}
-                  onChangeText={setFileTextContent}
-                  multiline
-                  scrollEnabled
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textAlignVertical="top"
-                  className="flex-1 p-4 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
-                />
-              </KeyboardAvoidingView>
-            ) : fileTextContent ? (
-              <ScrollView
-                className="flex-1"
-                contentContainerStyle={{ padding: 16 }}
-                horizontal={false}
-              >
-                <ScrollView horizontal showsHorizontalScrollIndicator>
-                  <Text
-                    selectable
-                    className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
-                  >
-                    {fileTextContent}
-                  </Text>
+            </View>
+
+            {/* Preview Content */}
+            <View className="flex-1 bg-neutral-50 dark:bg-black">
+              {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
+                <View className="flex-1 items-center justify-center p-4">
+                  <Image source={{ uri: selectedFile.data_url }} resizeMode="contain" className="h-full w-full" />
+                </View>
+              ) : isEditingFile ? (
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
+                  <TextInput
+                    value={fileTextContent}
+                    onChangeText={setFileTextContent}
+                    multiline
+                    scrollEnabled
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textAlignVertical="top"
+                    className="flex-1 p-4 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
+                  />
+                </KeyboardAvoidingView>
+              ) : fileTextContent ? (
+                <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }} horizontal={false}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator>
+                    <Text selectable className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
+                      {fileTextContent}
+                    </Text>
+                  </ScrollView>
                 </ScrollView>
-              </ScrollView>
-            ) : (
-              <View className="flex-1 items-center justify-center p-8">
-                <File size={48} color={dark ? '#555' : '#aaa'} />
-                <Text className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-                  Binary or Unsupported File Preview
-                </Text>
-                <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-                  This file cannot be rendered as text or an image.
-                </Text>
-              </View>
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Change / Jump to Path Modal */}
-      <Modal
-        visible={pathModalOpen}
-        transparent
-        animationType="none"
-        onRequestClose={() => setPathModalOpen(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          className="flex-1 items-center justify-center bg-black/60 p-4"
-        >
-          <View className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-neutral-900">
-            <Text className="text-base font-bold text-neutral-900 dark:text-white">
-              Navigate to Directory
-            </Text>
-            <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-              Enter absolute directory path on the server
-            </Text>
-
-            <TextInput
-              value={pathInput}
-              onChangeText={setPathInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder={activeDirectory || '~'}
-              placeholderTextColor={dark ? '#777' : '#9ca3af'}
-              className="mt-3.5 rounded-xl border border-neutral-300 p-3 font-mono text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
-            />
-
-            <View className="mt-4 flex-row items-center justify-end gap-2">
-              <Pressable
-                onPress={() => setPathModalOpen(false)}
-                className="rounded-xl px-4 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-              >
-                <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={handleJumpToPath}
-                className="rounded-xl bg-[#1a73e8] px-5 py-2.5 active:opacity-80"
-              >
-                <Text className="text-sm font-bold text-white">Go</Text>
-              </Pressable>
+              ) : (
+                <View className="flex-1 items-center justify-center p-8">
+                  <File size={48} color={dark ? '#555' : '#aaa'} />
+                  <Text className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                    Binary or Unsupported File Preview
+                  </Text>
+                  <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                    This file cannot be rendered as text or an image.
+                  </Text>
+                </View>
+              )}
             </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+          </SafeAreaView>
+        </Modal>
 
-      {/* Create Folder Modal */}
-      <Modal
-        visible={newFolderModalOpen}
-        transparent
-        animationType="none"
-        onRequestClose={() => setNewFolderModalOpen(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          className="flex-1 items-center justify-center bg-black/60 p-4"
-        >
-          <View className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-neutral-900">
-            <Text className="text-base font-bold text-neutral-900 dark:text-white">
-              New Folder
-            </Text>
-            <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-              Create folder in: {activeDirectory || '~'}
-            </Text>
-
-            <TextInput
-              value={newFolderName}
-              onChangeText={setNewFolderName}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              placeholder="folder_name"
-              placeholderTextColor={dark ? '#777' : '#9ca3af'}
-              className="mt-3.5 rounded-xl border border-neutral-300 p-3 text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
-            />
-
-            <View className="mt-4 flex-row items-center justify-end gap-2">
-              <Pressable
-                onPress={() => {
-                  setNewFolderName('');
-                  setNewFolderModalOpen(false);
-                }}
-                className="rounded-xl px-4 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-              >
-                <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={handleCreateFolder}
-                disabled={creatingFolder || !newFolderName.trim()}
-                className={`rounded-xl bg-[#1a73e8] px-5 py-2.5 active:opacity-80 ${
-                  !newFolderName.trim() ? 'opacity-50' : ''
-                }`}
-              >
-                {creatingFolder ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text className="text-sm font-bold text-white">Create</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Create New File Modal */}
-      <Modal
-        visible={newFileModalOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setNewFileModalOpen(false)}
-      >
-        <SafeAreaView className="flex-1 bg-white dark:bg-neutral-950">
-          <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <View>
-              <Text className="text-base font-bold text-neutral-900 dark:text-white">
-                Create New File
-              </Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                in {activeDirectory || '~'}
-              </Text>
-            </View>
-
-            <View className="flex-row items-center gap-2">
-              <Pressable
-                onPress={() => setNewFileModalOpen(false)}
-                className="rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-              >
-                <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Cancel
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleCreateFile}
-                disabled={creatingFile || !newFileName.trim()}
-                className={`rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80 ${
-                  !newFileName.trim() ? 'opacity-50' : ''
-                }`}
-              >
-                {creatingFile ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text className="text-xs font-bold text-white">Save File</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-
-          <View className="p-3 border-b border-neutral-200 dark:border-neutral-800">
-            <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">
-              File Name (e.g. notes.txt, script.py, config.json)
-            </Text>
-            <TextInput
-              value={newFileName}
-              onChangeText={setNewFileName}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              placeholder="filename.txt"
-              placeholderTextColor={dark ? '#777' : '#9ca3af'}
-              className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
-            />
-          </View>
-
+        {/* Change / Jump to Path Modal */}
+        <Modal visible={pathModalOpen} transparent animationType="none" onRequestClose={() => setPathModalOpen(false)}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            className="flex-1 p-3"
+            className="flex-1 items-center justify-center bg-black/60 p-4"
           >
-            <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">
-              File Content
-            </Text>
-            <TextInput
-              value={newFileContent}
-              onChangeText={setNewFileContent}
-              multiline
-              autoCapitalize="none"
-              autoCorrect={false}
-              textAlignVertical="top"
-              placeholder="Enter text or code here..."
-              placeholderTextColor={dark ? '#777' : '#9ca3af'}
-              className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
-            />
+            <View className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-neutral-900">
+              <Text className="text-base font-bold text-neutral-900 dark:text-white">Navigate to Directory</Text>
+              <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                Enter absolute directory path on the server
+              </Text>
+
+              <TextInput
+                value={pathInput}
+                onChangeText={setPathInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={activeDirectory || '~'}
+                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                className="mt-3.5 rounded-xl border border-neutral-300 p-3 font-mono text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
+              />
+
+              <View className="mt-4 flex-row items-center justify-end gap-2">
+                <Pressable
+                  onPress={() => setPathModalOpen(false)}
+                  className="rounded-xl px-4 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                >
+                  <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</Text>
+                </Pressable>
+                <Pressable onPress={handleJumpToPath} className="rounded-xl bg-[#1a73e8] px-5 py-2.5 active:opacity-80">
+                  <Text className="text-sm font-bold text-white">Go</Text>
+                </Pressable>
+              </View>
+            </View>
           </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+
+        {/* Create Folder Modal */}
+        <Modal
+          visible={newFolderModalOpen}
+          transparent
+          animationType="none"
+          onRequestClose={() => setNewFolderModalOpen(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            className="flex-1 items-center justify-center bg-black/60 p-4"
+          >
+            <View className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-neutral-900">
+              <Text className="text-base font-bold text-neutral-900 dark:text-white">New Folder</Text>
+              <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                Create folder in: {activeDirectory || '~'}
+              </Text>
+
+              <TextInput
+                value={newFolderName}
+                onChangeText={setNewFolderName}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                placeholder="folder_name"
+                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                className="mt-3.5 rounded-xl border border-neutral-300 p-3 text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
+              />
+
+              <View className="mt-4 flex-row items-center justify-end gap-2">
+                <Pressable
+                  onPress={() => {
+                    setNewFolderName('');
+                    setNewFolderModalOpen(false);
+                  }}
+                  className="rounded-xl px-4 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                >
+                  <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleCreateFolder}
+                  disabled={creatingFolder || !newFolderName.trim()}
+                  className={`rounded-xl bg-[#1a73e8] px-5 py-2.5 active:opacity-80 ${
+                    !newFolderName.trim() ? 'opacity-50' : ''
+                  }`}
+                >
+                  {creatingFolder ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text className="text-sm font-bold text-white">Create</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Create New File Modal */}
+        <Modal
+          visible={newFileModalOpen}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setNewFileModalOpen(false)}
+        >
+          <SafeAreaView className="flex-1 bg-white dark:bg-neutral-950">
+            <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <View>
+                <Text className="text-base font-bold text-neutral-900 dark:text-white">Create New File</Text>
+                <Text className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</Text>
+              </View>
+
+              <View className="flex-row items-center gap-2">
+                <Pressable
+                  onPress={() => setNewFileModalOpen(false)}
+                  className="rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                >
+                  <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={handleCreateFile}
+                  disabled={creatingFile || !newFileName.trim()}
+                  className={`rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80 ${
+                    !newFileName.trim() ? 'opacity-50' : ''
+                  }`}
+                >
+                  {creatingFile ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text className="text-xs font-bold text-white">Save File</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+
+            <View className="p-3 border-b border-neutral-200 dark:border-neutral-800">
+              <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">
+                File Name (e.g. notes.txt, script.py, config.json)
+              </Text>
+              <TextInput
+                value={newFileName}
+                onChangeText={setNewFileName}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                placeholder="filename.txt"
+                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
+              />
+            </View>
+
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 p-3">
+              <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">File Content</Text>
+              <TextInput
+                value={newFileContent}
+                onChangeText={setNewFileContent}
+                multiline
+                autoCapitalize="none"
+                autoCorrect={false}
+                textAlignVertical="top"
+                placeholder="Enter text or code here..."
+                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
+              />
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </Modal>
+      </SafeAreaView>
     </View>
   );
 }

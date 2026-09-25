@@ -4,7 +4,7 @@
 // one transcript. Navigation replaced setScreen() with expo-router routes.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AppState, useColorScheme as useSystemScheme } from 'react-native';
+import { AppState, Platform, useColorScheme as useSystemScheme } from 'react-native';
 import * as LocalAuth from 'expo-local-authentication';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -12,8 +12,10 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { useColorScheme as useNWColorScheme } from 'nativewind';
 import {
   checkMe,
+  clearSessionMessagesCache,
   getModelOptions,
   getSessionMessages,
+  logoutDashboard,
   mintWsTicket,
   opsGet as dashboardOpsGet,
   opsMut as dashboardOpsMut,
@@ -23,8 +25,32 @@ import {
   toWsUrl,
 } from '../lib/dashboard';
 import type { ModelProviderOption } from '../lib/dashboard';
-import { clearCookie, getActiveProfile, getCookie, getLastSession, getModel, getNotifyEnabled, getPassword, getTheme, loadConnection, saveActiveProfile, saveCookie, saveHost, saveLastSession, saveModel, saveNotifyEnabled, savePassword, saveTheme } from '../lib/connection';
+import {
+  clearCookie,
+  clearPassword,
+  connectionScope,
+  forgetAll,
+  getActiveProfile,
+  getCookie as getStoredCookie,
+  getLastSession,
+  getModel,
+  getNotifyEnabled,
+  getPassword,
+  getTheme,
+  loadConnection,
+  saveActiveProfile,
+  saveCookie,
+  saveHost,
+  saveLastSession,
+  saveModel,
+  saveNotifyEnabled,
+  savePassword,
+  saveTheme,
+} from '../lib/connection';
+import { clearMediaCaches } from '../lib/media-cache';
 import type { ResolvedTheme, Theme } from '../lib/connection';
+import * as api from '../lib/api';
+import { DEFAULT_PROFILE, MAX_UPLOAD_BYTES } from '../lib/constants';
 import {
   askNotificationCategory,
   dismissNotification,
@@ -55,14 +81,7 @@ import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, ServerAsk, SessionSummary } from '../lib/gateway-ws';
 import { changedFilesFromDiff, inlineDiffFromDetail } from '../utils/diff';
 import { formatToolCommand, formatToolResult } from '../utils/toolResult';
-import {
-  cleanThinking,
-  errMsg,
-  isSlashCommand,
-  nid,
-  parseSlashCommand,
-  utf8ToBase64,
-} from '../utils/messages';
+import { cleanThinking, errMsg, isSlashCommand, nid, parseSlashCommand, utf8ToBase64 } from '../utils/messages';
 import {
   rememberCommandsCatalog,
   slashBlockedMessage,
@@ -206,6 +225,10 @@ export interface AppStore {
   opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>;
   /** Session cookie — media components need it to load authed URLs. */
   getCookie: () => string;
+  /** Monotonic connection generation for fencing stale screen requests. */
+  getConnectionEpoch: () => number;
+  /** Connection + profile generation for auth-scoped REST screens. */
+  getAuthScope: () => string;
 }
 
 const AppContext = createContext<AppStore | null>(null);
@@ -216,13 +239,19 @@ function withTimeout<T>(p: Promise<T>, ms: number, what = 'timed out'): Promise<
   const timeout = new Promise<T>((_, rej) => {
     t = setTimeout(() => rej(new Error(what)), ms);
   });
-  return Promise.race([p.then((v) => {
-    if (t) clearTimeout(t);
-    return v;
-  }, (e) => {
-    if (t) clearTimeout(t);
-    throw e;
-  }), timeout]);
+  return Promise.race([
+    p.then(
+      (v) => {
+        if (t) clearTimeout(t);
+        return v;
+      },
+      (e) => {
+        if (t) clearTimeout(t);
+        throw e;
+      },
+    ),
+    timeout,
+  ]);
 }
 
 export interface AgentProfile {
@@ -242,20 +271,28 @@ export interface ScopedSessionSummary extends SessionSummary {
 
 function normalizeProfileName(name: string | null | undefined): string {
   const value = String(name ?? '').trim();
-  return value || 'default';
+  return value || DEFAULT_PROFILE;
 }
 
 function profilesOf(payload: unknown): AgentProfile[] {
-  const rows = Array.isArray(payload) ? payload : Array.isArray((payload as any)?.profiles) ? (payload as any).profiles : [];
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as any)?.profiles)
+      ? (payload as any).profiles
+      : [];
   return rows
     .filter((row: any) => row && typeof row === 'object' && typeof row.name === 'string' && row.name.trim())
     .map((row: any) => ({ ...row, name: normalizeProfileName(row.name) }));
 }
 
-async function discoverAgentProfiles(host: string, cookie: string): Promise<{ profiles: AgentProfile[]; current: string }> {
+async function discoverAgentProfiles(
+  host: string,
+  cookie: string,
+  onCookie?: (nextCookie: string) => void | Promise<void>,
+): Promise<{ profiles: AgentProfile[]; current: string }> {
   const [listResult, currentResult] = await Promise.allSettled([
-    dashboardOpsGet(host, cookie, '/api/profiles'),
-    dashboardOpsGet(host, cookie, '/api/profiles/active'),
+    dashboardOpsGet(host, cookie, api.profiles(), onCookie),
+    dashboardOpsGet(host, cookie, api.activeProfile(), onCookie),
   ]);
   const rows = listResult.status === 'fulfilled' ? profilesOf(listResult.value) : [];
   const currentPayload = currentResult.status === 'fulfilled' ? currentResult.value : null;
@@ -305,9 +342,7 @@ function notificationResponseKey(response: HermesNotificationResponse): string {
 function mergeUsageState(previous: unknown, patch: unknown): any {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return previous;
   const base =
-    previous && typeof previous === 'object' && !Array.isArray(previous)
-      ? (previous as Record<string, unknown>)
-      : {};
+    previous && typeof previous === 'object' && !Array.isArray(previous) ? (previous as Record<string, unknown>) : {};
   return { ...base, ...(patch as Record<string, unknown>) };
 }
 
@@ -349,8 +384,8 @@ function scheduleContextHydration(
 // ── Attachment upload ───────────────────────────────────────────────────────
 // prompt.submit is text-only, so bytes are staged through session-scoped
 // file.attach/image.attach_bytes RPCs and the agent is handed the returned ref.
-
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // raw; JSON base64 is ~4/3 bigger
+// MAX_UPLOAD_BYTES lives in ../lib/constants (the 1.4x check below accounts for
+// the JSON base64 inflation).
 
 const isImageAttachment = (a: Attachment) =>
   (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp)$/i.test(a.name);
@@ -430,9 +465,7 @@ async function uploadAttachments(
 function cutsWholeTranscript(list: UiMessage[], targetId: string): boolean {
   const idx = list.findIndex((m) => m.id === targetId);
   if (idx < 0) return false;
-  return !list
-    .slice(0, idx)
-    .some((m) => (m.role === 'user' || m.role === 'assistant') && m.rowId != null);
+  return !list.slice(0, idx).some((m) => (m.role === 'user' || m.role === 'assistant') && m.rowId != null);
 }
 
 /** Turn a REST/WS history transcript into transcript items — shared by opening a
@@ -441,7 +474,11 @@ function historyToItems(hist: HistoryMessage[]): UiMessage[] {
   const items: UiMessage[] = [];
   for (const m of hist) {
     if (m.role === 'assistant' && m.reasoning?.trim()) {
-      items.push({ id: nid(), role: 'thinking', text: cleanThinking(m.reasoning) });
+      items.push({
+        id: nid(),
+        role: 'thinking',
+        text: cleanThinking(m.reasoning),
+      });
     }
     if (m.role === 'tool' && (m.content.trim() || m.name)) {
       const label = m.name || m.content;
@@ -475,13 +512,31 @@ export function useApp(): AppStore {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [host, setHost] = useState('');
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPasswordState] = useState('');
+  const passwordScopeRef = useRef('');
+  const setPasswordForScope = useCallback((value: string, scope: string) => {
+    setPasswordState(value);
+    passwordScopeRef.current = value ? scope : '';
+  }, []);
+  const setPassword = useCallback(
+    (value: string) => {
+      setPasswordForScope(value, value ? connectionScope(host, username) : '');
+    },
+    [host, username, setPasswordForScope],
+  );
   const [rememberPw] = useState(true);
+  useEffect(() => {
+    const nextScope = connectionScope(host, username);
+    if (passwordScopeRef.current && passwordScopeRef.current !== nextScope) {
+      passwordScopeRef.current = '';
+      setPasswordState('');
+    }
+  }, [host, username]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [conn, setConn] = useState<ConnState>('idle');
-  const [activeProfile, setActiveProfile] = useState('default');
+  const [activeProfile, setActiveProfile] = useState(DEFAULT_PROFILE);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const profilesRef = useRef<AgentProfile[]>([]);
   profilesRef.current = profiles;
@@ -519,7 +574,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const owner = stored
       ? profileSessionKey(profile, stored)
       : runtime
-        ? runtimeOwners.current.get(runtime) ?? profileSessionKey(profile, runtime)
+        ? (runtimeOwners.current.get(runtime) ?? profileSessionKey(profile, runtime))
         : null;
     if (owner) parkedLiveRef.current.add(owner);
   }, []);
@@ -636,23 +691,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const gw = useRef<GatewayWs | null>(null);
   const cookie = useRef<string>('');
-  const activeProfileRef = useRef('default');
+  const cookieScope = useRef('');
+  const activeProfileRef = useRef(DEFAULT_PROFILE);
   activeProfileRef.current = activeProfile;
   const activeProfilePreferenceRef = useRef<string | null>(null);
   const profileEpochRef = useRef(0);
   const connectionEpochRef = useRef(0);
+  const connectRequestRef = useRef(0);
+  const logoutCleanupRef = useRef<Promise<void>>(Promise.resolve());
   const sessionOpenEpochRef = useRef(0);
   /** runtime session id → scoped durable owner (profile + stored id). */
   const runtimeOwners = useRef<Map<string, string>>(new Map());
   /** Best-effort runtime → owner metadata, including unresolved background profiles. */
   const runtimeAskOwners = useRef<Map<string, AskOwner>>(new Map());
+  const acceptRotatedCookie = useCallback(
+    async (
+      nextCookie: string,
+      targetHost: string,
+      targetUser: string,
+      expectedConnectionEpoch: number,
+      expectedProfileEpoch: number,
+    ) => {
+      if (connectionEpochRef.current !== expectedConnectionEpoch || profileEpochRef.current !== expectedProfileEpoch)
+        return;
+      cookie.current = nextCookie;
+      cookieScope.current = connectionScope(targetHost, targetUser);
+      await saveCookie(nextCookie, targetHost, targetUser);
+    },
+    [],
+  );
   const refreshProfiles = useCallback(async () => {
     if (!host || !cookie.current) return;
+    const connectionEpoch = connectionEpochRef.current;
+    const profileEpoch = profileEpochRef.current;
+    const targetHost = host;
+    const targetUser = username;
+    const targetCookie = cookie.current;
     try {
-      const discovered = await discoverAgentProfiles(host, cookie.current);
+      const discovered = await discoverAgentProfiles(targetHost, targetCookie, async (nextCookie) => {
+        if (latest.current.host !== targetHost || latest.current.username !== targetUser) return;
+        await acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, profileEpoch);
+      });
+      if (
+        connectionEpochRef.current !== connectionEpoch ||
+        profileEpochRef.current !== profileEpoch ||
+        latest.current.host !== targetHost ||
+        latest.current.username !== targetUser
+      )
+        return;
       setProfiles(discovered.profiles);
     } catch {}
-  }, [host]);
+  }, [acceptRotatedCookie, host, username]);
   const uploading = useRef(false); // send() re-entrancy guard while bytes go up
   const liveAid = useRef<string | null>(null);
   const liveThinkAid = useRef<string | null>(null);
@@ -689,74 +778,73 @@ export function AppProvider({ children }: { children: ReactNode }) {
   messagesRef.current = messages;
   notifyRef.current = notifyEnabled;
   // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
-  const latest = useRef({ host, activeProfile, sessionKey });
-  latest.current = { host, activeProfile, sessionKey };
+  const latest = useRef({ host, username, activeProfile, sessionKey });
+  latest.current = { host, username, activeProfile, sessionKey };
 
-  const resolveAskOwner = useCallback(
-    (sessionIdValue?: string, params?: Record<string, unknown>): AskOwner => {
-      const runtimeSessionId = String(sessionIdValue ?? '');
-      const connectionId = latest.current.host;
-      const hintedProfile = typeof params?.profile === 'string'
+  const resolveAskOwner = useCallback((sessionIdValue?: string, params?: Record<string, unknown>): AskOwner => {
+    const runtimeSessionId = String(sessionIdValue ?? '');
+    const connectionId = connectionScope(latest.current.host, latest.current.username);
+    const hintedProfile =
+      typeof params?.profile === 'string'
         ? normalizeProfileName(params.profile)
         : typeof params?.profile_name === 'string'
           ? normalizeProfileName(params.profile_name)
           : '';
-      const scoped = runtimeSessionId ? runtimeOwners.current.get(runtimeSessionId) : undefined;
-      if (scoped) {
-        const parsed = parseProfileSessionKey(scoped);
-        if (parsed) {
-          return {
-            connectionId,
-            profile: parsed.profile,
-            storedSessionId: parsed.storedSessionId,
-            runtimeSessionId,
-            resolved: true,
-          };
-        }
-      }
-      const known = runtimeSessionId ? runtimeAskOwners.current.get(runtimeSessionId) : undefined;
-      if (known) {
-        if (known.resolved) return { ...known, connectionId: connectionId || known.connectionId };
-        const profile = hintedProfile || (profilesRef.current.length === 1 ? normalizeProfileName(latest.current.activeProfile) : '');
-        return {
-          ...known,
-          connectionId: connectionId || known.connectionId,
-          profile,
-          resolved: Boolean(profile && known.storedSessionId),
-        };
-      }
-      // A request from the live foreground session can be resolved even before
-      // the runtime-owner map has been populated (for example during resume).
-      if (runtimeSessionId && sessionIdRef.current === runtimeSessionId) {
+    const scoped = runtimeSessionId ? runtimeOwners.current.get(runtimeSessionId) : undefined;
+    if (scoped) {
+      const parsed = parseProfileSessionKey(scoped);
+      if (parsed) {
         return {
           connectionId,
-          profile: normalizeProfileName(latest.current.activeProfile),
-          storedSessionId: latest.current.sessionKey ?? runtimeSessionId,
+          profile: parsed.profile,
+          storedSessionId: parsed.storedSessionId,
           runtimeSessionId,
           resolved: true,
         };
       }
-      if (hintedProfile) {
-        return {
-          connectionId,
-          profile: hintedProfile,
-          storedSessionId: '',
-          runtimeSessionId,
-          resolved: false,
-        };
-      }
-      // Background sessions may arrive before the app has ever opened them. Keep
-      // them in the inbox, but fail closed for profile-sensitive navigation.
+    }
+    const known = runtimeSessionId ? runtimeAskOwners.current.get(runtimeSessionId) : undefined;
+    if (known) {
+      if (known.resolved) return { ...known, connectionId: connectionId || known.connectionId };
+      const profile =
+        hintedProfile || (profilesRef.current.length === 1 ? normalizeProfileName(latest.current.activeProfile) : '');
+      return {
+        ...known,
+        connectionId: connectionId || known.connectionId,
+        profile,
+        resolved: Boolean(profile && known.storedSessionId),
+      };
+    }
+    // A request from the live foreground session can be resolved even before
+    // the runtime-owner map has been populated (for example during resume).
+    if (runtimeSessionId && sessionIdRef.current === runtimeSessionId) {
       return {
         connectionId,
-        profile: '',
+        profile: normalizeProfileName(latest.current.activeProfile),
+        storedSessionId: latest.current.sessionKey ?? runtimeSessionId,
+        runtimeSessionId,
+        resolved: true,
+      };
+    }
+    if (hintedProfile) {
+      return {
+        connectionId,
+        profile: hintedProfile,
         storedSessionId: '',
         runtimeSessionId,
         resolved: false,
       };
-    },
-    [],
-  );
+    }
+    // Background sessions may arrive before the app has ever opened them. Keep
+    // them in the inbox, but fail closed for profile-sensitive navigation.
+    return {
+      connectionId,
+      profile: '',
+      storedSessionId: '',
+      runtimeSessionId,
+      resolved: false,
+    };
+  }, []);
 
   const applyAskInbox = useCallback((input: AskInboxInput) => {
     const result = upsertAsk(askInboxRef.current, input);
@@ -782,25 +870,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const markAskByRpc = useCallback(
-    (rpcId: string, status: AskInboxStatus) => {
-      const next = setAskStatusByRpc(askInboxRef.current, latest.current.host, rpcId, status);
-      askInboxRef.current = next;
-      setAskInbox(next);
-      if (status === 'cancelled' || status === 'answered' || status === 'stale') {
-        const entry = next.find((item) => item.owner.connectionId === latest.current.host && item.rpcId === rpcId);
-        if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
-      }
-      if (
-        status !== 'pending' &&
-        status !== 'answering' &&
-        askRef.current?.rpcId === rpcId
-      ) {
-        setAsk(null);
-      }
-    },
-    [],
-  );
+  const markAskByRpc = useCallback((rpcId: string, status: AskInboxStatus) => {
+    const next = setAskStatusByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), rpcId, status);
+    askInboxRef.current = next;
+    setAskInbox(next);
+    if (status === 'cancelled' || status === 'answered' || status === 'stale') {
+      const entry = next.find(
+        (item) => item.owner.connectionId === connectionScope(latest.current.host, latest.current.username) && item.rpcId === rpcId,
+      );
+      if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
+    }
+    if (status !== 'pending' && status !== 'answering' && askRef.current?.rpcId === rpcId) {
+      setAsk(null);
+    }
+  }, []);
 
   const bindAskOwner = useCallback((runtimeSessionId: string, owner: AskOwner) => {
     runtimeAskOwners.current.set(runtimeSessionId, owner);
@@ -827,13 +910,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
     const connectionEpoch = connectionEpochRef.current;
+    const targetUser = latest.current.username;
     const ck = cookie.current;
     // Web: the jar is empty (Set-Cookie is unreadable) but the browser cookie
     // still rides along via credentials:'include', so only host+key are required.
     if (!h || !sk) return;
     void (async () => {
       try {
-        const items = await getSessionMessages(h, ck, sk, profile);
+        const items = await getSessionMessages(
+          h,
+          ck,
+          sk,
+          profile,
+          200,
+          connectionScope(h, targetUser),
+          async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+        );
         if (
           activeProfileRef.current !== profile ||
           profileEpochRef.current !== epoch ||
@@ -900,10 +992,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
     const connectionEpoch = connectionEpochRef.current;
+    const targetUser = latest.current.username;
     if (!h || !sk) return;
     void (async () => {
       try {
-        const items = await getSessionMessages(h, cookie.current, sk, profile);
+        const items = await getSessionMessages(
+          h,
+          cookie.current,
+          sk,
+          profile,
+          200,
+          connectionScope(h, targetUser),
+          async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+        );
         if (
           activeProfileRef.current !== profile ||
           profileEpochRef.current !== epoch ||
@@ -940,11 +1041,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const epoch = profileEpochRef.current;
     const sk = latest.current.sessionKey;
     const connectionEpoch = connectionEpochRef.current;
+    const targetUser = latest.current.username;
     const runtime = sessionIdRef.current;
     if (!h || !sk || !runtime) return;
     void (async () => {
       try {
-        const hist = await getSessionMessages(h, cookie.current, sk, profile);
+        const hist = await getSessionMessages(
+          h,
+          cookie.current,
+          sk,
+          profile,
+          200,
+          connectionScope(h, targetUser),
+          async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+        );
         if (
           activeProfileRef.current !== profile ||
           profileEpochRef.current !== epoch ||
@@ -1008,7 +1118,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       for (let i = 0; i < a.length; i++) {
         const x = a[i];
         const y = b[i];
-        if (x.subagent_id !== y.subagent_id || x.status !== y.status || x.tool_count !== y.tool_count || x.last_tool !== y.last_tool) return false;
+        if (
+          x.subagent_id !== y.subagent_id ||
+          x.status !== y.status ||
+          x.tool_count !== y.tool_count ||
+          x.last_tool !== y.last_tool
+        )
+          return false;
       }
       return true;
     };
@@ -1075,14 +1191,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const c = await loadConnection();
+        if (Platform.OS === 'web') await clearPassword(c.host, c.username);
         if (cancelled) return;
         setHost(c.host);
         setUsername(c.username);
         // Prefill saved password so the user never retypes it.
-        const savedPw = await getPassword().catch(() => null);
+        const savedPw = await getPassword(c.host, c.username).catch(() => null);
         if (cancelled) return;
-        if (savedPw) setPassword(savedPw);
-        const savedProfile = await getActiveProfile().catch(() => null);
+        const accountScope = connectionScope(c.host, c.username);
+        if (savedPw) setPasswordForScope(savedPw, accountScope);
+        const savedProfile = await getActiveProfile(accountScope).catch(() => null);
         if (savedProfile) {
           const normalized = normalizeProfileName(savedProfile);
           activeProfilePreferenceRef.current = normalized;
@@ -1105,7 +1223,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         // Restore the last picked model so the composer chip survives restarts
         // (the server global default still governs actual runs).
-        const savedModel = await getModel(activeProfileRef.current).catch(() => null);
+        const savedModel = await getModel(activeProfileRef.current, accountScope).catch(() => null);
         if (!cancelled && savedModel) {
           if (savedModel.provider) setModelProvider(savedModel.provider);
           setModel(savedModel.model);
@@ -1152,29 +1270,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
-  const ensureCookie = useCallback(async (h: string, user: string, pw: string): Promise<string> => {
-    if (cookie.current) {
-      try {
-        if (await checkMe(h, cookie.current)) return cookie.current;
-      } catch {}
-      cookie.current = '';
-      await clearCookie();
-    }
-    const stored = await getCookie();
-    if (stored) {
-      try {
-        if (await checkMe(h, stored)) {
-          cookie.current = stored;
-          return stored;
+  const ensureCookie = useCallback(
+    async (h: string, user: string, pw: string, isCurrent: () => boolean = () => true): Promise<string> => {
+      const scope = connectionScope(h, user);
+      if (cookieScope.current !== scope) {
+        cookie.current = '';
+        cookieScope.current = '';
+      }
+      if (!isCurrent()) throw new Error('Connection superseded');
+      const updateCookie = async (nextCookie: string) => {
+        if (!isCurrent()) return;
+        cookie.current = nextCookie;
+        cookieScope.current = scope;
+        await saveCookie(nextCookie, h, user);
+      };
+
+      if (cookie.current) {
+        try {
+          if (await checkMe(h, cookie.current, updateCookie)) {
+            if (!isCurrent()) throw new Error('Connection superseded');
+            cookieScope.current = scope;
+            return cookie.current;
+          }
+        } catch (e) {
+          if (!isCurrent()) throw e;
         }
-      } catch {}
-    }
-    if (!pw) throw new Error('Session expired — enter password');
-    const fresh = await passwordLogin(h, user, pw);
-    cookie.current = fresh;
-    await saveCookie(fresh);
-    return fresh;
-  }, []);
+        cookie.current = '';
+        cookieScope.current = '';
+        await clearCookie(h, user);
+      }
+
+      const stored = await getStoredCookie(h, user);
+      if (!isCurrent()) throw new Error('Connection superseded');
+      if (stored) {
+        try {
+          if (await checkMe(h, stored, updateCookie)) {
+            if (!isCurrent()) throw new Error('Connection superseded');
+            cookie.current = stored;
+            cookieScope.current = scope;
+            return stored;
+          }
+        } catch (e) {
+          if (!isCurrent()) throw e;
+        }
+      }
+      if (!isCurrent()) throw new Error('Connection superseded');
+      if (!pw) throw new Error('Session expired — enter password');
+      const fresh = await passwordLogin(h, user, pw);
+      if (!isCurrent()) throw new Error('Connection superseded');
+      cookie.current = fresh;
+      cookieScope.current = scope;
+      await saveCookie(fresh, h, user);
+      return fresh;
+    },
+    [],
+  );
 
   // Ask the backend which sessions are actually working right now (desktop
   // parity: the `session.active_list` snapshot behind confirmReconnectSettlesExcept).
@@ -1192,9 +1342,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!r.id) continue;
           const owner =
             runtimeOwners.current.get(r.id) ??
-            (r.id === sessionIdRef.current
-              ? profileSessionKey(activeProfileRef.current, r.id)
-              : null);
+            (r.id === sessionIdRef.current ? profileSessionKey(activeProfileRef.current, r.id) : null);
           if (owner) working.add(owner);
         }
       }
@@ -1222,7 +1370,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const cur = stored
       ? profileSessionKey(latest.current.activeProfile, stored)
       : runtime
-        ? runtimeOwners.current.get(runtime) ?? profileSessionKey(latest.current.activeProfile, runtime)
+        ? (runtimeOwners.current.get(runtime) ?? profileSessionKey(latest.current.activeProfile, runtime))
         : null;
     if (generatingRef.current && cur && !working.has(cur)) {
       releaseLocalTurn();
@@ -1239,80 +1387,90 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const hydration = ++askHydrationRef.current;
     try {
       const ids = new Set<string>();
-    if (sessionIdRef.current) ids.add(sessionIdRef.current);
-    for (const entry of askInboxRef.current) {
-      if (
-        (entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent') &&
-        entry.owner.runtimeSessionId
-      ) {
-        ids.add(entry.owner.runtimeSessionId);
-      }
-    }
-    let activeListAvailable = false;
-    const unresolvedRows: Array<{ id: string; sessionKey: string }> = [];
-    try {
-      const active = await g.activeList(sessionIdRef.current ?? undefined);
-      activeListAvailable = true;
-      for (const row of active) {
-        if (!row.id) continue;
-        const currentStoredKey = latest.current.sessionKey;
-        const isCurrent =
-          row.id === sessionIdRef.current ||
-          (!!sessionIdRef.current && !!currentStoredKey && row.sessionKey === currentStoredKey);
-        if (row.status === 'waiting' || isCurrent) ids.add(row.id);
-        if (row.sessionKey) {
-          const hintedProfile = row.profile ? normalizeProfileName(row.profile) : '';
-          const profile = hintedProfile || (profilesRef.current.length === 1 ? normalizeProfileName(activeProfileRef.current) : '');
-          const owner: AskOwner = {
-            connectionId: latest.current.host,
-            profile: isCurrent ? normalizeProfileName(activeProfileRef.current) : profile,
-            storedSessionId: row.sessionKey,
-            runtimeSessionId: row.id,
-            resolved: Boolean(isCurrent || (profile && row.sessionKey)),
-          };
-          const existing = runtimeAskOwners.current.get(row.id);
-          if (!existing?.resolved) runtimeAskOwners.current.set(row.id, owner);
-          if (!isCurrent && !owner.resolved) unresolvedRows.push({ id: row.id, sessionKey: row.sessionKey });
-          const scopedOwner = owner.resolved ? profileSessionKey(owner.profile, row.sessionKey) : '';
-          if (isCurrent) {
-            runtimeOwners.current.set(row.id, profileSessionKey(activeProfileRef.current, row.sessionKey));
-            if (row.id !== sessionIdRef.current) {
-              // The gateway can remint a live runtime after a process restart.
-              // Adopt the new id only for the same durable room, then rebuild
-              // the foreground transcript from REST.
-              sessionIdRef.current = row.id;
-              setSessionId(row.id);
-              resyncRef.current();
-            }
-          } else if (scopedOwner && parkedLiveRef.current.has(scopedOwner)) runtimeOwners.current.set(row.id, scopedOwner);
+      if (sessionIdRef.current) ids.add(sessionIdRef.current);
+      for (const entry of askInboxRef.current) {
+        if (
+          (entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent') &&
+          entry.owner.runtimeSessionId
+        ) {
+          ids.add(entry.owner.runtimeSessionId);
         }
       }
-    } catch {
-      // Keep the known runtime owners when active_list is unavailable.
-    }
-    if (unresolvedRows.length > 0 && profilesRef.current.length > 0) {
-      for (const row of unresolvedRows) {
-        const matches: string[] = [];
-        for (const profile of profilesRef.current) {
-          try {
-            const rows = await g.listSessions(100, profile.name);
-            if (rows.some((item) => item.id === row.sessionKey)) matches.push(profile.name);
-          } catch {
-            // Try the next known profile; never guess from the stored id.
+      let activeListAvailable = false;
+      const unresolvedRows: Array<{ id: string; sessionKey: string }> = [];
+      try {
+        const active = await g.activeList(sessionIdRef.current ?? undefined);
+        if (connectionEpochRef.current !== connectionEpoch) return;
+        activeListAvailable = true;
+        for (const row of active) {
+          if (connectionEpochRef.current !== connectionEpoch) return;
+          if (!row.id) continue;
+          const currentStoredKey = latest.current.sessionKey;
+          const hintedProfile = row.profile ? normalizeProfileName(row.profile) : '';
+          const currentProfile = normalizeProfileName(activeProfileRef.current);
+          const profileMatchesCurrent =
+            hintedProfile === currentProfile || (!hintedProfile && profilesRef.current.length <= 1);
+          const isCurrent =
+            row.id === sessionIdRef.current ||
+            (!!sessionIdRef.current &&
+              !!currentStoredKey &&
+              profileMatchesCurrent &&
+              row.sessionKey === currentStoredKey);
+          if (row.status === 'waiting' || isCurrent) ids.add(row.id);
+          if (row.sessionKey) {
+            const profile = hintedProfile || (profilesRef.current.length === 1 ? currentProfile : '');
+            const owner: AskOwner = {
+              connectionId: connectionScope(latest.current.host, latest.current.username),
+              profile: isCurrent ? normalizeProfileName(activeProfileRef.current) : profile,
+              storedSessionId: row.sessionKey,
+              runtimeSessionId: row.id,
+              resolved: Boolean(isCurrent || (profile && row.sessionKey)),
+            };
+            const existing = runtimeAskOwners.current.get(row.id);
+            if (!existing?.resolved) runtimeAskOwners.current.set(row.id, owner);
+            if (!isCurrent && !owner.resolved) unresolvedRows.push({ id: row.id, sessionKey: row.sessionKey });
+            const scopedOwner = owner.resolved ? profileSessionKey(owner.profile, row.sessionKey) : '';
+            if (isCurrent) {
+              runtimeOwners.current.set(row.id, profileSessionKey(activeProfileRef.current, row.sessionKey));
+              if (row.id !== sessionIdRef.current) {
+                // The gateway can remint a live runtime after a process restart.
+                // Adopt the new id only for the same durable room, then rebuild
+                // the foreground transcript from REST.
+                sessionIdRef.current = row.id;
+                setSessionId(row.id);
+                resyncRef.current();
+              }
+            } else if (scopedOwner && parkedLiveRef.current.has(scopedOwner))
+              runtimeOwners.current.set(row.id, scopedOwner);
           }
         }
-        if (matches.length !== 1) continue;
-        const owner: AskOwner = {
-          connectionId: latest.current.host,
-          profile: matches[0],
-          storedSessionId: row.sessionKey,
-          runtimeSessionId: row.id,
-          resolved: true,
-        };
-        runtimeAskOwners.current.set(row.id, owner);
-        bindAskOwner(row.id, owner);
+      } catch {
+        // Keep the known runtime owners when active_list is unavailable.
       }
-    }
+      if (unresolvedRows.length > 0 && profilesRef.current.length > 0) {
+        for (const row of unresolvedRows) {
+          const matches: string[] = [];
+          for (const profile of profilesRef.current) {
+            try {
+              const rows = await g.listSessions(100, profile.name);
+              if (connectionEpochRef.current !== connectionEpoch) return;
+              if (rows.some((item) => item.id === row.sessionKey)) matches.push(profile.name);
+            } catch {
+              // Try the next known profile; never guess from the stored id.
+            }
+          }
+          if (matches.length !== 1) continue;
+          const owner: AskOwner = {
+            connectionId: connectionScope(latest.current.host, latest.current.username),
+            profile: matches[0],
+            storedSessionId: row.sessionKey,
+            runtimeSessionId: row.id,
+            resolved: true,
+          };
+          runtimeAskOwners.current.set(row.id, owner);
+          bindAskOwner(row.id, owner);
+        }
+      }
       if (connectionEpochRef.current !== connectionEpoch) return;
       if (!activeListAvailable) {
         for (const runtime of runtimeOwners.current.keys()) ids.add(runtime);
@@ -1324,425 +1482,476 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const openWs = useCallback(async (h: string): Promise<GatewayWs> => {
-    const connectionEpoch = connectionEpochRef.current;
-    const ticket = await mintWsTicket(h, cookie.current, (nextCookie) => {
-      cookie.current = nextCookie;
-      void saveCookie(nextCookie);
-    });    // Events carry the runtime session id. Only the active profile's foreground
-    // runtime may touch the transcript. During a profile switch there is
-    // intentionally no current runtime until session.create resolves, so every
-    // session-scoped event is ignored during that gap.
-    const isCurrentSession = (sid: string) =>
-      !sid || (!!sessionIdRef.current && sid === sessionIdRef.current);
-    let ws: GatewayWs;
-    ws = new GatewayWs({
-      wsUrl: toWsUrl(h, ticket),
-      refreshUrl: async () => {
-        try {
-          const t = await mintWsTicket(h, cookie.current, (nextCookie) => {
-            cookie.current = nextCookie;
-            void saveCookie(nextCookie);
-          });
-          return toWsUrl(h, t);
-        } catch (e: any) {
-          if (typeof e?.cookie === 'string' && e.cookie) {
-            cookie.current = e.cookie;
-            void saveCookie(e.cookie);
-          }
-          throw e;
-        }
-      },
-      // Replay missed events only for the session the app is showing.
-      replaySessions: () => (sessionIdRef.current ? [sessionIdRef.current] : []),
-      events: {
-        onState: (s) => {
-          if (connectionEpochRef.current !== connectionEpoch) return;
-          setConn(s);
-          if (s === 'auth-expired') {
-            connectionEpochRef.current += 1;
-            setAuthed(false);
-            setError('Gateway session expired — sign in again.');
-            dismissAskNotifications();
-            askInboxRef.current = [];
-            setAskInbox([]);
-            pendingNotificationResponsesRef.current = [];
-            askHydrationRef.current = 0;
-            handledNotificationResponsesRef.current.clear();
-            askRef.current = null;
-            setAsk(null);
-            sessionIdRef.current = null;
-            setSessionId(null);
-            setSessionKey(null);
-            setMessages([]);
-            setSessions([]);
-            setUsageInfo(null);
-            setSessionInfo(null);
-            setGenerating(false);
-            runtimeOwners.current.clear();
-            runtimeAskOwners.current.clear();
-            turnOwnerRef.current.clear();
-            parkedLiveRef.current.clear();
-            void clearCookie();
-            router.replace('/login');
-            return;
-          }
-          if (s === 'ready') {
-            void (async () => {
-              await syncOpenRequests(ws);
-              await confirmAfterReconnect();
-            })();
+  const openWs = useCallback(
+    async (h: string, user: string): Promise<GatewayWs> => {
+      const connectionEpoch = connectionEpochRef.current;
+      const scope = connectionScope(h, user);
+      const isConnectionCurrent = () => connectionEpochRef.current === connectionEpoch;
+      const updateCookie = (nextCookie: string) => {
+        if (!isConnectionCurrent()) return;
+        cookie.current = nextCookie;
+        cookieScope.current = scope;
+        void saveCookie(nextCookie, h, user);
+      };
+      const ticket = await mintWsTicket(h, cookie.current, updateCookie);
+      if (!isConnectionCurrent()) throw new Error('Connection superseded');
+      // Events carry the runtime session id. Only the active profile's foreground
+      // runtime may touch the transcript. During a profile switch there is
+      // intentionally no current runtime until session.create resolves, so every
+      // session-scoped event is ignored during that gap.
+      const isCurrentSession = (sid: string) => !sid || (!!sessionIdRef.current && sid === sessionIdRef.current);
+      let ws: GatewayWs;
+      ws = new GatewayWs({
+        wsUrl: toWsUrl(h, ticket),
+        refreshUrl: async () => {
+          try {
+            if (!isConnectionCurrent() || cookieScope.current !== scope) {
+              throw new Error('Connection superseded');
+            }
+            const t = await mintWsTicket(h, cookie.current, updateCookie);
+            if (!isConnectionCurrent()) throw new Error('Connection superseded');
+            return toWsUrl(h, t);
+          } catch (e: any) {
+            if (typeof e?.cookie === 'string' && e.cookie) updateCookie(e.cookie);
+            throw e;
           }
         },
-        onToken: (sid, delta) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          const aid = liveAid.current;
-          if (!aid || !delta) return;
-          lastTurnEventAt.current = Date.now();
-          // O(1): buffer outside `messages`, no transcript map per delta.
-          // Update the ref synchronously — onComplete may fire before React re-renders.
-          const next = { ...streamingRef.current, [aid]: (streamingRef.current[aid] ?? '') + delta };
-          streamingRef.current = next;
-          setStreamingTexts(next);
-        },
-        onReasoning: (sid, delta) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          let aid = liveThinkAid.current;
-          if (!aid) {
-            aid = nid();
-            liveThinkAid.current = aid;
+        // Replay missed events only for the session the app is showing.
+        replaySessions: () => (sessionIdRef.current ? [sessionIdRef.current] : []),
+        events: {
+          onState: (s) => {
+            if (connectionEpochRef.current !== connectionEpoch) return;
+            setConn(s);
+            if (s === 'auth-expired') {
+              connectionEpochRef.current += 1;
+              connectRequestRef.current += 1;
+              profileEpochRef.current += 1;
+              gw.current?.close();
+              if (gw.current === ws) gw.current = null;
+              setAuthed(false);
+              setConn('idle');
+              setProfiles([]);
+              draftsRef.current.clear();
+              setInputRaw('');
+              queuedRef.current = [];
+              setQueued([]);
+              queueParkedRef.current = false;
+              setQueueParked(false);
+              setAttachments([]);
+              setProviders(null);
+              setToolLine(null);
+              activeProfilePreferenceRef.current = null;
+              activeProfileRef.current = DEFAULT_PROFILE;
+              setActiveProfile(DEFAULT_PROFILE);
+              setError('Gateway session expired — sign in again.');
+              dismissAskNotifications();
+              askInboxRef.current = [];
+              setAskInbox([]);
+              pendingNotificationResponsesRef.current = [];
+              askHydrationRef.current = 0;
+              handledNotificationResponsesRef.current.clear();
+              askRef.current = null;
+              setAsk(null);
+              sessionIdRef.current = null;
+              setSessionId(null);
+              setSessionKey(null);
+              setMessages([]);
+              setSessions([]);
+              setUsageInfo(null);
+              setSessionInfo(null);
+              setGenerating(false);
+              runtimeOwners.current.clear();
+              runtimeAskOwners.current.clear();
+              turnOwnerRef.current.clear();
+              parkedLiveRef.current.clear();
+              cookie.current = '';
+              cookieScope.current = '';
+              clearMediaCaches();
+              clearSessionMessagesCache();
+              setPassword('');
+              const cleanup = (async () => {
+                try {
+                  await forgetAll(h, user);
+                } catch {}
+              })();
+              logoutCleanupRef.current = cleanup;
+              void cleanup;
+              router.replace('/login');
+              return;
+            }
+            if (s === 'ready') {
+              void (async () => {
+                await syncOpenRequests(ws);
+                await confirmAfterReconnect();
+              })();
+            }
+          },
+          onToken: (sid, delta) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            const aid = liveAid.current;
+            if (!aid || !delta) return;
+            lastTurnEventAt.current = Date.now();
+            // O(1): buffer outside `messages`, no transcript map per delta.
+            // Update the ref synchronously — onComplete may fire before React re-renders.
+            const next = {
+              ...streamingRef.current,
+              [aid]: (streamingRef.current[aid] ?? '') + delta,
+            };
+            streamingRef.current = next;
+            setStreamingTexts(next);
+          },
+          onReasoning: (sid, delta) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            let aid = liveThinkAid.current;
+            if (!aid) {
+              aid = nid();
+              liveThinkAid.current = aid;
+              const id = aid;
+              const aiId = liveAid.current;
+              setMessages((prev) => {
+                // Thinking reads first — pin it ABOVE the pending answer bubble.
+                const think = { id, role: 'thinking' as Role, text: '' };
+                const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
+                if (aiIdx === -1) return [...prev, think];
+                return [...prev.slice(0, aiIdx), think, ...prev.slice(aiIdx)];
+              });
+              if (!delta) return;
+            }
             const id = aid;
+            if (!delta) return;
+            lastTurnEventAt.current = Date.now();
+            const next = {
+              ...streamingRef.current,
+              [id]: (streamingRef.current[id] ?? '') + delta,
+            };
+            streamingRef.current = next;
+            setStreamingTexts(next);
+          },
+          onInterim: (sid, text) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            lastTurnEventAt.current = Date.now();
+            // Interim status belongs ABOVE the streaming answer chronologically —
+            // pin it before the pending bubble (same as thinking), else it lands
+            // below the final answer.
             const aiId = liveAid.current;
             setMessages((prev) => {
-              // Thinking reads first — pin it ABOVE the pending answer bubble.
-              const think = { id, role: 'thinking' as Role, text: '' };
+              const item = { id: nid(), role: 'interim' as Role, text };
               const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
-              if (aiIdx === -1) return [...prev, think];
-              return [...prev.slice(0, aiIdx), think, ...prev.slice(aiIdx)];
+              if (aiIdx === -1) return [...prev, item];
+              return [...prev.slice(0, aiIdx), item, ...prev.slice(aiIdx)];
             });
-            if (!delta) return;
-          }
-          const id = aid;
-          if (!delta) return;
-          lastTurnEventAt.current = Date.now();
-          const next = { ...streamingRef.current, [id]: (streamingRef.current[id] ?? '') + delta };
-          streamingRef.current = next;
-          setStreamingTexts(next);
-        },
-        onInterim: (sid, text) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          lastTurnEventAt.current = Date.now();
-          // Interim status belongs ABOVE the streaming answer chronologically —
-          // pin it before the pending bubble (same as thinking), else it lands
-          // below the final answer.
-          const aiId = liveAid.current;
-          setMessages((prev) => {
-            const item = { id: nid(), role: 'interim' as Role, text };
-            const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
-            if (aiIdx === -1) return [...prev, item];
-            return [...prev.slice(0, aiIdx), item, ...prev.slice(aiIdx)];
-          });
-        },
-        onTool: (sid, info) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          lastTurnEventAt.current = Date.now();
-          if (info.phase === 'complete') {
-            setToolLine(null);
-            const mid = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
-            if (mid) {
-              const detail = info.summary || undefined;
-              // Keep the diff the gateway rendered for a file edit (it survives
-              // the summary line) so the tool bubble can show it inline.
-              const diff = info.inlineDiff || undefined;
-              if (diff) liveTurnDiffs.current.push(diff);
-              // And the RESULT itself — that's the body the expanded bubble shows.
-              const output = info.result !== undefined ? formatToolResult(info.result) || undefined : undefined;
-              const command = formatToolCommand(info.args) || info.context || undefined;
+          },
+          onTool: (sid, info) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            lastTurnEventAt.current = Date.now();
+            if (info.phase === 'complete') {
+              setToolLine(null);
+              const mid = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
+              if (mid) {
+                const detail = info.summary || undefined;
+                // Keep the diff the gateway rendered for a file edit (it survives
+                // the summary line) so the tool bubble can show it inline.
+                const diff = info.inlineDiff || undefined;
+                if (diff) liveTurnDiffs.current.push(diff);
+                // And the RESULT itself — that's the body the expanded bubble shows.
+                const output = info.result !== undefined ? formatToolResult(info.result) || undefined : undefined;
+                const command = formatToolCommand(info.args) || info.context || undefined;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === mid
+                      ? {
+                          ...m,
+                          pending: false,
+                          ...(detail ? { detail } : {}),
+                          ...(diff ? { diff } : {}),
+                          ...(output ? { output } : {}),
+                          ...(command && !m.command ? { command } : {}),
+                        }
+                      : m,
+                  ),
+                );
+                if (info.toolId) liveTools.current.delete(info.toolId);
+                if (liveToolAid.current === mid) liveToolAid.current = null;
+                // Fill the result/diff from REST shortly after (covers backends whose
+                // tool.complete predates the `result` field).
+                scheduleToolRefresh();
+              }
+              return;
+            }
+            setToolLine(info.name ? `⚙ ${info.name}…` : '⚙ running tool…');
+            // The command/primary arg rides `args` on tool.start (full) or `context`
+            // (80-char preview) as a fallback.
+            const command = formatToolCommand(info.args) || info.context || undefined;
+            const existing = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
+            if (existing) {
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === mid
+                  m.id === existing
                     ? {
                         ...m,
-                        pending: false,
-                        ...(detail ? { detail } : {}),
-                        ...(diff ? { diff } : {}),
-                        ...(output ? { output } : {}),
+                        text: info.name || m.text,
+                        detail: info.preview || m.detail,
                         ...(command && !m.command ? { command } : {}),
                       }
                     : m,
                 ),
               );
-              if (info.toolId) liveTools.current.delete(info.toolId);
-              if (liveToolAid.current === mid) liveToolAid.current = null;
-              // Fill the result/diff from REST shortly after (covers backends whose
-              // tool.complete predates the `result` field).
-              scheduleToolRefresh();
+              return;
             }
-            return;
-          }
-          setToolLine(info.name ? `⚙ ${info.name}…` : '⚙ running tool…');
-          // The command/primary arg rides `args` on tool.start (full) or `context`
-          // (80-char preview) as a fallback.
-          const command = formatToolCommand(info.args) || info.context || undefined;
-          const existing = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
-          if (existing) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === existing
-                  ? {
-                      ...m,
-                      text: info.name || m.text,
-                      detail: info.preview || m.detail,
-                      ...(command && !m.command ? { command } : {}),
-                    }
-                  : m,
-              ),
-            );
-            return;
-          }
-          const id = nid();
-          if (info.toolId) liveTools.current.set(info.toolId, id);
-          else liveToolAid.current = id;
-          liveTurnTools.current.push(id);
-          const aiId = liveAid.current;
-          const item: UiMessage = {
-            id,
-            role: 'tool',
-            text: info.name || 'tool',
-            pending: true,
-            ...(info.preview ? { detail: info.preview } : {}),
-            ...(command ? { command } : {}),
-          };
-          setMessages((prev) => {
-            const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
-            if (aiIdx === -1) return [...prev, item];
-            return [...prev.slice(0, aiIdx), item, ...prev.slice(aiIdx)];
-          });
-        },
-        onComplete: (sid, text) => {
-          if (connectionEpochRef.current !== connectionEpoch) return;
-          // Background turn finished — drop its parked latch (the visible room is untouched).
-          const owner = turnOwnerRef.current.get(sid);
-          turnOwnerRef.current.delete(sid);
-          if (owner) {
-            parkedLiveRef.current.delete(owner);
-          } else if (isCurrentSession(sid) && latest.current.sessionKey) {
-            parkedLiveRef.current.delete(
-              profileSessionKey(latest.current.activeProfile, latest.current.sessionKey),
-            );
-          }
-          if (!isCurrentSession(sid)) {
-            if (notifyRef.current) {
-              void pushNotification('Hermes finished', 'Background turn complete');
-            }
-            return;
-          }
-          const aid = liveAid.current;
-          const thinkId = liveThinkAid.current;
-          liveAid.current = null;
-          liveThinkAid.current = null;
-          liveTurnTools.current = [];
-          setGenerating(false);
-          // onComplete runs before React re-renders, so flip the ref too or the
-          // drain below would see a stale "generating" and bail.
-          generatingRef.current = false;
-          setToolLine(null);
-          // Single merge: fold buffered deltas into the durable transcript once.
-          const deltas = streamingRef.current;
-          const hasDeltas = aid && deltas[aid] !== undefined || thinkId && deltas[thinkId] !== undefined;
-          if (aid || thinkId || text) {
-            const base = messagesRef.current;
-            let next: UiMessage[];
-            if (hasDeltas) {
-              next = base.map((m) => {
-                const d = deltas[m.id];
-                if (d === undefined) return m;
-                // Server text wins when present, else keep streamed buffer.
-                const finalText = m.id === aid && text ? text : m.text + d;
-                return { ...m, text: finalText, pending: false };
-              });
-            } else if (aid) {
-              next = base.map((m) => (m.id === aid ? { ...m, text: text || m.text, pending: false } : m));
-            } else {
-              next = base;
-            }
-            if (!aid && text) {
-              next = [...next, { id: nid(), role: 'assistant', text }];
-            }
-            messagesRef.current = next;
-            setMessages(next);
-          }
-          streamingRef.current = {};
-          setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
-          // End-of-turn file summary: fold every inline diff this turn produced.
-          const turnDiffs = liveTurnDiffs.current;
-          liveTurnDiffs.current = [];
-          if (turnDiffs.length) {
-            const files = new Map<string, { added: number; removed: number }>();
-            for (const d of turnDiffs) {
-              for (const f of changedFilesFromDiff(d)) {
-                const cur = files.get(f.path) ?? { added: 0, removed: 0 };
-                cur.added += f.added;
-                cur.removed += f.removed;
-                files.set(f.path, cur);
-              }
-            }
-            if (files.size) {
-              let added = 0;
-              let removed = 0;
-              for (const v of files.values()) {
-                added += v.added;
-                removed += v.removed;
-              }
-              const n = files.size;
-              const names = [...files.keys()].map((p) => p.split('/').pop() || p);
-              const tail = names.length <= 3 ? ` · ${names.join(', ')}` : '';
-              setMessages((prev) => [
-                ...prev,
-                { id: nid(), role: 'summary', text: `${n} file${n === 1 ? '' : 's'} · +${added} −${removed}${tail}` },
-              ]);
-            }
-          }
-          // Backfill full tool RESULT content from the REST transcript.
-          toolRefreshRef.current();
-          // Stamp durable row ids so the new turn is editable/regenerable.
-          stampRowIdsRef.current();
-          // Turn ended — send the next queued prompt, if any.
-          drainRef.current();
-          // Refresh the status strip's context/token numbers.
-          usageRefreshRef.current();
-          if (notifyRef.current) {
-            void pushNotification('Hermes finished', 'Turn complete');
-          }
-        },
-        onNotice: (sid, text) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
-        },
-        onSessionInfo: (sid, info) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          setSessionInfo(info);
-          if (info?.usage) setUsageInfo((prev: any) => mergeUsageState(prev, info.usage));
-          if (contextPendingSidRef.current === sid && gw.current) {
-            hydrateSessionContext(gw.current, sid);
-          }
-          // Server truth wins when present (e.g. the global default changed on
-          // desktop) — and persists for the next boot.
-          if (info && typeof info.model === 'string' && info.model) {
-            const prov = typeof info.provider === 'string' ? info.provider : '';
-            setModelProvider(prov);
-            setModel(info.model);
-            void saveModel(prov, info.model, latest.current.activeProfile);
-          }
-        },
-        onUsage: (sid, usage) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          setUsageInfo((prev: any) => mergeUsageState(prev, usage));
-        },
-        onTodo: (sid, payload) => {
-          if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-          setTodos(normalizeTodos(payload));
-        },
-        onReplayTruncated: (sid) => {
-          if (connectionEpochRef.current !== connectionEpoch) return;
-          // Only the session on screen shares our transcript state.
-          if (sid === sessionIdRef.current) resyncRef.current();
-        },
-        onAsk: (a) => {
-          if (connectionEpochRef.current !== connectionEpoch) return;
-          const owner = resolveAskOwner(a.sessionId, a.params);
-          const result = applyAskInbox({
-            rpcId: a.rpcId,
-            method: a.method,
-            sessionId: a.sessionId,
-            params: a.params,
-            owner,
-            replayed: a.replayed === true,
-          });
-          const isCurrent = !a.sessionId || isCurrentSession(a.sessionId);
-          // Never hijack the visible room with a background request. Also do
-          // not resurrect a settled card from a late/replayed frame.
-          if (
-            isCurrent &&
-            (result.entry.status === 'pending' || result.entry.status === 'answering')
-          ) {
-            setAsk(a);
-          } else if (isCurrent && askRef.current?.rpcId === a.rpcId) {
-            setAsk(null);
-          }
-          if (notifyRef.current && result.added && !a.replayed) {
-            const what =
-              a.method === 'approval'
-                ? 'Command approval needed'
-                : a.method === 'clarify'
-                  ? 'A question needs your answer'
-                  : a.method === 'sudo'
-                    ? 'Sudo password required'
-                    : a.method === 'secret'
-                      ? 'A secret is required'
-                      : a.method.startsWith('vault.')
-                        ? 'Vault unlock required'
-                        : 'Hermes needs input';
-            void pushNotification('Hermes', what, {
-              identifier: `hermes-ask-${result.entry.rpcId}`,
-              categoryIdentifier: askNotificationCategory(a.method),
-              data: {
-                kind: 'ask',
-                connectionId: result.entry.owner.connectionId,
-                askKey: result.entry.key,
-                rpcId: result.entry.rpcId,
-                method: result.entry.method,
-                runtimeSessionId: result.entry.owner.runtimeSessionId,
-                storedSessionId: result.entry.owner.storedSessionId,
-                profile: result.entry.owner.profile,
-              },
+            const id = nid();
+            if (info.toolId) liveTools.current.set(info.toolId, id);
+            else liveToolAid.current = id;
+            liveTurnTools.current.push(id);
+            const aiId = liveAid.current;
+            const item: UiMessage = {
+              id,
+              role: 'tool',
+              text: info.name || 'tool',
+              pending: true,
+              ...(info.preview ? { detail: info.preview } : {}),
+              ...(command ? { command } : {}),
+            };
+            setMessages((prev) => {
+              const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
+              if (aiIdx === -1) return [...prev, item];
+              return [...prev.slice(0, aiIdx), item, ...prev.slice(aiIdx)];
             });
-          }
-          // A cold-start notification action can arrive before its open request
-          // has been rehydrated. Drain it after every ask delivery.
-          notificationDrainRef.current?.();
-        },
-        onAskCancel: (rpcId, info) => {
-          if (connectionEpochRef.current !== connectionEpoch) return;
-          markAskByRpc(rpcId, 'cancelled');
-          if (
-            askRef.current?.rpcId === rpcId &&
-            (!info?.sessionId || !askRef.current.sessionId || info.sessionId === askRef.current.sessionId)
-          ) {
-            setAsk(null);
-          }
-        },
-        onAskSnapshot: (sid, rpcIds, snapshotAt) => {
-          if (connectionEpochRef.current !== connectionEpoch) return;
-          const open = new Set(rpcIds);
-          const next = askInboxRef.current.map((entry) => {
-            const belongs = entry.owner.runtimeSessionId === sid || entry.sessionId === sid;
-            const wasPresentAtSnapshot = entry.receivedAt <= snapshotAt;
-            return (
-              belongs &&
-              wasPresentAtSnapshot &&
-              (entry.status === 'pending' ||
-                entry.status === 'answering' ||
-                entry.status === 'sent') &&
-              !open.has(entry.rpcId)
-            )
-              ? { ...entry, status: entry.status === 'sent' ? ('answered' as const) : ('cancelled' as const) }
-              : entry;
-          });
-          for (const before of askInboxRef.current) {
-            const after = next.find((entry) => entry.rpcId === before.rpcId && entry.owner.connectionId === before.owner.connectionId);
-            if (after && (after.status === 'cancelled' || after.status === 'stale') && before.status !== after.status) {
-              void dismissNotification(`hermes-ask-${before.rpcId}`);
+          },
+          onComplete: (sid, text) => {
+            if (connectionEpochRef.current !== connectionEpoch) return;
+            // Background turn finished — drop its parked latch (the visible room is untouched).
+            const owner = turnOwnerRef.current.get(sid);
+            turnOwnerRef.current.delete(sid);
+            if (owner) {
+              parkedLiveRef.current.delete(owner);
+            } else if (isCurrentSession(sid) && latest.current.sessionKey) {
+              parkedLiveRef.current.delete(profileSessionKey(latest.current.activeProfile, latest.current.sessionKey));
             }
-          }
-          askInboxRef.current = next;
-          setAskInbox(next);
-          if (askRef.current?.sessionId === sid && !open.has(askRef.current.rpcId)) setAsk(null);
+            if (!isCurrentSession(sid)) {
+              if (notifyRef.current) {
+                void pushNotification('Hermes finished', 'Background turn complete');
+              }
+              return;
+            }
+            const aid = liveAid.current;
+            const thinkId = liveThinkAid.current;
+            liveAid.current = null;
+            liveThinkAid.current = null;
+            liveTurnTools.current = [];
+            setGenerating(false);
+            // onComplete runs before React re-renders, so flip the ref too or the
+            // drain below would see a stale "generating" and bail.
+            generatingRef.current = false;
+            setToolLine(null);
+            // Single merge: fold buffered deltas into the durable transcript once.
+            const deltas = streamingRef.current;
+            const hasDeltas = (aid && deltas[aid] !== undefined) || (thinkId && deltas[thinkId] !== undefined);
+            if (aid || thinkId || text) {
+              const base = messagesRef.current;
+              let next: UiMessage[];
+              if (hasDeltas) {
+                next = base.map((m) => {
+                  const d = deltas[m.id];
+                  if (d === undefined) return m;
+                  // Server text wins when present, else keep streamed buffer.
+                  const finalText = m.id === aid && text ? text : m.text + d;
+                  return { ...m, text: finalText, pending: false };
+                });
+              } else if (aid) {
+                next = base.map((m) => (m.id === aid ? { ...m, text: text || m.text, pending: false } : m));
+              } else {
+                next = base;
+              }
+              if (!aid && text) {
+                next = [...next, { id: nid(), role: 'assistant', text }];
+              }
+              messagesRef.current = next;
+              setMessages(next);
+            }
+            streamingRef.current = {};
+            setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
+            // End-of-turn file summary: fold every inline diff this turn produced.
+            const turnDiffs = liveTurnDiffs.current;
+            liveTurnDiffs.current = [];
+            if (turnDiffs.length) {
+              const files = new Map<string, { added: number; removed: number }>();
+              for (const d of turnDiffs) {
+                for (const f of changedFilesFromDiff(d)) {
+                  const cur = files.get(f.path) ?? { added: 0, removed: 0 };
+                  cur.added += f.added;
+                  cur.removed += f.removed;
+                  files.set(f.path, cur);
+                }
+              }
+              if (files.size) {
+                let added = 0;
+                let removed = 0;
+                for (const v of files.values()) {
+                  added += v.added;
+                  removed += v.removed;
+                }
+                const n = files.size;
+                const names = [...files.keys()].map((p) => p.split('/').pop() || p);
+                const tail = names.length <= 3 ? ` · ${names.join(', ')}` : '';
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: nid(),
+                    role: 'summary',
+                    text: `${n} file${n === 1 ? '' : 's'} · +${added} −${removed}${tail}`,
+                  },
+                ]);
+              }
+            }
+            // Backfill full tool RESULT content from the REST transcript.
+            toolRefreshRef.current();
+            // Stamp durable row ids so the new turn is editable/regenerable.
+            stampRowIdsRef.current();
+            // Turn ended — send the next queued prompt, if any.
+            drainRef.current();
+            // Refresh the status strip's context/token numbers.
+            usageRefreshRef.current();
+            if (notifyRef.current) {
+              void pushNotification('Hermes finished', 'Turn complete');
+            }
+          },
+          onNotice: (sid, text) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            setMessages((prev) => [...prev, { id: nid(), role: 'notice', text }]);
+          },
+          onSessionInfo: (sid, info) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            setSessionInfo(info);
+            if (info?.usage) setUsageInfo((prev: any) => mergeUsageState(prev, info.usage));
+            if (contextPendingSidRef.current === sid && gw.current) {
+              hydrateSessionContext(gw.current, sid);
+            }
+            // Server truth wins when present (e.g. the global default changed on
+            // desktop) — and persists for the next boot.
+            if (info && typeof info.model === 'string' && info.model) {
+              const prov = typeof info.provider === 'string' ? info.provider : '';
+              setModelProvider(prov);
+              setModel(info.model);
+              void saveModel(
+                prov,
+                info.model,
+                latest.current.activeProfile,
+                connectionScope(latest.current.host, latest.current.username),
+              );
+            }
+          },
+          onUsage: (sid, usage) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            setUsageInfo((prev: any) => mergeUsageState(prev, usage));
+          },
+          onTodo: (sid, payload) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            setTodos(normalizeTodos(payload));
+          },
+          onReplayTruncated: (sid) => {
+            if (connectionEpochRef.current !== connectionEpoch) return;
+            // Only the session on screen shares our transcript state.
+            if (sid === sessionIdRef.current) resyncRef.current();
+          },
+          onAsk: (a) => {
+            if (connectionEpochRef.current !== connectionEpoch) return;
+            const owner = resolveAskOwner(a.sessionId, a.params);
+            const result = applyAskInbox({
+              rpcId: a.rpcId,
+              method: a.method,
+              sessionId: a.sessionId,
+              params: a.params,
+              owner,
+              replayed: a.replayed === true,
+            });
+            const isCurrent = !a.sessionId || isCurrentSession(a.sessionId);
+            // Never hijack the visible room with a background request. Also do
+            // not resurrect a settled card from a late/replayed frame.
+            if (isCurrent && (result.entry.status === 'pending' || result.entry.status === 'answering')) {
+              setAsk(a);
+            } else if (isCurrent && askRef.current?.rpcId === a.rpcId) {
+              setAsk(null);
+            }
+            if (notifyRef.current && result.added && !a.replayed) {
+              const what =
+                a.method === 'approval'
+                  ? 'Command approval needed'
+                  : a.method === 'clarify'
+                    ? 'A question needs your answer'
+                    : a.method === 'sudo'
+                      ? 'Sudo password required'
+                      : a.method === 'secret'
+                        ? 'A secret is required'
+                        : a.method.startsWith('vault.')
+                          ? 'Vault unlock required'
+                          : 'Hermes needs input';
+              void pushNotification('Hermes', what, {
+                identifier: `hermes-ask-${result.entry.rpcId}`,
+                categoryIdentifier: askNotificationCategory(a.method),
+                data: {
+                  kind: 'ask',
+                  connectionId: result.entry.owner.connectionId,
+                  askKey: result.entry.key,
+                  rpcId: result.entry.rpcId,
+                  method: result.entry.method,
+                  runtimeSessionId: result.entry.owner.runtimeSessionId,
+                  storedSessionId: result.entry.owner.storedSessionId,
+                  profile: result.entry.owner.profile,
+                },
+              });
+            }
+            // A cold-start notification action can arrive before its open request
+            // has been rehydrated. Drain it after every ask delivery.
+            notificationDrainRef.current?.();
+          },
+          onAskCancel: (rpcId, info) => {
+            if (connectionEpochRef.current !== connectionEpoch) return;
+            markAskByRpc(rpcId, 'cancelled');
+            if (
+              askRef.current?.rpcId === rpcId &&
+              (!info?.sessionId || !askRef.current.sessionId || info.sessionId === askRef.current.sessionId)
+            ) {
+              setAsk(null);
+            }
+          },
+          onAskSnapshot: (sid, rpcIds, snapshotAt) => {
+            if (connectionEpochRef.current !== connectionEpoch) return;
+            const open = new Set(rpcIds);
+            const next = askInboxRef.current.map((entry) => {
+              const belongs = entry.owner.runtimeSessionId === sid || entry.sessionId === sid;
+              const wasPresentAtSnapshot = entry.receivedAt <= snapshotAt;
+              return belongs &&
+                wasPresentAtSnapshot &&
+                (entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent') &&
+                !open.has(entry.rpcId)
+                ? {
+                    ...entry,
+                    status: entry.status === 'sent' ? ('answered' as const) : ('cancelled' as const),
+                  }
+                : entry;
+            });
+            for (const before of askInboxRef.current) {
+              const after = next.find(
+                (entry) => entry.rpcId === before.rpcId && entry.owner.connectionId === before.owner.connectionId,
+              );
+              if (
+                after &&
+                (after.status === 'cancelled' || after.status === 'stale') &&
+                before.status !== after.status
+              ) {
+                void dismissNotification(`hermes-ask-${before.rpcId}`);
+              }
+            }
+            askInboxRef.current = next;
+            setAskInbox(next);
+            if (askRef.current?.sessionId === sid && !open.has(askRef.current.rpcId)) setAsk(null);
+          },
         },
-      },
-    });
-    return ws;
-  }, [hydrateSessionContext, confirmAfterReconnect, syncOpenRequests, resolveAskOwner, applyAskInbox, markAskByRpc]);
+      });
+      return ws;
+    },
+    [hydrateSessionContext, confirmAfterReconnect, syncOpenRequests, resolveAskOwner, applyAskInbox, markAskByRpc],
+  );
 
   const refreshSessions = useCallback(async (limit?: number): Promise<ScopedSessionSummary[]> => {
     const g = gw.current;
@@ -1834,6 +2043,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const g = gw.current;
     const profile = activeProfileRef.current;
     const epoch = profileEpochRef.current;
+    const connectionEpoch = connectionEpochRef.current;
+    const targetHost = host;
+    const targetUser = username;
     if (!g || providersLoadingRef.current) return;
     // 30s TTL — the model popover opens often, don't refetch every open.
     if (providersRef.current && Date.now() - providersAtRef.current < 30000) return;
@@ -1862,7 +2074,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error('empty provider list');
     } catch (eWs) {
       try {
-        const next = await getModelOptions(host, cookie.current, { profile });
+        const next = await getModelOptions(targetHost, cookie.current, { profile }, async (nextCookie) => {
+          if (activeProfileRef.current !== profile) return;
+          await acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch);
+        });
         if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setProviders(next);
         providersAtRef.current = Date.now();
@@ -1875,7 +2090,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       providersLoadingRef.current = false;
       setProvidersLoading(false);
     }
-  }, [host, sessionId]);
+  }, [acceptRotatedCookie, host, sessionId, username]);
 
   // ── Slash command catalog ──────────────────────────────────────────────
   // `commands.catalog` is the live authority for each command's `desktop=`
@@ -1905,7 +2120,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const epoch = profileEpochRef.current;
       setModelProvider(providerSlug);
       setModel(modelId);
-      void saveModel(providerSlug, modelId, profile);
+      void saveModel(providerSlug, modelId, profile, connectionScope(latest.current.host, latest.current.username));
       const g = gw.current;
       const sid = sessionId;
       if (!g || !sid) return; // applies to the next new session
@@ -1914,13 +2129,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await g.switchModel(sid, modelId, providerSlug || undefined);
         if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Model → ${providerSlug ? `${providerSlug}:` : ''}${modelId} (this chat)` }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nid(),
+            role: 'notice',
+            text: `Model → ${providerSlug ? `${providerSlug}:` : ''}${modelId} (this chat)`,
+          },
+        ]);
       } catch (e: any) {
         if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         const code = e?.code !== undefined ? ` [${e.code}]` : '';
         const msg = errMsg(e);
         const hint = /timed?\s*out/i.test(msg) ? ' — try again, the worker is warm now' : '';
-        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Switch failed${code}: ${msg}${hint}` }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nid(),
+            role: 'notice',
+            text: `Switch failed${code}: ${msg}${hint}`,
+          },
+        ]);
       } finally {
         if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
           setToolLine(null);
@@ -1985,13 +2214,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const epoch = profileEpochRef.current;
       if (!g) return;
       try {
-        await g.configSet(
-          'approvals.mode',
-          mode,
-          sessionId ?? undefined,
-          undefined,
-          sessionId ? undefined : profile,
-        );
+        await g.configSet('approvals.mode', mode, sessionId ?? undefined, undefined, sessionId ? undefined : profile);
       } catch (e: any) {
         if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `approvals: ${errMsg(e)}` }]);
@@ -2014,8 +2237,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(
     async (h: string, user: string, pw: string) => {
-      connectionEpochRef.current += 1;
-      if (latest.current.host && latest.current.host !== h.trim()) {
+      const requestId = ++connectRequestRef.current;
+      await logoutCleanupRef.current.catch(() => {});
+      if (requestId !== connectRequestRef.current) return;
+      const nextHost = h.trim();
+      const nextUser = user.trim();
+      const nextScope = connectionScope(nextHost, nextUser);
+      const connectionEpoch = ++connectionEpochRef.current;
+      let profileEpoch = profileEpochRef.current;
+      const isCurrent = () =>
+        connectionEpochRef.current === connectionEpoch && profileEpochRef.current === profileEpoch;
+      const previousScope = latest.current.host ? connectionScope(latest.current.host, latest.current.username) : '';
+      // Boot/login can enter connect before the next render commits host/user;
+      // keep frozen WS callbacks scoped to this attempt immediately.
+      latest.current = { ...latest.current, host: nextHost, username: nextUser };
+
+      if (cookieScope.current !== nextScope) {
+        cookie.current = '';
+        cookieScope.current = '';
+      }
+      if (previousScope && previousScope !== nextScope) {
+        profileEpoch = ++profileEpochRef.current;
+        clearMediaCaches();
+        clearSessionMessagesCache();
         dismissAskNotifications();
         handledNotificationResponsesRef.current.clear();
         pendingNotificationResponsesRef.current = [];
@@ -2028,19 +2272,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         runtimeAskOwners.current.clear();
         turnOwnerRef.current.clear();
         parkedLiveRef.current.clear();
+        draftsRef.current.clear();
+        setInputRaw('');
+        setPassword('');
+        queuedRef.current = [];
+        setQueued([]);
+        queueParkedRef.current = false;
+        setQueueParked(false);
+        setProviders(null);
+        providersRef.current = null;
+        setProfiles([]);
+        activeProfilePreferenceRef.current = null;
+        activeProfileRef.current = DEFAULT_PROFILE;
+        setActiveProfile(DEFAULT_PROFILE);
       }
       setBusy(true);
       setError(null);
       try {
-        const probe = await probeStatus(h);
+        const probe = await probeStatus(nextHost);
+        if (!isCurrent()) throw new Error('Connection superseded');
         if (!probe.authRequired) {
           throw new Error('Dashboard has no auth gate (loopback?) — this app needs a gated dashboard with basic auth.');
         }
         if (!probe.providers.includes('basic')) {
           throw new Error(`Dashboard auth providers [${probe.providers.join(',')}] — basic not offered.`);
         }
-        await ensureCookie(h, user, pw);
-        const discovered = await discoverAgentProfiles(h, cookie.current);
+        await ensureCookie(nextHost, nextUser, pw, isCurrent);
+        if (!isCurrent()) throw new Error('Connection superseded');
+        const discovered = await discoverAgentProfiles(nextHost, cookie.current, async (nextCookie) => {
+          if (!isCurrent()) return;
+          await acceptRotatedCookie(nextCookie, nextHost, nextUser, connectionEpoch, profileEpoch);
+        });
+        if (!isCurrent()) throw new Error('Connection superseded');
         setProfiles(discovered.profiles);
         const preferred = activeProfilePreferenceRef.current;
         const selected =
@@ -2050,15 +2313,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         activeProfilePreferenceRef.current = selected;
         activeProfileRef.current = selected;
         setActiveProfile(selected);
-        void saveActiveProfile(selected);
+        void saveActiveProfile(selected, nextScope);
         const selectedInfo = discovered.profiles.find((profile) => profile.name === selected);
-        const rememberedModel = await getModel(selected).catch(() => null);
+        const rememberedModel = await getModel(selected, nextScope).catch(() => null);
+        if (!isCurrent()) throw new Error('Connection superseded');
         setModel(String(rememberedModel?.model ?? selectedInfo?.model ?? ''));
         setModelProvider(String(rememberedModel?.provider ?? selectedInfo?.provider ?? ''));
         gw.current?.close();
-        const ws = await openWs(h);
+        const ws = await openWs(nextHost, nextUser);
+        if (!isCurrent()) {
+          ws.close();
+          throw new Error('Connection superseded');
+        }
         gw.current = ws;
         const ok = await ws.connect();
+        if (!isCurrent()) {
+          ws.close();
+          return;
+        }
         if (!ok) {
           // Stop the background reconnect loop — the user retries explicitly.
           const d = ws.wsDebug();
@@ -2069,8 +2341,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
             `WS not ready in 15s (opens=${d.opens} errors=${d.errors} closes=[${closes}] lastEvent=${d.lastEvent ?? 'none'}) — REST ok but the socket never became ready. Check the dashboard log for /api/ws rejections.`,
           );
         }
-        await saveHost(h, user);
-        if (rememberPw && pw) await savePassword(pw);
+        await saveHost(nextHost, nextUser);
+        if (!isCurrent()) return;
+        // Never persist the basic-auth password in browser storage. Native keeps
+        // the existing opt-in SecureStore behaviour.
+        if (rememberPw && pw && Platform.OS !== 'web') {
+          await savePassword(pw, nextHost, nextUser);
+        }
         // Bounded waits — a wedged dashboard must never trap boot on a
         // spinner: list/open each get a ceiling, then we land on chat.
         let list: SessionSummary[] = [];
@@ -2079,35 +2356,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } catch {
           list = [];
         }
+        if (!isCurrent()) return;
         setAuthed(true);
         if (list.length > 0) {
           // Restore the chat the user was last viewing, else the most recent.
           let target = list[0];
           try {
-            const saved = await getLastSession(activeProfileRef.current);
+            const saved = await getLastSession(activeProfileRef.current, connectionScope(nextHost, nextUser));
             const found = saved ? list.find((s) => s.id === saved) : undefined;
             if (found) target = found;
           } catch {}
           try {
             await withTimeout(openSessionRef.current(target), 25000);
           } catch {
-            router.replace('/chat');
+            if (isCurrent()) router.replace('/chat');
           }
           return;
         }
-        router.replace('/chat');
+        if (isCurrent()) router.replace('/chat');
       } catch (e) {
-        setError(errMsg(e));
+        if (isCurrent() && errMsg(e) !== 'Connection superseded') setError(errMsg(e));
       } finally {
-        setBusy(false);
+        if (isCurrent()) setBusy(false);
       }
     },
-    [ensureCookie, openWs, rememberPw, refreshSessions],
+    [acceptRotatedCookie, ensureCookie, openWs, rememberPw, refreshSessions],
   );
   connectRef.current = connect;
 
   const login = useCallback(async () => {
-    const pw = password || (await getPassword()) || '';
+    const scope = connectionScope(host, username);
+    const enteredPassword = passwordScopeRef.current === scope ? password : '';
+    const pw = enteredPassword || (await getPassword(host, username)) || '';
     if (!host.trim() || !username.trim() || !pw) {
       setError('Fill host, username and password');
       return;
@@ -2116,11 +2396,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [host, username, password, connect]);
 
   const logout = useCallback(async () => {
+    const logoutHost = host;
+    const logoutUser = username;
+    const logoutCookie = cookie.current;
     connectionEpochRef.current += 1;
+    connectRequestRef.current += 1;
     gw.current?.close();
     gw.current?.clearAskRecords();
     gw.current = null;
     cookie.current = '';
+    cookieScope.current = '';
     liveThinkAid.current = null;
     liveAid.current = null;
     generatingRef.current = false;
@@ -2133,8 +2418,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sessionsFetchRef.current = null;
     sessionsFetchProfileRef.current = null;
     setInputRaw('');
-    await clearCookie();
+    clearMediaCaches();
+    clearSessionMessagesCache();
+    setPassword('');
     setAuthed(false);
+    setConn('idle');
+    setProfiles([]);
+    activeProfilePreferenceRef.current = null;
+    activeProfileRef.current = DEFAULT_PROFILE;
+    setActiveProfile(DEFAULT_PROFILE);
     sessionIdRef.current = null;
     setSessionId(null);
     setSessionKey(null);
@@ -2165,168 +2457,205 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setEditingRowId(null);
     setInfoOpen(false);
     router.replace('/login');
-  }, [sessionKey]);
+
+    const cleanup = (async () => {
+      try {
+        await logoutDashboard(logoutHost, logoutCookie);
+        await forgetAll(logoutHost, logoutUser);
+      } catch {}
+    })();
+    logoutCleanupRef.current = cleanup;
+    await cleanup;
+  }, [host, username]);
 
   // ── Sessions ─────────────────────────────────────────────────────────────
 
-  const openSession = useCallback(async (s: ScopedSessionSummary) => {
-    const g = gw.current;
-    if (!g) {
-      setError('Not connected — please login again');
-      return;
-    }
-    const connectionEpoch = connectionEpochRef.current;
-    const profile = normalizeProfileName(s.profile ?? activeProfileRef.current);
-    const epoch = profileEpochRef.current;
-    const openEpoch = ++sessionOpenEpochRef.current;
-    const isLatestOpen = () => openEpoch === sessionOpenEpochRef.current;
-    const isSameConnection = () => connectionEpochRef.current === connectionEpoch && gw.current === g;
-    const previousRuntimeId = sessionIdRef.current;
-    const previousSessionKey = latest.current.sessionKey;
-    const previousMessages = messagesRef.current;
-    const previousAsk = askRef.current;
-    const previousGenerating = generatingRef.current;
-    const previousLiveAid = liveAid.current;
-    const previousLiveThinkAid = liveThinkAid.current;
-    if (activeProfileRef.current !== profile) return;
-    // The ask slot is foreground-only; pending requests remain in the inbox.
-    askRef.current = null;
-    setAsk(null);
-    // Leaving a mid-turn session strands the latch: the old turn's onComplete
-    // is filtered by isCurrentSession, so park it (restored on return) and
-    // reset the local Stop/Send state. The server turn keeps running.
-    parkLiveTurn();
-    // Fence the old runtime while resume/history is in flight. Otherwise a late
-    // event from the old room can mutate the room being opened.
-    sessionIdRef.current = null;
-    setSessionId(null);
-    setOpeningId(s.id);
-    setError(null);
-    liveAid.current = null;
-    liveThinkAid.current = null;
-    liveTools.current.clear();
-    liveToolAid.current = null;
-    liveTurnTools.current = [];
-    setGenerating(false);
-    generatingRef.current = false;
-    setToolLine(null);
-    try {
-      // resume mints a FRESH live runtime id — history/submit/interrupt must use
-      // the returned session_id, NOT the stored id (server keeps two id spaces).
-      const r: any = await g.call('session.resume', {
-        profile,
-        session_id: s.id,
-        omit_messages: false,
-      });
-      const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : s.id;
-      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-      const resumeInfo =
-        r?.info && typeof r.info === 'object' && !Array.isArray(r.info) ? r.info : null;
-      // Resume carries the session's todo snapshot; restore the checklist.
-      setTodos(normalizeTodos(r?.todo_state));
-      // Full transcript via REST first (tool RESULT content + reasoning) —
-      // WS session.history is only a compact projection. Stored id, not live.
-      let hist: HistoryMessage[];
+  const openSession = useCallback(
+    async (s: ScopedSessionSummary) => {
+      const g = gw.current;
+      if (!g) {
+        setError('Not connected — please login again');
+        return;
+      }
+      const connectionEpoch = connectionEpochRef.current;
+      const profile = normalizeProfileName(s.profile ?? activeProfileRef.current);
+      const targetHost = latest.current.host;
+      const targetUser = latest.current.username;
+      const epoch = profileEpochRef.current;
+      const openEpoch = ++sessionOpenEpochRef.current;
+      const isLatestOpen = () => openEpoch === sessionOpenEpochRef.current;
+      const isSameConnection = () => connectionEpochRef.current === connectionEpoch && gw.current === g;
+      const previousRuntimeId = sessionIdRef.current;
+      const previousSessionKey = latest.current.sessionKey;
+      const previousMessages = messagesRef.current;
+      const previousAsk = askRef.current;
+      const previousGenerating = generatingRef.current;
+      const previousLiveAid = liveAid.current;
+      const previousLiveThinkAid = liveThinkAid.current;
+      if (activeProfileRef.current !== profile) return;
+      // The ask slot is foreground-only; pending requests remain in the inbox.
+      askRef.current = null;
+      setAsk(null);
+      // Leaving a mid-turn session strands the latch: the old turn's onComplete
+      // is filtered by isCurrentSession, so park it (restored on return) and
+      // reset the local Stop/Send state. The server turn keeps running.
+      parkLiveTurn();
+      // Fence the old runtime while resume/history is in flight. Otherwise a late
+      // event from the old room can mutate the room being opened.
+      sessionIdRef.current = null;
+      setSessionId(null);
+      setOpeningId(s.id);
+      setError(null);
+      liveAid.current = null;
+      liveThinkAid.current = null;
+      liveTools.current.clear();
+      liveToolAid.current = null;
+      liveTurnTools.current = [];
+      setGenerating(false);
+      generatingRef.current = false;
+      setToolLine(null);
       try {
-        // Gate on the cookie ONLY as a fallback signal: on web the jar is empty
-        // (JS can't read Set-Cookie) while the browser cookie still authenticates
-        // via `credentials: 'include'`, so always try REST.
-        hist = await getSessionMessages(host, cookie.current, s.id, profile);
-      } catch {
-        hist = [];
+        // resume mints a FRESH live runtime id — history/submit/interrupt must use
+        // the returned session_id, NOT the stored id (server keeps two id spaces).
+        const r: any = await g.call('session.resume', {
+          profile,
+          session_id: s.id,
+          omit_messages: false,
+        });
+        const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : s.id;
+        if (
+          !isLatestOpen() ||
+          !isSameConnection() ||
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch
+        )
+          return;
+        const resumeInfo = r?.info && typeof r.info === 'object' && !Array.isArray(r.info) ? r.info : null;
+        // Resume carries the session's todo snapshot; restore the checklist.
+        setTodos(normalizeTodos(r?.todo_state));
+        // Full transcript via REST first (tool RESULT content + reasoning) —
+        // WS session.history is only a compact projection. Stored id, not live.
+        let hist: HistoryMessage[];
+        try {
+          // Gate on the cookie ONLY as a fallback signal: on web the jar is empty
+          // (JS can't read Set-Cookie) while the browser cookie still authenticates
+          // via `credentials: 'include'`, so always try REST.
+          hist = await getSessionMessages(
+            targetHost,
+            cookie.current,
+            s.id,
+            profile,
+            200,
+            connectionScope(targetHost, targetUser),
+            async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
+          );
+        } catch {
+          hist = [];
+        }
+        if (hist.length === 0) hist = await g.history(liveId);
+        if (
+          !isLatestOpen() ||
+          !isSameConnection() ||
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch
+        )
+          return;
+        const owner = profileSessionKey(profile, s.id);
+        runtimeOwners.current.set(liveId, owner);
+        bindAskOwner(liveId, {
+          connectionId: connectionScope(latest.current.host, latest.current.username),
+          profile,
+          storedSessionId: s.id,
+          runtimeSessionId: liveId,
+          resolved: true,
+        });
+        setSessionKey(s.id);
+        void saveLastSession(s.id, profile, connectionScope(targetHost, targetUser));
+        sessionIdRef.current = liveId;
+        setSessionId(liveId);
+        draftKeyRef.current = owner;
+        setInputRaw(draftsRef.current.get(owner) ?? '');
+        setAttachments([]);
+        const pendingRoomAsk = askInboxRef.current.find(
+          (entry) =>
+            entry.owner.profile === profile &&
+            entry.owner.storedSessionId === s.id &&
+            (entry.status === 'pending' || entry.status === 'answering'),
+        );
+        if (pendingRoomAsk) setAsk(serverAskFromInbox(pendingRoomAsk));
+        // A live resume already returns the authoritative runtime info. Applying
+        // it here avoids depending on a later session.info broadcast, which can
+        // race the REST transcript load while the previous runtime is still current.
+        setSessionInfo(resumeInfo);
+        setUsageInfo(resumeInfo?.usage ?? null);
+        setSessionTitle(s.title || '');
+        void g
+          .usage(liveId)
+          .then((info) => {
+            if (isLatestOpen() && isSameConnection() && sessionIdRef.current === liveId) {
+              setUsageInfo((prev: any) => mergeUsageState(prev, info));
+            }
+          })
+          .catch(() => {});
+        hydrateSessionContext(g, liveId);
+        // Reasoning rides on the assistant message (sidecar, not its own role) —
+        // restore it as a thinking bubble above its answer, like the live view.
+        const items = historyToItems(hist);
+        clearStreaming();
+        const resumedRunning =
+          r?.running === true || r?.status === 'working' || (r?.inflight != null && typeof r.inflight === 'object');
+        if (parkedLiveRef.current.has(owner) || resumedRunning) {
+          // Back in a room whose turn is still live — re-anchor streaming to the
+          // transcript tail and re-arm Stop.
+          setMessages(reanchorLiveTurn(items));
+          lastTurnEventAt.current = Date.now();
+          setGenerating(true);
+          generatingRef.current = true;
+        } else {
+          setMessages(items);
+        }
+        queuedRef.current = [];
+        setQueued([]);
+        queueParkedRef.current = false;
+        setQueueParked(false);
+        editRowRef.current = null;
+        setEditingRowId(null);
+        setSubagents([]);
+        router.push('/chat');
+      } catch (e) {
+        if (
+          !isLatestOpen() ||
+          !isSameConnection() ||
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch
+        )
+          return;
+        sessionIdRef.current = previousRuntimeId;
+        setSessionId(previousRuntimeId);
+        if (previousSessionKey) setSessionKey(previousSessionKey);
+        messagesRef.current = previousMessages;
+        setMessages(previousMessages);
+        askRef.current = previousAsk;
+        setAsk(previousAsk);
+        generatingRef.current = previousGenerating;
+        setGenerating(previousGenerating);
+        liveAid.current = previousLiveAid;
+        liveThinkAid.current = previousLiveThinkAid;
+        const msg = errMsg(e);
+        if (/not.?found/i.test(msg)) {
+          // Stale entry — the session is gone server-side (pruned/deleted).
+          // Drop it so the list stops lying.
+          setSessions((prev) => prev.filter((x) => x.id !== s.id));
+          setError(`"${s.title || '(untitled)'}" no longer exists (deleted/pruned) — removed it from the list`);
+        } else {
+          setError(msg);
+        }
+      } finally {
+        if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile) setOpeningId(null);
       }
-      if (hist.length === 0) hist = await g.history(liveId);
-      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-      const owner = profileSessionKey(profile, s.id);
-      runtimeOwners.current.set(liveId, owner);
-      bindAskOwner(liveId, {
-        connectionId: latest.current.host,
-        profile,
-        storedSessionId: s.id,
-        runtimeSessionId: liveId,
-        resolved: true,
-      });
-      setSessionKey(s.id);
-      void saveLastSession(s.id, profile);
-      sessionIdRef.current = liveId;
-      setSessionId(liveId);
-      draftKeyRef.current = owner;
-      setInputRaw(draftsRef.current.get(owner) ?? '');
-      setAttachments([]);
-      const pendingRoomAsk = askInboxRef.current.find(
-        (entry) =>
-          entry.owner.profile === profile &&
-          entry.owner.storedSessionId === s.id &&
-          (entry.status === 'pending' || entry.status === 'answering'),
-      );
-      if (pendingRoomAsk) setAsk(serverAskFromInbox(pendingRoomAsk));
-      // A live resume already returns the authoritative runtime info. Applying
-      // it here avoids depending on a later session.info broadcast, which can
-      // race the REST transcript load while the previous runtime is still current.
-      setSessionInfo(resumeInfo);
-      setUsageInfo(resumeInfo?.usage ?? null);
-      setSessionTitle(s.title || '');
-      void g
-        .usage(liveId)
-        .then((info) => {
-          if (isLatestOpen() && isSameConnection() && sessionIdRef.current === liveId) {
-            setUsageInfo((prev: any) => mergeUsageState(prev, info));
-          }
-        })
-        .catch(() => {});
-      hydrateSessionContext(g, liveId);
-      // Reasoning rides on the assistant message (sidecar, not its own role) —
-      // restore it as a thinking bubble above its answer, like the live view.
-      const items = historyToItems(hist);
-      clearStreaming();
-      const resumedRunning =
-        r?.running === true ||
-        r?.status === 'working' ||
-        (r?.inflight != null && typeof r.inflight === 'object');
-      if (parkedLiveRef.current.has(owner) || resumedRunning) {
-        // Back in a room whose turn is still live — re-anchor streaming to the
-        // transcript tail and re-arm Stop.
-        setMessages(reanchorLiveTurn(items));
-        lastTurnEventAt.current = Date.now();
-        setGenerating(true);
-        generatingRef.current = true;
-      } else {
-        setMessages(items);
-      }
-      queuedRef.current = [];
-      setQueued([]);
-      queueParkedRef.current = false;
-      setQueueParked(false);
-      editRowRef.current = null;
-      setEditingRowId(null);
-      setSubagents([]);
-      router.push('/chat');
-    } catch (e) {
-      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-      sessionIdRef.current = previousRuntimeId;
-      setSessionId(previousRuntimeId);
-      if (previousSessionKey) setSessionKey(previousSessionKey);
-      messagesRef.current = previousMessages;
-      setMessages(previousMessages);
-      askRef.current = previousAsk;
-      setAsk(previousAsk);
-      generatingRef.current = previousGenerating;
-      setGenerating(previousGenerating);
-      liveAid.current = previousLiveAid;
-      liveThinkAid.current = previousLiveThinkAid;
-      const msg = errMsg(e);
-      if (/not.?found/i.test(msg)) {
-        // Stale entry — the session is gone server-side (pruned/deleted).
-        // Drop it so the list stops lying.
-        setSessions((prev) => prev.filter((x) => x.id !== s.id));
-        setError(`"${s.title || '(untitled)'}" no longer exists (deleted/pruned) — removed it from the list`);
-      } else {
-        setError(msg);
-      }
-    } finally {
-      if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile) setOpeningId(null);
-    }
-  }, [host, hydrateSessionContext, bindAskOwner]);
+    },
+    [acceptRotatedCookie, hydrateSessionContext, bindAskOwner],
+  );
   openSessionRef.current = openSession;
 
   const newSession = useCallback(async () => {
@@ -2366,18 +2695,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sid = String(result?.session_id ?? '');
       const storedSessionId = String(result?.stored_session_id ?? sid);
       if (!sid) throw new Error('Profile session creation returned no session id');
-      if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (
+        !isLatestOpen() ||
+        !isSameConnection() ||
+        activeProfileRef.current !== profile ||
+        profileEpochRef.current !== epoch
+      )
+        return;
       const owner = profileSessionKey(profile, storedSessionId || sid);
       runtimeOwners.current.set(sid, owner);
       bindAskOwner(sid, {
-        connectionId: latest.current.host,
+        connectionId: connectionScope(latest.current.host, latest.current.username),
         profile,
         storedSessionId: storedSessionId || sid,
         runtimeSessionId: sid,
         resolved: true,
       });
       setSessionKey(storedSessionId || sid);
-      void saveLastSession(storedSessionId || sid, profile);
+      void saveLastSession(
+        storedSessionId || sid,
+        profile,
+        connectionScope(latest.current.host, latest.current.username),
+      );
       sessionIdRef.current = sid;
       setSessionId(sid);
       setSessionTitle('');
@@ -2400,7 +2739,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       liveToolAid.current = null;
       router.push('/chat');
     } catch (e) {
-      if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+      if (
+        isLatestOpen() &&
+        isSameConnection() &&
+        activeProfileRef.current === profile &&
+        profileEpochRef.current === epoch
+      ) {
         sessionIdRef.current = previousRuntimeId;
         setSessionId(previousRuntimeId);
         if (previousSessionKey) setSessionKey(previousSessionKey);
@@ -2413,7 +2757,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError(errMsg(e));
       }
     } finally {
-      if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+      if (
+        isLatestOpen() &&
+        isSameConnection() &&
+        activeProfileRef.current === profile &&
+        profileEpochRef.current === epoch
+      ) {
         setBusy(false);
       }
     }
@@ -2442,10 +2791,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (draftKeyRef.current) draftsRef.current.set(draftKeyRef.current, inputRaw);
       parkLiveTurn();
       const epoch = ++profileEpochRef.current;
+      clearMediaCaches();
+      clearSessionMessagesCache();
       activeProfilePreferenceRef.current = next;
       activeProfileRef.current = next;
       setActiveProfile(next);
-      void saveActiveProfile(next);
+      void saveActiveProfile(next, connectionScope(host, username));
 
       sessionIdRef.current = null;
       contextHydrateCancelRef.current?.();
@@ -2498,7 +2849,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setProvidersError(null);
 
       const info = profiles.find((profile) => profile.name === next);
-      const remembered = await getModel(next).catch(() => null);
+      const remembered = await getModel(next, connectionScope(host, username)).catch(() => null);
       if (activeProfileRef.current !== next || profileEpochRef.current !== epoch) return;
       setModel(String(remembered?.model ?? info?.model ?? ''));
       setModelProvider(String(remembered?.provider ?? info?.provider ?? ''));
@@ -2518,7 +2869,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions],
+    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions, host, username],
   );
 
   // Fork the current chat into an independent copy (session.branch) and open it.
@@ -2540,7 +2891,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r: any = await g.branchSession(sid);
       const liveId = String(r?.session_id ?? '');
       if (!liveId) return;
-      if (connectionEpochRef.current !== connectionEpoch || activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (
+        connectionEpochRef.current !== connectionEpoch ||
+        activeProfileRef.current !== profile ||
+        profileEpochRef.current !== epoch
+      )
+        return;
       const hist: HistoryMessage[] = (Array.isArray(r?.messages) ? r.messages : []).map((m: any) => ({
         role: String(m?.role ?? ''),
         content: String(m?.text ?? m?.content ?? ''),
@@ -2553,14 +2909,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const owner = profileSessionKey(profile, branchKey);
       runtimeOwners.current.set(liveId, owner);
       bindAskOwner(liveId, {
-        connectionId: latest.current.host,
+        connectionId: connectionScope(latest.current.host, latest.current.username),
         profile,
         storedSessionId: branchKey,
         runtimeSessionId: liveId,
         resolved: true,
       });
       setSessionKey(branchKey);
-      void saveLastSession(branchKey, profile);
+      void saveLastSession(branchKey, profile, connectionScope(latest.current.host, latest.current.username));
       sessionIdRef.current = liveId;
       setSessionId(liveId);
       setSessionTitle(String(r?.title ?? ''));
@@ -2573,8 +2929,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTodos([]);
       setSubagents([]);
       setAttachments([]);
-      const branchInfo =
-        r?.info && typeof r.info === 'object' && !Array.isArray(r.info) ? r.info : null;
+      const branchInfo = r?.info && typeof r.info === 'object' && !Array.isArray(r.info) ? r.info : null;
       setSessionInfo(branchInfo);
       setUsageInfo(branchInfo?.usage ?? null);
       void g
@@ -2590,7 +2945,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setInputRaw(draftsRef.current.get(owner) ?? '');
       router.push('/chat');
     } catch (e: any) {
-      if (connectionEpochRef.current === connectionEpoch && activeProfileRef.current === profile && profileEpochRef.current === epoch) {
+      if (
+        connectionEpochRef.current === connectionEpoch &&
+        activeProfileRef.current === profile &&
+        profileEpochRef.current === epoch
+      ) {
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
       }
     }
@@ -2608,14 +2967,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Shared by send() and the slash dispatches that expand to a prompt (skills,
   // bundles, /bg-style sends).
   const beginTurn = useCallback(
-    async (submitText: string, echo?: { text: string; media?: Attachment[] }, rewindRowId?: number, confirmEmptyTruncate?: boolean) => {
+    async (
+      submitText: string,
+      echo?: { text: string; media?: Attachment[] },
+      rewindRowId?: number,
+      confirmEmptyTruncate?: boolean,
+    ) => {
       const g = gw.current;
       const sid = sessionId;
       const profile = activeProfile;
       const epoch = profileEpochRef.current;
       const connectionEpoch = connectionEpochRef.current;
       if (!g || !sid) return;
-      const submitOpts = rewindRowId != null ? { rewindRowId, ...(confirmEmptyTruncate ? { confirmEmptyTruncate: true } : {}) } : {};
+      const submitOpts =
+        rewindRowId != null
+          ? {
+              rewindRowId,
+              ...(confirmEmptyTruncate ? { confirmEmptyTruncate: true } : {}),
+            }
+          : {};
       const roomKey = sessionKey ?? sid ?? '';
       const owner = profileSessionKey(profile, roomKey);
       const sameRoom = () => {
@@ -2632,7 +3002,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       turnOwnerRef.current.set(sid, owner);
       runtimeOwners.current.set(sid, owner);
       bindAskOwner(sid, {
-        connectionId: latest.current.host,
+        connectionId: connectionScope(latest.current.host, latest.current.username),
         profile,
         storedSessionId: sessionKey ?? sid,
         runtimeSessionId: sid,
@@ -2661,7 +3031,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else if (rewindRowId != null) {
         setMessages((prev) => [
           ...prev,
-          { id: nid(), role: 'user' as Role, text: submitText, ts: Math.floor(Date.now() / 1000) },
+          {
+            id: nid(),
+            role: 'user' as Role,
+            text: submitText,
+            ts: Math.floor(Date.now() / 1000),
+          },
         ]);
       }
       const aid = nid();
@@ -2698,7 +3073,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
             runtimeOwners.current.set(liveId, owner);
             bindAskOwner(liveId, {
-              connectionId: latest.current.host,
+              connectionId: connectionScope(latest.current.host, latest.current.username),
               profile,
               storedSessionId: sessionKey,
               runtimeSessionId: liveId,
@@ -2723,7 +3098,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setGenerating(false);
         generatingRef.current = false;
         if (code === 4009) {
-          setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Session busy (${msg}). Stop the live turn and resend.` }]);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nid(),
+              role: 'notice',
+              text: `Session busy (${msg}). Stop the live turn and resend.`,
+            },
+          ]);
         } else {
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Send failed: ${msg}` }]);
         }
@@ -2928,7 +3310,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         stampRowIdsRef.current();
         setMessages((prev) => [
           ...prev,
-          { id: nid(), role: 'notice', text: 'Loading the message id — tap Edit again in a moment.' },
+          {
+            id: nid(),
+            role: 'notice',
+            text: 'Loading the message id — tap Edit again in a moment.',
+          },
         ]);
         return;
       }
@@ -2949,9 +3335,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const g = gw.current;
     if (!g || !sessionId || generatingRef.current) return;
     const list = messagesRef.current;
-    const lastUser = [...list]
-      .reverse()
-      .find((m) => m.role === 'user' && m.rowId != null && m.text.trim());
+    const lastUser = [...list].reverse().find((m) => m.role === 'user' && m.rowId != null && m.text.trim());
     if (!lastUser) {
       setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: 'Nothing to regenerate yet.' }]);
       stampRowIdsRef.current();
@@ -2987,116 +3371,114 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [activeProfile, sessionId, setInput],
   );
 
-  const send = useCallback(async (override?: string) => {
-    const text = (override ?? input).trim();
-    const g = gw.current;
-    const profile = activeProfile;
-    const epoch = profileEpochRef.current;
-    const files = override === undefined ? attachments : [];
-    if ((!text && files.length === 0) || !g || !sessionId) return;
-    // An edit resend rewinds history to that user row first (cleared below).
-    const rewindRowId = editRowRef.current ?? undefined;
-    if (editRowRef.current != null) {
-      editRowRef.current = null;
-      setEditingRowId(null);
-    }
-    if (generatingRef.current) {
-      // Mid-turn: hold it for the next turn instead of dropping it.
-      if (text) enqueueQueued(text);
-      if (override === undefined) setInput('');
-      return;
-    }
-
-    // A leading `/command` runs server-side instead of going to the model:
-    // prompt.submit does NOT dispatch slash commands (parity with the TUI's
-    // slash fallthrough). Attachments keep the normal prompt path.
-    if (!files.length && isSlashCommand(text)) {
-      if (override === undefined) setInput('');
-      // 1) Commands this app owns (a remote /new would mint a session id we
-      //    never adopt; /title and /stop map to existing mobile controls).
-      const action = slashMobileAction(text);
-      if (action === 'new') {
-        void newSessionRef.current();
-      } else if (action === 'title') {
-        const t = parseSlashCommand(text).arg;
-        if (t) void renameSessionRef.current(t);
-        else setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: 'Usage: /title <name>' }]);
-      } else if (action === 'stop') {
-        stopRef.current();
-      } else {
-        // 2) Curated like the desktop registry: terminal/messaging/settings-only
-        //    commands get the reason instead of a doomed slash.exec round-trip.
-        const blocked = slashBlockedMessage(text);
-        // 3) Offered, but a mobile control owns the surface (model chip, drawer).
-        const hint = slashMobileHint(text);
-        if (blocked) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: blocked }]);
-        else if (hint) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: hint }]);
-        else {
-          await runSlash(text);
-          if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-        }
+  const send = useCallback(
+    async (override?: string) => {
+      const text = (override ?? input).trim();
+      const g = gw.current;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
+      const files = override === undefined ? attachments : [];
+      if ((!text && files.length === 0) || !g || !sessionId) return;
+      // An edit resend rewinds history to that user row first (cleared below).
+      const rewindRowId = editRowRef.current ?? undefined;
+      if (editRowRef.current != null) {
+        editRowRef.current = null;
+        setEditingRowId(null);
       }
-      // A queued slash command doesn't start a turn, so drain the next one here.
-      drainRef.current();
-      return;
-    }
+      if (generatingRef.current) {
+        // Mid-turn: hold it for the next turn instead of dropping it.
+        if (text) enqueueQueued(text);
+        if (override === undefined) setInput('');
+        return;
+      }
 
-    // Bytes go up BEFORE the prompt through the active runtime session, so
-    // attachments land in the selected profile's workspace. A failed upload
-    // aborts the send and leaves the input + chips in place to retry.
-    let sent: { name: string; path: string; image: boolean }[] = [];
-    if (files.length) {
-      // Uploads take seconds — a second tap mid-flight would send the file and
-      // the prompt twice.
-      if (uploading.current) return;
-      uploading.current = true;
-      setToolLine(`uploading ${files.length} file${files.length === 1 ? '' : 's'}…`);
-      try {
-        sent = await uploadAttachments(files, g, sessionId);
-      } catch (e) {
+      // A leading `/command` runs server-side instead of going to the model:
+      // prompt.submit does NOT dispatch slash commands (parity with the TUI's
+      // slash fallthrough). Attachments keep the normal prompt path.
+      if (!files.length && isSlashCommand(text)) {
+        if (override === undefined) setInput('');
+        // 1) Commands this app owns (a remote /new would mint a session id we
+        //    never adopt; /title and /stop map to existing mobile controls).
+        const action = slashMobileAction(text);
+        if (action === 'new') {
+          void newSessionRef.current();
+        } else if (action === 'title') {
+          const t = parseSlashCommand(text).arg;
+          if (t) void renameSessionRef.current(t);
+          else setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: 'Usage: /title <name>' }]);
+        } else if (action === 'stop') {
+          stopRef.current();
+        } else {
+          // 2) Curated like the desktop registry: terminal/messaging/settings-only
+          //    commands get the reason instead of a doomed slash.exec round-trip.
+          const blocked = slashBlockedMessage(text);
+          // 3) Offered, but a mobile control owns the surface (model chip, drawer).
+          const hint = slashMobileHint(text);
+          if (blocked) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: blocked }]);
+          else if (hint) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: hint }]);
+          else {
+            await runSlash(text);
+            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+          }
+        }
+        // A queued slash command doesn't start a turn, so drain the next one here.
+        drainRef.current();
+        return;
+      }
+
+      // Bytes go up BEFORE the prompt through the active runtime session, so
+      // attachments land in the selected profile's workspace. A failed upload
+      // aborts the send and leaves the input + chips in place to retry.
+      let sent: { name: string; path: string; image: boolean }[] = [];
+      if (files.length) {
+        // Uploads take seconds — a second tap mid-flight would send the file and
+        // the prompt twice.
+        if (uploading.current) return;
+        uploading.current = true;
+        setToolLine(`uploading ${files.length} file${files.length === 1 ? '' : 's'}…`);
+        try {
+          sent = await uploadAttachments(files, g, sessionId);
+        } catch (e) {
+          if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+          setToolLine(null);
+          setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Upload failed: ${errMsg(e)}` }]);
+          return;
+        } finally {
+          uploading.current = false;
+        }
         if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setToolLine(null);
-        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Upload failed: ${errMsg(e)}` }]);
-        return;
-      } finally {
-        uploading.current = false;
       }
-      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-      setToolLine(null);
-    }
 
-    // Only a user-initiated send clears the composer — a queue drain must not
-    // wipe a draft the user is typing while the turn finishes.
-    if (override === undefined) {
-      setInput('');
-      setAttachments([]);
-    }
-    const images = files.filter(isImageAttachment);
-    // Images show as thumbnails in the bubble; other files keep their name line.
-    const shownText = [...files.filter((f) => !isImageAttachment(f)).map((f) => `📎 ${f.name}`), text]
-      .filter(Boolean)
-      .join('\n');
-    const submitText = [
-      ...sent.map((s) => `[attached ${s.image ? 'image' : 'file'}: ${s.path}]`),
-      text,
-    ]
-      .filter(Boolean)
-      .join('\n');
-    // Editing the first turn rewrites the whole transcript — same server gate
-    // as regenerate (confirm_empty_truncate).
-    const rewindTarget =
-      rewindRowId != null
-        ? messagesRef.current.find(
-            (m) => m.rowId === rewindRowId && (m.role === 'user' || m.role === 'assistant'),
-          )
-        : undefined;
-    await beginTurn(
-      submitText,
-      { text: shownText, media: images },
-      rewindRowId,
-      rewindTarget ? cutsWholeTranscript(messagesRef.current, rewindTarget.id) : false,
-    );
-  }, [activeProfile, input, attachments, sessionId, setInput, setAttachments, beginTurn, runSlash, enqueueQueued]);
+      // Only a user-initiated send clears the composer — a queue drain must not
+      // wipe a draft the user is typing while the turn finishes.
+      if (override === undefined) {
+        setInput('');
+        setAttachments([]);
+      }
+      const images = files.filter(isImageAttachment);
+      // Images show as thumbnails in the bubble; other files keep their name line.
+      const shownText = [...files.filter((f) => !isImageAttachment(f)).map((f) => `📎 ${f.name}`), text]
+        .filter(Boolean)
+        .join('\n');
+      const submitText = [...sent.map((s) => `[attached ${s.image ? 'image' : 'file'}: ${s.path}]`), text]
+        .filter(Boolean)
+        .join('\n');
+      // Editing the first turn rewrites the whole transcript — same server gate
+      // as regenerate (confirm_empty_truncate).
+      const rewindTarget =
+        rewindRowId != null
+          ? messagesRef.current.find((m) => m.rowId === rewindRowId && (m.role === 'user' || m.role === 'assistant'))
+          : undefined;
+      await beginTurn(
+        submitText,
+        { text: shownText, media: images },
+        rewindRowId,
+        rewindTarget ? cutsWholeTranscript(messagesRef.current, rewindTarget.id) : false,
+      );
+    },
+    [activeProfile, input, attachments, sessionId, setInput, setAttachments, beginTurn, runSlash, enqueueQueued],
+  );
   sendRef.current = send;
 
   // Release the local "a turn is running" latch without clearing the live
@@ -3129,11 +3511,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
     g.interrupt(sid).catch(() => {
-      if (
-        activeProfileRef.current === profile &&
-        profileEpochRef.current === epoch &&
-        sessionIdRef.current === sid
-      ) {
+      if (activeProfileRef.current === profile && profileEpochRef.current === epoch && sessionIdRef.current === sid) {
         releaseLocalTurn();
       }
     });
@@ -3159,7 +3537,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const cur = sk
           ? profileSessionKey(latest.current.activeProfile, sk)
           : runtime
-            ? runtimeOwners.current.get(runtime) ?? profileSessionKey(latest.current.activeProfile, runtime)
+            ? (runtimeOwners.current.get(runtime) ?? profileSessionKey(latest.current.activeProfile, runtime))
             : null;
         if (working && cur && working.has(cur)) {
           lastTurnEventAt.current = Date.now(); // still alive — snooze
@@ -3170,7 +3548,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         releaseLocalTurn();
         setMessages((prev) => [
           ...prev,
-          { id: nid(), role: 'notice', text: 'No updates for a while — released the stop button. The reply will still land if the agent is working.' },
+          {
+            id: nid(),
+            role: 'notice',
+            text: 'No updates for a while — released the stop button. The reply will still land if the agent is working.',
+          },
         ]);
       })();
     }, 10000);
@@ -3207,7 +3589,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (key: string, result: Record<string, unknown>) => {
       const entry = findAsk(askInboxRef.current, key);
       const g = gw.current;
-      if (!entry || !g || entry.owner.connectionId !== latest.current.host) return false;
+      if (!entry || !g || entry.owner.connectionId !== connectionScope(latest.current.host, latest.current.username)) return false;
+      if (entry.owner.profile !== normalizeProfileName(activeProfileRef.current)) return false;
       if (entry.status !== 'pending' && entry.status !== 'answering') return false;
       if (!g.replyToAsk(entry.rpcId, result)) return false;
       markAskStatus(entry.key, 'sent');
@@ -3242,7 +3625,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (entry.status !== 'pending' && entry.status !== 'answering') return;
     if (!entry.owner.resolved || !entry.owner.storedSessionId) {
       setError('This background request has no resolved profile yet. Open its session to answer it safely.');
-      router.push('/asks');
+      router.push('/asks' as any);
       return;
     }
     if (entry.owner.profile !== activeProfileRef.current) {
@@ -3271,7 +3654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError('Could not open the owning session; the request remains in Ask Inbox.');
         return;
       }
-      const refreshed = findAskByRpc(askInboxRef.current, latest.current.host, entry.rpcId) ?? entry;
+      const refreshed = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId) ?? entry;
       setAsk(serverAskFromInbox(refreshed));
       router.push('/chat');
     } catch (e) {
@@ -3284,7 +3667,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const current = askRef.current;
       if (!current || !gw.current) return false;
       const entry = askInboxRef.current.find(
-        (item) => item.owner.connectionId === latest.current.host && item.rpcId === current.rpcId,
+        (item) =>
+          item.owner.connectionId === connectionScope(latest.current.host, latest.current.username) &&
+          item.rpcId === current.rpcId,
       );
       return entry ? respondToInbox(entry.key, result) : false;
     },
@@ -3298,21 +3683,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [answerAsk],
   );
 
-  const answerApproval = useCallback(
-    (choice: string) => answerAsk({ choice }),
-    [answerAsk],
-  );
+  const answerApproval = useCallback((choice: string) => answerAsk({ choice }), [answerAsk]);
 
   const dismissAsk = useCallback(() => setAsk(null), []);
 
   const confirmSensitiveNotification = useCallback(async (): Promise<boolean> => {
     try {
-      const [hasHardware, enrolled] = await Promise.all([
-        LocalAuth.hasHardwareAsync(),
-        LocalAuth.isEnrolledAsync(),
-      ]);
+      const [hasHardware, enrolled] = await Promise.all([LocalAuth.hasHardwareAsync(), LocalAuth.isEnrolledAsync()]);
       if (!hasHardware || !enrolled) return false;
-      const result = await LocalAuth.authenticateAsync({ promptMessage: 'Confirm Hermes request' });
+      const result = await LocalAuth.authenticateAsync({
+        promptMessage: 'Confirm Hermes request',
+      });
       return result.success === true;
     } catch {
       return false;
@@ -3324,14 +3705,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const data = response.data;
       const responseKey = notificationResponseKey(response);
       if (handledNotificationResponsesRef.current.has(responseKey)) return;
-      if (
-        typeof data.connectionId === 'string' &&
-        latest.current.host &&
-        data.connectionId !== latest.current.host
-      ) {
+      const currentConnectionId = connectionScope(latest.current.host, latest.current.username);
+      if (typeof data.connectionId === 'string' && currentConnectionId && data.connectionId !== currentConnectionId) {
         return;
       }
-      if (!latest.current.host || !gw.current || askHydrationRef.current > 0) {
+      if (!currentConnectionId || !gw.current || askHydrationRef.current > 0) {
         queueNotificationResponse(response);
         return;
       }
@@ -3339,7 +3717,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const rpcId = typeof data.rpcId === 'string' ? data.rpcId : '';
       const entry =
         (key ? findAsk(askInboxRef.current, key) : undefined) ??
-        (rpcId ? findAskByRpc(askInboxRef.current, latest.current.host, rpcId) : undefined);
+        (rpcId ? findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), rpcId) : undefined);
       if (!entry) {
         if (!key && !rpcId) {
           if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) {
@@ -3349,7 +3727,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return;
         }
         queueNotificationResponse(response);
-        router.push('/asks');
+        router.push('/asks' as any);
+        return;
+      }
+
+      // Background asks must never be actioned against a different profile.
+      // Unresolved owners fail closed into the inbox rather than guessing.
+      if (!entry.owner.profile || entry.owner.profile !== normalizeProfileName(activeProfileRef.current)) {
+        queueNotificationResponse(response);
+        router.push('/asks' as any);
         return;
       }
 
@@ -3366,10 +3752,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             if (!(await confirmSensitiveNotification())) {
               handledNotificationResponsesRef.current.add(responseKey);
-              router.push('/asks');
+              router.push('/asks' as any);
               return;
             }
-            const current = findAskByRpc(askInboxRef.current, latest.current.host, entry.rpcId);
+            const current = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId);
             if (!current) {
               queueNotificationResponse(response);
               return;
@@ -3378,7 +3764,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               handledNotificationResponsesRef.current.add(responseKey);
             } else {
               queueNotificationResponse(response);
-              router.push('/asks');
+              router.push('/asks' as any);
             }
           } finally {
             notificationActionInFlightRef.current = false;
@@ -3387,7 +3773,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             );
             if (handledNotificationResponsesRef.current.has(responseKey)) {
               if (queued) clearQueuedNotificationResponse(queued);
-            } else if (pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)) {
+            } else if (
+              pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)
+            ) {
               notificationDrainRef.current?.();
             }
           }
@@ -3408,10 +3796,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             if (!(await confirmSensitiveNotification())) {
               handledNotificationResponsesRef.current.add(responseKey);
-              router.push('/asks');
+              router.push('/asks' as any);
               return;
             }
-            const current = findAskByRpc(askInboxRef.current, latest.current.host, entry.rpcId);
+            const current = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId);
             if (!current) {
               queueNotificationResponse(response);
               return;
@@ -3420,7 +3808,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               handledNotificationResponsesRef.current.add(responseKey);
             } else {
               queueNotificationResponse(response);
-              router.push('/asks');
+              router.push('/asks' as any);
             }
           } finally {
             notificationActionInFlightRef.current = false;
@@ -3429,7 +3817,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             );
             if (handledNotificationResponsesRef.current.has(responseKey)) {
               if (queued) clearQueuedNotificationResponse(queued);
-            } else if (pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)) {
+            } else if (
+              pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)
+            ) {
               notificationDrainRef.current?.();
             }
           }
@@ -3444,24 +3834,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
           void openAskEntry(entry);
           return;
         }
-        if (entry.method === 'clarify') {
-          if (Array.isArray(entry.params.questions) && entry.params.questions.length > 0) {
-            handledNotificationResponsesRef.current.add(responseKey);
-            void openAskEntry(entry);
-            return;
+        if (notificationActionInFlightRef.current) return;
+        notificationActionInFlightRef.current = true;
+        void (async () => {
+          try {
+            if (!(await confirmSensitiveNotification())) {
+              handledNotificationResponsesRef.current.add(responseKey);
+              router.push('/asks' as any);
+              return;
+            }
+            const current = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId);
+            if (!current || current.owner.profile !== normalizeProfileName(activeProfileRef.current)) {
+              queueNotificationResponse(response);
+              router.push('/asks' as any);
+              return;
+            }
+            if (current.method === 'clarify') {
+              if (Array.isArray(current.params.questions) && current.params.questions.length > 0) {
+                handledNotificationResponsesRef.current.add(responseKey);
+                void openAskEntry(current);
+                return;
+              }
+              if (respondToInbox(current.key, { answer: text })) {
+                handledNotificationResponsesRef.current.add(responseKey);
+              } else {
+                queueNotificationResponse(response);
+                router.push('/asks' as any);
+              }
+            } else if (answerInboxValue(current.key, text)) {
+              handledNotificationResponsesRef.current.add(responseKey);
+            } else {
+              queueNotificationResponse(response);
+              router.push('/asks' as any);
+            }
+          } finally {
+            notificationActionInFlightRef.current = false;
+            const queued = pendingNotificationResponsesRef.current.find(
+              (item) => notificationResponseKey(item) === responseKey,
+            );
+            if (handledNotificationResponsesRef.current.has(responseKey)) {
+              if (queued) clearQueuedNotificationResponse(queued);
+            } else if (
+              pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)
+            ) {
+              notificationDrainRef.current?.();
+            }
           }
-          if (respondToInbox(entry.key, { answer: text })) {
-            handledNotificationResponsesRef.current.add(responseKey);
-          } else {
-            queueNotificationResponse(response);
-            router.push('/asks');
-          }
-        } else if (answerInboxValue(entry.key, text)) {
-          handledNotificationResponsesRef.current.add(responseKey);
-        } else {
-          queueNotificationResponse(response);
-          router.push('/asks');
-        }
+        })();
         return;
       }
 
@@ -3472,7 +3891,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) {
         handledNotificationResponsesRef.current.add(responseKey);
-        router.push('/asks');
+        router.push('/asks' as any);
       }
     },
     [answerInboxApproval, answerInboxValue, confirmSensitiveNotification, openAskEntry, respondToInbox],
@@ -3635,7 +4054,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (r?.status === 'queued') {
           setMessages((prev) => [
             ...prev,
-            { id: nid(), role: 'notice', text: '↪ too late to steer this turn — queued as the next message' },
+            {
+              id: nid(),
+              role: 'notice',
+              text: '↪ too late to steer this turn — queued as the next message',
+            },
           ]);
         }
       } catch (e: any) {
@@ -3653,7 +4076,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : sessionKey;
             runtimeOwners.current.set(liveId, profileSessionKey(profile, sessionKey));
             bindAskOwner(liveId, {
-              connectionId: latest.current.host,
+              connectionId: connectionScope(latest.current.host, latest.current.username),
               profile,
               storedSessionId: sessionKey,
               runtimeSessionId: liveId,
@@ -3665,7 +4088,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return;
           } catch (e2) {
             if (!sameRoom()) return;
-            setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Steer failed: ${errMsg(e2)}` }]);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: nid(),
+                role: 'notice',
+                text: `Steer failed: ${errMsg(e2)}`,
+              },
+            ]);
             return;
           }
         }
@@ -3679,28 +4109,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (providerSlug: string, modelId: string) => {
       const profile = activeProfile;
       const epoch = profileEpochRef.current;
+      const connectionEpoch = connectionEpochRef.current;
       setModelProvider(providerSlug);
       setModel(modelId);
-      void saveModel(providerSlug, modelId, profile);
+      void saveModel(providerSlug, modelId, profile, connectionScope(host, username));
       if (!host) return;
       setToolLine('setting global default…');
       try {
-        await setMainModel(host, cookie.current, providerSlug, modelId, profile);
+        await setMainModel(host, cookie.current, providerSlug, modelId, profile, async (nextCookie) => {
+          if (activeProfileRef.current !== profile) return;
+          await acceptRotatedCookie(nextCookie, host, username, connectionEpoch, epoch);
+        });
         if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
         setMessages((prev) => [
           ...prev,
-          { id: nid(), role: 'notice', text: `Global default → ${providerSlug ? `${providerSlug}:` : ''}${modelId}` },
+          {
+            id: nid(),
+            role: 'notice',
+            text: `Global default → ${providerSlug ? `${providerSlug}:` : ''}${modelId}`,
+          },
         ]);
       } catch (e) {
         if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
-        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Global set failed: ${errMsg(e)}` }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nid(),
+            role: 'notice',
+            text: `Global set failed: ${errMsg(e)}`,
+          },
+        ]);
       } finally {
         if (activeProfileRef.current === profile && profileEpochRef.current === epoch) {
           setToolLine(null);
         }
       }
     },
-    [activeProfile, host],
+    [acceptRotatedCookie, activeProfile, host, username],
   );
 
   const jumpToRecent = useCallback(async () => {
@@ -3734,7 +4179,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const owner = profileSessionKey(profile, recentId);
         runtimeOwners.current.set(liveId, owner);
         bindAskOwner(liveId, {
-          connectionId: latest.current.host,
+          connectionId: connectionScope(latest.current.host, latest.current.username),
           profile,
           storedSessionId: recentId,
           runtimeSessionId: liveId,
@@ -3787,123 +4232,257 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [conn, host, activeProfile, profiles, sessionId, sessionKey, model, modelProvider, effort, queued.length, askInbox],
   );
   const getCookie = useCallback(() => cookie.current, []);
+  const getConnectionEpoch = useCallback(() => connectionEpochRef.current, []);
+  const getAuthScope = useCallback(() => `${connectionEpochRef.current}:${profileEpochRef.current}`, []);
 
-  const opsGet = useCallback(async (path: string) => dashboardOpsGet(host, cookie.current, path), [host]);
+  const opsGet = useCallback(
+    async (path: string) => {
+      const scope = getAuthScope();
+      const targetHost = host;
+      const targetUser = username;
+      const requestCookie = cookie.current;
+      const onCookie = async (nextCookie: string) => {
+        if (getAuthScope() !== scope) return;
+        cookie.current = nextCookie;
+        cookieScope.current = connectionScope(targetHost, targetUser);
+        await saveCookie(nextCookie, targetHost, targetUser);
+      };
+      const result = await dashboardOpsGet(targetHost, requestCookie, path, onCookie);
+      if (getAuthScope() !== scope) throw new Error('Connection superseded');
+      return result;
+    },
+    [getAuthScope, host, username],
+  );
   const opsMut = useCallback(
-    async (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) =>
-      dashboardOpsMut(host, cookie.current, path, method, body),
-    [host],
+    async (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => {
+      const scope = getAuthScope();
+      const targetHost = host;
+      const targetUser = username;
+      const requestCookie = cookie.current;
+      const onCookie = async (nextCookie: string) => {
+        if (getAuthScope() !== scope) return;
+        cookie.current = nextCookie;
+        cookieScope.current = connectionScope(targetHost, targetUser);
+        await saveCookie(nextCookie, targetHost, targetUser);
+      };
+      const result = await dashboardOpsMut(targetHost, requestCookie, path, method, body, onCookie);
+      if (getAuthScope() !== scope) throw new Error('Connection superseded');
+      return result;
+    },
+    [getAuthScope, host, username],
   );
 
   const value: AppStore = useMemo(
     () => ({
-    booting,
-    authed,
-    busy,
-    error,
-    host,
-    setHost,
-    username,
-    setUsername,
-    password,
-    setPassword,
-    conn,
-    activeProfile,
-    profiles,
-    refreshProfiles,
-    switchProfile,
-    sessions,
-    openingId,
-    sessionId,
-    sessionKey,
-    sessionTitle,
-    messages,
-    streamingTexts,
-    input,
-    setInput,
-    model,
-    modelProvider,
-    effort,
-    setEffort,
-    applyEffort,
-    applyFast,
-    providers,
-    providersLoading,
-    providersError,
-    attachments,
-    setAttachments,
-    generating,
-    copiedId,
-    infoOpen,
-    setInfoOpen,
-    infoSeq,
-    sessionInfo,
-    usageInfo,
-    usageLoading,
-    toolLine,
-    ask,
-    askInbox,
-    pendingAskCount: pendingAsks(askInbox).length,
-    openAskEntry,
-    answerInboxValue,
-    answerInboxApproval,
-    connect,
-    login,
-    logout,
-    refreshSessions,
-    loadMoreSessions,
-    sessionsHasMore,
-    sessionsLoadingMore,
-    openSession,
-    newSession,
-    send,
-    stop,
-    openInfo,
-    loadProviders,
-    loadCommandsCatalog,
-    queued,
-    queueParked,
-    enqueueQueued,
-    removeQueued,
-    clearQueue,
-    resumeQueue,
-    sendQueuedNow,
-    editingRowId,
-    editMessage,
-    cancelEdit,
-    regenerate,
-    pasteLarge,
-    applyApprovalMode,
-    branchSession,
-    notificationsEnabled: notifyEnabled,
-    setNotifications,
-    todos,
-    subagents,
-    refreshToolResults,
-    pickModel,
-    copyText,
-    answerValue,
-    answerApproval,
-    answerAsk,
-    dismissAsk,
-    theme,
-    themeMode,
-    setTheme,
-    toggleTheme,
-    renameSession,
-    deleteSessionById,
-    closeCurrent,
-    redirectLive,
-    setGlobalModel,
-    jumpToRecent,
-    opsGet,
-    opsMut,
-    getGw,
-    diagnostics,
-    getCookie,
+      booting,
+      authed,
+      busy,
+      error,
+      host,
+      setHost,
+      username,
+      setUsername,
+      password,
+      setPassword,
+      conn,
+      activeProfile,
+      profiles,
+      refreshProfiles,
+      switchProfile,
+      sessions,
+      openingId,
+      sessionId,
+      sessionKey,
+      sessionTitle,
+      messages,
+      streamingTexts,
+      input,
+      setInput,
+      model,
+      modelProvider,
+      effort,
+      setEffort,
+      applyEffort,
+      applyFast,
+      providers,
+      providersLoading,
+      providersError,
+      attachments,
+      setAttachments,
+      generating,
+      copiedId,
+      infoOpen,
+      setInfoOpen,
+      infoSeq,
+      sessionInfo,
+      usageInfo,
+      usageLoading,
+      toolLine,
+      ask,
+      askInbox,
+      pendingAskCount: pendingAsks(askInbox).length,
+      openAskEntry,
+      answerInboxValue,
+      answerInboxApproval,
+      connect,
+      login,
+      logout,
+      refreshSessions,
+      loadMoreSessions,
+      sessionsHasMore,
+      sessionsLoadingMore,
+      openSession,
+      newSession,
+      send,
+      stop,
+      openInfo,
+      loadProviders,
+      loadCommandsCatalog,
+      queued,
+      queueParked,
+      enqueueQueued,
+      removeQueued,
+      clearQueue,
+      resumeQueue,
+      sendQueuedNow,
+      editingRowId,
+      editMessage,
+      cancelEdit,
+      regenerate,
+      pasteLarge,
+      applyApprovalMode,
+      branchSession,
+      notificationsEnabled: notifyEnabled,
+      setNotifications,
+      todos,
+      subagents,
+      refreshToolResults,
+      pickModel,
+      copyText,
+      answerValue,
+      answerApproval,
+      answerAsk,
+      dismissAsk,
+      theme,
+      themeMode,
+      setTheme,
+      toggleTheme,
+      renameSession,
+      deleteSessionById,
+      closeCurrent,
+      redirectLive,
+      setGlobalModel,
+      jumpToRecent,
+      opsGet,
+      opsMut,
+      getGw,
+      diagnostics,
+      getCookie,
+      getConnectionEpoch,
+      getAuthScope,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [booting, authed, busy, error, host, username, password, conn, activeProfile, profiles, refreshProfiles, switchProfile, sessions, openingId, sessionId, sessionKey, sessionTitle, messages, streamingTexts, input, setInput, model, modelProvider, effort, applyEffort, applyFast, providers, providersLoading, providersError, attachments, generating, copiedId, infoOpen, infoSeq, sessionInfo, usageInfo, usageLoading, toolLine, ask, askInbox, openAskEntry, answerInboxValue, answerInboxApproval, connect, login, logout, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, openSession, newSession, send, stop, openInfo, loadProviders, loadCommandsCatalog, queued, queueParked, enqueueQueued, removeQueued, clearQueue, resumeQueue, sendQueuedNow, editingRowId, editMessage, cancelEdit, regenerate, pasteLarge, applyApprovalMode, branchSession, notifyEnabled, setNotifications, todos, subagents, refreshToolResults, pickModel, copyText, answerValue, answerApproval, answerAsk, dismissAsk, theme, themeMode, setTheme, toggleTheme, renameSession, deleteSessionById, closeCurrent, redirectLive, setGlobalModel, jumpToRecent, opsGet, opsMut, getGw, diagnostics, getCookie],
+    [
+      booting,
+      authed,
+      busy,
+      error,
+      host,
+      username,
+      password,
+      conn,
+      activeProfile,
+      profiles,
+      refreshProfiles,
+      switchProfile,
+      sessions,
+      openingId,
+      sessionId,
+      sessionKey,
+      sessionTitle,
+      messages,
+      streamingTexts,
+      input,
+      setInput,
+      model,
+      modelProvider,
+      effort,
+      applyEffort,
+      applyFast,
+      providers,
+      providersLoading,
+      providersError,
+      attachments,
+      generating,
+      copiedId,
+      infoOpen,
+      infoSeq,
+      sessionInfo,
+      usageInfo,
+      usageLoading,
+      toolLine,
+      ask,
+      askInbox,
+      openAskEntry,
+      answerInboxValue,
+      answerInboxApproval,
+      connect,
+      login,
+      logout,
+      refreshSessions,
+      loadMoreSessions,
+      sessionsHasMore,
+      sessionsLoadingMore,
+      openSession,
+      newSession,
+      send,
+      stop,
+      openInfo,
+      loadProviders,
+      loadCommandsCatalog,
+      queued,
+      queueParked,
+      enqueueQueued,
+      removeQueued,
+      clearQueue,
+      resumeQueue,
+      sendQueuedNow,
+      editingRowId,
+      editMessage,
+      cancelEdit,
+      regenerate,
+      pasteLarge,
+      applyApprovalMode,
+      branchSession,
+      notifyEnabled,
+      setNotifications,
+      todos,
+      subagents,
+      refreshToolResults,
+      pickModel,
+      copyText,
+      answerValue,
+      answerApproval,
+      answerAsk,
+      dismissAsk,
+      theme,
+      themeMode,
+      setTheme,
+      toggleTheme,
+      renameSession,
+      deleteSessionById,
+      closeCurrent,
+      redirectLive,
+      setGlobalModel,
+      jumpToRecent,
+      opsGet,
+      opsMut,
+      getGw,
+      diagnostics,
+      getCookie,
+      getConnectionEpoch,
+      getAuthScope,
+    ],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

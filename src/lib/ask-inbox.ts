@@ -2,7 +2,7 @@ export type AskInboxStatus =
   'pending' | 'answering' | 'sent' | 'answered' | 'cancelled' | 'stale';
 
 export interface AskOwner {
-  /** Stable identity for the gateway connection (the current host in the mobile client). */
+  /** Stable identity for the dashboard origin + authenticated account. */
   connectionId: string;
   /** Empty when the gateway did not provide enough metadata to resolve a profile. */
   profile: string;

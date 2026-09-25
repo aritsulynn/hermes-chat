@@ -1,7 +1,16 @@
 // Login route — connect to the dashboard (was the 'login' screen in App.tsx).
 import { useEffect, useRef, useState } from 'react';
 import { Redirect } from 'expo-router';
-import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AlertCircle, Fingerprint } from 'lucide-react-native';
@@ -36,17 +45,14 @@ export function LoginScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const [hw, enrolled] = await Promise.all([
-          LocalAuth.hasHardwareAsync(),
-          LocalAuth.isEnrolledAsync(),
-        ]);
-        const saved = await getPassword().catch(() => null);
+        const [hw, enrolled] = await Promise.all([LocalAuth.hasHardwareAsync(), LocalAuth.isEnrolledAsync()]);
+        const saved = await getPassword(host, username).catch(() => null);
         setBioAvailable(hw && enrolled && !!saved);
       } catch {
         setBioAvailable(false);
       }
     })();
-  }, []);
+  }, [host, username]);
 
   const submit = () => {
     if (busy) return;
@@ -56,14 +62,19 @@ export function LoginScreen() {
 
   const bioLogin = async () => {
     try {
-      const r = await LocalAuth.authenticateAsync({ promptMessage: 'Unlock Hermes' });
+      const r = await LocalAuth.authenticateAsync({
+        promptMessage: 'Unlock Hermes',
+      });
       if (r.success) await login();
     } catch {}
   };
 
   if (booting) {
     return (
-      <SafeAreaView className="flex-1 bg-white dark:bg-black items-center justify-center gap-3" edges={['top', 'left', 'right', 'bottom']}>
+      <SafeAreaView
+        className="flex-1 bg-white dark:bg-black items-center justify-center gap-3"
+        edges={['top', 'left', 'right', 'bottom']}
+      >
         <StatusBar style="auto" />
         <ActivityIndicator size="large" />
         <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
@@ -83,7 +94,12 @@ export function LoginScreen() {
         <ScrollView
           ref={scrollRef}
           className="flex-1"
-          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, paddingBottom: 24 + kbH }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            padding: 24,
+            paddingBottom: 24 + kbH,
+          }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -95,9 +111,7 @@ export function LoginScreen() {
             <Text className="mt-3 text-[28px] font-extrabold tracking-tight text-neutral-950 dark:text-neutral-100">
               Hermes
             </Text>
-            <Text className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Connect to your dashboard
-            </Text>
+            <Text className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Connect to your dashboard</Text>
           </View>
 
           {/* Credentials card */}
@@ -105,13 +119,7 @@ export function LoginScreen() {
             <Field label="Host" value={host} onChange={setHost} placeholder="http://your-server:9119" />
             <Field label="Username" value={username} onChange={setUsername} />
             <View className="-mb-2">
-              <Field
-                label="Password"
-                value={password}
-                onChange={setPassword}
-                secure
-                onSubmit={submit}
-              />
+              <Field label="Password" value={password} onChange={setPassword} secure onSubmit={submit} />
             </View>
           </View>
 

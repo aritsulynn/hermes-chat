@@ -1,6 +1,13 @@
 // User-configurable Hermes capability groups, ported from Hermes Desktop's
 // Capabilities → Toolsets REST surface. These changes are profile-wide and
 // apply to newly created chats; the active session keeps its current schema.
+//
+// NOTE: the import below carries an explicit `.ts` extension. This module is
+// loaded directly by node's test runner (--experimental-strip-types), and node
+// ESM does not do extensionless resolution. Keep it that way here.
+import { DEFAULT_PROFILE } from './constants.ts';
+import { toolsetToggle, toolsets as toolsetsPath } from './api.ts';
+
 export interface ToolsetInfo {
   name: string;
   label?: string;
@@ -44,15 +51,11 @@ function rowsOf(payload: unknown): ToolsetInfo[] {
     })) as ToolsetInfo[];
 }
 
-function profileQuery(profile: string): string {
-  return `profile=${encodeURIComponent(String(profile ?? '').trim() || 'default')}`;
-}
-
 export async function getToolsets(
   opsGet: (path: string) => Promise<any>,
   profile: string,
 ): Promise<ToolsetInfo[]> {
-  return rowsOf(await opsGet(`/api/tools/toolsets?${profileQuery(profile)}`));
+  return rowsOf(await opsGet(toolsetsPath(profile)));
 }
 
 export async function setToolsetEnabled(
@@ -61,10 +64,6 @@ export async function setToolsetEnabled(
   enabled: boolean,
   profile: string,
 ): Promise<ToolsetToggleResult> {
-  const result = await opsMut(
-    `/api/tools/toolsets/${encodeURIComponent(name)}?${profileQuery(profile)}`,
-    'PUT',
-    { enabled },
-  );
+  const result = await opsMut(toolsetToggle(name, profile), 'PUT', { enabled });
   return result && typeof result === 'object' ? (result as ToolsetToggleResult) : {};
 }

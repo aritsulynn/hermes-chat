@@ -1,6 +1,11 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { connectionScope, normalizeConnectionBase } from './connection-scope';
+import { DEFAULT_PROFILE } from './constants';
+
+export { connectionScope, normalizeConnectionBase } from './connection-scope';
+export { DEFAULT_PROFILE } from './constants';
 
 // Connection + credential vault. Secrets (password, session cookie) live in
 // SecureStore (encrypted at rest). Non-secrets (host, username) live in
@@ -15,11 +20,15 @@ const useWebStore = Platform.OS === 'web';
 // host/user/pw/cookie/theme/model back-to-back — cache so repeats are free.
 // Writes update the cache synchronously; deletes evict it.
 const memCache = new Map<string, string | null>();
+// Serialize physical writes per key. A late cookie rotation must not win over
+// the clear that follows logout, even when SecureStore calls resolve out of order.
+const storageTails = new Map<string, Promise<void>>();
 
 const K_HOST = 'hermes.conn.host';
 const K_USERNAME = 'hermes.conn.username';
 const K_PASSWORD = 'hermes.conn.password';
 const K_COOKIE = 'hermes.conn.cookie';
+const K_SCOPED_SECRET_PREFIX = 'hermes.conn.secret.';
 const K_THEME = 'hermes.ui.theme';
 const K_ACTIVE_PROFILE = 'hermes.ui.activeProfile';
 const K_LAST_SESSION = 'hermes.ui.lastSession';
@@ -28,7 +37,10 @@ const K_MODEL = 'hermes.ui.model';
 const K_MODEL_PREFIX = 'hermes.ui.model.profile';
 const K_MODEL_PROVIDER = 'hermes.ui.modelProvider';
 const K_MODEL_PROVIDER_PREFIX = 'hermes.ui.modelProvider.profile';
-const DEFAULT_PROFILE = 'default';
+
+function scopedSecretKey(kind: 'password' | 'cookie', host: string, username: string): string {
+  return `${K_SCOPED_SECRET_PREFIX}${kind}.${encodeURIComponent(connectionScope(host, username))}`;
+}
 
 function normalizeProfile(profile: string | null | undefined): string {
   return String(profile ?? '').trim() || DEFAULT_PROFILE;
@@ -38,21 +50,34 @@ function profileStorageKey(prefix: string, profile: string): string {
   return `${prefix}.${encodeURIComponent(normalizeProfile(profile))}`;
 }
 
-/** Persist the global UI profile independently from the server's launch profile. */
-export async function saveActiveProfile(profile: string): Promise<void> {
+function accountProfileStorageKey(prefix: string, profile: string, scope: string): string {
+  const normalizedScope = String(scope ?? '').trim();
+  return normalizedScope
+    ? `${prefix}.account.${encodeURIComponent(normalizedScope)}.profile.${encodeURIComponent(normalizeProfile(profile))}`
+    : profileStorageKey(prefix, profile);
+}
+
+/** Persist the selected profile per dashboard account when a scope is supplied. */
+export async function saveActiveProfile(profile: string, scope = ''): Promise<void> {
+  if (scope) {
+    await set(accountProfileStorageKey(K_ACTIVE_PROFILE, DEFAULT_PROFILE, scope), normalizeProfile(profile));
+    return;
+  }
   await set(K_ACTIVE_PROFILE, normalizeProfile(profile));
 }
 
-export async function getActiveProfile(): Promise<string | null> {
+export async function getActiveProfile(scope = ''): Promise<string | null> {
+  if (scope) return get(accountProfileStorageKey(K_ACTIVE_PROFILE, DEFAULT_PROFILE, scope));
   return get(K_ACTIVE_PROFILE);
 }
 
 /** Remember the session the user was viewing in each profile. */
-export async function saveLastSession(id: string, profile = DEFAULT_PROFILE): Promise<void> {
-  if (id) await set(profileStorageKey(K_LAST_SESSION_PREFIX, profile), id);
+export async function saveLastSession(id: string, profile = DEFAULT_PROFILE, scope = ''): Promise<void> {
+  if (id) await set(accountProfileStorageKey(K_LAST_SESSION_PREFIX, profile, scope), id);
 }
 
-export async function getLastSession(profile = DEFAULT_PROFILE): Promise<string | null> {
+export async function getLastSession(profile = DEFAULT_PROFILE, scope = ''): Promise<string | null> {
+  if (scope) return get(accountProfileStorageKey(K_LAST_SESSION_PREFIX, profile, scope));
   const scoped = await get(profileStorageKey(K_LAST_SESSION_PREFIX, profile));
   if (scoped) return scoped;
   // Migrate the pre-profile value only into the default namespace.
@@ -62,18 +87,24 @@ export async function getLastSession(profile = DEFAULT_PROFILE): Promise<string 
 const K_NOTIFY = 'hermes.ui.notify';
 
 /** Remember the last picked model per profile across restarts. */
-export async function saveModel(
-  provider: string,
-  model: string,
-  profile = DEFAULT_PROFILE,
-): Promise<void> {
+export async function saveModel(provider: string, model: string, profile = DEFAULT_PROFILE, scope = ''): Promise<void> {
   await Promise.all([
-    set(profileStorageKey(K_MODEL_PROVIDER_PREFIX, profile), provider ?? ''),
-    set(profileStorageKey(K_MODEL_PREFIX, profile), model ?? ''),
+    set(accountProfileStorageKey(K_MODEL_PROVIDER_PREFIX, profile, scope), provider ?? ''),
+    set(accountProfileStorageKey(K_MODEL_PREFIX, profile, scope), model ?? ''),
   ]);
 }
 
-export async function getModel(profile = DEFAULT_PROFILE): Promise<{ provider: string; model: string } | null> {
+export async function getModel(
+  profile = DEFAULT_PROFILE,
+  scope = '',
+): Promise<{ provider: string; model: string } | null> {
+  if (scope) {
+    const [scopedProvider, scopedModel] = await Promise.all([
+      get(accountProfileStorageKey(K_MODEL_PROVIDER_PREFIX, profile, scope)),
+      get(accountProfileStorageKey(K_MODEL_PREFIX, profile, scope)),
+    ]);
+    return scopedModel ? { provider: scopedProvider ?? '', model: scopedModel } : null;
+  }
   const [provider, model] = await Promise.all([
     get(profileStorageKey(K_MODEL_PROVIDER_PREFIX, profile)),
     get(profileStorageKey(K_MODEL_PREFIX, profile)),
@@ -95,11 +126,16 @@ export async function getNotifyEnabled(): Promise<boolean> {
 const K_KANBAN_BOARD = 'hermes.ui.kanbanBoard';
 
 /** Remember the selected kanban board across restarts. */
-export async function saveKanbanBoard(slug: string): Promise<void> {
+export async function saveKanbanBoard(slug: string, scope = ''): Promise<void> {
+  if (scope) {
+    await set(`${K_KANBAN_BOARD}.account.${encodeURIComponent(scope)}`, slug ?? '');
+    return;
+  }
   await set(K_KANBAN_BOARD, slug ?? '');
 }
 
-export async function getKanbanBoard(): Promise<string | null> {
+export async function getKanbanBoard(scope = ''): Promise<string | null> {
+  if (scope) return get(`${K_KANBAN_BOARD}.account.${encodeURIComponent(scope)}`);
   return get(K_KANBAN_BOARD);
 }
 
@@ -114,6 +150,10 @@ async function get(key: string): Promise<string | null> {
   try {
     const cached = memCache.get(key);
     if (cached !== undefined) return cached;
+    const pending = storageTails.get(key);
+    if (pending) await pending;
+    const afterWrite = memCache.get(key);
+    if (afterWrite !== undefined) return afterWrite;
     const v = useWebStore ? await AsyncStorage.getItem(key) : await SecureStore.getItemAsync(key);
     // Cache hits AND misses (null) so repeat boot reads don't hit keychain again.
     // Miss cache is short-lived to avoid stale first-run writes.
@@ -124,9 +164,27 @@ async function get(key: string): Promise<string | null> {
   }
 }
 
+function queueStorageWrite(key: string, write: () => Promise<void>): Promise<void> {
+  const previous = storageTails.get(key) ?? Promise.resolve();
+  const current = previous
+    .catch(() => {})
+    .then(async () => {
+      try {
+        await write();
+      } catch {
+        // Storage is best-effort (e.g. private mode) — never fail login over it.
+      }
+    });
+  storageTails.set(key, current);
+  void current.finally(() => {
+    if (storageTails.get(key) === current) storageTails.delete(key);
+  });
+  return current;
+}
+
 async function set(key: string, value: string): Promise<void> {
   memCache.set(key, value);
-  try {
+  await queueStorageWrite(key, async () => {
     if (useWebStore) {
       await AsyncStorage.setItem(key, value);
     } else {
@@ -134,29 +192,68 @@ async function set(key: string, value: string): Promise<void> {
         keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
     }
-  } catch {
-    // Storage is best-effort (e.g. private mode) — never fail login over it.
-  }
+  });
 }
 
 async function del(key: string): Promise<void> {
   memCache.delete(key);
-  try {
+  await queueStorageWrite(key, async () => {
     if (useWebStore) await AsyncStorage.removeItem(key);
     else await SecureStore.deleteItemAsync(key);
-  } catch {}
+  });
+}
+
+async function resolveScope(host?: string, username?: string): Promise<{ host: string; username: string } | null> {
+  const explicit = host !== undefined || username !== undefined;
+  if (explicit) {
+    const scopedHost = String(host ?? '').trim();
+    const scopedUser = String(username ?? '').trim();
+    return scopedHost && scopedUser ? { host: scopedHost, username: scopedUser } : null;
+  }
+  const [storedHost, storedUsername] = await Promise.all([get(K_HOST), get(K_USERNAME)]);
+  const scopedHost = String(storedHost ?? '').trim();
+  const scopedUser = String(storedUsername ?? '').trim();
+  return scopedHost && scopedUser ? { host: scopedHost, username: scopedUser } : null;
+}
+
+/** Read a secret only from the requested dashboard/account scope. */
+async function getScopedSecret(kind: 'password' | 'cookie', host?: string, username?: string): Promise<string | null> {
+  const explicitScope = host !== undefined || username !== undefined;
+  const scope = await resolveScope(host, username);
+  if (!scope) return null;
+  const scopedKey = scopedSecretKey(kind, scope.host, scope.username);
+  const current = await get(scopedKey);
+  if (current !== null) {
+    if (!explicitScope) await del(kind === 'password' ? K_PASSWORD : K_COOKIE);
+    return current;
+  }
+
+  // One-time migration for installs created before scoped credentials existed.
+  // Only the implicit saved scope may migrate; an explicitly requested host
+  // must never receive a legacy secret from a different dashboard.
+  if (!explicitScope) {
+    const legacyKey = kind === 'password' ? K_PASSWORD : K_COOKIE;
+    const legacy = await get(legacyKey);
+    if (legacy !== null) {
+      await set(scopedKey, legacy);
+      await del(legacyKey);
+    }
+    return legacy;
+  }
+  return null;
 }
 
 export async function loadConnection(): Promise<Connection> {
-  const [host, username, password, cookie] = await Promise.all([
-    get(K_HOST),
-    get(K_USERNAME),
-    get(K_PASSWORD),
-    get(K_COOKIE),
-  ]);
+  const [host, username] = await Promise.all([get(K_HOST), get(K_USERNAME)]);
+  const scopedHost = host ?? '';
+  const scopedUsername = username ?? '';
+  const [password, cookie] =
+    scopedHost && scopedUsername
+      ? await Promise.all([getScopedSecret('password'), getScopedSecret('cookie')])
+      : [null, null];
   return {
-    host: host ?? '',
-    username: username ?? '',
+    host: scopedHost,
+    username: scopedUsername,
     hasPassword: !!password,
     hasCookie: !!cookie,
   };
@@ -166,30 +263,42 @@ export async function saveHost(host: string, username: string): Promise<void> {
   await Promise.all([set(K_HOST, host.trim()), set(K_USERNAME, username.trim())]);
 }
 
-export async function savePassword(password: string): Promise<void> {
-  if (password) await set(K_PASSWORD, password);
+export async function savePassword(password: string, host?: string, username?: string): Promise<void> {
+  if (!password) return;
+  const scope = await resolveScope(host, username);
+  if (!scope) return;
+  await set(scopedSecretKey('password', scope.host, scope.username), password);
+  await del(K_PASSWORD);
 }
 
-export async function getPassword(): Promise<string | null> {
-  return get(K_PASSWORD);
+export async function getPassword(host?: string, username?: string): Promise<string | null> {
+  return getScopedSecret('password', host, username);
 }
 
-export async function saveCookie(cookie: string): Promise<void> {
+export async function saveCookie(cookie: string, host?: string, username?: string): Promise<void> {
   // Web keeps the real cookie in the browser jar (JS can't see it) and the
   // login flow yields an empty string — persist a marker so boot knows a
   // session may exist and attempts the silent reconnect (validated via me).
-  if (useWebStore) {
-    await set(K_COOKIE, cookie || 'web-jar');
+  const scope = await resolveScope(host, username);
+  if (!scope) return;
+  const value = useWebStore ? cookie || 'web-jar' : cookie;
+  const key = scopedSecretKey('cookie', scope.host, scope.username);
+  if (value) await set(key, value);
+  else await del(key);
+  await del(K_COOKIE);
+}
+
+export async function getCookie(host?: string, username?: string): Promise<string | null> {
+  return getScopedSecret('cookie', host, username);
+}
+
+export async function clearCookie(host?: string, username?: string): Promise<void> {
+  const scope = await resolveScope(host, username);
+  if (!scope) {
+    await del(K_COOKIE);
     return;
   }
-  if (cookie) await set(K_COOKIE, cookie);
-}
-
-export async function getCookie(): Promise<string | null> {
-  return get(K_COOKIE);
-}
-
-export async function clearCookie(): Promise<void> {
+  await del(scopedSecretKey('cookie', scope.host, scope.username));
   await del(K_COOKIE);
 }
 
@@ -205,6 +314,22 @@ export async function saveTheme(t: Theme): Promise<void> {
   await set(K_THEME, t);
 }
 
-export async function forgetAll(): Promise<void> {
-  await Promise.all([del(K_PASSWORD), del(K_COOKIE)]);
+export async function clearPassword(host?: string, username?: string): Promise<void> {
+  const scope = await resolveScope(host, username);
+  await del(K_PASSWORD);
+  if (scope) await del(scopedSecretKey('password', scope.host, scope.username));
+}
+
+export async function forgetAll(host?: string, username?: string): Promise<void> {
+  const scope = await resolveScope(host, username);
+  await Promise.all([
+    del(K_PASSWORD),
+    del(K_COOKIE),
+    ...(scope
+      ? [
+          del(scopedSecretKey('password', scope.host, scope.username)),
+          del(scopedSecretKey('cookie', scope.host, scope.username)),
+        ]
+      : []),
+  ]);
 }

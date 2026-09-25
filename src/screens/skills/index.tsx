@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Redirect } from 'expo-router';
 import { RefreshCw, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useApp } from '../../hooks/app-store';
@@ -24,7 +25,7 @@ import { getSkillContent, getSkills, setSkillEnabled } from '../../lib/skills';
 import type { SkillInfo } from '../../lib/skills';
 
 export function SkillsScreen() {
-  const { opsGet, opsMut, theme } = useApp();
+  const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
 
@@ -38,15 +39,27 @@ export function SkillsScreen() {
   const [content, setContent] = useState('');
   const [contentLoading, setContentLoading] = useState(false);
 
+  useEffect(() => {
+    if (authed) return;
+    setSkills(null);
+    setViewing(null);
+    setContent('');
+    setError(null);
+  }, [authed]);
+
   const load = useCallback(
     async (isRefresh = false) => {
+      const scope = getAuthScope();
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
       try {
-        setSkills(await getSkills(opsGet));
+        const next = await getSkills(opsGet);
+        if (getAuthScope() !== scope) return;
+        setSkills(next);
         setUnsupported(false);
       } catch (e) {
+        if (getAuthScope() !== scope) return;
         const msg = errMsg(e);
         if (/HTTP 404/.test(msg)) {
           setUnsupported(true);
@@ -55,49 +68,57 @@ export function SkillsScreen() {
           setError(msg);
         }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (getAuthScope() === scope) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
-    [opsGet],
+    [getAuthScope, opsGet],
   );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (authed) void load();
+  }, [authed, load]);
 
   const toggle = useCallback(
     async (name: string, enabled: boolean) => {
+      const scope = getAuthScope();
       setToggling(name);
       setSkills((prev) => (prev ?? []).map((s) => (s.name === name ? { ...s, enabled } : s)));
       try {
         await setSkillEnabled(opsMut, name, enabled);
+        if (getAuthScope() !== scope) return;
       } catch (e) {
+        if (getAuthScope() !== scope) return;
         setSkills((prev) => (prev ?? []).map((s) => (s.name === name ? { ...s, enabled: !enabled } : s)));
         Alert.alert('Toggle failed', errMsg(e));
       } finally {
-        setToggling(null);
+        if (getAuthScope() === scope) setToggling(null);
       }
     },
-    [opsMut],
+    [getAuthScope, opsMut],
   );
 
   const openContent = useCallback(
     async (name: string) => {
+      const scope = getAuthScope();
       setViewing(name);
       setContent('');
       setContentLoading(true);
       try {
         const res = await getSkillContent(opsGet, name);
-        setContent(res.content || '(empty)');
+        if (getAuthScope() === scope) setContent(res.content || '(empty)');
       } catch (e) {
-        setContent(`Couldn't load SKILL.md: ${errMsg(e)}`);
+        if (getAuthScope() === scope) setContent(`Couldn't load SKILL.md: ${errMsg(e)}`);
       } finally {
-        setContentLoading(false);
+        if (getAuthScope() === scope) setContentLoading(false);
       }
     },
-    [opsGet],
+    [getAuthScope, opsGet],
   );
+
+  if (!authed) return <Redirect href="/login" />;
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
@@ -112,9 +133,7 @@ export function SkillsScreen() {
           <View className="flex-row items-center gap-3">
             <HamburgerBtn />
             <View>
-              <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">
-                Skills
-              </Text>
+              <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Skills</Text>
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">
                 {loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
               </Text>
@@ -125,11 +144,7 @@ export function SkillsScreen() {
             hitSlop={8}
             className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
           >
-            <RefreshCw
-              size={18}
-              color={dark ? '#e5e5e5' : '#333'}
-              className={refreshing ? 'animate-spin' : ''}
-            />
+            <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
           </Pressable>
         </View>
 
@@ -172,7 +187,10 @@ export function SkillsScreen() {
                   >
                     <View className="flex-row items-center gap-2">
                       <Pressable className="min-w-0 flex-1" onPress={() => void openContent(name)}>
-                        <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100" numberOfLines={1}>
+                        <Text
+                          className="text-sm font-semibold text-neutral-900 dark:text-neutral-100"
+                          numberOfLines={1}
+                        >
                           {name}
                         </Text>
                         {!!s.description && (
@@ -201,7 +219,12 @@ export function SkillsScreen() {
         </ScrollView>
 
         {/* SKILL.md viewer */}
-        <Modal visible={viewing !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setViewing(null)}>
+        <Modal
+          visible={viewing !== null}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setViewing(null)}
+        >
           <View className="flex-1 bg-white dark:bg-neutral-950" style={{ paddingTop: 48 }}>
             <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
               <Text className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white" numberOfLines={1}>

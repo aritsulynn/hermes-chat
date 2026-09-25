@@ -97,7 +97,10 @@ export async function ensureNotificationCategories(): Promise<void> {
         {
           identifier: NOTIFICATION_ASK_APPROVE,
           buttonTitle: 'Allow once',
-          options: { opensAppToForeground: true, isAuthenticationRequired: true },
+          options: {
+            opensAppToForeground: true,
+            isAuthenticationRequired: true,
+          },
         },
         {
           identifier: NOTIFICATION_ASK_REJECT,
@@ -120,6 +123,7 @@ export async function ensureNotificationCategories(): Promise<void> {
           buttonTitle: 'Answer',
           options: {
             opensAppToForeground: true,
+            isAuthenticationRequired: true,
             textInput: {
               submitButtonTitle: 'Send',
               placeholder: 'Type your answer…',
@@ -270,8 +274,7 @@ function normalizeNotificationResponse(response: any): HermesNotificationRespons
   if (!response) return null;
   const data = response?.notification?.request?.content?.data;
   const rawAction = String(response?.actionIdentifier ?? NOTIFICATION_DEFAULT_ACTION);
-  const actionIdentifier =
-    rawAction === NOTIFICATION_LEGACY_DEFAULT_ACTION ? NOTIFICATION_DEFAULT_ACTION : rawAction;
+  const actionIdentifier = rawAction === NOTIFICATION_LEGACY_DEFAULT_ACTION ? NOTIFICATION_DEFAULT_ACTION : rawAction;
   return {
     actionIdentifier,
     data: data && typeof data === 'object' ? data : {},
@@ -284,9 +287,7 @@ function normalizeNotificationResponse(response: any): HermesNotificationRespons
  * launched from a notification action can handle the action after the gateway
  * reconnects. Returns an unsubscribe function.
  */
-export function onNotificationResponse(
-  cb: (response: HermesNotificationResponse) => void,
-): (() => void) | null {
+export function onNotificationResponse(cb: (response: HermesNotificationResponse) => void): (() => void) | null {
   try {
     if (Platform.OS === 'web') {
       browserResponseHandler = cb;
@@ -303,7 +304,9 @@ export function onNotificationResponse(
     const sub = N.addNotificationResponseReceivedListener(deliver);
     // Cold-start path. The API is async in SDK 57; older builds simply do not
     // expose it and the listener remains the fallback.
-    void N.getLastNotificationResponseAsync?.().then?.(deliver).catch?.(() => {});
+    void N.getLastNotificationResponseAsync?.()
+      .then?.(deliver)
+      .catch?.(() => {});
     return () => {
       try {
         sub?.remove?.();

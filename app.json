@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "scheme": "hermes-mobile",
     "ios": {
       "supportsTablet": true,
@@ -25,8 +24,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.lynn.hermesmobile",
-      "usesCleartextTraffic": true,
+      "package": "com.kirara.hermes",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -38,11 +40,24 @@
     },
     "plugins": [
       "./plugins/allow-cleartext.js",
+      "./plugins/secure-release-signing.js",
       "expo-secure-store",
       "expo-notifications",
       "expo-router",
       "expo-status-bar",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
       [
         "expo-navigation-bar",
         {

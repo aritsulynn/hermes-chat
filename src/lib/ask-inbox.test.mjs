@@ -28,6 +28,10 @@ test('ask keys include the owner namespace', () => {
     askKey(owner({ connectionId: 'host-b' }), 'srq-1'),
     askKey(owner(), 'srq-1'),
   );
+  assert.notEqual(
+    askKey(owner({ connectionId: 'host-a::account-b' }), 'srq-1'),
+    askKey(owner({ connectionId: 'host-a::account-a' }), 'srq-1'),
+  );
 });
 
 test('replayed asks upsert the same request after a runtime remint', () => {

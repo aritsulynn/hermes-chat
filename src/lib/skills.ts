@@ -3,6 +3,8 @@
 // Same backend REST contract, routed through the mobile app's authed ops
 // helpers (cookie auth, no Authorization header). All best-effort: older
 // backends without these routes reject, and callers degrade to a notice.
+import { skillContent, skills, skillToggle } from './api';
+
 export interface SkillInfo {
   name: string;
   description?: string;
@@ -21,7 +23,7 @@ function rowsOf(payload: unknown): SkillInfo[] {
 }
 
 export async function getSkills(opsGet: (path: string) => Promise<any>): Promise<SkillInfo[]> {
-  const res = await opsGet('/api/skills');
+  const res = await opsGet(skills());
   return rowsOf(res);
 }
 
@@ -29,7 +31,7 @@ export async function getSkillContent(
   opsGet: (path: string) => Promise<any>,
   name: string,
 ): Promise<{ content: string; name: string; path: string }> {
-  const res = await opsGet(`/api/skills/content?name=${encodeURIComponent(name)}`);
+  const res = await opsGet(skillContent(name));
   return {
     content: String((res as any)?.content ?? ''),
     name: String((res as any)?.name ?? name),
@@ -42,5 +44,5 @@ export async function setSkillEnabled(
   name: string,
   enabled: boolean,
 ): Promise<void> {
-  await opsMut('/api/skills/toggle', 'PUT', { name, enabled });
+  await opsMut(skillToggle(), 'PUT', { name, enabled });
 }

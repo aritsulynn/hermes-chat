@@ -16,6 +16,22 @@
 //   server→client ask:  {jsonrpc:"2.0", id:"srq-...", method, params:{session_id, ...}}
 //     → client replies  {jsonrpc:"2.0", id:"srq-...", result:{...}}
 //     → on timeout/cancel the server sends {method:"event", params:{type:"request.cancel", id, ...}}
+//
+// Explicit `.ts` specifiers below: node's test runner loads this file directly
+// (--experimental-strip-types) and does not do extensionless ESM resolution.
+import {
+  WS_AUTH_CLOSE_CODES,
+  WS_CLOSE_LOG_MAX,
+  WS_CONNECT_TIMEOUT_MS,
+  WS_HEARTBEAT_MS,
+  WS_INITIAL_BACKOFF_MS,
+  WS_MAX_BACKOFF_MS,
+  WS_REPLAY_HOLD_MAX,
+  WS_REPLAY_TIMEOUT_MS,
+  WS_RPC_TIMEOUT_MS,
+  WS_SEQ_MAP_MAX,
+  WS_TOKEN_FLUSH_MS,
+} from './constants.ts';
 
 export type ConnState = 'idle' | 'connecting' | 'ready' | 'reconnecting' | 'closed' | 'auth-expired';
 
@@ -71,14 +87,12 @@ export interface SlashCompletionsResult {
 function completionItems(r: any): SlashCompletionItem[] {
   const rows = Array.isArray(r?.items) ? r.items : [];
   return rows
-    .map(
-      (it: any): SlashCompletionItem => ({
-        text: typeof it?.text === 'string' ? it.text : '',
-        display: typeof it?.display === 'string' ? it.display : '',
-        meta: typeof it?.meta === 'string' ? it.meta : '',
-        ...(typeof it?.kind === 'string' ? { kind: it.kind } : {}),
-      }),
-    )
+    .map((it: any): SlashCompletionItem => ({
+      text: typeof it?.text === 'string' ? it.text : '',
+      display: typeof it?.display === 'string' ? it.display : '',
+      meta: typeof it?.meta === 'string' ? it.meta : '',
+      ...(typeof it?.kind === 'string' ? { kind: it.kind } : {}),
+    }))
     .filter((it: SlashCompletionItem) => it.text.trim().length > 0);
 }
 
@@ -105,7 +119,10 @@ function reasoningTextOf(m: any): string {
   push(m?.reasoning_content);
   push(m?.reasoning_details);
   const seen = new Set<string>();
-  return parts.filter((p) => (seen.has(p) ? false : (seen.add(p), true))).join('\n').trim();
+  return parts
+    .filter((p) => (seen.has(p) ? false : (seen.add(p), true)))
+    .join('\n')
+    .trim();
 }
 
 export interface ServerAsk {
@@ -128,7 +145,20 @@ export interface GatewayEvents {
   onToken?: (sessionId: string, delta: string) => void;
   onReasoning?: (sessionId: string, delta: string) => void;
   onInterim?: (sessionId: string, text: string) => void;
-  onTool?: (sessionId: string, info: { name?: string; preview?: string; summary?: string; inlineDiff?: string; result?: unknown; args?: unknown; context?: string; toolId?: string; phase: 'start' | 'progress' | 'generating' | 'complete' }) => void;
+  onTool?: (
+    sessionId: string,
+    info: {
+      name?: string;
+      preview?: string;
+      summary?: string;
+      inlineDiff?: string;
+      result?: unknown;
+      args?: unknown;
+      context?: string;
+      toolId?: string;
+      phase: 'start' | 'progress' | 'generating' | 'complete';
+    },
+  ) => void;
   onComplete?: (sessionId: string, text: string, raw?: any) => void;
   onNotice?: (sessionId: string, text: string) => void;
   onSessionInfo?: (sid: string, info: any) => void;
@@ -154,8 +184,8 @@ export interface ConnectOpts {
   /** Sessions whose missed events should be replayed after a reconnect (the
    *  app shows one session, so replaying others would corrupt its state). */
   replaySessions?: () => string[];
-  heartbeatMs?: number; // default 15000 (gateway.ping)
-  maxBackoffMs?: number; // default 15000
+  heartbeatMs?: number; // default WS_HEARTBEAT_MS (gateway.ping)
+  maxBackoffMs?: number; // default WS_MAX_BACKOFF_MS
 }
 
 /** In-app WS diagnostics — surfaced in the connect error so a failed
@@ -167,9 +197,8 @@ export interface WsDebug {
   lastEvent: string | null;
 }
 
-const PING_MS = 15000;
-
 let nextId = 1;
+const AUTH_CLOSE_CODES = new Set<number>(WS_AUTH_CLOSE_CODES);
 const SUPPORTED_SERVER_ASK_METHODS = new Set([
   'clarify',
   'approval',
@@ -187,10 +216,18 @@ export class GatewayWs {
   private replaySessions?: () => string[];
   private heartbeatMs: number;
   private maxBackoffMs: number;
-  private pending = new Map<number | string, { ok: (r: any) => void; fail: (e: RpcError) => void; timer: ReturnType<typeof setTimeout>; generation: number }>();
+  private pending = new Map<
+    number | string,
+    {
+      ok: (r: any) => void;
+      fail: (e: RpcError) => void;
+      timer: ReturnType<typeof setTimeout>;
+      generation: number;
+    }
+  >();
   private state: ConnState = 'idle';
   private closed = false;
-  private backoff = 1000;
+  private backoff = WS_INITIAL_BACKOFF_MS;
   private pingTimer: any = null;
   private reconnectTimer: any = null;
   private reconnectScheduled = false;
@@ -216,7 +253,12 @@ export class GatewayWs {
 
   /** Snapshot of handshake diagnostics for error messages / debugging. */
   wsDebug(): WsDebug {
-    return { opens: this.dbg.opens, errors: this.dbg.errors, closes: [...this.dbg.closes], lastEvent: this.dbg.lastEvent };
+    return {
+      opens: this.dbg.opens,
+      errors: this.dbg.errors,
+      closes: [...this.dbg.closes],
+      lastEvent: this.dbg.lastEvent,
+    };
   }
 
   constructor(opts: ConnectOpts) {
@@ -224,8 +266,8 @@ export class GatewayWs {
     this.events = opts.events;
     this.refreshUrl = opts.refreshUrl;
     this.replaySessions = opts.replaySessions;
-    this.heartbeatMs = opts.heartbeatMs ?? PING_MS;
-    this.maxBackoffMs = opts.maxBackoffMs ?? 15000;
+    this.heartbeatMs = opts.heartbeatMs ?? WS_HEARTBEAT_MS;
+    this.maxBackoffMs = opts.maxBackoffMs ?? WS_MAX_BACKOFF_MS;
   }
 
   private setState(s: ConnState) {
@@ -235,7 +277,7 @@ export class GatewayWs {
 
   /** Connect and wait for gateway.ready. Resolves true on ready, false on
    *  timeout/close/auth-reject so callers never hang forever. */
-  connect(timeoutMs = 15000): Promise<boolean> {
+  connect(timeoutMs = WS_CONNECT_TIMEOUT_MS): Promise<boolean> {
     this.closed = false;
     return new Promise((resolve) => {
       let done = false;
@@ -285,14 +327,17 @@ export class GatewayWs {
     if (this.closed) return;
     this.reconnectScheduled = false;
     const generation = ++this.socketGeneration;
-    this.failPendingForGeneration(generation - 1, { code: -32000, message: 'socket generation replaced' });
+    this.failPendingForGeneration(generation - 1, {
+      code: -32000,
+      message: 'socket generation replaced',
+    });
     this.replayGeneration = generation;
     this.replaying = false;
     this.replayOverflow = false;
     this.replayHold = null;
     this.tokenBuf.clear();
     this.reasoningBuf.clear();
-    this.setState(this.backoff > 1000 ? 'reconnecting' : 'connecting');
+    this.setState(this.backoff > WS_INITIAL_BACKOFF_MS ? 'reconnecting' : 'connecting');
     let ws: WebSocket;
     try {
       ws = new WebSocket(this.url);
@@ -309,7 +354,7 @@ export class GatewayWs {
 
     ws.onopen = () => {
       if (this.ws !== ws || this.closed) return;
-      this.backoff = 1000;
+      this.backoff = WS_INITIAL_BACKOFF_MS;
       this.dbg.opens++;
       this.startHeartbeat();
       // Advertise server-request answering so the backend actually sends
@@ -337,12 +382,15 @@ export class GatewayWs {
     ws.onclose = (ev: any) => {
       if (this.ws !== ws || generation !== this.socketGeneration) return;
       this.clearTimers();
-      this.dbg.closes.push({ code: typeof ev?.code === 'number' ? ev.code : undefined, reason: ev?.reason ? String(ev.reason) : undefined });
-      if (this.dbg.closes.length > 5) this.dbg.closes.shift();
+      this.dbg.closes.push({
+        code: typeof ev?.code === 'number' ? ev.code : undefined,
+        reason: ev?.reason ? String(ev.reason) : undefined,
+      });
+      if (this.dbg.closes.length > WS_CLOSE_LOG_MAX) this.dbg.closes.shift();
       if (this.closed) return;
       // 4401/4403/4408 = credential rejected → refreshing the ticket won't help
       // without a fresh login.
-      if (ev?.code === 4401 || ev?.code === 4403 || ev?.code === 4408) {
+      if (typeof ev?.code === 'number' && AUTH_CLOSE_CODES.has(ev.code)) {
         this.setState('auth-expired');
         this.readyResolve?.(false);
         this.readyResolve = null;
@@ -359,10 +407,18 @@ export class GatewayWs {
     if (this.refreshUrl) {
       try {
         this.url = await this.refreshUrl();
-        this.backoff = 1000;
-      } catch {
-        // Mint failed (cookie expired?) — back off and retry; ultimately
-        // surfaces as auth-expired when the app re-logs-in.
+        this.backoff = WS_INITIAL_BACKOFF_MS;
+      } catch (e: any) {
+        // A rejected session cookie cannot be repaired by another ticket mint.
+        if (e?.status === 401 || e?.status === 403) {
+          this.reconnectScheduled = false;
+          this.setState('auth-expired');
+          this.readyResolve?.(false);
+          this.readyResolve = null;
+          return;
+        }
+        // Transient mint/network failure — back off and retry; the next attempt
+        // will surface auth-expired if the server rejects the session.
       }
     }
     if (this.closed) {
@@ -384,9 +440,11 @@ export class GatewayWs {
     const beat = () => {
       if (pingInFlight) return;
       pingInFlight = true;
-      this.call('gateway.ping', {}).catch(() => {}).finally(() => {
-        pingInFlight = false;
-      });
+      this.call('gateway.ping', {})
+        .catch(() => {})
+        .finally(() => {
+          pingInFlight = false;
+        });
     };
     this.pingTimer = setInterval(beat, this.heartbeatMs);
   }
@@ -414,7 +472,11 @@ export class GatewayWs {
 
   // ── RPC ────────────────────────────────────────────────────────────────
 
-  call(method: string, params: Record<string, any> = {}, timeoutMs = 120000): Promise<any> {
+  call(
+    method: string,
+    params: Record<string, any> = {},
+    timeoutMs = WS_RPC_TIMEOUT_MS,
+  ): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.ws || (this.ws as any).readyState !== 1) {
         reject({ code: -32000, message: 'not connected' } satisfies RpcError);
@@ -498,7 +560,7 @@ export class GatewayWs {
         const result = await this.call(
           'session.events.since',
           { session_id: id, last_seen: this.lastSeq.get(id) ?? 0 },
-          20000,
+          WS_REPLAY_TIMEOUT_MS,
         );
         if (Array.isArray(result?.open_requests)) {
           this.events.onAskSnapshot?.(
@@ -517,11 +579,16 @@ export class GatewayWs {
 
   private failUnsupportedAsk(ask: ServerAsk): void {
     try {
-      this.ws?.send(JSON.stringify({
-        jsonrpc: '2.0',
-        id: ask.rpcId,
-        error: { code: -32601, message: `unsupported server request: ${ask.method}` },
-      }));
+      this.ws?.send(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: ask.rpcId,
+          error: {
+            code: -32601,
+            message: `unsupported server request: ${ask.method}`,
+          },
+        }),
+      );
     } catch {}
   }
 
@@ -594,7 +661,12 @@ export class GatewayWs {
   }
 
   async createSession(
-    opts: { title?: string; model?: string; provider?: string; effort?: string } = {},
+    opts: {
+      title?: string;
+      model?: string;
+      provider?: string;
+      effort?: string;
+    } = {},
     profile?: string,
   ): Promise<{ sessionId: string; storedSessionId: string }> {
     const selectedProfile = String(profile ?? '').trim();
@@ -607,7 +679,10 @@ export class GatewayWs {
       // failures are ignored server-side, so this never breaks create.
       ...(opts.effort ? { reasoning_effort: opts.effort.toLowerCase() } : {}),
     });
-    return { sessionId: String(r?.session_id ?? ''), storedSessionId: String(r?.stored_session_id ?? '') };
+    return {
+      sessionId: String(r?.session_id ?? ''),
+      storedSessionId: String(r?.stored_session_id ?? ''),
+    };
   }
 
   /** Attach to a live session / reload durable one. Returns live payload. */
@@ -619,11 +694,9 @@ export class GatewayWs {
     profileOrOmitMessages?: boolean | string,
   ): Promise<any> {
     const profileFirst = typeof omitMessagesOrProfile === 'string';
-    const omitMessages = profileFirst
-      ? Boolean(profileOrOmitMessages)
-      : Boolean(omitMessagesOrProfile);
+    const omitMessages = profileFirst ? Boolean(profileOrOmitMessages) : Boolean(omitMessagesOrProfile);
     const selectedProfile = String(
-      profileFirst ? omitMessagesOrProfile : (profileOrOmitMessages as string | undefined) ?? '',
+      profileFirst ? omitMessagesOrProfile : ((profileOrOmitMessages as string | undefined) ?? ''),
     ).trim();
     return this.call('session.resume', {
       session_id: sessionId,
@@ -642,7 +715,11 @@ export class GatewayWs {
       if (m?.role === 'tool') {
         const name = typeof m?.name === 'string' ? m.name : '';
         const ctx = typeof m?.context === 'string' ? m.context : '';
-        return { role: 'tool', content: ctx || name, ...(name ? { name } : {}) };
+        return {
+          role: 'tool',
+          content: ctx || name,
+          ...(name ? { name } : {}),
+        };
       }
       let text = '';
       if (typeof m?.text === 'string') text = m.text;
@@ -665,7 +742,15 @@ export class GatewayWs {
     });
   }
 
-  async submit(sessionId: string, text: string, opts: { queued?: boolean; rewindRowId?: number; confirmEmptyTruncate?: boolean } = {}): Promise<'streaming' | 'queued'> {
+  async submit(
+    sessionId: string,
+    text: string,
+    opts: {
+      queued?: boolean;
+      rewindRowId?: number;
+      confirmEmptyTruncate?: boolean;
+    } = {},
+  ): Promise<'streaming' | 'queued'> {
     // NOTE: this backend validates params strictly — no model/provider/effort
     // here (they 400 "Extra inputs are not permitted"). Per-message model
     // override does not exist; switching is via slash.exec (/model).
@@ -708,11 +793,7 @@ export class GatewayWs {
     const selectedProfile = String(profile ?? '').trim();
     return this.call(
       'model.options',
-      sessionId
-        ? { session_id: sessionId }
-        : selectedProfile
-          ? { profile: selectedProfile }
-          : {},
+      sessionId ? { session_id: sessionId } : selectedProfile ? { profile: selectedProfile } : {},
     );
   }
 
@@ -725,7 +806,10 @@ export class GatewayWs {
    */
   switchModel(sessionId: string, model: string, provider?: string): Promise<any> {
     const arg = provider ? `${model} --provider ${provider}` : model;
-    return this.call('slash.exec', { session_id: sessionId, command: `/model ${arg}` });
+    return this.call('slash.exec', {
+      session_id: sessionId,
+      command: `/model ${arg}`,
+    });
   }
 
   deleteSession(sessionId: string, profile?: string): Promise<any> {
@@ -738,7 +822,10 @@ export class GatewayWs {
 
   /** Fork the current session into an independent copy (`session.branch`). */
   branchSession(sessionId: string, name?: string): Promise<any> {
-    return this.call('session.branch', { session_id: sessionId, ...(name ? { name } : {}) });
+    return this.call('session.branch', {
+      session_id: sessionId,
+      ...(name ? { name } : {}),
+    });
   }
 
   closeSession(sessionId: string): Promise<any> {
@@ -756,7 +843,10 @@ export class GatewayWs {
       text,
       ...(sessionId ? { session_id: sessionId } : {}),
     });
-    return { items: completionItems(r), replaceFrom: typeof r?.replace_from === 'number' ? r.replace_from : 1 };
+    return {
+      items: completionItems(r),
+      replaceFrom: typeof r?.replace_from === 'number' ? r.replace_from : 1,
+    };
   }
 
   /** `@…` completions for the word under the composer caret (the whole token,
@@ -844,7 +934,7 @@ export class GatewayWs {
     return this.call(
       'session.active_list',
       currentSessionId ? { current_session_id: currentSessionId } : {},
-      15000,
+      WS_CONNECT_TIMEOUT_MS,
     ).then((r: any) => {
       const rows = Array.isArray(r?.sessions) ? r.sessions : [];
       return rows.map((s: any) => ({
@@ -941,7 +1031,11 @@ export class GatewayWs {
         const lastSeen = this.lastSeq.get(sid) ?? 0;
         let r: any = null;
         try {
-          r = await this.call('session.events.since', { session_id: sid, last_seen: lastSeen }, 20000);
+          r = await this.call(
+            'session.events.since',
+            { session_id: sid, last_seen: lastSeen },
+            WS_REPLAY_TIMEOUT_MS,
+          );
         } catch {
           replayFailed = true;
           break;
@@ -995,7 +1089,7 @@ export class GatewayWs {
       // double-deliver (the replay carries the same seq) or advance the watermark
       // past the gap we're filling.
       if (this.replaying) {
-        if (this.replayHold && this.replayHold.length < 500) {
+        if (this.replayHold && this.replayHold.length < WS_REPLAY_HOLD_MAX) {
           this.replayHold?.push({ type, params });
         } else {
           this.replayOverflow = true;
@@ -1006,7 +1100,7 @@ export class GatewayWs {
       if (seq <= seen) return; // replayed / duplicate
       this.lastSeq.set(sid, seq);
       // Bound the per-session watermark map — sessions accumulate forever otherwise.
-      if (this.lastSeq.size > 200) {
+      if (this.lastSeq.size > WS_SEQ_MAP_MAX) {
         const oldest = this.lastSeq.keys().next().value;
         if (oldest !== undefined) this.lastSeq.delete(oldest);
       }
@@ -1037,7 +1131,7 @@ export class GatewayWs {
 
   private scheduleFlush() {
     if (this.flushTimer) return;
-    this.flushTimer = setTimeout(() => this.flushBuffers(), 50);
+    this.flushTimer = setTimeout(() => this.flushBuffers(), WS_TOKEN_FLUSH_MS);
   }
 
   private dispatch(type: string, sid: string, body: Record<string, any>) {
@@ -1091,13 +1185,28 @@ export class GatewayWs {
         this.events.onComplete?.(sid, strOf(body.text), body);
         break;
       case 'tool.start':
-        this.events.onTool?.(sid, { name: body?.name, args: body?.args, context: body?.context, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'start' });
+        this.events.onTool?.(sid, {
+          name: body?.name,
+          args: body?.args,
+          context: body?.context,
+          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
+          phase: 'start',
+        });
         break;
       case 'tool.progress':
-        this.events.onTool?.(sid, { name: body?.name, preview: body?.preview, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'progress' });
+        this.events.onTool?.(sid, {
+          name: body?.name,
+          preview: body?.preview,
+          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
+          phase: 'progress',
+        });
         break;
       case 'tool.generating':
-        this.events.onTool?.(sid, { name: body?.name, toolId: strOf(body?.tool_id ?? body?.id) || undefined, phase: 'generating' });
+        this.events.onTool?.(sid, {
+          name: body?.name,
+          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
+          phase: 'generating',
+        });
         break;
       case 'tool.complete':
         this.events.onTool?.(sid, {

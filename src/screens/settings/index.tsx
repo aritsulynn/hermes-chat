@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Redirect } from 'expo-router';
 import {
   Check,
   CircleUserRound,
@@ -24,7 +25,7 @@ import {
   User,
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
-import { HamburgerBtn } from '../../components';
+import { HamburgerBtn, UpdatePanel } from '../../components';
 import { notificationsSupported } from '../../lib/notifications';
 import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
@@ -61,6 +62,8 @@ export function SettingsScreen() {
     );
   }, [logout]);
 
+  if (!authed) return <Redirect href="/login" />;
+
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
     {/* No 'bottom' edge: the only bottom padding lives in the ScrollView
@@ -82,7 +85,11 @@ export function SettingsScreen() {
         </View>
       </View>
 
-      <ScrollView className="flex-1 px-4 py-4" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+      <ScrollView
+        className="flex-1 px-4 py-4"
+        nestedScrollEnabled
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+      >
         {/* Appearance Section */}
         <View className="mb-6">
           <View className="flex-row items-center gap-2 mb-2">
@@ -426,6 +433,11 @@ export function SettingsScreen() {
                 Copy diagnostics
               </Text>
             </Pressable>
+          </View>
+
+          {/* Server update: check / apply / live log stream. */}
+          <View className="mt-3">
+            <UpdatePanel />
           </View>
         </View>
 

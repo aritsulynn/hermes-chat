@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Redirect } from 'expo-router';
 import { Boxes, RefreshCw, Search } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components';
@@ -36,7 +37,7 @@ function displayLabel(toolset: ToolsetInfo): string {
 }
 
 export function ToolsetsScreen() {
-  const { activeProfile, opsGet, opsMut, theme } = useApp();
+  const { authed, activeProfile, opsGet, opsMut, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
 
@@ -52,17 +53,18 @@ export function ToolsetsScreen() {
   const load = useCallback(
     async (isRefresh = false) => {
       const profile = activeProfile;
+      const scope = getAuthScope();
       const epoch = ++loadEpoch.current;
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
       try {
         const next = await getToolsets(opsGet, profile);
-        if (activeProfile !== profile || loadEpoch.current !== epoch) return;
+        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
         setToolsets(next);
         setUnsupported(false);
       } catch (e) {
-        if (activeProfile !== profile || loadEpoch.current !== epoch) return;
+        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
         const msg = errMsg(e);
         if (/HTTP 404/.test(msg)) {
           setUnsupported(true);
@@ -71,39 +73,48 @@ export function ToolsetsScreen() {
           setError(msg);
         }
       } finally {
-        if (activeProfile === profile && loadEpoch.current === epoch) {
+        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) {
           setLoading(false);
           setRefreshing(false);
         }
       }
     },
-    [activeProfile, opsGet],
+    [activeProfile, getAuthScope, opsGet],
   );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (authed) void load();
+    else {
+      setToolsets(null);
+      setError(null);
+      setLoading(true);
+    }
+  }, [authed, load]);
 
   const toggle = useCallback(
     async (name: string, enabled: boolean) => {
       const profile = activeProfile;
+      const scope = getAuthScope();
       setToggling(name);
       setToolsets((prev) => (prev ?? []).map((row) => (row.name === name ? { ...row, enabled } : row)));
       try {
         const result = await setToolsetEnabled(opsMut, name, enabled, profile);
-        if (activeProfile !== profile) return;
+        if (getAuthScope() !== scope || activeProfile !== profile) return;
         if (result.post_setup_started) {
-          Alert.alert('Setup started', `${name} was enabled. Hermes is preparing its required dependency in the background.`);
+          Alert.alert(
+            'Setup started',
+            `${name} was enabled. Hermes is preparing its required dependency in the background.`,
+          );
         }
       } catch (e) {
-        if (activeProfile !== profile) return;
+        if (getAuthScope() !== scope || activeProfile !== profile) return;
         setToolsets((prev) => (prev ?? []).map((row) => (row.name === name ? { ...row, enabled: !enabled } : row)));
         Alert.alert('Toolset update failed', errMsg(e));
       } finally {
-        if (activeProfile === profile) setToggling(null);
+        if (getAuthScope() === scope && activeProfile === profile) setToggling(null);
       }
     },
-    [activeProfile, opsMut],
+    [activeProfile, getAuthScope, opsMut],
   );
 
   const visibleToolsets = useMemo(
@@ -115,11 +126,15 @@ export function ToolsetsScreen() {
     if (!q) return visibleToolsets;
     return visibleToolsets.filter((row) =>
       [row.name, row.label, row.description, ...(row.tools ?? [])].some((value) =>
-        String(value ?? '').toLowerCase().includes(q),
+        String(value ?? '')
+          .toLowerCase()
+          .includes(q),
       ),
     );
   }, [query, visibleToolsets]);
   const enabledCount = visibleToolsets.filter((row) => row.enabled).length;
+
+  if (!authed) return <Redirect href="/login" />;
 
   return (
     <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
@@ -188,7 +203,8 @@ export function ToolsetsScreen() {
           ) : unsupported ? (
             <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
               <Text className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-                Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability toolsets here.
+                Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability toolsets
+                here.
               </Text>
             </View>
           ) : error ? (
@@ -234,7 +250,9 @@ export function ToolsetsScreen() {
                         <Text
                           numberOfLines={1}
                           className={`text-sm font-semibold ${
-                            enabled ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
+                            enabled
+                              ? 'text-neutral-900 dark:text-neutral-100'
+                              : 'text-neutral-500 dark:text-neutral-400'
                           }`}
                         >
                           {label}

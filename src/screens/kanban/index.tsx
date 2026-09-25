@@ -20,7 +20,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useApp } from '../../hooks/app-store';
-import { getKanbanBoard, saveKanbanBoard } from '../../lib/connection';
+import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../lib/connection';
+import * as api from '../../lib/api';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn, Tap } from '../../components';
 
@@ -53,8 +54,6 @@ interface BoardMeta {
   is_current?: boolean;
   total?: number;
 }
-
-const API = '/api/plugins/kanban';
 
 // Column dot colors (same tones as the desktop COLUMN_META).
 const COLUMN_DOT: Record<string, string> = {
@@ -118,7 +117,7 @@ function CardChips({ t, dark }: { t: KanbanTask; dark: boolean }) {
 }
 
 export function KanbanScreen() {
-  const { booting, authed, opsGet, opsMut, theme } = useApp();
+  const { booting, authed, host, username, opsGet, opsMut, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -144,6 +143,15 @@ export function KanbanScreen() {
   // Bottom sheets sit under the keyboard on Android (edge-to-edge ignores
   // adjustResize), so lift them by hand like the chat dock does.
   const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    if (authed) return;
+    setBoards([]);
+    setSlug('');
+    setBoard(null);
+    setCollapsed({});
+    setDetail(null);
+    setError(null);
+  }, [authed]);
   useEffect(() => {
     const show = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
@@ -181,8 +189,10 @@ export function KanbanScreen() {
   );
 
   const loadBoards = useCallback(async (): Promise<BoardMeta[]> => {
+    const scope = getAuthScope();
     try {
-      const r: any = await opsGet(`${API}/boards`);
+      const r: any = await opsGet(api.kanbanBoards());
+      if (getAuthScope() !== scope) return [];
       const rows = Array.isArray(r?.boards) ? r.boards : [];
       const list: BoardMeta[] = rows.map((b: any) => ({
         slug: String(b?.slug ?? ''),
@@ -193,14 +203,16 @@ export function KanbanScreen() {
       setBoards(list);
       return list;
     } catch {
-      setBoards([]);
+      if (getAuthScope() === scope) setBoards([]);
       return [];
     }
-  }, [opsGet]);
+  }, [getAuthScope, opsGet]);
 
   const loadBoard = useCallback(async (): Promise<KanbanBoardData | null> => {
+    const scope = getAuthScope();
     try {
-      const r: any = await opsGet(`${API}/board${boardQuery('include_archived=true')}`);
+      const r: any = await opsGet(api.kanbanBoard(boardQuery('include_archived=true')));
+      if (getAuthScope() !== scope) return null;
       const cols = Array.isArray(r?.columns) ? r.columns : [];
       const data: KanbanBoardData = {
         columns: cols.map((c: any) => ({
@@ -212,11 +224,13 @@ export function KanbanScreen() {
       setError(null);
       return data;
     } catch (e) {
-      setError(errMsg(e));
-      setBoard(null);
+      if (getAuthScope() === scope) {
+        setError(errMsg(e));
+        setBoard(null);
+      }
       return null;
     }
-  }, [opsGet, boardQuery]);
+  }, [getAuthScope, opsGet, boardQuery]);
 
   const reload = useCallback(
     async (pull = false) => {
@@ -226,7 +240,7 @@ export function KanbanScreen() {
         const list = await loadBoards();
         // First run: restore the saved board, else the server current.
         if (!slug) {
-          const saved = await getKanbanBoard().catch(() => null);
+          const saved = await getKanbanBoard(connectionScope(host, username)).catch(() => null);
           const pick =
             (saved && list.some((b) => b.slug === saved) && saved) ||
             list.find((b) => b.is_current)?.slug ||
@@ -262,7 +276,7 @@ export function KanbanScreen() {
 
   const pickSlug = (s: string) => {
     setSlug(s);
-    void saveKanbanBoard(s);
+    void saveKanbanBoard(s, connectionScope(host, username));
   };
 
   const isCollapsed = (name: string, count: number) =>
@@ -281,9 +295,11 @@ export function KanbanScreen() {
   };
 
   const mutate = async (fn: () => Promise<unknown>, after?: () => void) => {
+    const scope = getAuthScope();
     setSaving(true);
     try {
       await fn();
+      if (getAuthScope() !== scope) return;
       const b = await loadBoard();
       after?.();
       // Keep the detail sheet on the fresh row so consecutive moves work.
@@ -298,15 +314,15 @@ export function KanbanScreen() {
         }
       }
     } catch (e) {
-      setError(errMsg(e));
+      if (getAuthScope() === scope) setError(errMsg(e));
     } finally {
-      setSaving(false);
+      if (getAuthScope() === scope) setSaving(false);
     }
   };
 
   const moveTask = (t: KanbanTask, status: string) => {
     if (!t.id || t.status === status) return;
-    void mutate(() => opsMut(`${API}/tasks/${encodeURIComponent(t.id)}${boardQuery()}`, 'PATCH', { status }));
+    void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'PATCH', { status }));
   };
 
   const saveDetail = () => {
@@ -318,9 +334,7 @@ export function KanbanScreen() {
       setDetail(null);
       return;
     }
-    void mutate(() =>
-      opsMut(`${API}/tasks/${encodeURIComponent(detail.id)}${boardQuery()}`, 'PATCH', patch),
-    );
+    void mutate(() => opsMut(api.kanbanTask(detail.id, boardQuery()), 'PATCH', patch));
   };
 
   const deleteDetail = () => {
@@ -332,7 +346,7 @@ export function KanbanScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () =>
-          void mutate(() => opsMut(`${API}/tasks/${encodeURIComponent(t.id)}${boardQuery()}`, 'DELETE')),
+          void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'DELETE')),
       },
     ]);
   };
@@ -344,7 +358,7 @@ export function KanbanScreen() {
     const status = (newStatus || cols.find((c) => c === 'todo') || cols.find((c) => c !== 'archived') || cols[0] || '').trim();
     void mutate(
       () =>
-        opsMut(`${API}/tasks${boardQuery()}`, 'POST', {
+        opsMut(api.kanbanTasks(boardQuery()), 'POST', {
           title,
           ...(newBody.trim() ? { body: newBody.trim() } : {}),
           ...(status ? { status } : {}),

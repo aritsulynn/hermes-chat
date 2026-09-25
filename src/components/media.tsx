@@ -34,7 +34,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, ImageOff, Share2, X } from 'lucide-react-native';
 import { useApp } from '../hooks/app-store';
 import { base64ToUtf8, mediaPathFromHref } from '../utils/messages';
-import { writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
+import {
+  getMediaCacheGeneration,
+  mediaCacheKey,
+  ratioCache,
+  serverFileCache,
+  serverFilePending,
+} from '../lib/media-cache';
+import { buildImageSource, shouldAttachDashboardCookie } from '../lib/media-policy';
+import { deleteAsync, writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
+import * as api from '../lib/api';
+import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../lib/constants';
 
 const REMOTE = /^(https?:|data:|blob:)/i;
 // Routes the dashboard serves itself (cookie auth) — no files read needed.
@@ -57,7 +67,6 @@ const basename = (s: string) => s.split(/[\\/]/).pop()?.split('?')[0] || s;
 // Text-ish payloads get an in-app preview; anything else (pdf, zip, video…)
 // says so rather than dumping mojibake into a <Text>.
 const TEXT_MIME = /^(text\/|application\/(json|xml|yaml|x-yaml|javascript|csv)|image\/svg)/i;
-const PREVIEW_MAX_CHARS = 20000;
 
 // `#media:` href, the `?path=` of a /api/files/read link, or a bare path.
 function pathOfHref(href: string): string | null {
@@ -72,23 +81,23 @@ function pathOfHref(href: string): string | null {
 // Server-side files sit behind three different gates: /api/media (the agent's
 // media roots — images only), /api/fs/read-data-url (any path) and
 // /api/files/read (the managed root the Files tab browses). Try in that order.
-// Results are memoized per path so scrolling an image-heavy transcript doesn't
-// refetch the same file per bubble mount. In-flight requests are shared too.
-const serverFileCache = new Map<string, string>();
-const serverFilePending = new Map<string, Promise<string>>();
+// Results are memoized per authenticated scope + path so scrolling an
+// image-heavy transcript doesn't refetch the same file per bubble mount.
 async function readServerFile(
   opsGet: (path: string) => Promise<any>,
   path: string,
+  cacheScope: string,
 ): Promise<string> {
-  const hit = serverFileCache.get(path);
+  const cacheKey = mediaCacheKey(cacheScope, path);
+  const generation = getMediaCacheGeneration();
+  const hit = serverFileCache.get(cacheKey);
   if (hit !== undefined) return hit;
-  const inflight = serverFilePending.get(path);
+  const inflight = serverFilePending.get(cacheKey);
   if (inflight) return inflight;
-  const q = encodeURIComponent(path);
   const attempts: [string, (r: any) => unknown][] = [
-    [`/api/media?path=${q}`, (r) => r?.data_url],
-    [`/api/fs/read-data-url?path=${q}`, (r) => r?.dataUrl],
-    [`/api/files/read?path=${q}`, (r) => r?.data_url],
+    [api.media(path), (r) => r?.data_url],
+    [api.mediaReadDataUrl(path), (r) => r?.dataUrl],
+    [api.mediaViaFiles(path), (r) => r?.data_url],
   ];
   const p = (async () => {
     for (const [url, pick] of attempts) {
@@ -97,34 +106,32 @@ async function readServerFile(
         const v = pick(
           await Promise.race([
             opsGet(url),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('media timeout')), 15000)),
+            new Promise((_, rej) =>
+              setTimeout(() => rej(new Error('media timeout')), MEDIA_FETCH_TIMEOUT_MS),
+            ),
           ]),
         );
         if (typeof v === 'string' && v.startsWith('data:')) {
-          // Bound the cache — image data URLs are large.
+          // Bound the cache — image data URLs are large. A logout/host switch
+          // invalidates the generation so an old in-flight response cannot
+          // repopulate the new authenticated scope.
+          if (getMediaCacheGeneration() !== generation) return v;
           if (serverFileCache.size > 40) {
             const oldest = serverFileCache.keys().next().value;
             if (oldest !== undefined) serverFileCache.delete(oldest);
           }
-          serverFileCache.set(path, v);
+          serverFileCache.set(cacheKey, v);
           return v;
         }
       } catch {}
     }
     return '';
   })().finally(() => {
-    serverFilePending.delete(path);
+    serverFilePending.delete(cacheKey);
   });
-  serverFilePending.set(path, p);
+  serverFilePending.set(cacheKey, p);
   return p;
 }
-
-const imageSource = (uri: string, cookie: string) => ({
-  uri,
-  ...(cookie && !/^data:/i.test(uri) ? { headers: { Cookie: cookie } } : {}),
-});
-
-const ratioCache = new Map<string, number>();
 
 /** Share or download a resolved media URI. Remote/relative sources share the URL;
  *  an embedded data URL is written to a cache file first; web uses the Web Share
@@ -153,9 +160,13 @@ async function shareUri(uri: string, name?: string): Promise<void> {
       const data = m?.[3] ?? '';
       const ext = (mime.split('/')[1] || 'bin').split('+')[0];
       const path = `${cacheDirectory ?? ''}hermes-${Date.now()}.${ext}`;
-      if (isB64) await writeAsStringAsync(path, data, { encoding: 'base64' });
-      else await writeAsStringAsync(path, decodeURIComponent(data));
-      await Share.share({ url: path });
+      try {
+        if (isB64) await writeAsStringAsync(path, data, { encoding: 'base64' });
+        else await writeAsStringAsync(path, decodeURIComponent(data));
+        await Share.share({ url: path });
+      } finally {
+        await deleteAsync(path, { idempotent: true }).catch(() => {});
+      }
       return;
     }
     await Share.share({ url: uri, message: uri });
@@ -164,9 +175,10 @@ async function shareUri(uri: string, name?: string): Promise<void> {
 
 // Resolve a markdown image src into something <Image> can actually load.
 function useResolvedImage(src: string) {
-  const { host, opsGet, getCookie } = useApp();
+  const { host, username, activeProfile, opsGet, getCookie } = useApp();
   const [uri, setUri] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const cacheScope = JSON.stringify([host, username, activeProfile, getCookie()]);
 
   useEffect(() => {
     let alive = true;
@@ -184,7 +196,7 @@ function useResolvedImage(src: string) {
     if (isWebPath(p)) return done(`${base(host)}${p}`);
     if (!looksLikeFilePath(p)) return fail();
 
-    void readServerFile(opsGet, p).then((d) => {
+    void readServerFile(opsGet, p, cacheScope).then((d) => {
       if (!d) return fail();
       if (!/^data:image\//i.test(d)) return fail();
       done(d);
@@ -192,9 +204,13 @@ function useResolvedImage(src: string) {
     return () => {
       alive = false;
     };
-  }, [src, host, opsGet]);
+  }, [src, host, opsGet, cacheScope]);
 
-  return { uri, error, cookie: getCookie() };
+  // Do not even read/passthrough the cookie for external images. React Native's
+  // Image loader does not share the app's fetch cookie jar, but a custom header
+  // on an arbitrary URI would disclose the dashboard session to that host.
+  const cookie = uri && shouldAttachDashboardCookie(uri, host) ? getCookie() : '';
+  return { uri, error, cookie, cacheScope };
 }
 
 // ── Image ───────────────────────────────────────────────────────────────────
@@ -222,7 +238,8 @@ function BrokenImage({ src, alt, dark }: { src: string; alt?: string; dark: bool
 }
 
 export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark: boolean }) {
-  const { uri, error, cookie } = useResolvedImage(src);
+  const { host } = useApp();
+  const { uri, error, cookie, cacheScope } = useResolvedImage(src);
   const [ratio, setRatio] = useState<number | null>(null);
   const [broken, setBroken] = useState(false);
   const { width: winW } = useWindowDimensions();
@@ -234,7 +251,7 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     boxH = 340;
     if (ratio) boxW = Math.round(boxH * ratio);
   }
-  const imgSource = useMemo(() => imageSource(uri ?? '', cookie), [uri, cookie]);
+  const imgSource = useMemo(() => buildImageSource(uri ?? '', host, cookie), [uri, host, cookie]);
   const boxStyle = useMemo(
     () => ({
       width: boxW,
@@ -248,7 +265,8 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
   // Cached aspect ratios so thumbnail + preview of the same URI cost one native call.
   useEffect(() => {
     if (!uri) return;
-    const cached = ratioCache.get(uri);
+    const ratioKey = mediaCacheKey(cacheScope, uri);
+    const cached = ratioCache.get(ratioKey);
     if (cached) {
       setRatio(cached);
       return;
@@ -266,7 +284,7 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
               const oldest = ratioCache.keys().next().value;
               if (oldest !== undefined) ratioCache.delete(oldest);
             }
-            ratioCache.set(uri, r);
+            ratioCache.set(ratioKey, r);
             setRatio(r);
           }
         },
@@ -276,7 +294,7 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     return () => {
       alive = false;
     };
-  }, [uri]);
+  }, [uri, cacheScope]);
 
   // Falls back to the file name so the viewer always has a caption.
   const caption = alt || basename(serverPath(src));
@@ -286,7 +304,11 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     return (
       <View
         className="my-1 items-center justify-center rounded-[10px]"
-        style={{ width: boxW, height: 120, backgroundColor: dark ? '#1b1b1b' : '#e9e9ee' }}
+        style={{
+          width: boxW,
+          height: 120,
+          backgroundColor: dark ? '#1b1b1b' : '#e9e9ee',
+        }}
       >
         <ActivityIndicator size="small" color={dark ? '#888' : '#666'} />
       </View>
@@ -298,22 +320,14 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
       className="my-1"
       style={{ width: boxW, height: boxH }}
     >
-      <Image
-        source={imgSource}
-        resizeMode="contain"
-        onError={() => setBroken(true)}
-        style={boxStyle}
-      />
+      <Image source={imgSource} resizeMode="contain" onError={() => setBroken(true)} style={boxStyle} />
     </Pressable>
   );
 }
 
 // ── File link / preview ─────────────────────────────────────────────────────
 
-type Preview =
-  | { kind: 'image'; uri: string; caption?: string }
-  | { kind: 'text'; text: string }
-  | { kind: 'other' };
+type Preview = { kind: 'image'; uri: string; caption?: string } | { kind: 'text'; text: string } | { kind: 'other' };
 
 // Markdown groups inline tokens inside a <Text>, so the link rule must return
 // text (a Modal nested in a Text is not a thing). The preview therefore lives
@@ -322,7 +336,11 @@ let previewListener: ((p: Preview | null) => void) | null = null;
 const showPreview = (p: Preview | null) => previewListener?.(p);
 
 export function FilePreviewHost() {
+  const { authed } = useApp();
   const [preview, setPreview] = useState<Preview | null>(null);
+  useEffect(() => {
+    if (!authed) setPreview(null);
+  }, [authed]);
   useEffect(() => {
     previewListener = setPreview;
     return () => {
@@ -332,24 +350,25 @@ export function FilePreviewHost() {
   return <FilePreviewModal preview={preview} onClose={() => setPreview(null)} />;
 }
 
-function FilePreviewModal({
-  preview,
-  onClose,
-}: {
-  preview: Preview | null;
-  onClose: () => void;
-}) {
+function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClose: () => void }) {
   const insets = useSafeAreaInsets();
-  const { getCookie } = useApp();
+  const { host, getCookie } = useApp();
   if (!preview) return null;
+  const previewCookie = preview.kind === 'image' && shouldAttachDashboardCookie(preview.uri, host) ? getCookie() : '';
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <View className="flex-1 bg-black/95" style={{ paddingTop: insets.top + 44, paddingBottom: insets.bottom + 12 }}>
+      <View
+        className="flex-1 bg-black/95"
+        style={{
+          paddingTop: insets.top + 44,
+          paddingBottom: insets.bottom + 12,
+        }}
+      >
         {preview.kind === 'image' ? (
           <>
             <Pressable className="flex-1 items-center justify-center p-3" onPress={onClose}>
               <Image
-                source={imageSource(preview.uri, getCookie())}
+                source={buildImageSource(preview.uri, host, previewCookie)}
                 resizeMode="contain"
                 style={{ width: '100%', height: '100%' }}
               />
@@ -410,7 +429,7 @@ export function FileChip({
   label: string;
   textStyle?: StyleProp<TextStyle>;
 }) {
-  const { host, opsGet } = useApp();
+  const { host, username, activeProfile, opsGet, getCookie } = useApp();
   const [busy, setBusy] = useState(false);
 
   const open = useCallback(async () => {
@@ -422,18 +441,22 @@ export function FileChip({
     }
     setBusy(true);
     try {
-      const d = await readServerFile(opsGet, path);
+      const cacheScope = JSON.stringify([host, username, activeProfile, getCookie()]);
+      const d = await readServerFile(opsGet, path, cacheScope);
       const mime = d.match(/^data:([^;,]+)/)?.[1] ?? '';
       if (mime.startsWith('image/')) showPreview({ kind: 'image', uri: d });
       else if (TEXT_MIME.test(mime)) {
         const b64 = d.split(';base64,')[1] ?? '';
         // Slice BEFORE decode — decoding a multi-MB file just to show 20k chars spikes memory.
-        showPreview({ kind: 'text', text: base64ToUtf8(b64.slice(0, 30000)).slice(0, PREVIEW_MAX_CHARS) });
+        showPreview({
+          kind: 'text',
+          text: base64ToUtf8(b64.slice(0, 30000)).slice(0, PREVIEW_MAX_CHARS),
+        });
       } else showPreview({ kind: 'other' });
     } finally {
       setBusy(false);
     }
-  }, [href, host, opsGet]);
+  }, [href, host, username, activeProfile, opsGet, getCookie]);
 
   // Inline <Text>: the markdown pipeline puts link tokens inside a textgroup
   // Text, so this must not be a View.

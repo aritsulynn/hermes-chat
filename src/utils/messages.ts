@@ -394,12 +394,16 @@ export function flattenLists(text: string): string {
 // ── Composer options ─────────────────────────────────────────────────────────
 // Real picker inventory comes from the gateway (WS model.options, fallback
 // REST GET /api/model/options). This is only the offline fallback.
+//
+// Deliberately carries NO model names: a fabricated entry would render as a
+// selectable model that the server then rejects. `models: null` makes the
+// picker show an empty, honest list while the gateway is unreachable.
 
 export const FALLBACK_PROVIDERS: ModelProviderOption[] = [
   {
     slug: '',
     name: 'Default',
-    models: ['Muse Spark 1.3 Free', 'opus', 'sonnet', 'haiku'],
-    totalModels: 4,
+    models: null,
+    totalModels: 0,
   },
 ];

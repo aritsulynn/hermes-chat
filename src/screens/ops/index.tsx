@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components';
+import * as api from '../../lib/api';
 
 export type OpsTab = 'cron' | 'kanban' | 'logs' | 'usage' | 'files';
 
@@ -23,7 +24,7 @@ export function OpsScreen({
   initialTab?: string;
   hideTabs?: boolean;
 } = {}) {
-  const { booting, authed, opsGet, opsMut, theme } = useApp();
+  const { booting, authed, activeProfile, opsGet, opsMut, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
   const navigation = useNavigation();
 
@@ -63,40 +64,52 @@ export function OpsScreen({
   const [logLevel, setLogLevel] = useState('INFO');
   const [logLines, setLogLines] = useState('200');
   const [filePath, setFilePath] = useState('/');
+  useEffect(() => {
+    if (authed) return;
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, [authed]);
 
   const load = useCallback(async () => {
+    const scope = getAuthScope();
     setLoading(true);
     setError(null);
+    const applyData = (value: any) => {
+      if (getAuthScope() === scope) setData(value);
+    };
     try {
-      if (tab === 'cron') setData(await opsGet('/api/cron/jobs'));
+      if (tab === 'cron') applyData(await opsGet(api.cronJobs()));
       else if (tab === 'kanban') {
         try {
-          setData(await opsGet('/api/plugins/kanban/boards?include_archived=true'));
+          applyData(await opsGet(api.kanbanBoardsWithArchived()));
         } catch {
-          setData(await opsGet('/api/plugins/kanban/board'));
+          applyData(await opsGet(api.kanbanBoard()));
         }
       } else if (tab === 'logs') {
-        setData(
+        applyData(
           await opsGet(
-            `/api/logs?file=${encodeURIComponent(logFile)}&lines=${encodeURIComponent(logLines)}&level=${encodeURIComponent(logLevel)}`,
+            api.logs({ file: logFile, lines: logLines, level: logLevel || undefined }),
           ),
         );
       } else if (tab === 'usage') {
         try {
-          setData(await opsGet('/api/analytics/usage?days=7'));
+          applyData(await opsGet(api.usageLast7Days()));
         } catch {
-          setData(await opsGet('/api/portal'));
+          applyData(await opsGet(api.portal()));
         }
       } else {
-        setData(await opsGet(`/api/files?path=${encodeURIComponent(filePath)}`));
+        applyData(await opsGet(api.files(filePath)));
       }
     } catch (e) {
-      setError(errMsg(e));
-      setData(null);
+      if (getAuthScope() === scope) {
+        setError(errMsg(e));
+        setData(null);
+      }
     } finally {
-      setLoading(false);
+      if (getAuthScope() === scope) setLoading(false);
     }
-  }, [tab, opsGet, logFile, logLevel, logLines, filePath]);
+  }, [getAuthScope, tab, opsGet, logFile, logLevel, logLines, filePath]);
 
   useEffect(() => {
     if (authed) void load();
@@ -123,20 +136,28 @@ export function OpsScreen({
     }
   }, [tab, data]);
 
-  const cronAction = async (id: string, action: 'pause' | 'resume' | 'trigger') => {
+  const profileForJob = (id: string) => {
+    const job = cronJobs.find((item) => String(item?.id ?? '') === id);
+    return String(job?.profile ?? activeProfile);
+  };
+  const withJobProfile = (path: string, id: string) => api.withProfile(path, profileForJob(id));
+
+  const cronAction = async (id: string, action: api.CronJobAction) => {
+    const scope = getAuthScope();
     try {
-      await opsMut(`/api/cron/jobs/${encodeURIComponent(id)}/${action}`, 'POST', {});
-      void load();
+      await opsMut(api.cronJobAction(id, action, profileForJob(id)), 'POST', {});
+      if (getAuthScope() === scope) void load();
     } catch (e) {
-      setError(errMsg(e));
+      if (getAuthScope() === scope) setError(errMsg(e));
     }
   };
   const cronDelete = async (id: string) => {
+    const scope = getAuthScope();
     try {
-      await opsMut(`/api/cron/jobs/${encodeURIComponent(id)}`, 'DELETE');
-      void load();
+      await opsMut(withJobProfile(api.cronJob(id), id), 'DELETE');
+      if (getAuthScope() === scope) void load();
     } catch (e) {
-      setError(errMsg(e));
+      if (getAuthScope() === scope) setError(errMsg(e));
     }
   };
 
