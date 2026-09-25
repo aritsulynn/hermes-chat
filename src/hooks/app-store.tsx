@@ -83,6 +83,7 @@ import { useAskInboxSlice } from '../store/slices/useAskInbox';
 import { useAskRepliesSlice } from '../store/slices/useAskReplies';
 import { useNotificationResponsesSlice } from '../store/slices/useNotificationResponses';
 import { useToolRefreshSlice } from '../store/slices/useToolRefresh';
+import { useLiveTurnSlice } from '../store/slices/useLiveTurn';
 import { useStoreRuntime } from '../store/runtime';
 
 const AppContext = createContext<AppStore | null>(null);
@@ -131,39 +132,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
   const [sessionTitle, setSessionTitle] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([]);
-  const [streamingTexts, setStreamingTexts] = useState<Record<string, string>>({});
-  const streamingRef = useRef<Record<string, string>>({});
-  streamingRef.current = streamingTexts;
-  const clearStreaming = useCallback(() => {
-    streamingRef.current = {};
-    setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
-  }, []);
-  // Park the visible room's live turn before leaving it, so coming back can
-  // restore its Stop button instead of stranding Send/Stop on the wrong room.
-  const parkLiveTurn = useCallback(() => {
-    if (!generatingRef.current) return;
-    const profile = latest.current.activeProfile;
-    const stored = latest.current.sessionKey;
-    const runtime = sessionIdRef.current;
-    const owner = stored
-      ? profileSessionKey(profile, stored)
-      : runtime
-        ? (runtimeOwners.current.get(runtime) ?? profileSessionKey(profile, runtime))
-        : null;
-    if (owner) parkedLiveRef.current.add(owner);
-  }, []);
-  // Re-anchor streaming after a transcript rebuild while this room's turn is
-  // live (REST is newer truth; the pre-switch buffer was already dropped).
-  const reanchorLiveTurn = useCallback((items: UiMessage[]): UiMessage[] => {
-    const tail = items[items.length - 1];
-    if (tail && tail.role === 'assistant') {
-      liveAid.current = tail.id;
-      return items;
-    }
-    const rea = nid();
-    liveAid.current = rea;
-    return [...items, { id: rea, role: 'assistant', text: '', pending: true }];
-  }, []);
   // `commands.catalog` dispositions live in ./slash-commands (module cache); this
   // counter only forces a re-render once the live table lands so the wheel re-filters.
   const [, setCatalogVersion] = useState(0);
@@ -251,19 +219,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [acceptRotatedCookie, host, username]);
   const uploading = useRef(false); // send() re-entrancy guard while bytes go up
-  const liveAid = useRef<string | null>(null);
-  const liveThinkAid = useRef<string | null>(null);
-  const liveTools = useRef<Map<string, string>>(new Map());
-  const liveToolAid = useRef<string | null>(null);
-  const liveTurnTools = useRef<string[]>([]); // tool bubbles minted this turn, in order
-  const liveTurnDiffs = useRef<string[]>([]); // inline diffs seen this turn (for the end-of-turn summary)
-  // Live turns are per-session: the latch must follow the room, not the app.
-  // parkedLive = stored keys with a background-live turn; turnOwner maps each
-  // live runtime sid to its stored key so a background complete cleans up.
-  const turnOwnerRef = useRef<Map<string, string>>(new Map());
-  const parkedLiveRef = useRef<Set<string>>(new Set());
-  // Last turn-event time — the watchdog below releases a stranded Stop latch.
-  const lastTurnEventAt = useRef(0);
   // Live runtime session id for callbacks frozen in openWs (reconnect replay).
   const sessionIdRef = useRef<string | null>(null);
   sessionIdRef.current = sessionId;
@@ -302,6 +257,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
   const latest = useRef({ host, username, activeProfile, sessionKey });
   latest.current = { host, username, activeProfile, sessionKey };
+  const {
+    streamingTexts,
+    setStreamingTexts,
+    streamingRef,
+    liveAid,
+    liveThinkAid,
+    liveTools,
+    liveToolAid,
+    liveTurnTools,
+    liveTurnDiffs,
+    turnOwnerRef,
+    parkedLiveRef,
+    lastTurnEventAt,
+    clearStreaming,
+    parkLiveTurn,
+    reanchorLiveTurn,
+  } = useLiveTurnSlice({ runtime, latest, sessionIdRef });
 
   const {
     model,
