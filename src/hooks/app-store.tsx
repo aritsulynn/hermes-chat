@@ -40,22 +40,9 @@ import {
 } from '../lib/connection';
 import { clearMediaCaches } from '../lib/media-cache';
 import { DEFAULT_PROFILE } from '../lib/constants';
-import {
-  askNotificationCategory,
-  dismissNotification,
-  ensureAndroidChannel,
-  ensureNotificationCategories,
-  NOTIFICATION_ASK_ANSWER,
-  NOTIFICATION_ASK_APPROVE,
-  NOTIFICATION_ASK_OPEN,
-  NOTIFICATION_ASK_REJECT,
-  NOTIFICATION_DEFAULT_ACTION,
-  onNotificationResponse,
-  pushNotification,
-} from '../lib/notifications';
-import { askKey, findAsk, findAskByRpc, pendingAsks } from '../lib/ask-inbox';
+import { askNotificationCategory, dismissNotification, pushNotification } from '../lib/notifications';
+import { askKey, pendingAsks } from '../lib/ask-inbox';
 import type { AskInboxEntry, AskOwner } from '../lib/ask-inbox';
-import type { HermesNotificationResponse } from '../lib/notifications';
 import { GatewayWs } from '../lib/gateway-ws';
 import type { ConnState, HistoryMessage, SessionSummary } from '../lib/gateway-ws';
 import { changedFilesFromDiff, inlineDiffFromDetail } from '../utils/diff';
@@ -77,7 +64,6 @@ import {
   isImageAttachment,
   mergeUsageState,
   normalizeProfileName,
-  notificationResponseKey,
   profileSessionKey,
   scheduleContextHydration,
   serverAskFromInbox,
@@ -95,6 +81,7 @@ import { useComposerSlice } from '../store/slices/useComposer';
 import { useSessionsSlice } from '../store/slices/useSessions';
 import { useAskInboxSlice } from '../store/slices/useAskInbox';
 import { useAskRepliesSlice } from '../store/slices/useAskReplies';
+import { useNotificationResponsesSlice } from '../store/slices/useNotificationResponses';
 import { useStoreRuntime } from '../store/runtime';
 
 const AppContext = createContext<AppStore | null>(null);
@@ -181,27 +168,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [, setCatalogVersion] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [toolLine, setToolLine] = useState<string | null>(null);
-  const pendingNotificationResponsesRef = useRef<HermesNotificationResponse[]>([]);
-  const notificationDrainRef = useRef<(() => void) | null>(null);
-  const notificationActionInFlightRef = useRef(false);
-  const askHydrationRef = useRef(0);
-  const handledNotificationResponsesRef = useRef<Set<string>>(new Set());
-  const queueNotificationResponse = useCallback((response: HermesNotificationResponse) => {
-    const key = notificationResponseKey(response);
-    if (handledNotificationResponsesRef.current.has(key)) return;
-    if (pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) === key)) return;
-    pendingNotificationResponsesRef.current = [...pendingNotificationResponsesRef.current, response];
-  }, []);
-  const clearQueuedNotificationResponse = useCallback((response?: HermesNotificationResponse) => {
-    if (!response) {
-      pendingNotificationResponsesRef.current = [];
-      return;
-    }
-    const key = notificationResponseKey(response);
-    pendingNotificationResponsesRef.current = pendingNotificationResponsesRef.current.filter(
-      (item) => notificationResponseKey(item) !== key,
-    );
-  }, []);
   const { themeMode, theme, setTheme, hydrateTheme } = useThemeSlice();
   // Local notifications (turn complete / server asks while backgrounded).
   const { notifyEnabled, notifyRef, setNotifications, loadNotifications } = useNotificationsSlice();
@@ -626,18 +592,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openSessionRef,
     setError,
   });
-  // Notification taps/actions are routed through the ask inbox. The handler is
-  // installed below (after response helpers exist); a cold-start response is
-  // held until that handler is ready.
-  useEffect(() => {
-    void ensureAndroidChannel();
-    void ensureNotificationCategories();
-    const unsub = onNotificationResponse((response) => {
-      queueNotificationResponse(response);
-      notificationDrainRef.current?.();
-    });
-    return () => unsub?.();
-  }, []);
+  const {
+    pendingNotificationResponsesRef,
+    notificationDrainRef,
+    notificationActionInFlightRef,
+    askHydrationRef,
+    handledNotificationResponsesRef,
+    queueNotificationResponse,
+    clearQueuedNotificationResponse,
+    handleNotificationResponse,
+    drainPendingNotificationResponse,
+  } = useNotificationResponsesSlice({
+    runtime,
+    askInboxRef,
+    answerInboxApproval,
+    answerInboxValue,
+    openAskEntry,
+    respondToInbox,
+    confirmSensitiveNotification,
+    latest,
+  });
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -2662,219 +2636,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Ask replies ──────────────────────────────────────────────────────────
 
-  const handleNotificationResponse = useCallback(
-    (response: HermesNotificationResponse) => {
-      const data = response.data;
-      const responseKey = notificationResponseKey(response);
-      if (handledNotificationResponsesRef.current.has(responseKey)) return;
-      const currentConnectionId = connectionScope(latest.current.host, latest.current.username);
-      if (typeof data.connectionId === 'string' && currentConnectionId && data.connectionId !== currentConnectionId) {
-        return;
-      }
-      if (!currentConnectionId || !gw.current || askHydrationRef.current > 0) {
-        queueNotificationResponse(response);
-        return;
-      }
-      const key = typeof data.askKey === 'string' ? data.askKey : '';
-      const rpcId = typeof data.rpcId === 'string' ? data.rpcId : '';
-      const entry =
-        (key ? findAsk(askInboxRef.current, key) : undefined) ??
-        (rpcId ? findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), rpcId) : undefined);
-      if (!entry) {
-        if (!key && !rpcId) {
-          if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) {
-            handledNotificationResponsesRef.current.add(responseKey);
-            router.push('/chat');
-          }
-          return;
-        }
-        queueNotificationResponse(response);
-        router.push('/asks' as any);
-        return;
-      }
-
-      // Background asks must never be actioned against a different profile.
-      // Unresolved owners fail closed into the inbox rather than guessing.
-      if (!entry.owner.profile || entry.owner.profile !== normalizeProfileName(activeProfileRef.current)) {
-        queueNotificationResponse(response);
-        router.push('/asks' as any);
-        return;
-      }
-
-      if (response.actionIdentifier === NOTIFICATION_ASK_APPROVE) {
-        const choices = Array.isArray(entry.params.choices) ? entry.params.choices.map(String) : [];
-        if (!choices.includes('once')) {
-          handledNotificationResponsesRef.current.add(responseKey);
-          void openAskEntry(entry);
-          return;
-        }
-        if (notificationActionInFlightRef.current) return;
-        notificationActionInFlightRef.current = true;
-        void (async () => {
-          try {
-            if (!(await confirmSensitiveNotification())) {
-              handledNotificationResponsesRef.current.add(responseKey);
-              router.push('/asks' as any);
-              return;
-            }
-            const current = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId);
-            if (!current) {
-              queueNotificationResponse(response);
-              return;
-            }
-            if (answerInboxApproval(current.key, 'once')) {
-              handledNotificationResponsesRef.current.add(responseKey);
-            } else {
-              queueNotificationResponse(response);
-              router.push('/asks' as any);
-            }
-          } finally {
-            notificationActionInFlightRef.current = false;
-            const queued = pendingNotificationResponsesRef.current.find(
-              (item) => notificationResponseKey(item) === responseKey,
-            );
-            if (handledNotificationResponsesRef.current.has(responseKey)) {
-              if (queued) clearQueuedNotificationResponse(queued);
-            } else if (
-              pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)
-            ) {
-              notificationDrainRef.current?.();
-            }
-          }
-        })();
-        return;
-      }
-
-      if (response.actionIdentifier === NOTIFICATION_ASK_REJECT) {
-        const choices = Array.isArray(entry.params.choices) ? entry.params.choices.map(String) : [];
-        if (choices.length > 0 && !choices.includes('deny')) {
-          handledNotificationResponsesRef.current.add(responseKey);
-          void openAskEntry(entry);
-          return;
-        }
-        if (notificationActionInFlightRef.current) return;
-        notificationActionInFlightRef.current = true;
-        void (async () => {
-          try {
-            if (!(await confirmSensitiveNotification())) {
-              handledNotificationResponsesRef.current.add(responseKey);
-              router.push('/asks' as any);
-              return;
-            }
-            const current = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId);
-            if (!current) {
-              queueNotificationResponse(response);
-              return;
-            }
-            if (answerInboxApproval(current.key, 'deny')) {
-              handledNotificationResponsesRef.current.add(responseKey);
-            } else {
-              queueNotificationResponse(response);
-              router.push('/asks' as any);
-            }
-          } finally {
-            notificationActionInFlightRef.current = false;
-            const queued = pendingNotificationResponsesRef.current.find(
-              (item) => notificationResponseKey(item) === responseKey,
-            );
-            if (handledNotificationResponsesRef.current.has(responseKey)) {
-              if (queued) clearQueuedNotificationResponse(queued);
-            } else if (
-              pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)
-            ) {
-              notificationDrainRef.current?.();
-            }
-          }
-        })();
-        return;
-      }
-
-      if (response.actionIdentifier === NOTIFICATION_ASK_ANSWER) {
-        const text = String(response.userText ?? '').trim();
-        if (!text) {
-          handledNotificationResponsesRef.current.add(responseKey);
-          void openAskEntry(entry);
-          return;
-        }
-        if (notificationActionInFlightRef.current) return;
-        notificationActionInFlightRef.current = true;
-        void (async () => {
-          try {
-            if (!(await confirmSensitiveNotification())) {
-              handledNotificationResponsesRef.current.add(responseKey);
-              router.push('/asks' as any);
-              return;
-            }
-            const current = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId);
-            if (!current || current.owner.profile !== normalizeProfileName(activeProfileRef.current)) {
-              queueNotificationResponse(response);
-              router.push('/asks' as any);
-              return;
-            }
-            if (current.method === 'clarify') {
-              if (Array.isArray(current.params.questions) && current.params.questions.length > 0) {
-                handledNotificationResponsesRef.current.add(responseKey);
-                void openAskEntry(current);
-                return;
-              }
-              if (respondToInbox(current.key, { answer: text })) {
-                handledNotificationResponsesRef.current.add(responseKey);
-              } else {
-                queueNotificationResponse(response);
-                router.push('/asks' as any);
-              }
-            } else if (answerInboxValue(current.key, text)) {
-              handledNotificationResponsesRef.current.add(responseKey);
-            } else {
-              queueNotificationResponse(response);
-              router.push('/asks' as any);
-            }
-          } finally {
-            notificationActionInFlightRef.current = false;
-            const queued = pendingNotificationResponsesRef.current.find(
-              (item) => notificationResponseKey(item) === responseKey,
-            );
-            if (handledNotificationResponsesRef.current.has(responseKey)) {
-              if (queued) clearQueuedNotificationResponse(queued);
-            } else if (
-              pendingNotificationResponsesRef.current.some((item) => notificationResponseKey(item) !== responseKey)
-            ) {
-              notificationDrainRef.current?.();
-            }
-          }
-        })();
-        return;
-      }
-
-      if (response.actionIdentifier === NOTIFICATION_ASK_OPEN) {
-        handledNotificationResponsesRef.current.add(responseKey);
-        void openAskEntry(entry);
-        return;
-      }
-      if (response.actionIdentifier === NOTIFICATION_DEFAULT_ACTION) {
-        handledNotificationResponsesRef.current.add(responseKey);
-        router.push('/asks' as any);
-      }
-    },
-    [answerInboxApproval, answerInboxValue, confirmSensitiveNotification, openAskEntry, respondToInbox],
-  );
-
-  const drainPendingNotificationResponse = useCallback(() => {
-    if (notificationActionInFlightRef.current) return;
-    const pending = pendingNotificationResponsesRef.current[0];
-    if (!pending) return;
-    pendingNotificationResponsesRef.current = pendingNotificationResponsesRef.current.slice(1);
-    void handleNotificationResponse(pending);
-  }, [handleNotificationResponse]);
-  notificationDrainRef.current = drainPendingNotificationResponse;
-  useEffect(() => {
-    drainPendingNotificationResponse();
-    return () => {
-      if (notificationDrainRef.current === drainPendingNotificationResponse) {
-        notificationDrainRef.current = null;
-      }
-    };
-  }, [drainPendingNotificationResponse]);
 
   // ── Session management / steering / model defaults ─────────────────────
 
