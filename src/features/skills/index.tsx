@@ -9,18 +9,21 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  Switch,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
-import { RefreshCw, X } from 'lucide-react-native';
+import { AlertCircle, RefreshCw, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components/ui/bits';
+import { Switch } from '../../components/ui/switch';
+import { Button } from '../../components/ui/button';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Text as UIText } from '../../components/ui/text';
 import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
 
@@ -164,12 +167,17 @@ export function SkillsScreen() {
               </Text>
             </View>
           ) : error ? (
-            <View className="flex-row items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-950 dark:bg-red-950/30">
-              <Text className="flex-1 text-xs text-red-600 dark:text-red-400">{error}</Text>
-              <Pressable onPress={() => void load()}>
-                <Text className="text-xs font-semibold text-red-700 dark:text-red-300">Retry</Text>
-              </Pressable>
-            </View>
+            <UIAlert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
+              <Button
+                variant="destructive"
+                size="sm"
+                onPress={() => void load()}
+                className="ml-6 mt-1 self-start"
+              >
+                <UIText className="text-xs font-semibold">Retry</UIText>
+              </Button>
+            </UIAlert>
           ) : !skills?.length ? (
             <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</Text>
@@ -208,7 +216,7 @@ export function SkillsScreen() {
                         (toggling === name ? (
                           <ActivityIndicator size="small" color="#1a73e8" />
                         ) : (
-                          <Switch value={enabled} onValueChange={(v) => void toggle(name, v)} />
+                          <Switch checked={enabled} onCheckedChange={(v) => void toggle(name, v)} />
                         ))}
                     </View>
                   </View>

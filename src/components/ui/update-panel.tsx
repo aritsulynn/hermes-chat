@@ -28,7 +28,10 @@ import {
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { Tap } from './bits';
+import { Button } from './button';
+import { Badge } from './badge';
+import { Alert as UIAlert, AlertDescription } from './alert';
+import { Text as UIText } from './text';
 import * as api from '../../services/api';
 import {
   actionOutcomeLabel,
@@ -70,10 +73,11 @@ const CHIP_TEXT: Record<UpdateTone, string> = {
 };
 
 function Chip({ tone, label }: { tone: UpdateTone; label: string }) {
+  const variant = tone === 'danger' ? 'destructive' : tone === 'muted' ? 'secondary' : 'outline';
   return (
-    <View className={`rounded-full border px-2 py-0.5 ${CHIP[tone]}`}>
-      <Text className={`text-[11px] font-semibold ${CHIP_TEXT[tone]}`}>{label}</Text>
-    </View>
+    <Badge variant={variant} className={CHIP[tone]}>
+      <UIText className={`text-[11px] font-semibold ${CHIP_TEXT[tone]}`}>{label}</UIText>
+    </Badge>
   );
 }
 
@@ -319,7 +323,9 @@ export function UpdatePanel() {
       </View>
 
       {!!error && (
-        <Text className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</Text>
+        <UIAlert icon={TriangleAlert} variant="destructive" className="mt-2">
+          <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
+        </UIAlert>
       )}
 
       {info && info.updateAvailable && info.commits.length > 0 && (
@@ -341,13 +347,17 @@ export function UpdatePanel() {
       )}
 
       {info && !info.canApply && info.message && (
-        <View className="mt-3 flex-row items-start gap-2 rounded-xl border border-amber-300/70 bg-amber-50/70 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <TriangleAlert size={14} color="#d97706" style={{ marginTop: 1 }} />
-          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300">
+        <UIAlert
+          icon={TriangleAlert}
+          variant="default"
+          iconClassName="text-amber-600"
+          className="mt-3 border-amber-300/70 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30"
+        >
+          <AlertDescription className="text-[11px] text-amber-800 dark:text-amber-300">
             {info.message}
             {info.updateCommand ? `\n${info.updateCommand}` : ''}
-          </Text>
-        </View>
+          </AlertDescription>
+        </UIAlert>
       )}
 
       {receiptLabel ? (
@@ -362,61 +372,55 @@ export function UpdatePanel() {
       ) : null}
 
       <View className="mt-3 flex-row flex-wrap items-center gap-2">
-        <Tap
+        <Button
           accessibilityRole="button"
           accessibilityLabel="Check for updates"
           disabled={busy || !ready}
           onPress={() => void refresh(true)}
-          radius={10}
-          className={`flex-row items-center gap-1.5 rounded-xl border border-neutral-300 px-3 py-2 dark:border-neutral-700 ${
-            busy || !ready ? 'opacity-50' : ''
-          }`}
+          variant="outline"
+          className="gap-1.5 rounded-xl px-3 py-2"
         >
           {checking ? (
             <ActivityIndicator size="small" />
           ) : (
             <RefreshCw size={14} color="#1a73e8" />
           )}
-          <Text className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-100">
+          <UIText className="text-[13px] font-semibold">
             Check for updates
-          </Text>
-        </Tap>
+          </UIText>
+        </Button>
 
         {canApply && (
-          <Tap
+          <Button
             accessibilityRole="button"
             accessibilityLabel="Update Hermes now"
             disabled={starting || running}
             onPress={applyUpdate}
-            radius={10}
-            className={`flex-row items-center gap-1.5 rounded-xl bg-[#1a73e8] px-3 py-2 ${
-              starting || running ? 'opacity-50' : ''
-            }`}
+            variant="default"
+            className="gap-1.5 rounded-xl px-3 py-2"
           >
             {starting ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <Download size={14} color="#fff" />
             )}
-            <Text className="text-[13px] font-semibold text-white">Update now</Text>
-          </Tap>
+            <UIText className="text-[13px] font-semibold">Update now</UIText>
+          </Button>
         )}
 
-        <Tap
+        <Button
           accessibilityRole="button"
           accessibilityLabel="Restart gateway"
           disabled={!ready || running}
           onPress={restartGateway}
-          radius={10}
-          className={`flex-row items-center gap-1.5 rounded-xl border border-neutral-300 px-3 py-2 dark:border-neutral-700 ${
-            !ready || running ? 'opacity-50' : ''
-          }`}
+          variant="outline"
+          className="gap-1.5 rounded-xl px-3 py-2"
         >
           <RotateCw size={14} color="#666" />
-          <Text className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-100">
+          <UIText className="text-[13px] font-semibold">
             Restart gateway
-          </Text>
-        </Tap>
+          </UIText>
+        </Button>
       </View>
 
       {activeAction && (
@@ -432,7 +436,7 @@ export function UpdatePanel() {
               </Text>
               <Chip tone={actionOutcomeTone(running, exitCode)} label={actionOutcomeLabel(running, exitCode)} />
             </View>
-            <Tap
+            <Button
               accessibilityRole="button"
               accessibilityLabel="Close update log"
               onPress={() => {
@@ -440,11 +444,12 @@ export function UpdatePanel() {
                 setActiveAction(null);
               }}
               hitSlop={8}
-              radius={14}
-              className="p-1.5"
+              variant="ghost"
+              size="icon"
+              className="h-auto w-auto p-1.5"
             >
               <X size={14} color="#9aa0a6" />
-            </Tap>
+            </Button>
           </View>
           <ScrollView
             ref={logRef}
@@ -463,16 +468,17 @@ export function UpdatePanel() {
             </Text>
           </ScrollView>
           {!atBottom && (
-            <Tap
+            <Button
               accessibilityRole="button"
               accessibilityLabel="Jump to latest log line"
               onPress={jumpToLatest}
               hitSlop={8}
-              radius={16}
-              className="absolute bottom-2.5 right-2.5 h-8 w-8 items-center justify-center rounded-full bg-[#1a73e8]"
+              variant="default"
+              size="icon"
+              className="absolute bottom-2.5 right-2.5 h-8 w-8 rounded-full"
             >
               <ArrowDown size={15} color="#fff" />
-            </Tap>
+            </Button>
           )}
         </View>
       )}

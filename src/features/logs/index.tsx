@@ -7,9 +7,9 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { Input } from '../../components/ui/input';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
@@ -335,10 +335,10 @@ export function LogsScreen() {
 
           {showFilters && (
             <View className="mt-3 pt-3 border-t border-neutral-200/70 dark:border-neutral-800/70" style={{ gap: 12 }}>
-              {/* Search Input */}
-              <View className="flex-row items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+              {/* Search Input — border lives on the Input itself */}
+              <View className="flex-row items-center gap-2">
                 <Search size={15} color={dark ? '#737373' : '#9ca3af'} />
-                <TextInput
+                <Input
                   value={search}
                   onChangeText={setSearch}
                   placeholder="Filter logs (substring)..."

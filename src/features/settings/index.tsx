@@ -3,7 +3,6 @@ import {
   Alert,
   Pressable,
   ScrollView,
-  Switch,
   Text,
   View,
 } from 'react-native';
@@ -26,6 +25,10 @@ import {
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components/ui/bits';
+import { Switch } from '../../components/ui/switch';
+import { Separator } from '../../components/ui/separator';
+import { Avatar, AvatarFallback } from '../../components/ui/avatar';
+import { Text as UIText } from '../../components/ui/text';
 import { UpdatePanel } from '../../components/ui/update-panel';
 import { notificationsSupported } from '../../services/notifications';
 import { BUILD_ID } from '../../build';
@@ -215,11 +218,13 @@ export function SettingsScreen() {
             {/* User row */}
             <View className="flex-row items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-800">
               <View className="flex-row items-center gap-2.5">
-                <View className="h-8 w-8 items-center justify-center rounded-full bg-[#1a73e8]">
-                  <Text className="text-sm font-bold text-white">
-                    {(username || 'H').slice(0, 1).toUpperCase()}
-                  </Text>
-                </View>
+                <Avatar alt={username || 'Profile'} className="bg-[#1a73e8]">
+                  <AvatarFallback className="bg-[#1a73e8]">
+                    <UIText className="text-sm font-bold text-white">
+                      {(username || 'H').slice(0, 1).toUpperCase()}
+                    </UIText>
+                  </AvatarFallback>
+                </Avatar>
                 <View>
                   <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                     {username || 'Hermes User'}
@@ -324,7 +329,7 @@ export function SettingsScreen() {
               })}
             </View>
 
-            <View className="my-3 h-[1px] bg-neutral-200 dark:bg-neutral-800" />
+            <Separator className="my-3 bg-neutral-200 dark:bg-neutral-800" />
             {[
               ['Profile', typeof sessionInfo?.profile_name === 'string' ? sessionInfo.profile_name : ''],
               ['Model', typeof sessionInfo?.model === 'string' ? sessionInfo.model : ''],
@@ -346,7 +351,7 @@ export function SettingsScreen() {
 
             {mcpServers.length > 0 && (
               <>
-                <View className="my-2 h-[1px] bg-neutral-200 dark:bg-neutral-800" />
+                <Separator className="my-2 bg-neutral-200 dark:bg-neutral-800" />
                 <Text className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                   MCP servers
                 </Text>
@@ -388,8 +393,8 @@ export function SettingsScreen() {
               </View>
               <Switch
                 accessibilityLabel="Background notifications"
-                value={notificationsEnabled}
-                onValueChange={(v) => void setNotifications(v)}
+                checked={notificationsEnabled}
+                onCheckedChange={(v) => void setNotifications(v)}
               />
             </View>
           </View>

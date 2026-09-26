@@ -10,9 +10,11 @@ import {
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Textarea } from '../../components/ui/textarea';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect, useRouter } from 'expo-router';
@@ -675,8 +677,8 @@ export function CronScreen() {
 
                 {/* Name */}
                 <View>
-                  <Text className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Job Name *</Text>
-                  <TextInput
+                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Job Name *</Label>
+                  <Input
                     value={formName}
                     onChangeText={setFormName}
                     placeholder="e.g. morning-brief"
@@ -689,10 +691,10 @@ export function CronScreen() {
 
                 {/* Schedule Expression */}
                 <View>
-                  <Text className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                     Schedule (Cron Expression) *
-                  </Text>
-                  <TextInput
+                  </Label>
+                  <Input
                     value={formSchedule}
                     onChangeText={setFormSchedule}
                     placeholder="e.g. 0 9 * * *"
@@ -730,10 +732,10 @@ export function CronScreen() {
 
                 {/* Prompt / Instructions */}
                 <View>
-                  <Text className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                     Prompt (Task for Hermes) *
-                  </Text>
-                  <TextInput
+                  </Label>
+                  <Textarea
                     value={formPrompt}
                     onChangeText={setFormPrompt}
                     placeholder="Describe what the agent should execute when this cron job triggers..."
@@ -747,10 +749,10 @@ export function CronScreen() {
 
                 {/* Optional: Model override */}
                 <View>
-                  <Text className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                     Model Override (optional)
-                  </Text>
-                  <TextInput
+                  </Label>
+                  <Input
                     value={formModel}
                     onChangeText={setFormModel}
                     placeholder="e.g. nous/hermes-3-llama-3.1-8b (leave blank for default)"

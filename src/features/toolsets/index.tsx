@@ -8,17 +8,21 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
-import { Boxes, RefreshCw, Search } from 'lucide-react-native';
+import { AlertCircle, Boxes, RefreshCw, Search } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components/ui/bits';
+import { Switch } from '../../components/ui/switch';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Badge } from '../../components/ui/badge';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Text as UIText } from '../../components/ui/text';
 import { errMsg } from '../../utils/messages';
 import { getToolsets, setToolsetEnabled } from '../../services/toolsets';
 import type { ToolsetInfo } from '../../services/toolsets';
@@ -183,7 +187,7 @@ export function ToolsetsScreen() {
           {!loading && !unsupported && !error && (
             <View className="mb-3 flex-row items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
               <Search size={16} color={dark ? '#888' : '#777'} />
-              <TextInput
+              <Input
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search toolsets…"
@@ -208,12 +212,17 @@ export function ToolsetsScreen() {
               </Text>
             </View>
           ) : error ? (
-            <View className="flex-row items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-950 dark:bg-red-950/30">
-              <Text className="flex-1 text-xs text-red-600 dark:text-red-400">{error}</Text>
-              <Pressable onPress={() => void load()}>
-                <Text className="text-xs font-semibold text-red-700 dark:text-red-300">Retry</Text>
-              </Pressable>
-            </View>
+            <UIAlert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
+              <Button
+                variant="destructive"
+                size="sm"
+                onPress={() => void load()}
+                className="ml-6 mt-1 self-start"
+              >
+                <UIText className="text-xs font-semibold">Retry</UIText>
+              </Button>
+            </UIAlert>
           ) : filtered.length === 0 ? (
             <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -269,28 +278,30 @@ export function ToolsetsScreen() {
                           <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">
                             {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
                           </Text>
-                          <View
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'
-                            }`}
-                          />
-                          <Text
-                            className={`text-[11px] font-medium ${
-                              toolset.configured
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-amber-600 dark:text-amber-400'
-                            }`}
-                          >
-                            {toolset.configured ? 'Ready' : 'Needs setup'}
-                          </Text>
+                          <Badge variant={toolset.configured ? 'outline' : 'secondary'}>
+                            <View
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'
+                              }`}
+                            />
+                            <UIText
+                              className={`text-[11px] font-medium ${
+                                toolset.configured
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-amber-600 dark:text-amber-400'
+                              }`}
+                            >
+                              {toolset.configured ? 'Ready' : 'Needs setup'}
+                            </UIText>
+                          </Badge>
                         </View>
                       </View>
                       {toggling === name ? (
                         <ActivityIndicator size="small" color="#1a73e8" />
                       ) : (
                         <Switch
-                          value={enabled}
-                          onValueChange={(value) => void toggle(name, value)}
+                          checked={enabled}
+                          onCheckedChange={(value) => void toggle(name, value)}
                           accessibilityLabel={`${enabled ? 'Disable' : 'Enable'} ${label} toolset`}
                         />
                       )}

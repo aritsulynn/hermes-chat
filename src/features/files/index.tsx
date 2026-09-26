@@ -11,7 +11,6 @@ import {
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,6 +39,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { HamburgerBtn } from '../../components/ui/bits';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Textarea } from '../../components/ui/textarea';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Text as UIText } from '../../components/ui/text';
 import * as api from '../../services/api';
 import { formatBytes } from '../../utils/format';
 import { FileRow } from './components/FileRow';
@@ -535,7 +539,7 @@ export function FilesScreen() {
         <View className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
           <View className="flex-row items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
             <Search size={15} color={dark ? '#888' : '#9ca3af'} />
-            <TextInput
+            <Input
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search in this folder..."
@@ -554,12 +558,18 @@ export function FilesScreen() {
 
         {/* Error Alert */}
         {error && (
-          <View className="m-3 flex-row items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-950 dark:bg-red-950/30">
-            <AlertCircle size={17} color="#dc2626" />
-            <Text className="flex-1 text-xs text-red-600 dark:text-red-400">{error}</Text>
-            <Pressable onPress={() => void load(activeDirectory)}>
-              <Text className="text-xs font-semibold text-red-700 dark:text-red-300">Retry</Text>
-            </Pressable>
+          <View className="m-3">
+            <UIAlert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
+              <Button
+                variant="destructive"
+                size="sm"
+                onPress={() => void load(activeDirectory)}
+                className="ml-6 mt-1 self-start"
+              >
+                <UIText className="text-xs font-semibold">Retry</UIText>
+              </Button>
+            </UIAlert>
           </View>
         )}
 
@@ -719,7 +729,7 @@ export function FilesScreen() {
                 </View>
               ) : isEditingFile ? (
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-                  <TextInput
+                  <Textarea
                     value={fileTextContent}
                     onChangeText={setFileTextContent}
                     multiline
@@ -765,7 +775,7 @@ export function FilesScreen() {
                 Enter absolute directory path on the server
               </Text>
 
-              <TextInput
+              <Input
                 value={pathInput}
                 onChangeText={setPathInput}
                 autoCapitalize="none"
@@ -807,7 +817,7 @@ export function FilesScreen() {
                 Create folder in: {activeDirectory || '~'}
               </Text>
 
-              <TextInput
+              <Input
                 value={newFolderName}
                 onChangeText={setNewFolderName}
                 autoCapitalize="none"
@@ -888,7 +898,7 @@ export function FilesScreen() {
               <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">
                 File Name (e.g. notes.txt, script.py, config.json)
               </Text>
-              <TextInput
+              <Input
                 value={newFileName}
                 onChangeText={setNewFileName}
                 autoCapitalize="none"
@@ -902,7 +912,7 @@ export function FilesScreen() {
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 p-3">
               <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">File Content</Text>
-              <TextInput
+              <Textarea
                 value={newFileContent}
                 onChangeText={setNewFileContent}
                 multiline

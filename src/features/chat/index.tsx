@@ -10,7 +10,6 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -20,8 +19,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Redirect, useNavigation } from 'expo-router';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, GitFork, Image as ImageIcon, Info, Pencil, Search } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil, Search } from 'lucide-react-native';
+import { useApp, useStreaming } from '../../hooks/app-store';
 import {
   FALLBACK_PROVIDERS,
   applySlashCompletion,
@@ -44,9 +43,23 @@ import { Composer } from '../../components/chat/composer';
 import type { AnchorMeasure, AnchorRect } from '../../components/chat/composer';
 import { MessageBubble, formatBubbleTime } from '../../components/chat/message-bubble';
 import { AskSheet, InfoSheet } from '../../components/ui/sheets';
-import { CtxRing, HamburgerBtn, Tap } from '../../components/ui/bits';
+import { CtxRing, HamburgerBtn } from '../../components/ui/bits';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Text as UIText } from '../../components/ui/text';
 import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
 import { FALLBACK_SLASH, messageMatchesSearch } from './helpers';
+
+// Estimated row heights by role for getItemLayout (see usage below).
+const EST_H: Record<string, number> = {
+  user: 90,
+  assistant: 200,
+  thinking: 70,
+  tool: 240,
+  notice: 60,
+  interim: 60,
+  summary: 60,
+};
 
 export function ChatScreen() {
   const {
@@ -55,7 +68,6 @@ export function ChatScreen() {
     sessionId,
     sessionTitle,
     messages,
-    streamingTexts,
     input,
     setInput,
     model,
@@ -112,6 +124,10 @@ export function ChatScreen() {
     getGw,
     theme,
   } = useApp();
+  // High-frequency token deltas live in their own context (see useStreaming):
+  // subscribing here keeps per-token re-renders inside the chat screen while
+  // the rest of the app stays put.
+  const streamingTexts = useStreaming();
   const dark = theme === 'dark';
   const headerIcon = dark ? '#f5f5f5' : '#111';
 
@@ -296,11 +312,26 @@ export function ChatScreen() {
   const [todosOpen, setTodosOpen] = useState(false);
   // True while the list is scrolled up — shows the jump-to-bottom button.
   const [atBottom, setAtBottom] = useState(true);
-  // Height of the floating bottom dock (panels + composer) — the list reserves
-  // this much padding so the last message can scroll above it.
+  // True while mounted rows end before the transcript does (windowing) —
+  // drives the jump button even when the (measured) position reads bottom.
+  const [hasMoreBelow, setHasMoreBelow] = useState(false);
+  const totalRef = useRef(0);
+  totalRef.current = messages.length;
+  const handleViewable = useCallback(({ viewableItems }: any) => {
+    let mx = -1;
+    for (const v of viewableItems) mx = Math.max(mx, v?.index ?? -1);
+    setHasMoreBelow((p) => {
+      const v = mx >= 0 && mx < totalRef.current - 1;
+      return p === v ? p : v;
+    });
+  }, []);
+  // Height of the bottom footer (panels + composer), keyboard lift included.
+  // Feeds the scroll-to-bottom button anchor above it. The transcript no
+  // longer slides under the composer (separate fixed footer), so the list
+  // reserves no room for it.
   const [dockH, setDockH] = useState(0);
-  // Keyboard height — the absolute dock must be lifted by hand, and the list
-  // owns its own bottom space (see the layout note below).
+  // Keyboard height — the footer is lifted by hand with bottom padding, and
+  // the flex layout shrinks the list above it automatically.
   const [kbH, setKbH] = useState(0);
   // Gap between the lifted dock and the keyboard so the composer doesn't sit
   // flush on it. Only while the keyboard is open.
@@ -308,9 +339,29 @@ export function ChatScreen() {
   const contentH = useRef(0);
   const layoutH = useRef(0);
   const endPad = useRef(0);
-  endPad.current = 12 + dockH + kbH + kbGap;
+  // No tail gap: last bubble sits flush on the footer (same tone family),
+  // so no dark strip can appear between transcript and composer.
+  endPad.current = 0;
+  // Fresh-load pin: after F5 / session switch / resume, land at the bottom
+  // explicitly (instant, one shot). The content-size follow alone can lose the
+  // race against MVCP stabilization on a cold load and strand the viewport at
+  // the top. Detects reloads by session/first-message/length signature —
+  // plain appends (new messages while reading history) deliberately do NOT
+  // pin; stickEnd governs those.
+  const pinTrack = useRef({ sid: null as string | null, first: null as string | null, len: 0 });
   // Y where the current drag started — snap only fires on net-downward moves.
   const dragStartY = useRef(0);
+  // Consecutive non-touch, non-bottom scroll frames (see handleScroll) —
+  // transients must persist before they may cancel following.
+  const missEnd = useRef(0);
+  // Fresh-load intent: set on reload signature, cleared on landing, on user
+  // positioning (drag/momentum release), or never — it survives transient
+  // system events that must not strand a cold load mid-list. Plain appends
+  // never set it, so reading history is never yanked.
+  const pinWanted = useRef(false);
+  // True between momentum-begin/end — the only reliable "user flung,
+  // finger already up" signal. Programmatic scrolls don't emit these.
+  const momentum = useRef(false);
   // Latest scroll offset (mirrored in onScroll) — the jump button instant-jumps
   // when far instead of smooth-scrolling ten thousand pixels sluggishly.
   const scrollY = useRef(0);
@@ -340,8 +391,7 @@ export function ChatScreen() {
     () => messages.some((m) => m.role === 'user' && m.rowId != null && m.text.trim()),
     [messages],
   );
-  // Kebab menu + in-conversation search.
-  const [kebabOpen, setKebabOpen] = useState(false);
+  // In-conversation search.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [matchIdx, setMatchIdx] = useState(0);
@@ -383,14 +433,6 @@ export function ChatScreen() {
   );
   const onCopy = useCallback((id: string, text: string) => void copyText(id, text), [copyText]);
   const onRegenerate = useCallback(() => regenerate(), [regenerate]);
-  // Per-message ⋯ popover (Branch chat) — same screen-level Modal pattern as
-  // the kebab menu, anchored to the bubble's ⋯ button.
-  const [branchAnchor, setBranchAnchor] = useState<{ anchor: AnchorRect; id: string } | null>(null);
-  const openBranchMenu = useCallback(
-    (m: AnchorMeasure, id: string) => m((a) => setBranchAnchor({ anchor: a, id })),
-    [],
-  );
-  const closeBranchMenu = useCallback(() => setBranchAnchor(null), []);
   // Long-press menu on our own messages (Copy / Edit) — same popover pattern.
   const [userMenu, setUserMenu] = useState<{ anchor: AnchorRect; id: string } | null>(null);
   const openUserMenu = useCallback(
@@ -418,6 +460,12 @@ export function ChatScreen() {
   }, []);
 
   const scrollEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Trailing throttle for the per-token auto-follow (see
+  // handleContentSizeChange): without it every streamed token fires a native
+  // scroll command (~30/s) — layout thrash and a viewport that fights back.
+  const followTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Backstop for the fresh-load pin below (cleared + reset per reload).
+  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollEnd = useCallback((animated?: unknown) => {
     const anim = animated === false ? false : true;
     // Double-tick: one frame for layout shrink (keyboard resize), one for content.
@@ -440,20 +488,24 @@ export function ChatScreen() {
   useEffect(
     () => () => {
       if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
+      if (followTimer.current) clearTimeout(followTimer.current);
+      if (pinTimer.current) clearTimeout(pinTimer.current);
     },
     [],
   );
 
-  // The list ends with `endPad` of empty space (room for the floating dock),
-  // so a manual scroll can stop inside that dead zone with the last bubble's
-  // footer hidden behind the composer. Snap through it on downward releases
-  // only — an upward release is the user reading back, and must never be
-  // stolen even inside the zone (a tall dock stretches the zone past
-  // AT_END_PX, which used to yank upward scrolls back down).
+  // Small snap-through near the end on downward releases only — an upward
+  // release is the user reading back, and must never be stolen.
   const snapToEnd = useCallback(
     (e: any) => {
       touching.current = false;
       const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+      // Settle follow state from the release position itself (don't wait for
+      // scroll events that may never come on a static list): released at the
+      // bottom → following; released mid-list → user parked deliberately.
+      const here = contentH.current - (y + layoutH.current) < AT_END_PX;
+      stickEnd.current = here;
+      pinWanted.current = false;
       if (y < dragStartY.current - 4) return;
       const rest = contentH.current - (y + layoutH.current);
       if (rest <= 2 || rest > endPad.current + 8) return;
@@ -495,9 +547,9 @@ export function ChatScreen() {
     };
   }, [scrollEnd, remeasurePopover]);
 
-  // Keyboard/dock resize does NOT auto-scroll: other chat apps leave the
-  // transcript where it is and let the user scroll down to the newest message
-  // (the list's bottom padding reserves room for the dock + keyboard).
+  // Keyboard/footer resize does NOT auto-scroll: other chat apps leave the
+  // transcript where it is and let the user scroll down to the newest message.
+  // (kbResizeRef guards the follow during the resize transition.)
   useEffect(() => {
     if (kbH === 0 && dockH === 0) return;
     kbResizeRef.current = true;
@@ -506,6 +558,37 @@ export function ChatScreen() {
     }, 450);
     return () => clearTimeout(t);
   }, [kbH, dockH]);
+
+  useEffect(() => {
+    const prev = pinTrack.current;
+    const first = messages.length ? messages[0].id : null;
+    pinTrack.current = { sid: sessionId, first, len: messages.length };
+    if (!sessionId || messages.length === 0) return;
+    const reloaded =
+      sessionId !== prev.sid || first !== prev.first || prev.len === 0;
+    if (!reloaded) return;
+    // Declare intent immediately; the actual pin rides the content-size
+    // follow (correct measurements post-layout), NOT a direct scrollEnd here:
+    // on a cold load contentH/layoutH are still stale when this effect runs,
+    // so an immediate scroll computes a bogus small offset, strands the
+    // viewport up top, and reads exactly like "went down then bounced back".
+    stickEnd.current = true;
+    setAtBottom(true);
+    // Backstop: if no content-size event ever arrives to trigger the follow
+    // (static transcript, kb-suppressed window), pin once, late. Survives
+    // appends (only a new reload resets it); holding a finger down re-arms
+    // instead of firing into an actively-driven list.
+    if (pinTimer.current) clearTimeout(pinTimer.current);
+    pinWanted.current = true;
+    pinTimer.current = setTimeout(function tick() {
+      pinTimer.current = null;
+      if (touching.current) {
+        pinTimer.current = setTimeout(tick, 600);
+        return;
+      }
+      if (stickEnd.current || pinWanted.current) scrollEnd(false);
+    }, 600);
+  }, [sessionId, messages, scrollEnd]);
 
   // Fetch picker inventory when entering a chat (WS model.options, REST fallback).
   useEffect(() => {
@@ -687,16 +770,49 @@ export function ChatScreen() {
     return s;
   }, [searchOpen, sq, messages, streamingTexts]);
   const listContentStyle = useMemo(
-    () => ({ padding: 12, gap: 8, paddingBottom: 12 + dockH + kbH + kbGap }),
-    [dockH, kbH, kbGap],
+    () => ({ padding: 12, gap: 8, paddingBottom: 0 }),
+    [],
   );
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
+  // Estimated row heights by role for getItemLayout: lets the list know the
+  // FULL transcript extent (for correct pin-to-bottom offsets) without
+  // mounting every row — windowing (removeClippedSubviews + windowSize) only
+  // measures what's mounted, so a cold pin otherwise lands at the end of the
+  // initial window instead of the transcript (long chats only — hence
+  // "sometimes"). Residual estimate error self-corrects via the follow system.
+  // Matches contentContainer padding/gap below (12 top pad + 8 inter-row gap).
+  const getItemLayout = useCallback(
+    (data: ArrayLike<UiMessage> | null | undefined, index: number) => {
+      const est = (i: number) => EST_H[data?.[i]?.role ?? ''] ?? 120;
+      let offset = 12;
+      for (let j = 0; j < index; j++) offset += est(j) + 8;
+      return { length: est(index), offset, index };
+    },
+    [],
+  );
   const listMaintainVisible = useMemo(() => ({ minIndexForVisible: 0 }), []);
   const handleContentSizeChange = useCallback(
     (_w: number, h: number) => {
       contentH.current = h;
       if (touching.current) return;
-      if (stickEnd.current && !kbResizeRef.current) scrollEnd(false);
+      if (!stickEnd.current || kbResizeRef.current) return;
+      // Coalesce: at most one follow per window no matter how many tokens
+      // land inside it. Discrete follows (send, keyboard, session open) call
+      // scrollEnd directly and are unaffected.
+      if (followTimer.current) return;
+      followTimer.current = setTimeout(() => {
+        followTimer.current = null;
+        if ((!stickEnd.current && !pinWanted.current) || touching.current) return;
+        // Skip micro-gaps: the bottom is already on screen, and firing a
+        // native scroll per tick for a few pixels is what made following look
+        // steppy. Glide (animated) for short hops, jump (instant) for long
+        // hauls — same rule as the scroll-to-bottom button (a full-transcript
+        // animated glide reads as a slow descent).
+        const end = Math.max(0, contentH.current - layoutH.current);
+        const dist = end - scrollY.current;
+        if (dist < 12) return;
+        scrollEnd(dist < 3000);
+      }, 250);
     },
     [scrollEnd],
   );
@@ -719,7 +835,30 @@ export function ChatScreen() {
       if (atEnd) flying.current = false;
       else return;
     }
-    stickEnd.current = atEnd;
+    if (atEnd) {
+      // Landing near the bottom (re)engages following and retires any fresh-
+      // load intent — self-healing after programmatic scrolls, layout shifts
+      // and keyboard transitions. A fling that lands here is over by definition.
+      missEnd.current = 0;
+      momentum.current = false;
+      stickEnd.current = true;
+      pinWanted.current = false;
+    } else if (touching.current || momentum.current) {
+      // Genuine user driving (finger down, or fling in flight): disengage
+      // immediately and retire load intent — the user positioned deliberately.
+      missEnd.current = 0;
+      stickEnd.current = false;
+      pinWanted.current = false;
+    } else {
+      // No touch, no momentum: MVCP adjustments, layout shifts and stray
+      // events. A lone transient must never cancel following (it strands the
+      // viewport mid-list with no further follow queued) — require it to
+      // persist across frames. pinWanted deliberately survives this branch.
+      missEnd.current += 1;
+      if (missEnd.current >= 3) {
+        stickEnd.current = false;
+      }
+    }
     setAtBottom((p) => (p === atEnd ? p : atEnd));
   }, []);
   const renderMessage = useCallback(
@@ -742,13 +881,13 @@ export function ChatScreen() {
           canRegenerate={!!lastAssistantId && item.id === lastAssistantId && hasRegenTarget && !generating}
           canBranch={item.role === 'assistant' && !item.pending}
           onRegenerate={onRegenerate}
-          onBranchMenu={openBranchMenu}
+          onBranchChat={() => void branchSession()}
           onUserMenu={openUserMenu}
           onTip={showTip}
         />
       );
     },
-    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, openBranchMenu, openUserMenu, showTip, streamingTexts],
+    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, branchSession, openUserMenu, showTip, streamingTexts],
   );
   const listExtraData = useMemo(
     () => ({ expanded, highlightIds, copiedId, generating, lastAssistantId, dark, bubbleMax, streamingTexts }),
@@ -809,9 +948,9 @@ export function ChatScreen() {
           <StatusBar style="auto" />
           <View className="flex-1 items-center justify-center p-6">
             <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</Text>
-            <Tap onPress={() => void newSession()} radius={8} highlight="#1667d0" className="mt-2 items-center bg-[#1a73e8] px-[18px] py-[11px]">
-              <Text className="text-[15px] font-semibold text-white">+ New chat</Text>
-            </Tap>
+            <Button variant="default" onPress={() => void newSession()} className="mt-2 items-center px-[18px] py-[11px]">
+              <UIText className="text-[15px] font-semibold">+ New chat</UIText>
+            </Button>
           </View>
         </SafeAreaView>
       </View>
@@ -876,10 +1015,9 @@ export function ChatScreen() {
           contextPercent={ctxPct}
           contextTone={ctxTone}
           onOpenSearch={() => {
-            setKebabOpen(false);
             setSearchOpen(true);
           }}
-          onOpenMenu={() => setKebabOpen((v) => !v)}
+          onSelectInfo={() => void openInfo()}
           onOpenInfo={() => void openInfo()}
         />
       )}
@@ -890,95 +1028,6 @@ export function ChatScreen() {
           gesture bar (and float the composer above the keyboard). */}
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
-
-      {/* Kebab dropdown — anchored directly below the screen-owned 52pt header row. */}
-      <Modal
-        visible={kebabOpen}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={() => setKebabOpen(false)}
-      >
-        <View style={{ flex: 1 }}>
-          <Pressable
-            style={{ position: 'absolute', inset: 0 }}
-            onPress={() => setKebabOpen(false)}
-          />
-          <View
-            className="absolute w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
-            style={{ top: insets.top + 58, right: 12 }}
-          >
-            <Tap
-              testID="menu-info"
-              onPress={() => {
-                setKebabOpen(false);
-                void openInfo();
-              }}
-              radius={10}
-              className="flex-row items-center gap-2.5 px-3 py-2.5"
-            >
-              <Info size={17} color={headerIcon} />
-              <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Session info</Text>
-            </Tap>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Per-message ⋯ popover — floats above the ⋯ button that opened it
-          (window → modal coords, same +insets.top shift as the kebab menu).
-          Falls below the button when there's no room above. */}
-      <Modal
-        visible={!!branchAnchor}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={closeBranchMenu}
-      >
-        <View style={{ flex: 1 }}>
-          <Pressable
-            style={{ position: 'absolute', inset: 0 }}
-            onPress={closeBranchMenu}
-          />
-          {!!branchAnchor &&
-            (() => {
-              const target = messages.find((m) => m.id === branchAnchor.id);
-              const menuW = 192;
-              const left = Math.max(8, Math.min(branchAnchor.anchor.x + branchAnchor.anchor.w - menuW, winW - menuW - 8));
-              const above = branchAnchor.anchor.y > 96;
-              return (
-                <View
-                  className="absolute w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
-                  style={
-                    above
-                      ? { bottom: winH - branchAnchor.anchor.y + 8, left }
-                      : { top: branchAnchor.anchor.y + branchAnchor.anchor.h + 8 + insets.top, left }
-                  }
-                >
-                  {!!target?.ts && (
-                    <View className="flex-row items-center gap-2.5 px-3 py-2">
-                      <Clock size={17} color={dark ? '#888' : '#999'} />
-                      <Text className="text-[13px] text-neutral-500 dark:text-neutral-400">
-                        {formatBubbleTime(target.ts)}
-                      </Text>
-                    </View>
-                  )}
-                  <Tap
-                    testID="menu-branch"
-                    onPress={() => {
-                      closeBranchMenu();
-                      void branchSession();
-                    }}
-                    radius={10}
-                    className="flex-row items-center gap-2.5 px-3 py-2.5"
-                  >
-                    <GitFork size={17} color={headerIcon} />
-                    <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Branch chat</Text>
-                  </Tap>
-                </View>
-              );
-            })()}
-        </View>
-      </Modal>
 
       {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
       <Modal
@@ -1022,30 +1071,30 @@ export function ChatScreen() {
                     </View>
                   )}
                   {showCopy && (
-                    <Tap
+                    <Button
+                      variant="ghost"
                       onPress={() => {
                         closeUserMenu();
                         void copyText(target.id, fullText);
                       }}
-                      radius={10}
                       className="flex-row items-center gap-2.5 px-3 py-2.5"
                     >
                       <Copy size={17} color={headerIcon} />
-                      <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</Text>
-                    </Tap>
+                      <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</UIText>
+                    </Button>
                   )}
                   {showEdit && (
-                    <Tap
+                    <Button
+                      variant="ghost"
                       onPress={() => {
                         closeUserMenu();
                         editMessage(target.id);
                       }}
-                      radius={10}
                       className="flex-row items-center gap-2.5 px-3 py-2.5"
                     >
                       <Pencil size={17} color={headerIcon} />
-                      <Text className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</Text>
-                    </Tap>
+                      <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</UIText>
+                    </Button>
                   )}
                 </View>
               );
@@ -1053,10 +1102,11 @@ export function ChatScreen() {
         </View>
       </Modal>
 
-      {/* Plain View, not KeyboardAvoidingView: the composer dock is absolutely
-          positioned (so the transcript shows behind it), and an absolute child
-          ignores the view's padding — the keyboard is handled explicitly above
-          via kbH (dock bottom + list padding). */}
+      {/* Plain View, not KeyboardAvoidingView: the composer is a fixed footer
+          below the transcript (separate from the scroll region), and an
+          absolute child ignores the view's padding — the keyboard is handled
+          explicitly above via kbH (footer padding; the flex layout shrinks
+          the list above it automatically). */}
       <View className="flex-1">
         <FlatList
           ref={listRef}
@@ -1067,7 +1117,13 @@ export function ChatScreen() {
           contentContainerStyle={listContentStyle}
           onContentSizeChange={handleContentSizeChange}
           onLayout={handleListLayout}
-          onMomentumScrollEnd={snapToEnd}
+          onMomentumScrollBegin={() => {
+            momentum.current = true;
+          }}
+          onMomentumScrollEnd={(e: any) => {
+            momentum.current = false;
+            snapToEnd(e);
+          }}
           onScrollEndDrag={snapToEnd}
           onScrollBeginDrag={handleScrollBeginDrag}
           onScroll={handleScroll}
@@ -1082,12 +1138,15 @@ export function ChatScreen() {
           updateCellsBatchingPeriod={80}
           initialNumToRender={12}
           renderItem={renderMessage}
+          getItemLayout={getItemLayout}
+          onViewableItemsChanged={handleViewable}
         />
-        {/* Floating bottom dock — transparent, so the transcript shows behind the
-            composer instead of a solid background band. */}
+        {/* Fixed footer: opaque card tone edge-to-edge, so no black can show
+            through anywhere in the input zone (tail is 0, insets paint the
+            same tone). Same JSX position as before, so the focused input
+            never remounts. */}
         <View
-          className="absolute left-0 right-0 bg-white dark:bg-black"
-          style={{ bottom: kbH + kbGap }}
+          style={{ paddingBottom: kbH + kbGap }}
           onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
         >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
@@ -1110,24 +1169,24 @@ export function ChatScreen() {
             const active = todos.find(todoActive);
             return (
               <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Tap
+                <Button
+                  variant="ghost"
                   onPress={() => setTodosOpen((v) => !v)}
-                  radius={8}
                   className="flex-row items-center gap-2 px-3 py-2"
                 >
-                  <Text className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     Tasks
-                  </Text>
-                  <Text className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                  </UIText>
+                  <UIText className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
                     {done}/{todos.length}
-                  </Text>
+                  </UIText>
                   {!todosOpen && active && (
-                    <Text
+                    <UIText
                       className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
                       numberOfLines={1}
                     >
                       · {todoLabel(active)}
-                    </Text>
+                    </UIText>
                   )}
                   {todosOpen && <View className="flex-1" />}
                   {todosOpen ? (
@@ -1135,7 +1194,7 @@ export function ChatScreen() {
                   ) : (
                     <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
                   )}
-                </Tap>
+                </Button>
                 {todosOpen && (
                   <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
                     {todos.map((t, i) => {
@@ -1178,24 +1237,24 @@ export function ChatScreen() {
             const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
             return (
               <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Tap
+                <Button
+                  variant="ghost"
                   onPress={() => setSubagentsOpen((v) => !v)}
-                  radius={8}
                   className="flex-row items-center gap-2 px-3 py-2"
                 >
-                  <Text className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     Subagents
-                  </Text>
-                  <Text className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                  </UIText>
+                  <UIText className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
                     {running}/{subagents.length}
-                  </Text>
+                  </UIText>
                   {!subagentsOpen && first && (
-                    <Text
+                    <UIText
                       className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
                       numberOfLines={1}
                     >
                       · {first.goal || first.last_tool || first.subagent_id}
-                    </Text>
+                    </UIText>
                   )}
                   {subagentsOpen && <View className="flex-1" />}
                   {subagentsOpen ? (
@@ -1203,7 +1262,7 @@ export function ChatScreen() {
                   ) : (
                     <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
                   )}
-                </Tap>
+                </Button>
                 {subagentsOpen && (
                   <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled>
                     {subagents.map((s) => {
@@ -1248,13 +1307,13 @@ export function ChatScreen() {
                 {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
               </Text>
               {queueParked ? (
-                <Tap onPress={resumeQueue} hitSlop={8} radius={4} className="px-1.5 py-0.5">
-                  <Text className="text-[11px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Resume</Text>
-                </Tap>
+                <Button variant="link" onPress={resumeQueue} hitSlop={8} className="px-1.5 py-0.5">
+                  <UIText className="text-[11px] font-semibold">Resume</UIText>
+                </Button>
               ) : (
-                <Tap onPress={clearQueue} hitSlop={8} radius={4} className="px-1.5 py-0.5">
-                  <Text className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</Text>
-                </Tap>
+                <Button variant="link" onPress={clearQueue} hitSlop={8} className="px-1.5 py-0.5">
+                  <UIText className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</UIText>
+                </Button>
               )}
             </View>
             <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
@@ -1266,17 +1325,17 @@ export function ChatScreen() {
                   >
                     {q.text}
                   </Text>
-                  <Tap
+                  <Button
+                    variant="outline"
                     onPress={() => sendQueuedNow(q.id)}
                     hitSlop={8}
-                    radius={4}
-                    className="shrink-0 border border-neutral-300 px-1.5 py-0.5 dark:border-neutral-700"
+                    className="shrink-0 px-1.5 py-0.5"
                   >
-                    <Text className="text-[11px] font-semibold dark:text-neutral-100">Send</Text>
-                  </Tap>
-                  <Tap onPress={() => removeQueued(q.id)} hitSlop={10} radius={4} className="shrink-0 px-1.5 py-0.5">
-                    <Text className="text-[15px] leading-[15px] text-neutral-400">×</Text>
-                  </Tap>
+                    <UIText className="text-[11px] font-semibold">Send</UIText>
+                  </Button>
+                  <Button variant="link" onPress={() => removeQueued(q.id)} hitSlop={10} className="shrink-0 px-1.5 py-0.5">
+                    <UIText className="text-[15px] leading-[15px] text-neutral-400">×</UIText>
+                  </Button>
                 </View>
               ))}
             </ScrollView>
@@ -1298,35 +1357,35 @@ export function ChatScreen() {
               {visibleCompletions.slice(0, 40).map((item, i) => {
                 const label = item.display || item.text;
                 return (
-                  <Tap
+                  <Button
+                    variant="ghost"
                     key={`${item.text}-${i}`}
                     testID={`completion-option-${i}`}
                     onPress={() => applyCompletion(item)}
-                    radius={8}
                     className="flex-row items-center gap-2 px-3 py-2"
                   >
-                    <Text
+                    <UIText
                       className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]"
                       numberOfLines={1}
                     >
                       {label}
-                    </Text>
+                    </UIText>
                     {item.meta ? (
-                      <Text
+                      <UIText
                         className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
                         numberOfLines={1}
                       >
                         {item.meta}
-                      </Text>
+                      </UIText>
                     ) : (
                       <View className="flex-1" />
                     )}
                     {item.kind === 'skill' && (
-                      <Text className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                      <UIText className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
                         skill
-                      </Text>
+                      </UIText>
                     )}
-                  </Tap>
+                  </Button>
                 );
               })}
             </ScrollView>
@@ -1334,12 +1393,12 @@ export function ChatScreen() {
         )}
         {editingRowId != null && (
           <View className="mx-2.5 mb-1 flex-row items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
-            <Text className="flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
+            <Text className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
               Editing — resend to rewind and rerun from here
             </Text>
-            <Tap onPress={cancelEdit} hitSlop={8} radius={4} className="shrink-0 px-1.5 py-0.5">
-              <Text className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</Text>
-            </Tap>
+            <Button variant="link" onPress={cancelEdit} hitSlop={8} className="shrink-0 px-1.5 py-0.5">
+              <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</UIText>
+            </Button>
           </View>
         )}
         <Composer
@@ -1365,9 +1424,12 @@ export function ChatScreen() {
         />
         </View>
       </View>
-      {/* Jump to the newest message (shown once the user scrolls up). */}
-      {!atBottom && (
-        <Tap
+      {/* Jump to the newest message (shown once the user scrolls up, or while
+          windowing still hides tail rows below the mounted window). */}
+      {(!atBottom || hasMoreBelow) && (
+        <Button
+          variant="ghost"
+          size="icon"
           testID="scroll-to-bottom"
           onPress={() => {
             stickEnd.current = true;
@@ -1376,14 +1438,13 @@ export function ChatScreen() {
             const dist = contentH.current - (scrollY.current + layoutH.current);
             scrollEnd(dist < 3000);
           }}
-          radius={18}
           className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
-          // Floats just above the dock, whose height moves (panels open/close,
-          // keyboard lifts it) — a fixed bottom hid the button behind the dock.
-          style={{ bottom: dockH + kbH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
+          // Floats just above the footer, whose measured height already
+          // includes the keyboard lift.
+          style={{ bottom: dockH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
         >
           <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
-        </Tap>
+        </Button>
       )}
       <AskSheet
         ref={askRef}
@@ -1440,53 +1501,53 @@ export function ChatScreen() {
                 {effortOptions.map((e) => {
                   const on = e === effort.trim().toLowerCase();
                   return (
-                    <Tap
+                    <Button
+                      variant="ghost"
                       key={e}
                       testID={`effort-option-${e}`}
                       onPress={() => {
                         void applyEffort(e);
                         closePopover();
                       }}
-                      radius={8}
                       className={`flex-row items-center gap-2 px-2.5 py-2 ${
                         on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                       }`}
                     >
-                      <Text
-                        className={`flex-1 text-[14px] ${
+                      <UIText
+                        className={`min-w-0 flex-1 text-[14px] ${
                           on
                             ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                             : 'text-neutral-900 dark:text-neutral-100'
                         }`}
                       >
                         {reasoningLabel(e)}
-                      </Text>
+                      </UIText>
                       {on && <Check size={15} color="#1a73e8" />}
-                    </Tap>
+                    </Button>
                   );
                 })}
                 {/* Fast mode — separate from reasoning (`config.set fast`). */}
                 <View className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
-                <Tap
+                <Button
+                  variant="ghost"
                   testID="fast-toggle"
                   onPress={() => {
                     void applyFast(!(sessionInfo?.fast === true));
                     closePopover();
                   }}
-                  radius={8}
                   className="flex-row items-center gap-2 px-2.5 py-2"
                 >
-                  <Text
-                    className={`flex-1 text-[14px] ${
+                  <UIText
+                    className={`min-w-0 flex-1 text-[14px] ${
                       sessionInfo?.fast === true
                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                         : 'text-neutral-900 dark:text-neutral-100'
                     }`}
                   >
                     Fast mode
-                  </Text>
+                  </UIText>
                   {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
-                </Tap>
+                </Button>
               </>
             )}
 
@@ -1495,24 +1556,24 @@ export function ChatScreen() {
                 <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Attach
                 </Text>
-                <Tap
+                <Button
+                  variant="ghost"
                   testID="attach-photo"
                   onPress={() => void pickImage()}
-                  radius={8}
                   className="flex-row items-center gap-2.5 px-2.5 py-2"
                 >
                   <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
-                  <Text className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</Text>
-                </Tap>
-                <Tap
+                  <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</UIText>
+                </Button>
+                <Button
+                  variant="ghost"
                   testID="attach-file"
                   onPress={() => void pickFile()}
-                  radius={8}
                   className="flex-row items-center gap-2.5 px-2.5 py-2"
                 >
                   <FileText size={17} color={dark ? '#ccc' : '#444'} />
-                  <Text className="text-[14px] text-neutral-900 dark:text-neutral-100">File</Text>
-                </Tap>
+                  <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">File</UIText>
+                </Button>
               </>
             )}
 
@@ -1522,7 +1583,7 @@ export function ChatScreen() {
                   Switch model (this chat)
                 </Text>
                 <View className="px-1.5 pb-1.5">
-                  <TextInput
+                  <Input
                     className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
                     value={modelQuery}
                     onChangeText={setModelQuery}
@@ -1545,28 +1606,28 @@ export function ChatScreen() {
                     const open = mq ? true : (modelExpanded[p.slug] ?? false);
                     return (
                       <View key={p.slug || p.name}>
-                        <Tap
+                        <Button
+                          variant="ghost"
                           onPress={() =>
                             setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))
                           }
-                          radius={8}
                           className="flex-row items-center gap-2 px-2.5 py-2"
                         >
-                          <Text
-                            className="flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100"
+                          <UIText
+                            className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100"
                             numberOfLines={1}
                           >
                             {p.name}
-                          </Text>
-                          <Text className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                          </UIText>
+                          <UIText className="text-[12px] text-neutral-500 dark:text-neutral-400">
                             {count} model{count === 1 ? '' : 's'}
-                          </Text>
+                          </UIText>
                           {open ? (
                             <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
                           ) : (
                             <ChevronRight size={15} color={dark ? '#a3a3a3' : '#666'} />
                           )}
-                        </Tap>
+                        </Button>
                         {open &&
                           (p.models ?? []).map((mm) => {
                             const on = mm === model && p.slug === modelProvider;
@@ -1577,15 +1638,15 @@ export function ChatScreen() {
                                   on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                                 }`}
                               >
-                                <Tap
+                                <Button
+                                  variant="ghost"
                                   onPress={() => {
                                     void pickModel(p.slug, mm);
                                     closePopover();
                                   }}
-                                  radius={6}
                                   className="flex-1"
                                 >
-                                  <Text
+                                  <UIText
                                     className={`text-[14px] ${
                                       on
                                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
@@ -1595,19 +1656,19 @@ export function ChatScreen() {
                                   >
                                     {on ? '● ' : '○ '}
                                     {mm}
-                                  </Text>
-                                </Tap>
-                                <Tap
+                                  </UIText>
+                                </Button>
+                                <Button
+                                  variant="outline"
                                   onPress={() => {
                                     void setGlobalModel(p.slug, mm);
                                     closePopover();
                                   }}
-                                  radius={8}
-                                  className="border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+                                  className="px-2 py-1"
                                   hitSlop={8}
                                 >
-                                  <Text className="text-[13px] dark:text-neutral-100">Global</Text>
-                                </Tap>
+                                  <UIText className="text-[13px]">Global</UIText>
+                                </Button>
                               </View>
                             );
                           })}

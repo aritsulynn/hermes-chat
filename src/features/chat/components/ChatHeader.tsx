@@ -1,8 +1,12 @@
 // Chat top bar — the normal header and the in-transcript search header.
 // Extracted from index.tsx to keep the screen focused on orchestration.
-import { Text, TextInput, View } from 'react-native';
-import { ChevronDown, ChevronUp, MoreVertical, Search, X } from 'lucide-react-native';
-import { CtxRing, HamburgerBtn, Tap } from '../../../components/ui/bits';
+import { Text, View } from 'react-native';
+import { ChevronDown, ChevronUp, Info, MoreVertical, Search, X } from 'lucide-react-native';
+import { CtxRing, HamburgerBtn } from '../../../components/ui/bits';
+import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
+import { Text as UIText } from '../../../components/ui/text';
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 
 export function ChatNormalHeader({
   insetTop,
@@ -12,7 +16,7 @@ export function ChatNormalHeader({
   contextPercent,
   contextTone,
   onOpenSearch,
-  onOpenMenu,
+  onSelectInfo,
   onOpenInfo,
 }: {
   insetTop: number;
@@ -22,7 +26,7 @@ export function ChatNormalHeader({
   contextPercent: number | null;
   contextTone: 'ok' | 'warn' | 'hot';
   onOpenSearch: () => void;
-  onOpenMenu: () => void;
+  onSelectInfo: () => void;
   onOpenInfo: () => void;
 }) {
   return (
@@ -47,28 +51,44 @@ export function ChatNormalHeader({
           {contextPercent != null && (
             <CtxRing pct={contextPercent} tone={contextTone} dark={dark} onPress={onOpenInfo} />
           )}
-          <Tap
+          <Button
+            variant="ghost"
+            size="icon"
             testID="search-open"
             accessibilityRole="button"
             accessibilityLabel="Search conversation"
             onPress={onOpenSearch}
             hitSlop={2}
-            radius={20}
-            className="h-10 w-10 items-center justify-center"
           >
             <Search size={20} color={iconColor} />
-          </Tap>
-          <Tap
-            testID="kebab-btn"
-            accessibilityRole="button"
-            accessibilityLabel="Chat menu"
-            onPress={onOpenMenu}
-            hitSlop={2}
-            radius={20}
-            className="h-10 w-10 items-center justify-center"
-          >
-            <MoreVertical size={20} color={iconColor} />
-          </Tap>
+          </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                testID="kebab-btn"
+                accessibilityRole="button"
+                accessibilityLabel="Chat menu"
+                hitSlop={2}
+              >
+                <MoreVertical size={20} color={iconColor} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent side="bottom" align="end" className="w-52 p-1.5">
+              <PopoverClose asChild>
+                <Button
+                  variant="ghost"
+                  testID="menu-info"
+                  onPress={onSelectInfo}
+                  className="flex-row items-center gap-2.5 px-3 py-2.5"
+                >
+                  <Info size={17} color={iconColor} />
+                  <UIText className="text-[15px]">Session info</UIText>
+                </Button>
+              </PopoverClose>
+            </PopoverContent>
+          </Popover>
         </View>
       </View>
     </View>
@@ -112,7 +132,7 @@ export function ChatSearchHeader({
         <View className="min-w-0 flex-1 flex-row items-center gap-1">
           <View className="h-11 min-w-0 flex-1 flex-row items-center rounded-xl border border-neutral-200 bg-[#f4f4f6] px-3 dark:border-neutral-700 dark:bg-[#212121]">
             <Search size={18} color={dark ? '#aaa' : '#666'} />
-            <TextInput
+            <Input
               testID="conversation-search"
               accessibilityLabel="Search conversation"
               className="ml-2 min-w-0 flex-1 bg-transparent px-0 py-0 text-[16px] text-neutral-950 dark:text-neutral-100"
@@ -134,42 +154,45 @@ export function ChatSearchHeader({
               </Text>
             )}
           </View>
-          <Tap
+          <Button
+            variant="ghost"
+            size="icon"
             testID="search-prev"
             accessibilityRole="button"
             accessibilityLabel="Previous search match"
             onPress={onPrevious}
             disabled={!matchCount}
             hitSlop={2}
-            radius={16}
-            className="h-11 w-10 items-center justify-center"
+            className="h-11 w-10"
           >
             <ChevronUp size={20} color={matchCount ? iconColor : disabledColor} />
-          </Tap>
-          <Tap
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             testID="search-next"
             accessibilityRole="button"
             accessibilityLabel="Next search match"
             onPress={onNext}
             disabled={!matchCount}
             hitSlop={2}
-            radius={16}
-            className="h-11 w-10 items-center justify-center"
+            className="h-11 w-10"
           >
             <ChevronDown size={20} color={matchCount ? iconColor : disabledColor} />
-          </Tap>
+          </Button>
         </View>
-        <Tap
+        <Button
+          variant="ghost"
+          size="icon"
           testID="search-close"
           accessibilityRole="button"
           accessibilityLabel="Close conversation search"
           onPress={onClose}
           hitSlop={2}
-          radius={20}
-          className="h-11 w-10 items-center justify-center"
+          className="h-11 w-10"
         >
           <X size={22} color={iconColor} />
-        </Tap>
+        </Button>
       </View>
     </View>
   );

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
 import {
   Activity,
+  AlertCircle,
   Coins,
   Cpu,
   DollarSign,
@@ -18,6 +19,11 @@ import {
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components/ui/bits';
+import { Button } from '../../components/ui/button';
+import { Badge } from '../../components/ui/badge';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Progress } from '../../components/ui/progress';
+import { Text as UIText } from '../../components/ui/text';
 import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
@@ -194,11 +200,20 @@ export function UsageScreen() {
         </View>
 
         {error && (
-          <View className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/40">
-            <Text className="text-xs font-medium text-red-700 dark:text-red-300">{error}</Text>
-            <Pressable onPress={() => void fetchUsage(true)} className="mt-2 self-start rounded bg-red-600 px-2.5 py-1">
-              <Text className="text-xs font-medium text-white">Retry</Text>
-            </Pressable>
+          <View className="m-4">
+            <UIAlert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
+                {error}
+              </AlertDescription>
+              <Button
+                variant="destructive"
+                size="sm"
+                onPress={() => void fetchUsage(true)}
+                className="ml-6 mt-1 self-start"
+              >
+                <UIText className="text-xs font-medium text-white">Retry</UIText>
+              </Button>
+            </UIAlert>
           </View>
         )}
 
@@ -282,14 +297,11 @@ export function UsageScreen() {
                         {(totals?.total_input || 0).toLocaleString()}
                       </Text>
                     </View>
-                    <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                      <View
-                        className="h-full bg-[#1a73e8] rounded-full"
-                        style={{
-                          width: `${Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}%`,
-                        }}
-                      />
-                    </View>
+                    <Progress
+                      value={Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}
+                      indicatorClassName="bg-[#1a73e8]"
+                      className="bg-neutral-200 dark:bg-neutral-800"
+                    />
                   </View>
 
                   {/* Output Tokens */}
@@ -300,14 +312,11 @@ export function UsageScreen() {
                         {(totals?.total_output || 0).toLocaleString()}
                       </Text>
                     </View>
-                    <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                      <View
-                        className="h-full bg-[#8b5cf6] rounded-full"
-                        style={{
-                          width: `${Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}%`,
-                        }}
-                      />
-                    </View>
+                    <Progress
+                      value={Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}
+                      indicatorClassName="bg-[#8b5cf6]"
+                      className="bg-neutral-200 dark:bg-neutral-800"
+                    />
                   </View>
 
                   {/* Reasoning Tokens */}
@@ -319,14 +328,11 @@ export function UsageScreen() {
                           {(totals?.total_reasoning || 0).toLocaleString()}
                         </Text>
                       </View>
-                      <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                        <View
-                          className="h-full bg-[#f59e0b] rounded-full"
-                          style={{
-                            width: `${Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}%`,
-                          }}
-                        />
-                      </View>
+                      <Progress
+                        value={Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}
+                        indicatorClassName="bg-[#f59e0b]"
+                        className="bg-neutral-200 dark:bg-neutral-800"
+                      />
                     </View>
                   )}
 
@@ -339,14 +345,11 @@ export function UsageScreen() {
                           {(totals?.total_cache_read || 0).toLocaleString()}
                         </Text>
                       </View>
-                      <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                        <View
-                          className="h-full bg-[#10b981] rounded-full"
-                          style={{
-                            width: `${Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}%`,
-                          }}
-                        />
-                      </View>
+                      <Progress
+                        value={Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}
+                        indicatorClassName="bg-[#10b981]"
+                        className="bg-neutral-200 dark:bg-neutral-800"
+                      />
                     </View>
                   )}
                 </View>
@@ -453,20 +456,21 @@ export function UsageScreen() {
                       </View>
                       <View className="flex-row flex-wrap gap-1.5">
                         {toolsList.map((item) => (
-                          <View
+                          <Badge
                             key={item.name}
-                            className="flex-row items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 dark:border-neutral-800 dark:bg-neutral-950"
+                            variant="secondary"
+                            className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
                           >
-                            <Text className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
+                            <UIText className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
                               {item.name}
-                            </Text>
-                            <Text className="font-mono text-[11px] font-bold text-[#1a73e8] dark:text-[#7aa7ff]">
+                            </UIText>
+                            <UIText className="font-mono text-[11px] font-bold text-[#1a73e8] dark:text-[#7aa7ff]">
                               {item.count}
-                            </Text>
+                            </UIText>
                             {typeof item.percentage === 'number' && (
-                              <Text className="text-[10px] text-neutral-400">{item.percentage}%</Text>
+                              <UIText className="text-[10px] text-neutral-400">{item.percentage}%</UIText>
                             )}
-                          </View>
+                          </Badge>
                         ))}
                       </View>
                     </View>
@@ -483,18 +487,19 @@ export function UsageScreen() {
                       </View>
                       <View className="flex-row flex-wrap gap-1.5">
                         {skillsList.map((item) => (
-                          <View
+                          <Badge
                             key={item.name}
-                            className="flex-row items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 dark:border-neutral-800 dark:bg-neutral-950"
+                            variant="secondary"
+                            className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
                           >
-                            <Text className="text-xs text-neutral-800 dark:text-neutral-200">{item.name}</Text>
-                            <Text className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                            <UIText className="text-xs text-neutral-800 dark:text-neutral-200">{item.name}</UIText>
+                            <UIText className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                               {item.count}
-                            </Text>
+                            </UIText>
                             {typeof item.percentage === 'number' && (
-                              <Text className="text-[10px] text-neutral-400">{item.percentage}%</Text>
+                              <UIText className="text-[10px] text-neutral-400">{item.percentage}%</UIText>
                             )}
-                          </View>
+                          </Badge>
                         ))}
                       </View>
                     </View>

@@ -17,6 +17,7 @@ import { AlertCircle, Fingerprint } from 'lucide-react-native';
 import * as LocalAuth from 'expo-local-authentication';
 import { useApp } from '../../hooks/app-store';
 import { Field } from '../../components/ui/bits';
+import { Alert, AlertDescription } from '../../components/ui/alert';
 import { BUILD_ID } from '../../build';
 import { getPassword } from '../../services/connection';
 
@@ -124,10 +125,9 @@ export function LoginScreen() {
           </View>
 
           {error && (
-            <View className="mt-3 flex-row items-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 dark:border-red-950 dark:bg-red-950/30">
-              <AlertCircle size={17} color="#dc2626" />
-              <Text className="flex-1 text-xs leading-5 text-red-600 dark:text-red-400">{error}</Text>
-            </View>
+            <Alert icon={AlertCircle} variant="destructive" className="mt-3">
+              <AlertDescription className="flex-1 text-xs leading-5 text-red-600 dark:text-red-400">{error}</AlertDescription>
+            </Alert>
           )}
 
           <Pressable

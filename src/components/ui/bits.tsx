@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode, Ref } from 'react';
-import { Animated, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
-import type { PressableProps, StyleProp, ViewStyle } from 'react-native';
+import { Animated, Keyboard, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
 import { useApp } from '../../hooks/app-store';
+import { Button } from './button';
+import { Input } from './input';
+import { Label } from './label';
+import { Text as UIText } from './text';
 
 // Circular context-window ring for the chat header — sits left of the kebab,
 // taps into Session info for the exact numbers.
@@ -38,12 +40,13 @@ export function CtxRing({
           ? '#5fd28a'
           : '#1a7f37';
   return (
-    <Tap
+    <Button
+      variant="ghost"
+      size="icon"
       testID="ctx-ring"
       accessibilityRole="button"
       accessibilityLabel={`Context ${clamped}% — open session info`}
       onPress={onPress}
-      radius={18}
       className="h-9 w-9 items-center justify-center"
       hitSlop={6}
     >
@@ -65,11 +68,13 @@ export function CtxRing({
           fill="none"
           strokeDasharray={`${(clamped / 100) * c} ${c}`}
           strokeLinecap="round"
-          rotation="-90"
-          origin={`${size / 2}, ${size / 2}`}
+          // `rotation` + `origin` props make react-native-svg emit a
+          // `transform-origin` DOM attribute on web (React warning) — the
+          // equivalent `transform` attribute is valid SVG on both platforms.
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-    </Tap>
+    </Button>
   );
 }
 
@@ -78,7 +83,9 @@ export function HamburgerBtn() {
   const { theme } = useApp();
   const navigation = useNavigation();
   return (
-    <Tap
+    <Button
+      variant="ghost"
+      size="icon"
       testID="hamburger-btn"
       accessibilityRole="button"
       accessibilityLabel="Open navigation menu"
@@ -88,59 +95,11 @@ export function HamburgerBtn() {
         Keyboard.dismiss();
         (navigation as any).openDrawer?.();
       }}
-      radius={20}
       className="justify-center px-2 py-2"
       hitSlop={12}
     >
       <MenuIcon size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
-    </Tap>
-  );
-}
-
-// Pressable that paints a rounded highlight while held.
-//
-// NativeWind's `active:` variant only lights up once the compiled stylesheet is
-// in sync, and function `style` props are dropped by the css interop — so the
-// press is tracked locally and painted with a plain style (works light + dark,
-// native + web) while call sites stay declarative.
-export function Tap({
-  radius = 10,
-  highlight = 'rgba(120,120,128,0.24)',
-  className,
-  style,
-  onPressIn,
-  onPressOut,
-  children,
-  ref,
-  ...rest
-}: Omit<PressableProps, 'style' | 'children'> & {
-  className?: string;
-  style?: StyleProp<ViewStyle>;
-  /** Corner radius of the highlight. */
-  radius?: number;
-  /** Highlight colour while held. */
-  highlight?: string;
-  children?: ReactNode;
-  ref?: Ref<View>;
-}) {
-  const [pressed, setPressed] = useState(false);
-  return (
-    <Pressable
-      ref={ref}
-      {...rest}
-      className={className}
-      onPressIn={(e) => {
-        setPressed(true);
-        onPressIn?.(e);
-      }}
-      onPressOut={(e) => {
-        setPressed(false);
-        onPressOut?.(e);
-      }}
-      style={[style, pressed && { backgroundColor: highlight, borderRadius: radius }]}
-    >
-      {children}
-    </Pressable>
+    </Button>
   );
 }
 
@@ -166,8 +125,8 @@ export function Field({
   if (!secure) {
     return (
       <View className="mb-2.5">
-        <Text className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Text>
-        <TextInput
+        <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
+        <Input
           className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={value}
           onChangeText={onChange}
@@ -184,9 +143,9 @@ export function Field({
   }
   return (
     <View className="mb-2.5">
-      <Text className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Text>
+      <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
       <View className="flex-row items-center rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black pr-1">
-        <TextInput
+        <Input
           className="flex-1 px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={value}
           onChangeText={onChange}
@@ -197,9 +156,9 @@ export function Field({
           returnKeyType={onSubmit ? 'go' : 'default'}
           onSubmitEditing={() => onSubmit?.()}
         />
-        <Tap onPress={() => setVisible((v) => !v)} radius={8} className="px-2.5 py-2" hitSlop={8}>
-          <Text className="text-sm font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">{visible ? 'Hide' : 'Show'}</Text>
-        </Tap>
+        <Button variant="link" onPress={() => setVisible((v) => !v)} className="px-2.5 py-2" hitSlop={8}>
+          <UIText className="text-sm font-semibold">{visible ? 'Hide' : 'Show'}</UIText>
+        </Button>
       </View>
     </View>
   );

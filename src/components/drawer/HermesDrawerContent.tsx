@@ -2,7 +2,7 @@
 // (opens straight into chat), History/Ops links, user footer with
 // theme switch + logout. Extracted from app/_layout.tsx.
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { usePathname } from 'expo-router';
@@ -19,7 +19,12 @@ import {
   X,
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
-import { Tap } from '../ui/bits';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Text as UIText } from '../ui/text';
+import { Avatar, AvatarFallback } from '../ui/avatar';
+import { Badge } from '../ui/badge';
+import { Separator } from '../ui/separator';
 import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
 
 export function HermesDrawerContent(props: DrawerContentComponentProps) {
@@ -113,7 +118,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       >
         {searchOpen ? (
           <View className="flex-row items-center gap-1 px-4 pt-2">
-            <TextInput
+            <Input
               value={q}
               onChangeText={setQ}
               placeholder="Search chats…"
@@ -121,98 +126,100 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
               autoFocus
               className="flex-1 rounded-lg border border-neutral-300 px-3 py-2.5 text-[16px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
             />
-            <Tap
+            <Button
+              variant="ghost"
+              size="icon"
               onPress={() => {
                 setSearchOpen(false);
                 setQ('');
               }}
               hitSlop={10}
-              radius={18}
-              className="p-2"
             >
               <X size={20} color={dimColor} />
-            </Tap>
+            </Button>
           </View>
         ) : (
           <View className="flex-row items-center px-4 pt-2">
-            <Tap
+            <Button
+              variant="ghost"
               testID="profile-selector"
               accessibilityRole="button"
               accessibilityLabel={`Switch profile. Active profile: ${activeProfile}`}
               onPress={() => setProfilePickerOpen(true)}
               hitSlop={8}
-              radius={12}
-              className="min-w-0 flex-1 flex-row items-center gap-2 px-1 py-1"
+              className="min-w-0 h-auto flex-1 shrink flex-row items-center justify-start gap-2 px-1 py-1"
             >
-              <Text className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
+              <UIText className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</UIText>
               <ChevronDown size={17} color={dimColor} />
-            </Tap>
-            <Tap onPress={() => setSearchOpen(true)} hitSlop={10} radius={18} className="p-2">
+            </Button>
+            <Button variant="ghost" size="icon" onPress={() => setSearchOpen(true)} hitSlop={10}>
               <Search size={20} color={dimColor} />
-            </Tap>
-            <Tap onPress={close} hitSlop={10} radius={18} className="p-2">
+            </Button>
+            <Button variant="ghost" size="icon" onPress={close} hitSlop={10}>
               <X size={20} color={dimColor} />
-            </Tap>
+            </Button>
           </View>
         )}
         <View className="px-3 pt-2 gap-1">
-          <Tap
+          <Button
+            variant="ghost"
             disabled={busy}
             onPress={() => {
               if (busy) return;
               close();
               void newSession();
             }}
-            radius={12}
-            className={`flex-row items-center gap-3 px-3 py-3 ${
+            className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
               isNewChat ? activeItemClass : ''
             } ${busy ? 'opacity-50' : ''}`}
           >
             <SquarePen size={20} color={isNewChat ? '#1a73e8' : dimColor} />
-            <Text
-              className={`text-[17px] ${
+            <UIText
+              numberOfLines={1}
+              className={`flex-1 min-w-0 text-[17px] ${
                 isNewChat
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                  : 'text-neutral-950 dark:text-neutral-100'
+                  : 'font-normal text-neutral-950 dark:text-neutral-100'
               }`}
             >
               New chat
-            </Text>
-          </Tap>
+            </UIText>
+          </Button>
           {NAV_ITEMS.map((item) => {
             const active = pathname === `/${item.name}`;
             const Icon = item.icon;
             return (
-              <Tap
+              <Button
                 key={item.name}
+                variant="ghost"
                 onPress={() => {
                   close();
                   props.navigation.navigate(item.name);
                 }}
-                radius={12}
-                className={`flex-row items-center gap-3 px-3 py-3 ${
+                className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
                   active ? activeItemClass : ''
                 }`}
               >
                 <Icon size={20} color={active ? '#1a73e8' : dimColor} />
-                <Text
-                  className={`text-[17px] ${
+                <UIText
+                  numberOfLines={1}
+                  className={`flex-1 min-w-0 text-[17px] ${
                     active
                       ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                      : 'text-neutral-950 dark:text-neutral-100'
+                      : 'font-normal text-neutral-950 dark:text-neutral-100'
                   }`}
                 >
                   {item.label}
-                </Text>
-              </Tap>
+                </UIText>
+              </Button>
             );
           })}
 
           {/* Meatball (More) Button under Files */}
-          <Tap
+          <Button
+            variant="ghost"
             onPress={() => setShowMoreMenu(!showMoreMenu)}
-            radius={12}
-            className={`flex-row items-center gap-3 px-3 py-3 ${
+            className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
               showMoreMenu || isMoreActive ? activeItemClass : ''
             }`}
           >
@@ -220,21 +227,22 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
               size={20}
               color={(showMoreMenu || isMoreActive) ? '#1a73e8' : dimColor}
             />
-            <Text
-              className={`flex-1 text-[17px] ${
+            <UIText
+              numberOfLines={1}
+              className={`flex-1 min-w-0 text-[17px] ${
                 (showMoreMenu || isMoreActive)
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                  : 'text-neutral-950 dark:text-neutral-100'
+                  : 'font-normal text-neutral-950 dark:text-neutral-100'
               }`}
             >
               More
-            </Text>
+            </UIText>
             {pendingAskCount > 0 && (
-              <View className="min-w-5 items-center rounded-full bg-red-500 px-1.5 py-0.5">
-                <Text className="text-[11px] font-bold text-white">{pendingAskCount > 99 ? '99+' : pendingAskCount}</Text>
-              </View>
+              <Badge variant="destructive">
+                <UIText className="text-[11px] font-bold text-white">{pendingAskCount > 99 ? '99+' : pendingAskCount}</UIText>
+              </Badge>
             )}
-          </Tap>
+          </Button>
 
           {/* Submenu for More */}
           {showMoreMenu && (
@@ -243,28 +251,29 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                 const active = pathname === `/${item.name}`;
                 const Icon = item.icon;
                 return (
-                  <Tap
+                  <Button
                     key={item.name}
+                    variant="ghost"
                     onPress={() => {
                       close();
                       props.navigation.navigate(item.name);
                     }}
-                    radius={12}
-                    className={`flex-row items-center gap-3 px-3 py-2.5 ${
+                    className={`flex-row h-auto items-center justify-start gap-3 px-3 py-2.5 ${
                       active ? activeItemClass : ''
                     }`}
                   >
                     <Icon size={18} color={active ? '#1a73e8' : dimColor} />
-                    <Text
-                      className={`text-[15px] ${
+                    <UIText
+                      numberOfLines={1}
+                      className={`flex-1 min-w-0 text-[15px] ${
                         active
                           ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                          : 'text-neutral-800 dark:text-neutral-200'
+                          : 'font-normal text-neutral-800 dark:text-neutral-200'
                       }`}
                     >
                       {item.label}
-                    </Text>
-                  </Tap>
+                    </UIText>
+                  </Button>
                 );
               })}
             </View>
@@ -285,8 +294,9 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
               (s.profile ?? activeProfile) === activeProfile &&
               (s.id === activeId || s.id === openingId);
             return (
-              <Tap
+              <Button
                 key={`${s.profile ?? activeProfile}:${s.id}`}
+                variant="ghost"
                 accessibilityRole="button"
                 accessibilityLabel={`Open chat ${s.title || '(untitled)'}`}
                 onPress={() => {
@@ -311,23 +321,22 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                   );
                 }}
                 delayLongPress={400}
-                radius={12}
-                className={`px-3 py-3 ${
+                className={`flex-row h-auto items-center justify-start px-3 py-3 ${
                   active ? activeItemClass : ''
                 }`}
               >
-                <Text
+                <UIText
                   numberOfLines={1}
                   ellipsizeMode="tail"
-                  className={`text-[16px] ${
+                  className={`flex-1 min-w-0 text-[16px] ${
                     active
                       ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                       : 'text-neutral-950 dark:text-neutral-100'
                   }`}
                 >
                   {s.title || '(untitled)'}
-                </Text>
-              </Tap>
+                </UIText>
+              </Button>
             );
           })}
           {/* Infinite-scroll footer: spinner while the next 100 loads. */}
@@ -361,16 +370,16 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                   Chat and toolsets use this profile
                 </Text>
               </View>
-              <Tap
+              <Button
+                variant="ghost"
+                size="icon"
                 accessibilityRole="button"
                 accessibilityLabel="Close profile picker"
                 onPress={() => setProfilePickerOpen(false)}
                 hitSlop={8}
-                radius={16}
-                className="p-2"
               >
                 <X size={18} color={dimColor} />
-              </Tap>
+              </Button>
             </View>
             <ScrollView className="max-h-[420px]" nestedScrollEnabled showsVerticalScrollIndicator={false}>
               {profiles.length === 0 ? (
@@ -381,8 +390,9 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                 profiles.map((profile) => {
                   const selected = profile.name === activeProfile;
                   return (
-                    <Tap
+                    <Button
                       key={profile.name}
+                      variant="ghost"
                       testID={`profile-option-${profile.name}`}
                       accessibilityRole="button"
                       accessibilityState={{ selected }}
@@ -392,8 +402,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                         close();
                         void switchProfile(profile.name);
                       }}
-                      radius={12}
-                      className={`flex-row items-center gap-3 px-3 py-3 ${
+                      className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
                         selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
                       } ${busy && !selected ? 'opacity-50' : ''}`}
                     >
@@ -408,22 +417,22 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                         />
                       </View>
                       <View className="min-w-0 flex-1">
-                        <Text
+                        <UIText
                           numberOfLines={1}
-                          className={`text-sm font-semibold ${
+                          className={`min-w-0 text-sm font-semibold ${
                             selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
                           }`}
                         >
                           {profile.display_name || profile.name}
-                        </Text>
+                        </UIText>
                         {!!profile.description && (
-                          <Text numberOfLines={1} className="text-xs text-neutral-500 dark:text-neutral-400">
+                          <UIText numberOfLines={1} className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">
                             {profile.description}
-                          </Text>
+                          </UIText>
                         )}
                       </View>
-                      {selected && <Text className="text-xs font-semibold text-sky-700 dark:text-sky-300">Active</Text>}
-                    </Tap>
+                      {selected && <UIText className="text-xs font-semibold text-sky-700 dark:text-sky-300">Active</UIText>}
+                    </Button>
                   );
                 })
               )}
@@ -440,30 +449,32 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
           paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
-        <Tap
+        <Button
+          variant="ghost"
           onPress={() => setShowUserMenu(!showUserMenu)}
-          radius={0}
-          className="flex-row items-center gap-3 px-4 py-4"
+          className="flex-row h-auto items-center justify-start gap-3 px-4 py-4"
         >
-          <View className="h-11 w-11 items-center justify-center rounded-full bg-[#1a73e8]">
-            <Text className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</Text>
-          </View>
+          <Avatar alt={username || 'Profile'} className="size-11 bg-[#1a73e8]">
+            <AvatarFallback className="bg-[#1a73e8]">
+              <UIText className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</UIText>
+            </AvatarFallback>
+          </Avatar>
           <View className="flex-1">
-            <Text
+            <UIText
               numberOfLines={1}
               ellipsizeMode="tail"
-              className="text-[16px] font-semibold text-neutral-950 dark:text-neutral-100"
+              className="min-w-0 text-[16px] font-semibold text-neutral-950 dark:text-neutral-100"
             >
               {username || 'Hermes'}
-            </Text>
-            <Text className="text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</Text>
+            </UIText>
+            <UIText className="min-w-0 text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</UIText>
           </View>
           <ChevronRight
             size={18}
             color={dimColor}
             style={{ transform: [{ rotate: showUserMenu ? '-90deg' : '0deg' }] }}
           />
-        </Tap>
+        </Button>
       </View>
 
       {/* Floating Popover Menu right above the profile bar */}
@@ -492,66 +503,69 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
               const active = pathname === `/${item.name}`;
               const Icon = item.icon;
               return (
-                <Tap
+                <Button
                   key={item.name}
+                  variant="ghost"
                   onPress={() => {
                     setShowUserMenu(false);
                     close();
                     props.navigation.navigate(item.name);
                   }}
-                  radius={12}
-                  className={`flex-row items-center gap-3 px-3.5 py-3 ${
+                  className={`flex-row h-auto items-center justify-start gap-3 px-3.5 py-3 ${
                     active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                   }`}
                 >
                   <Icon size={19} color={active ? '#1a73e8' : dark ? '#ccc' : '#444'} />
-                  <Text
-                    className={`text-[15px] font-medium ${
+                  <UIText
+                    numberOfLines={1}
+                    className={`flex-1 min-w-0 text-[15px] font-medium ${
                       active
                         ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
                         : 'text-neutral-900 dark:text-neutral-100'
                     }`}
                   >
                     {item.label}
-                  </Text>
-                </Tap>
+                  </UIText>
+                </Button>
               );
             })}
 
-            <View className="my-0.5 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+            <Separator className="my-0.5 bg-neutral-100 dark:bg-neutral-800" />
 
-            <Tap
+            <Button
+              variant="ghost"
               onPress={() => {
                 setShowUserMenu(false);
                 close();
                 props.navigation.navigate('settings');
               }}
-              radius={12}
-              className="flex-row items-center gap-3 px-3.5 py-3"
+              className="flex-row h-auto items-center justify-start gap-3 px-3.5 py-3"
             >
               <Settings size={19} color={dark ? '#ccc' : '#444'} />
-              <Text className="text-[15px] font-medium text-neutral-900 dark:text-neutral-100">
+              <UIText
+                numberOfLines={1}
+                className="flex-1 min-w-0 text-[15px] font-medium text-neutral-900 dark:text-neutral-100"
+              >
                 Settings
-              </Text>
-            </Tap>
+              </UIText>
+            </Button>
 
-            <View className="my-0.5 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+            <Separator className="my-0.5 bg-neutral-100 dark:bg-neutral-800" />
 
-            <Tap
+            <Button
+              variant="destructive"
               onPress={() => {
                 setShowUserMenu(false);
                 close();
                 void logout();
               }}
-              radius={12}
-              highlight="rgba(220,38,38,0.14)"
-              className="flex-row items-center gap-3 px-3.5 py-3"
+              className="flex-row h-auto items-center justify-start gap-3 px-3.5 py-3"
             >
-              <LogOut size={19} color="#dc2626" />
-              <Text className="text-[15px] font-medium text-red-600 dark:text-red-400">
+              <LogOut size={19} color="#fff" />
+              <UIText className="text-[15px] font-medium">
                 Log Out
-              </Text>
-            </Tap>
+              </UIText>
+            </Button>
           </View>
         </>
       )}

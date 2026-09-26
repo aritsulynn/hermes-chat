@@ -70,6 +70,19 @@ import { useSessionMiscSlice } from './slices/useSessionMisc';
 
 const AppContext = createContext<AppStore | null>(null);
 
+// High-frequency streaming deltas, isolated from AppContext: every token
+// produces a new object identity, and a single shared context would re-render
+// every useApp() consumer app-wide ~30x/s during streaming (drawer, header,
+// composer, all screens). Only the chat transcript reads this, so it gets its
+// own context — everyone else stays put while tokens flow.
+const StreamingContext = createContext<Record<string, string> | null>(null);
+
+export function useStreaming(): Record<string, string> {
+  const v = useContext(StreamingContext);
+  if (!v) throw new Error('useStreaming must be used inside AppProvider');
+  return v;
+}
+
 
 export function useApp(): AppStore {
   const v = useContext(AppContext);
@@ -1051,7 +1064,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionKey,
       sessionTitle,
       messages,
-      streamingTexts,
       input,
       setInput,
       model,
@@ -1151,7 +1163,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionKey,
       sessionTitle,
       messages,
-      streamingTexts,
       input,
       setInput,
       model,
@@ -1230,5 +1241,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      <StreamingContext.Provider value={streamingTexts}>{children}</StreamingContext.Provider>
+    </AppContext.Provider>
+  );
 }

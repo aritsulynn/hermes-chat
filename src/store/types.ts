@@ -46,11 +46,6 @@ export interface AppStore {
   sessionKey: string | null;
   sessionTitle: string;
   messages: UiMessage[];
-  /** Live streaming deltas by bubble id — kept outside `messages` so per-token
-   *  updates are O(1) instead of mapping the whole transcript. Merged into
-   *  `messages` once on turn end (desktop parity: hot state local, durable
-   *  transcript appended, not rewritten). */
-  streamingTexts: Record<string, string>;
   input: string;
   setInput: (v: string) => void;
   model: string;

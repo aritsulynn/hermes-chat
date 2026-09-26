@@ -18,6 +18,9 @@ import {
 } from 'lucide-react-native';
 
 import { HamburgerBtn } from '../../components/ui/bits';
+import { Badge } from '../../components/ui/badge';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Text as UIText } from '../../components/ui/text';
 import { useApp } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
 import { errMsg } from '../../utils/messages';
@@ -101,17 +104,17 @@ function AskCard({
           </Text>
         </View>
         {waiting ? (
-          <View className="rounded-full bg-amber-100 px-2 py-1 dark:bg-amber-950/60">
-            <Text className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
+          <Badge variant="secondary" className="border-transparent py-1">
+            <UIText className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
               {entry.status === 'sent' ? 'Sent' : 'Waiting'}
-            </Text>
-          </View>
+            </UIText>
+          </Badge>
         ) : (
-          <View className="rounded-full bg-neutral-100 px-2 py-1 dark:bg-neutral-800">
-            <Text className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">
+          <Badge variant="secondary" className="border-transparent py-1">
+            <UIText className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">
               {entry.status}
-            </Text>
-          </View>
+            </UIText>
+          </Badge>
         )}
       </View>
 
@@ -246,11 +249,9 @@ export function AskInboxScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {!!error && (
-            <View className="rounded-xl border border-red-200 bg-red-50/70 px-3 py-2.5 dark:border-red-950/60 dark:bg-red-950/20">
-              <Text className="text-sm text-red-700 dark:text-red-300">
-                {error}
-              </Text>
-            </View>
+            <UIAlert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="text-red-700 dark:text-red-300">{error}</AlertDescription>
+            </UIAlert>
           )}
           <View className="mb-1 flex-row items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
             <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
