@@ -369,7 +369,25 @@ export function renderMediaTags(text: string): string {
 export function cleanThinking(text: string): string {
   const lines = text.split('\n');
   while (lines.length > 1 && /^\([^)\n]{0,12}\)\s*\S.*\.\.\.\s*$/.test(lines[0])) lines.shift();
-  return lines.join('\n');
+  // Collapse runs of invisible-only lines: streaming deltas and some models
+  // pad with blank / zero-width-space lines, and an RN Text renders every
+  // one at full line height — a tall empty void under the real content.
+  // A line carrying only invisible chars shows nothing, so keep at most one
+  // blank separator (paragraph breaks survive) and strip the rest, including
+  // zero-width chars that `\s` doesn't match (U+200B/C/D, U+2060).
+  const out: string[] = [];
+  let blanks = 0;
+  for (const line of lines) {
+    if (/^[\s\u200B\u200C\u200D\u2060\uFEFF]*$/.test(line)) {
+      blanks += 1;
+      if (blanks > 1) continue;
+      out.push('');
+    } else {
+      blanks = 0;
+      out.push(line);
+    }
+  }
+  return out.join('\n').replace(/[\s\u200B\u200C\u200D\u2060\uFEFF]+$/, '');
 }
 
 // react-native-markdown-display renders lists as flex rows whose width Yoga
