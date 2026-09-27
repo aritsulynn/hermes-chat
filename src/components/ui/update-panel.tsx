@@ -19,6 +19,8 @@ import {
 } from 'react-native';
 import {
   ArrowDown,
+  ChevronDown,
+  ChevronUp,
   Download,
   RefreshCw,
   RotateCw,
@@ -81,8 +83,24 @@ function Chip({ tone, label }: { tone: UpdateTone; label: string }) {
   );
 }
 
+function formatCommitDate(at: number): string {
+  if (!at) return '';
+  try {
+    // `at` may be seconds or milliseconds — normalize to ms.
+    const ms = at > 1e12 ? at : at * 1000;
+    return new Date(ms).toLocaleDateString([], {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '';
+  }
+}
+
 export function UpdatePanel() {
-  const { conn, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { conn, activeProfile, opsGet, opsMut, getAuthScope, theme } = useApp();
+  const dark = theme === 'dark';
 
   const [info, setInfo] = useState<UpdateCheck | null>(null);
   const [checking, setChecking] = useState(false);
@@ -97,6 +115,9 @@ export function UpdatePanel() {
   // While true, new log lines keep the view pinned to the bottom. The user
   // scrolling up turns it off so reading earlier output isn't yanked away.
   const [atBottom, setAtBottom] = useState(true);
+  // Commit list expander — collapsed shows the first 5 one-liners, expanded
+  // shows every commit with full summary + author/date.
+  const [commitsOpen, setCommitsOpen] = useState(false);
 
   const aliveRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -329,20 +350,45 @@ export function UpdatePanel() {
       )}
 
       {info && info.updateAvailable && info.commits.length > 0 && (
-        <View className="mt-3 gap-1.5">
-          {info.commits.slice(0, 5).map((c, i) => (
-            <View key={`${c.sha}-${i}`} className="flex-row items-center gap-2">
-              <Text className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
-                {c.sha || '·'}
-              </Text>
-              <Text
-                numberOfLines={1}
-                className="flex-1 text-[11px] text-neutral-600 dark:text-neutral-300"
-              >
-                {c.summary || '(no summary)'}
-              </Text>
-            </View>
-          ))}
+        <View className="mt-3">
+          <Button
+            accessibilityRole="button"
+            accessibilityLabel={commitsOpen ? 'Collapse commits' : 'Expand commits'}
+            onPress={() => setCommitsOpen((v) => !v)}
+            variant="ghost"
+            className="flex-row items-center gap-1.5 self-start px-0 py-1"
+          >
+            <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+              {info.commits.length} commit{info.commits.length === 1 ? '' : 's'} behind
+            </UIText>
+            {commitsOpen ? (
+              <ChevronUp size={14} color="#888" />
+            ) : (
+              <ChevronDown size={14} color="#888" />
+            )}
+          </Button>
+          <View className="gap-1.5">
+            {(commitsOpen ? info.commits : info.commits.slice(0, 5)).map((c, i) => (
+              <View key={`${c.sha}-${i}`} className="flex-row items-start gap-2">
+                <Text className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
+                  {(c.sha || '·').slice(0, 7)}
+                </Text>
+                <View className="min-w-0 flex-1">
+                  <Text
+                    numberOfLines={commitsOpen ? undefined : 1}
+                    className="text-[11px] text-neutral-600 dark:text-neutral-300"
+                  >
+                    {c.summary || '(no summary)'}
+                  </Text>
+                  {commitsOpen && (!!c.author || !!c.at) && (
+                    <Text className="mt-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+                      {[c.author, formatCommitDate(c.at)].filter(Boolean).join(' · ')}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
       )}
 
@@ -371,42 +417,44 @@ export function UpdatePanel() {
         </View>
       ) : null}
 
-      <View className="mt-3 flex-row flex-wrap items-center gap-2">
-        <Button
-          accessibilityRole="button"
-          accessibilityLabel="Check for updates"
-          disabled={busy || !ready}
-          onPress={() => void refresh(true)}
-          variant="outline"
-          className="gap-1.5 rounded-xl px-3 py-2"
-        >
-          {checking ? (
-            <ActivityIndicator size="small" />
-          ) : (
-            <RefreshCw size={14} color="#1a73e8" />
-          )}
-          <UIText className="text-[13px] font-semibold">
-            Check for updates
-          </UIText>
-        </Button>
-
-        {canApply && (
+      <View className="mt-3 gap-2">
+        <View className="flex-row items-stretch gap-2">
           <Button
             accessibilityRole="button"
-            accessibilityLabel="Update Hermes now"
-            disabled={starting || running}
-            onPress={applyUpdate}
-            variant="default"
-            className="gap-1.5 rounded-xl px-3 py-2"
+            accessibilityLabel="Check for updates"
+            disabled={busy || !ready}
+            onPress={() => void refresh(true)}
+            variant="outline"
+            className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2"
           >
-            {starting ? (
-              <ActivityIndicator size="small" color="#fff" />
+            {checking ? (
+              <ActivityIndicator size="small" />
             ) : (
-              <Download size={14} color="#fff" />
+              <RefreshCw size={14} color="#1a73e8" />
             )}
-            <UIText className="text-[13px] font-semibold">Update now</UIText>
+            <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
+              Check for updates
+            </UIText>
           </Button>
-        )}
+
+          {canApply && (
+            <Button
+              accessibilityRole="button"
+              accessibilityLabel="Update Hermes now"
+              disabled={starting || running}
+              onPress={applyUpdate}
+              variant="default"
+              className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2"
+            >
+              {starting ? (
+                <ActivityIndicator size="small" color={dark ? '#111' : '#fff'} />
+              ) : (
+                <Download size={14} color={dark ? '#111' : '#fff'} />
+              )}
+              <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">Update now</UIText>
+            </Button>
+          )}
+        </View>
 
         <Button
           accessibilityRole="button"
@@ -414,10 +462,10 @@ export function UpdatePanel() {
           disabled={!ready || running}
           onPress={restartGateway}
           variant="outline"
-          className="gap-1.5 rounded-xl px-3 py-2"
+          className="gap-1.5 self-stretch rounded-xl px-3 py-2"
         >
           <RotateCw size={14} color="#666" />
-          <UIText className="text-[13px] font-semibold">
+          <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
             Restart gateway
           </UIText>
         </Button>

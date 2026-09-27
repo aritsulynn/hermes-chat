@@ -12,7 +12,6 @@ import {
   ChevronRight,
   CircleUserRound,
   Ellipsis,
-  LogOut,
   Search,
   Settings,
   SquarePen,
@@ -32,7 +31,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   const drawerOpen = useDrawerStatus() === 'open';
   const {
     authed, username, host, busy, activeProfile, profiles, refreshProfiles, switchProfile, sessionId, sessionKey, openingId, sessions, messages, pendingAskCount,
-    newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, logout, theme, deleteSessionById,
+    newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, theme, deleteSessionById,
   } = useApp();
   // Hooks FIRST — no early return above this line (authed flips at
   // login; returning early before hooks breaks hook order).
@@ -547,23 +546,6 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                 className="flex-1 min-w-0 text-[15px] font-medium text-neutral-900 dark:text-neutral-100"
               >
                 Settings
-              </UIText>
-            </Button>
-
-            <Separator className="my-0.5 bg-neutral-100 dark:bg-neutral-800" />
-
-            <Button
-              variant="destructive"
-              onPress={() => {
-                setShowUserMenu(false);
-                close();
-                void logout();
-              }}
-              className="flex-row h-auto items-center justify-start gap-3 px-3.5 py-3"
-            >
-              <LogOut size={19} color="#fff" />
-              <UIText className="text-[15px] font-medium">
-                Log Out
               </UIText>
             </Button>
           </View>

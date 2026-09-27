@@ -12,6 +12,7 @@ import { Redirect } from 'expo-router';
 import {
   Check,
   CircleUserRound,
+  Download,
   Globe,
   Info,
   LogOut,
@@ -206,84 +207,6 @@ export function SettingsScreen() {
           </View>
         </View>
 
-        {/* Account & Server Section */}
-        <View className="mb-6">
-          <View className="flex-row items-center gap-2 mb-2">
-            <User size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
-            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-              Account & Server
-            </Text>
-          </View>
-          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
-            {/* User row */}
-            <View className="flex-row items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-800">
-              <View className="flex-row items-center gap-2.5">
-                <Avatar alt={username || 'Profile'} className="bg-[#1a73e8]">
-                  <AvatarFallback className="bg-[#1a73e8]">
-                    <UIText className="text-sm font-bold text-white">
-                      {(username || 'H').slice(0, 1).toUpperCase()}
-                    </UIText>
-                  </AvatarFallback>
-                </Avatar>
-                <View>
-                  <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                    {username || 'Hermes User'}
-                  </Text>
-                  <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Account
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Active agent profile — switch from the Drawer. */}
-            <View className="flex-row items-center justify-between border-b border-neutral-200 py-2.5 dark:border-neutral-800">
-              <View className="flex-row items-center gap-2">
-                <CircleUserRound size={15} color={dark ? '#aaa' : '#666'} />
-                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Agent Profile</Text>
-              </View>
-              <Text className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">{activeProfile}</Text>
-            </View>
-
-            {/* Host row */}
-            <View className="flex-row items-center justify-between py-2.5 border-b border-neutral-200 dark:border-neutral-800">
-              <View className="flex-row items-center gap-2">
-                <Server size={15} color={dark ? '#aaa' : '#666'} />
-                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Server Host</Text>
-              </View>
-              <Text className="text-xs font-mono font-medium text-neutral-900 dark:text-neutral-100">
-                {host || 'Not connected'}
-              </Text>
-            </View>
-
-            {/* Gateway status row */}
-            <View className="flex-row items-center justify-between py-2.5">
-              <View className="flex-row items-center gap-2">
-                <Globe size={15} color={dark ? '#aaa' : '#666'} />
-                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Gateway Status</Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View
-                  className={`h-2 w-2 rounded-full ${
-                    isReady ? 'bg-emerald-500' : isConnecting ? 'bg-amber-500' : 'bg-red-500'
-                  }`}
-                />
-                <Text
-                  className={`text-xs font-medium ${
-                    isReady
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : isConnecting
-                      ? 'text-amber-600 dark:text-amber-400'
-                      : 'text-red-500'
-                  }`}
-                >
-                  {isReady ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
         {/* Agent / runtime Section */}
         <View className="mb-6">
           <View className="flex-row items-center gap-2 mb-2">
@@ -371,6 +294,17 @@ export function SettingsScreen() {
           </View>
         </View>
 
+        {/* Hermes Update Section */}
+        <View className="mb-6">
+          <View className="flex-row items-center gap-2 mb-2">
+            <Download size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
+            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              Hermes Update
+            </Text>
+          </View>
+          <UpdatePanel />
+        </View>
+
         {/* Notifications Section */}
         <View className="mb-6">
           <View className="flex-row items-center gap-2 mb-2">
@@ -396,6 +330,84 @@ export function SettingsScreen() {
                 checked={notificationsEnabled}
                 onCheckedChange={(v) => void setNotifications(v)}
               />
+            </View>
+          </View>
+        </View>
+
+        {/* Account & Server Section */}
+        <View className="mb-6">
+          <View className="flex-row items-center gap-2 mb-2">
+            <User size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
+            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              Account & Server
+            </Text>
+          </View>
+          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            {/* User row */}
+            <View className="flex-row items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-800">
+              <View className="flex-row items-center gap-2.5">
+                <Avatar alt={username || 'Profile'} className="bg-[#1a73e8]">
+                  <AvatarFallback className="bg-[#1a73e8]">
+                    <UIText className="text-sm font-bold text-white">
+                      {(username || 'H').slice(0, 1).toUpperCase()}
+                    </UIText>
+                  </AvatarFallback>
+                </Avatar>
+                <View>
+                  <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                    {username || 'Hermes User'}
+                  </Text>
+                  <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Account
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Active agent profile — switch from the Drawer. */}
+            <View className="flex-row items-center justify-between border-b border-neutral-200 py-2.5 dark:border-neutral-800">
+              <View className="flex-row items-center gap-2">
+                <CircleUserRound size={15} color={dark ? '#aaa' : '#666'} />
+                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Agent Profile</Text>
+              </View>
+              <Text className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">{activeProfile}</Text>
+            </View>
+
+            {/* Host row */}
+            <View className="flex-row items-center justify-between py-2.5 border-b border-neutral-200 dark:border-neutral-800">
+              <View className="flex-row items-center gap-2">
+                <Server size={15} color={dark ? '#aaa' : '#666'} />
+                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Server Host</Text>
+              </View>
+              <Text className="text-xs font-mono font-medium text-neutral-900 dark:text-neutral-100">
+                {host || 'Not connected'}
+              </Text>
+            </View>
+
+            {/* Gateway status row */}
+            <View className="flex-row items-center justify-between py-2.5">
+              <View className="flex-row items-center gap-2">
+                <Globe size={15} color={dark ? '#aaa' : '#666'} />
+                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Gateway Status</Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View
+                  className={`h-2 w-2 rounded-full ${
+                    isReady ? 'bg-emerald-500' : isConnecting ? 'bg-amber-500' : 'bg-red-500'
+                  }`}
+                />
+                <Text
+                  className={`text-xs font-medium ${
+                    isReady
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : isConnecting
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-red-500'
+                  }`}
+                >
+                  {isReady ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -441,10 +453,6 @@ export function SettingsScreen() {
             </Pressable>
           </View>
 
-          {/* Server update: check / apply / live log stream. */}
-          <View className="mt-3">
-            <UpdatePanel />
-          </View>
         </View>
 
         {/* Log Out Action Button */}

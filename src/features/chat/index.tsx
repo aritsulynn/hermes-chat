@@ -319,12 +319,12 @@ export function ChatScreen() {
   // reading on a non-scrollable list can't pin the button on screen.
   const [canScroll, setCanScroll] = useState(false);
   // Height of the bottom footer (panels + composer), keyboard lift included.
-  // Feeds the scroll-to-bottom button anchor above it. The transcript no
-  // longer slides under the composer (separate fixed footer), so the list
-  // reserves no room for it.
+  // Feeds the scroll-to-bottom button anchor above it. The footer overlays
+  // the transcript (absolute, transparent), so the list reserves room for it
+  // via content padding (see listContentStyle) instead of flex space.
   const [dockH, setDockH] = useState(0);
-  // Keyboard height — the footer is lifted by hand with bottom padding, and
-  // the flex layout shrinks the list above it automatically.
+  // Keyboard height — the footer is lifted by hand with bottom padding. The
+  // list stays full-height underneath the transparent footer zone.
   const [kbH, setKbH] = useState(0);
   // Gap between the lifted dock and the keyboard so the composer doesn't sit
   // flush on it. Only while the keyboard is open.
@@ -332,8 +332,9 @@ export function ChatScreen() {
   const contentH = useRef(0);
   const layoutH = useRef(0);
   const endPad = useRef(0);
-  // No tail gap: last bubble sits flush on the footer (same tone family),
-  // so no dark strip can appear between transcript and composer.
+  // Tail gap lives in the list content padding (= dockH, see
+  // listContentStyle) so the last bubble can scroll above the overlaid
+  // footer instead of hiding behind it.
   endPad.current = 0;
   // Fresh-load pin: after F5 / session switch / resume, land at the bottom
   // explicitly (instant, one shot). The content-size follow alone can lose the
@@ -780,8 +781,8 @@ export function ChatScreen() {
     return s;
   }, [searchOpen, sq, messages, streamingTexts]);
   const listContentStyle = useMemo(
-    () => ({ padding: 12, paddingBottom: 0 }),
-    [],
+    () => ({ padding: 12, paddingBottom: dockH }),
+    [dockH],
   );
   // FlashList วาง cell แบบ absolute — `gap` ใน contentContainerStyle โดนเมิน
   // ข้อความเลยติดกัน ใช้ separator คั่น 8px แทน (เท่า gap เดิม)
@@ -1037,7 +1038,13 @@ export function ChatScreen() {
   const popRootH = rootWin.current.h || Math.max(0, winH - rootWin.current.y);
   const popRelY = popover ? popover.y - rootWin.current.y : 0;
   const popBottom = popover ? Math.max(8, popRootH - popRelY + 6) : 0;
-  const popLeft = popover ? Math.max(8, Math.min(popover.x, winW - popW - 8)) : 0;
+  const popLeft = popover
+    ? popover.kind === 'model'
+      // Wide panel: dock to the left screen margin instead of the mid-screen
+      // anchor chip, so it never floats mid-air or clips past the right edge.
+      ? 12
+      : Math.max(8, Math.min(popover.x, winW - popW - 8))
+    : 0;
   // Height budget = the space between the anchor and the top of the screen
   // content, minus the 6px anchor gap and an 8px top margin. The popover grows
   // upward from the composer, so without this the model list (which gets long
@@ -1170,11 +1177,11 @@ export function ChatScreen() {
         </View>
       </Modal>
 
-      {/* Plain View, not KeyboardAvoidingView: the composer is a fixed footer
-          below the transcript (separate from the scroll region), and an
-          absolute child ignores the view's padding — the keyboard is handled
-          explicitly above via kbH (footer padding; the flex layout shrinks
-          the list above it automatically). */}
+      {/* Plain View, not KeyboardAvoidingView: the composer is an absolute
+          overlay at the bottom of the transcript container with a transparent
+          background, so scrolled messages show through around the card — an
+          absolute child ignores the view's padding, and the keyboard is
+          handled explicitly via kbH (footer padding lifts the card). */}
       <View className="flex-1">
         <FlashList
           ref={listRef}
@@ -1208,12 +1215,16 @@ export function ChatScreen() {
           keyboardDismissMode="none"
           renderItem={renderMessage}
         />
-        {/* Fixed footer: opaque card tone edge-to-edge, so no black can show
-            through anywhere in the input zone (tail is 0, insets paint the
-            same tone). Same JSX position as before, so the focused input
-            never remounts. */}
+        {/* Overlay footer: absolute + transparent, so the transcript scrolls
+            underneath and shows through around the composer card. The list
+            keeps the last bubble reachable via bottom content padding
+            (= dockH). Same JSX position as before, so the focused input
+            never remounts. box-none: taps on the transparent margins fall
+            through to the list (which dismisses the keyboard); the card and
+            panels stay fully tappable. */}
         <View
-          style={{ paddingBottom: kbH + kbGap }}
+          pointerEvents="box-none"
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: kbH + kbGap, backgroundColor: 'transparent' }}
           onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
         >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens

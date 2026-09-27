@@ -1,6 +1,6 @@
 import type * as React from 'react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Image, Keyboard, Pressable, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { Brain, Check, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react-native';
 import { cleanThinking, flattenLists, renderMediaTags } from '../../utils/messages';
@@ -169,6 +169,13 @@ const BubbleThumb = memo(function BubbleThumb({ uri, name }: { uri: string; name
   return <Image key={uri + name} source={source} resizeMode="cover" className="h-20 w-20 rounded-lg bg-black/10" />;
 });
 
+// Stable tap-to-dismiss for plain bubbles — module-level so the memo()'d
+// bubble keeps a referentially stable onPress (see the note on ChatScreen's
+// stable handlers). The list uses keyboardShouldPersistTaps="handled", so a
+// tap on selectable text/a link would otherwise count as "handled" and leave
+// the keyboard up.
+const dismissKeyboard = () => Keyboard.dismiss();
+
 export const MessageBubble = memo(function MessageBubble({
   item,
   bubbleMax,
@@ -306,7 +313,7 @@ export const MessageBubble = memo(function MessageBubble({
               }
               onToggleExpand(item.id);
             }
-          : undefined
+          : dismissKeyboard
       }
       onLongPress={
         toggleable
