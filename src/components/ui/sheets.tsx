@@ -528,3 +528,93 @@ export const AskSheet = forwardRef<
     </BottomSheetModal>
   );
 });
+
+// ── Generic form sheet ────────────────────────────────────────────────────────
+
+/**
+ * Drives a BottomSheetModal from a boolean so callers never touch present()
+ * themselves. gorhom's dismiss() on a sheet that was never presented flips its
+ * internal status to DISMISSING, and the portal then renders nothing — silently,
+ * forever — so `presented` is tracked and an unpresented sheet is never
+ * dismissed. A user-swiped sheet already closed itself, which is why onDismiss
+ * only has to push the state back to false.
+ */
+export function useSheet(open: boolean) {
+  const ref = useRef<BottomSheetModal>(null);
+  const presented = useRef(false);
+  useEffect(() => {
+    if (open) {
+      if (presented.current) return;
+      presented.current = true;
+      ref.current?.present();
+    } else if (presented.current) {
+      presented.current = false;
+      ref.current?.dismiss();
+    }
+  }, [open]);
+  return ref;
+}
+
+/**
+ * Themed bottom sheet chrome: backdrop, background, pan-down-to-close and
+ * keyboard handling. Use it directly when the body brings its own scroller
+ * (a list), or via FormSheet for a short form.
+ */
+export const Sheet = forwardRef<
+  BottomSheetModal,
+  {
+    onClose: () => void;
+    snapPoints?: Array<string | number>;
+    children: React.ReactNode;
+  }
+>(function Sheet({ onClose, snapPoints, children }, ref) {
+  const { theme } = useThemeValue();
+  const dark = theme === 'dark';
+  return (
+    <BottomSheetModal
+      ref={ref}
+      index={0}
+      snapPoints={snapPoints ?? ['85%']}
+      backdropComponent={renderBackdrop}
+      backgroundStyle={{ backgroundColor: screenBg(dark) }}
+      handleIndicatorStyle={{ backgroundColor: dark ? '#525252' : '#d4d4d4' }}
+      enablePanDownToClose
+      // Lifts with the keyboard so inputs and submit buttons stay reachable.
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      onDismiss={onClose}
+    >
+      {children}
+    </BottomSheetModal>
+  );
+});
+
+/**
+ * Themed bottom sheet for short forms (create/edit). Replaces the hand-rolled
+ * `<Modal transparent>` + scrim + `marginBottom: keyboardHeight` blocks: the
+ * keyboard handling is the library's, so callers need no Keyboard listener.
+ */
+export const FormSheet = forwardRef<
+  BottomSheetModal,
+  {
+    onClose: () => void;
+    snapPoints?: Array<string | number>;
+    /** Pinned above the scroller so it stays put while the body scrolls. */
+    header?: React.ReactNode;
+    children: React.ReactNode;
+  }
+>(function FormSheet({ onClose, snapPoints, header, children }, ref) {
+  return (
+    <Sheet ref={ref} onClose={onClose} snapPoints={snapPoints}>
+      {header}
+      <BottomSheetScrollView
+        className="bg-white dark:bg-black"
+        contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 32 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+      >
+        {children}
+      </BottomSheetScrollView>
+    </Sheet>
+  );
+});

@@ -6,16 +6,12 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Redirect, useNavigation } from 'expo-router';
 import {
   ActivityIndicator,
-  Keyboard,
-  Modal,
-  Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { TriangleAlert } from 'lucide-react-native';
 import { useApp, useThemeValue } from '../../hooks/app-store';
@@ -28,6 +24,7 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { ConfirmDialog } from '../../components/ui/dialog';
+import { FormSheet, useSheet } from '../../components/ui/sheets';
 import { Text as UIText } from '../../components/ui/text';
 import { CardChips } from './components/CardChips';
 import { placeholderColor, screenStyle } from '../../theme';
@@ -79,7 +76,6 @@ export function KanbanScreen() {
   // four inputs, so it must not be recomputed on every render.
   const placeholder = useMemo(() => placeholderColor(dark), [dark]);
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
 
   const [boards, setBoards] = useState<BoardMeta[]>([]);
   const [slug, setSlug] = useState('');
@@ -101,9 +97,9 @@ export function KanbanScreen() {
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newStatus, setNewStatus] = useState('');
-  // Bottom sheets sit under the keyboard on Android (edge-to-edge ignores
-  // adjustResize), so lift them by hand like the chat dock does.
-  const [kbH, setKbH] = useState(0);
+  // Bottom sheets: FormSheet drives present/dismiss from these two booleans.
+  const detailSheet = useSheet(!!detail);
+  const createSheet = useSheet(showCreate);
   useEffect(() => {
     if (authed) return;
     setBoards([]);
@@ -113,20 +109,6 @@ export function KanbanScreen() {
     setDetail(null);
     setError(null);
   }, [authed]);
-  useEffect(() => {
-    const show = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e: any) => setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0))),
-    );
-    const hide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKbH(0),
-    );
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   useEffect(() => {
     (navigation as any).setOptions?.({
@@ -450,159 +432,134 @@ export function KanbanScreen() {
         </ScrollView>
 
         {/* Task detail sheet */}
-        <Modal
-          visible={!!detail}
-          transparent
-          animationType="slide"
-          statusBarTranslucent
-          onRequestClose={() => setDetail(null)}
-        >
-          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
-            <Pressable style={{ position: 'absolute', inset: 0 }} onPress={() => setDetail(null)} />
-            <View
-              className="rounded-t-3xl border-t border-neutral-200 bg-white dark:border-neutral-800 dark:bg-[#141414]"
-              style={{ maxHeight: '85%', paddingBottom: Math.max(insets.bottom, 12), marginBottom: kbH }}
-            >
-              <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
-                <Input
-                  accessibilityLabel="Title"
-                  className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
-                  value={editTitle}
-                  onChangeText={setEditTitle}
-                  placeholder="Title"
-                  placeholderTextColor={placeholder}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  multiline
-                />
-                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Move to
-                </Text>
-                <View className="flex-row flex-wrap gap-1.5">
-                  {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                    const on = detail?.status === s;
-                    return (
-                      <Button
-                        key={s}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: on }}
-                        accessibilityLabel={`Move to ${s}`}
-                        onPress={() => detail && moveTask(detail, s)}
-                        variant={on ? 'default' : 'outline'}
-                        size="sm"
-                        className="rounded-full px-3 py-1.5"
-                      >
-                        <UIText className="text-[13px] font-medium capitalize">
-                          {s}
-                        </UIText>
-                      </Button>
-                    );
-                  })}
-                </View>
-                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Notes
-                </Text>
-                <Textarea
-                  accessibilityLabel="Notes"
-                  className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                  value={editBody}
-                  onChangeText={setEditBody}
-                  placeholder="Details…"
-                  placeholderTextColor={placeholder}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  multiline
-                  textAlignVertical="top"
-                />
-                {detail && <CardChips t={detail} dark={dark} />}
-                <View className="flex-row gap-2 pt-1">
-                  <Button
-                    onPress={saveDetail}
-                    variant="default"
-                    className="flex-1 rounded-xl px-4 py-3"
-                    disabled={saving}
-                  >
-                    <UIText className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</UIText>
-                  </Button>
-                  <Button
-                    onPress={deleteDetail}
-                    variant="destructive"
-                    className="rounded-xl px-4 py-3"
-                    disabled={saving}
-                  >
-                    <UIText className="text-[15px] font-semibold">Delete</UIText>
-                  </Button>
-                </View>
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
+        <FormSheet ref={detailSheet} onClose={() => setDetail(null)}>
+          {detail && (
+            <>
+              <Input
+                accessibilityLabel="Title"
+                className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Title"
+                placeholderTextColor={placeholder}
+                keyboardAppearance={dark ? 'dark' : 'light'}
+                multiline
+              />
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Move to
+              </Text>
+              <View className="flex-row flex-wrap gap-1.5">
+                {statusOptions.filter((s) => s !== 'archived').map((s) => {
+                  const on = detail?.status === s;
+                  return (
+                    <Button
+                      key={s}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Move to ${s}`}
+                      onPress={() => detail && moveTask(detail, s)}
+                      variant={on ? 'default' : 'outline'}
+                      size="sm"
+                      className="rounded-full px-3 py-1.5"
+                    >
+                      <UIText className="text-[13px] font-medium capitalize">
+                        {s}
+                      </UIText>
+                    </Button>
+                  );
+                })}
+              </View>
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Notes
+              </Text>
+              <Textarea
+                accessibilityLabel="Notes"
+                className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                value={editBody}
+                onChangeText={setEditBody}
+                placeholder="Details…"
+                placeholderTextColor={placeholder}
+                keyboardAppearance={dark ? 'dark' : 'light'}
+                multiline
+                textAlignVertical="top"
+              />
+              <CardChips t={detail} dark={dark} />
+              <View className="flex-row gap-2 pt-1">
+                <Button
+                  onPress={saveDetail}
+                  variant="default"
+                  className="flex-1 rounded-xl px-4 py-3"
+                  disabled={saving}
+                >
+                  <UIText className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</UIText>
+                </Button>
+                <Button
+                  onPress={deleteDetail}
+                  variant="destructive"
+                  className="rounded-xl px-4 py-3"
+                  disabled={saving}
+                >
+                  <UIText className="text-[15px] font-semibold">Delete</UIText>
+                </Button>
+              </View>
+            </>
+          )}
+        </FormSheet>
 
         {/* New task sheet */}
-        <Modal
-          visible={showCreate}
-          transparent
-          animationType="slide"
-          statusBarTranslucent
-          onRequestClose={() => setShowCreate(false)}
-        >
-          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
-            <Pressable style={{ position: 'absolute', inset: 0 }} onPress={() => setShowCreate(false)} />
-            <View
-              className="rounded-t-3xl border-t border-neutral-200 bg-white dark:border-neutral-800 dark:bg-[#141414]"
-              style={{ maxHeight: '85%', paddingBottom: Math.max(insets.bottom, 12), marginBottom: kbH }}
-            >
-              <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
-                <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
-                <Input
-                  className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                  value={newTitle}
-                  onChangeText={setNewTitle}
-                  placeholder="Title"
-                  placeholderTextColor={placeholder}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  autoFocus
-                  returnKeyType="next"
-                />
-                <Textarea
-                  className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                  accessibilityLabel="Notes"
-                  value={newBody}
-                  onChangeText={setNewBody}
-                  placeholder="Details (optional)"
-                  placeholderTextColor={placeholder}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  multiline
-                  textAlignVertical="top"
-                />
-                <View className="flex-row flex-wrap gap-1.5">
-                  {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                    const on = createStatus === s;
-                    return (
-                      <Button
-                        key={s}
-                        onPress={() => setNewStatus(s)}
-                        variant={on ? 'default' : 'outline'}
-                        size="sm"
-                        className="px-3 py-1.5"
-                      >
-                        <UIText className="text-[13px] font-medium capitalize">
-                          {s}
-                        </UIText>
-                      </Button>
-                    );
-                  })}
-                </View>
+        <FormSheet ref={createSheet} onClose={() => setShowCreate(false)} snapPoints={['70%']}>
+          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
+          <Input
+            accessibilityLabel="Title"
+            className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+            value={newTitle}
+            onChangeText={setNewTitle}
+            placeholder="Title"
+            placeholderTextColor={placeholder}
+            keyboardAppearance={dark ? 'dark' : 'light'}
+            returnKeyType="next"
+          />
+          <Textarea
+            className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+            accessibilityLabel="Notes"
+            value={newBody}
+            onChangeText={setNewBody}
+            placeholder="Details (optional)"
+            placeholderTextColor={placeholder}
+            keyboardAppearance={dark ? 'dark' : 'light'}
+            multiline
+            textAlignVertical="top"
+          />
+          <View className="flex-row flex-wrap gap-1.5">
+            {statusOptions.filter((s) => s !== 'archived').map((s) => {
+              const on = createStatus === s;
+              return (
                 <Button
-                  onPress={createTask}
-                  variant="default"
-                  className="rounded-xl px-4 py-3"
-                  disabled={!newTitle.trim() || saving}
+                  key={s}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Create in ${s}`}
+                  onPress={() => setNewStatus(s)}
+                  variant={on ? 'default' : 'outline'}
+                  size="sm"
+                  className="px-3 py-1.5"
                 >
-                  <UIText className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</UIText>
+                  <UIText className="text-[13px] font-medium capitalize">
+                    {s}
+                  </UIText>
                 </Button>
-              </ScrollView>
-            </View>
+              );
+            })}
           </View>
-        </Modal>
+          <Button
+            onPress={createTask}
+            variant="default"
+            className="rounded-xl px-4 py-3"
+            disabled={!newTitle.trim() || saving}
+          >
+            <UIText className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</UIText>
+          </Button>
+        </FormSheet>
       </SafeAreaView>
 
       <ConfirmDialog

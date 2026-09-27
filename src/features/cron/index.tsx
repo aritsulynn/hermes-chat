@@ -1,10 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Keyboard,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,6 +14,8 @@ import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
 import { Button } from '../../components/ui/button';
 import { ConfirmDialog } from '../../components/ui/dialog';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { Sheet, useSheet } from '../../components/ui/sheets';
 import { Text as UIText } from '../../components/ui/text';
 import { Textarea } from '../../components/ui/textarea';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -489,19 +487,6 @@ export function CronScreen() {
   const [formDeliver, setFormDeliver] = useState('local');
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  // Bottom sheet sits under the keyboard on Android (edge-to-edge ignores
-  // adjustResize), so lift it by hand like the chat dock does.
-  const [kbH, setKbH] = useState(0);
-  useEffect(() => {
-    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e: any) =>
-      setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0))),
-    );
-    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbH(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   // Run History state
   const [runsModalOpen, setRunsModalOpen] = useState(false);
@@ -512,6 +497,10 @@ export function CronScreen() {
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [runMessages, setRunMessages] = useState<Record<string, RunMessageItem[]>>({});
   const [runMessagesLoading, setRunMessagesLoading] = useState(false);
+
+  // Bottom sheets: Sheet drives present/dismiss from these two booleans.
+  const formSheet = useSheet(modalOpen);
+  const runsSheet = useSheet(runsModalOpen);
 
   useEffect(() => {
     if (authed) return;
@@ -1039,178 +1028,166 @@ export function CronScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleJobsRefresh} />}
         />
 
-        {/* Create / Edit Modal */}
-        <Modal
-          visible={modalOpen}
-          animationType="slide"
-          transparent
-          onRequestClose={() => !formSaving && setModalOpen(false)}
+        {/* Create / Edit sheet */}
+        <Sheet
+          ref={formSheet}
+          snapPoints={['90%']}
+          onClose={() => !formSaving && setModalOpen(false)}
         >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            className="flex-1 justify-end bg-black/50"
-          >
-            <View
-              className="max-h-[90%] rounded-t-3xl border-t border-neutral-200 bg-white p-5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
-              style={{ marginBottom: kbH }}
+          {/* Header */}
+          <View className="flex-row items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
+            <Text className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
+              {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
+            </Text>
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="Close"
+              disabled={formSaving}
+              onPress={() => setModalOpen(false)}
+              hitSlop={10}
+              className="h-8 w-8 rounded-lg"
             >
-              {/* Modal Header */}
-              <View className="flex-row items-center justify-between pb-3 border-b border-neutral-200 dark:border-neutral-800">
-                <Text className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
-                  {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
-                </Text>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  accessibilityLabel="Close"
-                  disabled={formSaving}
-                  onPress={() => setModalOpen(false)}
-                  hitSlop={10}
-                  className="h-8 w-8 rounded-lg"
-                >
-                  <X size={20} color={dark ? '#ccc' : '#444'} />
-                </Button>
-              </View>
+              <X size={20} color={dark ? '#ccc' : '#444'} />
+            </Button>
+          </View>
 
-              {/* Modal Body Form */}
-              <ScrollView className="mt-3" contentContainerStyle={{ gap: 14, paddingBottom: 24 }}>
-                {formError && (
-                  <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
-                    <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
-                      {formError}
-                    </AlertDescription>
-                  </UIAlert>
-                )}
+          {/* Body form */}
+          <BottomSheetScrollView
+            className="bg-white dark:bg-black"
+            contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {formError && (
+              <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
+                <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
+                  {formError}
+                </AlertDescription>
+              </UIAlert>
+            )}
 
-                {/* Name */}
-                <View>
-                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Job Name *</Label>
-                  <Input
-                    value={formName}
-                    onChangeText={setFormName}
-                    placeholder="e.g. morning-brief"
-                    placeholderTextColor={placeholder}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                </View>
+            {/* Name */}
+            <View>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Job Name *</Label>
+              <Input
+                value={formName}
+                onChangeText={setFormName}
+                placeholder="e.g. morning-brief"
+                placeholderTextColor={placeholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              />
+            </View>
 
-                {/* Schedule Expression */}
-                <View>
-                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                    Schedule (Cron Expression) *
-                  </Label>
-                  <Input
-                    value={formSchedule}
-                    onChangeText={setFormSchedule}
-                    placeholder="e.g. 0 9 * * *"
-                    placeholderTextColor={placeholder}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    className="font-mono rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                  {/* Presets Chips */}
-                  <Text className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-1.5">
-                    {SCHEDULE_PRESETS.map((preset) => (
-                      <Pressable
-                        key={preset.label}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: formSchedule === preset.expr }}
-                        accessibilityLabel={`${preset.label} schedule, ${preset.expr}`}
-                        onPress={() => setFormSchedule(preset.expr)}
-                        className={`mr-1.5 rounded-lg border px-2.5 py-1 ${
-                          formSchedule === preset.expr
-                            ? 'border-[#1a73e8] bg-[#1a73e8]/10'
-                            : 'border-neutral-300 dark:border-neutral-700'
-                        }`}
-                      >
-                        <Text
-                          className={`text-[11px] font-medium ${
-                            formSchedule === preset.expr
-                              ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
-                              : 'text-neutral-600 dark:text-neutral-300'
-                          }`}
-                        >
-                          {preset.label}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Prompt / Instructions */}
-                <View>
-                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                    Prompt (Task for Hermes) *
-                  </Label>
-                  <Textarea
-                    value={formPrompt}
-                    onChangeText={setFormPrompt}
-                    placeholder="Describe what the agent should execute when this cron job triggers..."
-                    placeholderTextColor={placeholder}
-                    multiline
-                    numberOfLines={4}
-                    textAlignVertical="top"
-                    className="min-h-[100px] rounded-xl border border-neutral-300 p-3 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                </View>
-
-                {/* Optional: Model override */}
-                <View>
-                  <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                    Model Override (optional)
-                  </Label>
-                  <Input
-                    value={formModel}
-                    onChangeText={setFormModel}
-                    placeholder="e.g. nous/hermes-3-llama-3.1-8b (leave blank for default)"
-                    placeholderTextColor={placeholder}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                </View>
-
-                {/* Action Buttons */}
-                <View className="mt-2 flex-row gap-3">
+            {/* Schedule Expression */}
+            <View>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Schedule (Cron Expression) *
+              </Label>
+              <Input
+                value={formSchedule}
+                onChangeText={setFormSchedule}
+                placeholder="e.g. 0 9 * * *"
+                placeholderTextColor={placeholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="font-mono rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              />
+              {/* Presets Chips */}
+              <Text className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-1.5">
+                {SCHEDULE_PRESETS.map((preset) => (
                   <Pressable
-                    disabled={formSaving}
-                    onPress={() => setModalOpen(false)}
-                    className="flex-1 items-center rounded-xl border border-neutral-300 py-3 dark:border-neutral-700"
+                    key={preset.label}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: formSchedule === preset.expr }}
+                    accessibilityLabel={`${preset.label} schedule, ${preset.expr}`}
+                    onPress={() => setFormSchedule(preset.expr)}
+                    className={`mr-1.5 rounded-lg border px-2.5 py-1 ${
+                      formSchedule === preset.expr
+                        ? 'border-[#1a73e8] bg-[#1a73e8]/10'
+                        : 'border-neutral-300 dark:border-neutral-700'
+                    }`}
                   >
-                    <Text className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</Text>
+                    <Text
+                      className={`text-[11px] font-medium ${
+                        formSchedule === preset.expr
+                          ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                          : 'text-neutral-600 dark:text-neutral-300'
+                      }`}
+                    >
+                      {preset.label}
+                    </Text>
                   </Pressable>
-
-                  <Pressable
-                    disabled={formSaving}
-                    onPress={handleSave}
-                    className="flex-1 items-center justify-center rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600"
-                  >
-                    {formSaving ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text className="text-sm font-semibold text-white">
-                        {editingJob ? 'Save Changes' : 'Create Job'}
-                      </Text>
-                    )}
-                  </Pressable>
-                </View>
+                ))}
               </ScrollView>
             </View>
-          </KeyboardAvoidingView>
-        </Modal>
 
-        {/* Runs History Modal */}
-        <Modal visible={runsModalOpen} animationType="slide" transparent onRequestClose={() => setRunsModalOpen(false)}>
-          <View className="flex-1 justify-end bg-black/60">
-            <View
-              style={{ maxHeight: '92%', height: '85%' }}
-              className="rounded-t-3xl border-t border-neutral-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-900 flex-col"
-            >
-              {/* Header */}
-              <View className="flex-row items-center justify-between border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+            {/* Prompt / Instructions */}
+            <View>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Prompt (Task for Hermes) *
+              </Label>
+              <Textarea
+                value={formPrompt}
+                onChangeText={setFormPrompt}
+                placeholder="Describe what the agent should execute when this cron job triggers..."
+                placeholderTextColor={placeholder}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                className="min-h-[100px] rounded-xl border border-neutral-300 p-3 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              />
+            </View>
+
+            {/* Optional: Model override */}
+            <View>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Model Override (optional)
+              </Label>
+              <Input
+                value={formModel}
+                onChangeText={setFormModel}
+                placeholder="e.g. nous/hermes-3-llama-3.1-8b (leave blank for default)"
+                placeholderTextColor={placeholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <View className="mt-2 flex-row gap-3">
+              <Pressable
+                disabled={formSaving}
+                onPress={() => setModalOpen(false)}
+                className="flex-1 items-center rounded-xl border border-neutral-300 py-3 dark:border-neutral-700"
+              >
+                <Text className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                disabled={formSaving}
+                onPress={handleSave}
+                className="flex-1 items-center justify-center rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600"
+              >
+                {formSaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text className="text-sm font-semibold text-white">
+                    {editingJob ? 'Save Changes' : 'Create Job'}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </BottomSheetScrollView>
+        </Sheet>
+
+        {/* Runs History sheet */}
+        <Sheet ref={runsSheet} snapPoints={['85%']} onClose={() => setRunsModalOpen(false)}>
+          {/* Header */}
+          <View className="flex-row items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
                 <View className="flex-1 pr-2">
                   <View className="flex-row items-center gap-2">
                     <History size={18} color="#1a73e8" />
@@ -1262,9 +1239,7 @@ export function CronScreen() {
                 ItemSeparatorComponent={ListGap12}
                 contentContainerStyle={runsContentStyle}
               />
-            </View>
-          </View>
-        </Modal>
+        </Sheet>
       </SafeAreaView>
 
       <ConfirmDialog
