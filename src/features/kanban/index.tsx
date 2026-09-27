@@ -446,7 +446,10 @@ export function KanbanScreen() {
             <>
               <Input
                 accessibilityLabel="Title"
-                className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
+                // Input is a fixed 40px single-line field; a title long enough
+                // to wrap has to grow the box and hang from the top, or the
+                // second line spills over the label below.
+                className="h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
                 value={editTitle}
                 onChangeText={setEditTitle}
                 placeholder="Title"
