@@ -1,3 +1,0 @@
-
-  return { beginTurn, runSlash, editMessage, cancelEdit, regenerate, pasteLarge, send, releaseLocalTurn, stop };
-}
