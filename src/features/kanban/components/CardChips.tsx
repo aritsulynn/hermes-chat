@@ -1,10 +1,11 @@
 // Card metadata chips: assignee, priority, progress, comments, warnings.
+import { memo } from 'react';
 import { View } from 'react-native';
 import { Badge } from '../../../components/ui/badge';
 import { Text as UIText } from '../../../components/ui/text';
 import type { KanbanTask } from '../types';
 
-export function CardChips({ t, dark }: { t: KanbanTask; dark: boolean }) {
+export const CardChips = memo(function CardChips({ t, dark }: { t: KanbanTask; dark: boolean }) {
   const chips: string[] = [];
   if (t.assignee) chips.push(`@${t.assignee}`);
   if (t.priority != null) chips.push(`P${t.priority}`);
@@ -25,4 +26,4 @@ export function CardChips({ t, dark }: { t: KanbanTask; dark: boolean }) {
       )}
     </View>
   );
-}
+});

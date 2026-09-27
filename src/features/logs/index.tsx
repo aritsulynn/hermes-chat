@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
-  FlatList,
   Platform,
   Pressable,
   ScrollView,
   Text,
   View,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import type { FlashListRef } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -29,16 +30,24 @@ import {
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
+import { asRecord } from '../../utils/ops';
+import { placeholderColor, screenStyle } from '../../theme';
 import { HamburgerBtn } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
 import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
 
+type LogRow = { line: string; sev: LineSeverity };
+
 export function LogsScreen() {
   const { authed, opsGet, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
-  const listRef = useRef<FlatList>(null);
+  // Resolved once per scheme: auto-refresh re-renders this screen every 3.5s
+  // and each value feeds the header/filter chrome plus the list surface.
+  const screen = useMemo(() => screenStyle(dark), [dark]);
+  const placeholder = useMemo(() => placeholderColor(dark, 'log'), [dark]);
+  const listRef = useRef<FlashListRef<LogRow>>(null);
 
   const [file, setFile] = useState<LogFile>('agent');
   const [level, setLevel] = useState<LogLevelFilter>('ALL');
@@ -59,6 +68,11 @@ export function LogsScreen() {
     setLoading(true);
   }, [authed]);
 
+  // `search` is submit-driven (not live): read it through a ref so typing in
+  // the box doesn't recreate `fetchLogs` and refetch on every keystroke.
+  const searchRef = useRef(search);
+  searchRef.current = search;
+
   const fetchLogs = useCallback(
     async (isBackground = false) => {
       const scope = getAuthScope();
@@ -72,11 +86,14 @@ export function LogsScreen() {
             file,
             lines: lineCount,
             level: level !== 'ALL' ? level : undefined,
-            search: search.trim() || undefined,
+            search: searchRef.current.trim() || undefined,
           }),
         );
         if (getAuthScope() !== scope) return;
-        const rawLines: string[] = Array.isArray(res?.lines) ? res.lines : [];
+        const raw = asRecord(res).lines;
+        const rawLines: string[] = Array.isArray(raw)
+          ? raw.filter((l): l is string => typeof l === 'string')
+          : [];
         setLines(rawLines);
       } catch (e) {
         if (getAuthScope() === scope) setError(errMsg(e));
@@ -87,13 +104,13 @@ export function LogsScreen() {
         }
       }
     },
-    [file, getAuthScope, lineCount, level, opsGet, search],
+    [file, getAuthScope, lineCount, level, opsGet],
   );
 
   // Initial load & when file/level/lines change
   useEffect(() => {
     if (authed) void fetchLogs();
-  }, [authed, file, level, lineCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authed, fetchLogs]);
 
   // Auto-refresh interval (every 3.5 seconds) — skips when backgrounded
   // so the Drawer keeping this screen mounted doesn't poll forever.
@@ -127,7 +144,9 @@ export function LogsScreen() {
       setCopied(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 2000);
-    } catch {}
+    } catch (e) {
+      console.warn('[logs] copy failed', e);
+    }
   };
 
   // Statistics + per-row severity in one pass — old code ran classifyLine
@@ -147,22 +166,25 @@ export function LogsScreen() {
     if (rows.length > 0) {
       try {
         listRef.current?.scrollToEnd({ animated: true });
-      } catch {}
+      } catch (e) {
+        console.warn('[logs] scrollToEnd failed', e);
+      }
     }
   }, [rows.length]);
 
   const scrollToTop = useCallback(() => {
     if (rows.length > 0) {
       try {
-        listRef.current?.scrollToIndex({ index: 0, animated: true });
-      } catch {}
+        void listRef.current?.scrollToIndex({ index: 0, animated: true });
+      } catch (e) {
+        console.warn('[logs] scrollToIndex failed', e);
+      }
     }
   }, [rows.length]);
-  const logKeyExtractor = useCallback(
-    (item: { line: string }, index: number) => `${index}-${item.line.length}-${item.line.slice(0, 24)}`,
-    [],
-  );
-  const renderLogRow = useCallback(({ item, index }: { item: { line: string; sev: LineSeverity }; index: number }) => {
+  // Index prefix keeps keys unique across refreshes; length suffix disambiguates
+  // same-index edits without slicing the line (avoids a per-cell string alloc).
+  const logKeyExtractor = useCallback((item: { line: string }, index: number) => `${index}-${item.line.length}`, []);
+  const renderLogRow = useCallback(({ item, index }: { item: LogRow; index: number }) => {
     const isErr = item.sev === 'error';
     const isWarn = item.sev === 'warning';
     const isDbg = item.sev === 'debug';
@@ -191,10 +213,20 @@ export function LogsScreen() {
     );
   }, []);
 
+  // Stable content style — FlashList re-measures on contentContainerStyle
+  // identity change, so keep the ref stable across renders.
+  const logListContentStyle = useMemo(
+    () => ({
+      padding: 10,
+      paddingBottom: insets.bottom + 48,
+    }),
+    [insets.bottom],
+  );
+
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screen}>
       {/* No 'bottom' edge: the list content already pads insets.bottom + 48. */}
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
@@ -342,7 +374,7 @@ export function LogsScreen() {
                   value={search}
                   onChangeText={setSearch}
                   placeholder="Filter logs (substring)..."
-                  placeholderTextColor={dark ? '#666' : '#999'}
+                  placeholderTextColor={placeholder}
                   autoCapitalize="none"
                   autoCorrect={false}
                   className="flex-1 text-xs text-neutral-950 dark:text-neutral-100 py-0.5"
@@ -497,20 +529,15 @@ export function LogsScreen() {
           </View>
         ) : (
           <View className="flex-1 bg-[#101014]">
-            <FlatList
+            {/* FlashList v2 sizes rows itself; drawDistance replaces the old
+                windowSize/maxToRenderPerBatch overscan tuning. */}
+            <FlashList
               ref={listRef}
               data={rows}
               keyExtractor={logKeyExtractor}
-              contentContainerStyle={{
-                padding: 10,
-                paddingBottom: insets.bottom + 48,
-              }}
+              contentContainerStyle={logListContentStyle}
               renderItem={renderLogRow}
-              initialNumToRender={30}
-              maxToRenderPerBatch={30}
-              windowSize={7}
-              updateCellsBatchingPeriod={80}
-              removeClippedSubviews
+              drawDistance={800}
             />
 
             {/* Quick Jump Buttons (Floating) */}

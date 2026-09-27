@@ -1,7 +1,7 @@
 // Toolsets route — user-facing capability groups ported from Hermes Desktop's
 // Capabilities → Toolsets view. Toolsets control which groups of tools the
 // agent can use (terminal, web, browser, vision, media generation, and more).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,12 +24,12 @@ import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { Text as UIText } from '../../components/ui/text';
 import { errMsg } from '../../utils/messages';
+import { brandColor, placeholderColor, screenStyle } from '../../theme';
 import { getToolsets, setToolsetEnabled } from '../../services/toolsets';
 import type { ToolsetInfo } from '../../services/toolsets';
 
 // Same presentation-only curation as Hermes Desktop's Toolsets tab.
 const HIDDEN_TOOLSETS = new Set(['discord', 'discord_admin', 'yuanbao', 'context_engine', 'moa']);
-
 function displayLabel(toolset: ToolsetInfo): string {
   const raw = typeof toolset.label === 'string' ? toolset.label : typeof toolset.name === 'string' ? toolset.name : '';
   // Backend labels may include a leading emoji. Keep the mobile list text-only.
@@ -39,6 +39,88 @@ function displayLabel(toolset: ToolsetInfo): string {
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+// Memoized row: the toolset inventory is backend-bounded (<30 rows), so a
+// virtualized list isn't warranted — but toggling one switch must not
+// re-render every row. The switch binding closes over the row's own name.
+const ToolsetRow = memo(function ToolsetRow({
+  toolset,
+  dark,
+  toggling,
+  onToggle,
+}: {
+  toolset: ToolsetInfo;
+  dark: boolean;
+  toggling: boolean;
+  onToggle: (name: string, enabled: boolean) => void;
+}) {
+  const name = String(toolset.name ?? '');
+  const enabled = toolset.enabled;
+  const label = displayLabel(toolset);
+  const description = String(toolset.description ?? '').trim();
+  const toolCount = toolset.tools.length;
+  if (!name) return null;
+  return (
+    <View
+      className={`rounded-2xl border p-3.5 ${
+        enabled
+          ? 'border-neutral-300 bg-neutral-50/70 dark:border-neutral-700 dark:bg-neutral-900/60'
+          : 'border-neutral-200 bg-white/70 dark:border-neutral-800 dark:bg-neutral-950/60'
+      }`}
+    >
+      <View className="flex-row items-center gap-3">
+        <View
+          className={`h-9 w-9 items-center justify-center rounded-xl ${
+            enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-neutral-100 dark:bg-neutral-900'
+          }`}
+        >
+          <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
+        </View>
+        <View className="min-w-0 flex-1">
+          <Text
+            numberOfLines={1}
+            className={`text-sm font-semibold ${
+              enabled ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
+            }`}
+          >
+            {label}
+          </Text>
+          {!!description && (
+            <Text numberOfLines={2} className="mt-0.5 text-xs leading-[17px] text-neutral-500 dark:text-neutral-400">
+              {description}
+            </Text>
+          )}
+          <View className="mt-1 flex-row items-center gap-2">
+            <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">
+              {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
+            </Text>
+            <Badge variant={toolset.configured ? 'outline' : 'secondary'}>
+              <View
+                className={`h-1.5 w-1.5 rounded-full ${toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'}`}
+              />
+              <UIText
+                className={`text-[11px] font-medium ${
+                  toolset.configured ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                {toolset.configured ? 'Ready' : 'Needs setup'}
+              </UIText>
+            </Badge>
+          </View>
+        </View>
+        {toggling ? (
+          <ActivityIndicator size="small" color={brandColor(dark)} />
+        ) : (
+          <Switch
+            checked={enabled}
+            onCheckedChange={(value) => void onToggle(name, value)}
+            accessibilityLabel={`${enabled ? 'Disable' : 'Enable'} ${label} toolset`}
+          />
+        )}
+      </View>
+    </View>
+  );
+});
 
 export function ToolsetsScreen() {
   const { authed, activeProfile, opsGet, opsMut, theme, getAuthScope } = useApp();
@@ -141,7 +223,7 @@ export function ToolsetsScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
 
@@ -191,7 +273,7 @@ export function ToolsetsScreen() {
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search toolsets…"
-                placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                placeholderTextColor={placeholderColor(dark)}
                 autoCapitalize="none"
                 autoCorrect={false}
                 accessibilityLabel="Search toolsets"
@@ -202,7 +284,7 @@ export function ToolsetsScreen() {
 
           {loading && !refreshing ? (
             <View className="items-center py-16">
-              <ActivityIndicator size="large" color="#1a73e8" />
+              <ActivityIndicator size="large" color={brandColor(dark)} />
             </View>
           ) : unsupported ? (
             <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
@@ -231,84 +313,15 @@ export function ToolsetsScreen() {
             </View>
           ) : (
             <View className="gap-2">
-              {filtered.map((toolset) => {
-                const name = String(toolset.name ?? '');
-                if (!name) return null;
-                const enabled = toolset.enabled;
-                const label = displayLabel(toolset);
-                const description = String(toolset.description ?? '').trim();
-                const toolCount = toolset.tools.length;
-                return (
-                  <View
-                    key={name}
-                    className={`rounded-2xl border p-3.5 ${
-                      enabled
-                        ? 'border-neutral-300 bg-neutral-50/70 dark:border-neutral-700 dark:bg-neutral-900/60'
-                        : 'border-neutral-200 bg-white/70 dark:border-neutral-800 dark:bg-neutral-950/60'
-                    }`}
-                  >
-                    <View className="flex-row items-center gap-3">
-                      <View
-                        className={`h-9 w-9 items-center justify-center rounded-xl ${
-                          enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-neutral-100 dark:bg-neutral-900'
-                        }`}
-                      >
-                        <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
-                      </View>
-                      <View className="min-w-0 flex-1">
-                        <Text
-                          numberOfLines={1}
-                          className={`text-sm font-semibold ${
-                            enabled
-                              ? 'text-neutral-900 dark:text-neutral-100'
-                              : 'text-neutral-500 dark:text-neutral-400'
-                          }`}
-                        >
-                          {label}
-                        </Text>
-                        {!!description && (
-                          <Text
-                            numberOfLines={2}
-                            className="mt-0.5 text-xs leading-[17px] text-neutral-500 dark:text-neutral-400"
-                          >
-                            {description}
-                          </Text>
-                        )}
-                        <View className="mt-1 flex-row items-center gap-2">
-                          <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                            {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
-                          </Text>
-                          <Badge variant={toolset.configured ? 'outline' : 'secondary'}>
-                            <View
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'
-                              }`}
-                            />
-                            <UIText
-                              className={`text-[11px] font-medium ${
-                                toolset.configured
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : 'text-amber-600 dark:text-amber-400'
-                              }`}
-                            >
-                              {toolset.configured ? 'Ready' : 'Needs setup'}
-                            </UIText>
-                          </Badge>
-                        </View>
-                      </View>
-                      {toggling === name ? (
-                        <ActivityIndicator size="small" color="#1a73e8" />
-                      ) : (
-                        <Switch
-                          checked={enabled}
-                          onCheckedChange={(value) => void toggle(name, value)}
-                          accessibilityLabel={`${enabled ? 'Disable' : 'Enable'} ${label} toolset`}
-                        />
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
+              {filtered.map((toolset) => (
+                <ToolsetRow
+                  key={String(toolset.name ?? '')}
+                  toolset={toolset}
+                  dark={dark}
+                  toggling={toggling === String(toolset.name ?? '')}
+                  onToggle={toggle}
+                />
+              ))}
             </View>
           )}
         </ScrollView>

@@ -65,6 +65,45 @@ export const THEME = {
 
 export type ThemeColors = (typeof THEME)['light'];
 
+// ── Shared runtime colours ─────────────────────────────────────────────────
+// Central tokens for the hex values previously copy-pasted across screens.
+// NOTE: Tailwind `className` strings (e.g. `text-[#1a73e8]`) must stay literal
+// — NativeWind extracts them statically — so these tokens cover only runtime
+// values: `color`/`placeholderTextColor` props and `style` objects.
+
+/** Primary brand blue (light) / its dark-mode counterpart. */
+export const BRAND_BLUE = '#1a73e8';
+export const BRAND_BLUE_DARK = '#7aa7ff';
+/** Brand blue for the current scheme (icon `color` props, inline styles). */
+export const brandColor = (dark: boolean): string => (dark ? BRAND_BLUE_DARK : BRAND_BLUE);
+
+/** Full-screen surface behind every tab (`flex: 1` + scheme background). */
+export const screenBg = (dark: boolean): string => (dark ? '#000' : '#fff');
+/** Style object for a full-screen surface (`style={screenStyle(dark)}`). */
+export const screenStyle = (dark: boolean): { flex: 1; backgroundColor: string } => ({
+  flex: 1,
+  backgroundColor: screenBg(dark),
+});
+
+export type PlaceholderKind = 'standard' | 'file' | 'cron' | 'log' | 'composer';
+const PLACEHOLDER_COLORS: Record<PlaceholderKind, { light: string; dark: string }> = {
+  standard: { light: '#9ca3af', dark: '#888' },
+  file: { light: '#9ca3af', dark: '#777' },
+  cron: { light: '#999', dark: '#777' },
+  log: { light: '#999', dark: '#666' },
+  composer: { light: '#9ca3af', dark: '#8a8a8a' },
+};
+/** `placeholderTextColor` for the current scheme (pass the screen's kind). */
+export function placeholderColor(dark: boolean, kind: PlaceholderKind = 'standard'): string {
+  const c = PLACEHOLDER_COLORS[kind];
+  return dark ? c.dark : c.light;
+}
+
+/** Near-black body text of the light assistant markdown theme. */
+export const MARKDOWN_INK = '#111';
+/** Code-block surface, shared by every markdown theme (light and dark). */
+export const CODE_SURFACE = '#1e1e24';
+
 export const NAV_THEME: Record<'light' | 'dark', Theme> = {
   light: {
     ...DefaultTheme,

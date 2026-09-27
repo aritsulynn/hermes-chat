@@ -38,6 +38,7 @@ import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '..
 import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
 import { contextTone, mergeUsage } from '../../utils/usage';
 import { isSlashSuggestion, skillUsage } from '../../utils/slash-commands';
+import { placeholderColor, screenBg, screenStyle } from '../../theme';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../services/gateway-ws';
 import { Composer } from '../../components/chat/composer';
@@ -158,6 +159,20 @@ export function ChatScreen() {
   const { width: winW, height: winH } = useWindowDimensions();
   const bubbleMax = Math.round(winW * 0.85);
   const insets = useSafeAreaInsets();
+
+  // Theme tokens resolved once per scheme: this screen re-renders on every
+  // streamed token, and a fresh style object per render would re-push the
+  // surface colours to native each time.
+  const screen = useMemo(() => screenStyle(dark), [dark]);
+  const noSessionHeader = useMemo(
+    () => ({
+      height: insets.top + 52,
+      paddingTop: insets.top,
+      backgroundColor: screenBg(dark),
+    }),
+    [insets.top, dark],
+  );
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
 
   // Screen-level anchored popovers ("+" attach, model picker, thinking effort),
   // anchored to the composer controls that opened them. Rendered here, not in
@@ -491,7 +506,7 @@ export function ChatScreen() {
   // Small snap-through near the end on downward releases only — an upward
   // release is the user reading back, and must never be stolen.
   const snapToEnd = useCallback(
-    (e: any) => {
+    (e: { nativeEvent?: { contentOffset?: { y?: number } } }) => {
       touching.current = false;
       const y = e?.nativeEvent?.contentOffset?.y ?? 0;
       // Settle follow state from the release position itself (don't wait for
@@ -507,8 +522,7 @@ export function ChatScreen() {
       setAtBottom(true);
       scrollEnd();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scrollEnd],
+    [scrollEnd, setAtBottom],
   );
 
   // When the keyboard slides up the list height shrinks but content offset
@@ -887,15 +901,16 @@ export function ChatScreen() {
     }
     setAtBottom((p) => (p === atEnd ? p : atEnd));
   }, []);
+  const onBranchChat = useCallback(() => void branchSession(), [branchSession]);
   const renderMessage = useCallback(
     ({ item }: { item: UiMessage }) => {
-      // Merge the O(1) streaming buffer for the 1-2 live bubbles only —
-      // other rows keep their stable `item` reference so memo() holds.
-      const delta = streamingTexts[item.id];
-      const liveItem = delta ? { ...item, text: item.text + delta } : item;
+      // Streaming deltas reach the live bubble via StreamingContext inside
+      // MessageBubble — merging here would re-key renderMessage/extraData per
+      // token and invalidate every row. Other rows keep their stable `item`
+      // reference so memo() holds.
       return (
         <MessageBubble
-          item={liveItem}
+          item={item}
           bubbleMax={bubbleMax}
           dark={dark}
           expanded={!!expanded[item.id]}
@@ -907,17 +922,21 @@ export function ChatScreen() {
           canRegenerate={!!lastAssistantId && item.id === lastAssistantId && hasRegenTarget && !generating}
           canBranch={item.role === 'assistant' && !item.pending}
           onRegenerate={onRegenerate}
-          onBranchChat={() => void branchSession()}
+          onBranchChat={onBranchChat}
           onUserMenu={openUserMenu}
           onTip={showTip}
         />
       );
     },
-    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, branchSession, openUserMenu, showTip, streamingTexts],
+    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, onBranchChat, openUserMenu, showTip],
   );
   const listExtraData = useMemo(
-    () => ({ expanded, highlightIds, copiedId, generating, lastAssistantId, dark, bubbleMax, streamingTexts }),
-    [expanded, highlightIds, copiedId, generating, lastAssistantId, dark, bubbleMax, streamingTexts],
+    // Minimal: only per-row affordances that data-item identity alone won't
+    // refresh (old/new last-assistant rows for regenerate, expand/highlight/
+    // copy flags, generating). Theme/width flow through renderMessage's
+    // closure; streaming deltas flow via StreamingContext in the bubble.
+    () => ({ expanded, highlightIds, copiedId, generating, lastAssistantId }),
+    [expanded, highlightIds, copiedId, generating, lastAssistantId],
   );
 
   const closeSearch = useCallback(() => {
@@ -986,7 +1005,7 @@ export function ChatScreen() {
 
   if (booting) {
     return (
-      <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+      <View style={screen}>
         <SafeAreaView className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black" edges={['top', 'left', 'right', 'bottom']}>
           <StatusBar style="auto" />
           <ActivityIndicator size="large" />
@@ -999,14 +1018,8 @@ export function ChatScreen() {
 
   if (!sessionId) {
     return (
-      <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
-        <View
-          style={{
-            height: insets.top + 52,
-            paddingTop: insets.top,
-            backgroundColor: dark ? '#000' : '#fff',
-          }}
-        >
+      <View style={screen}>
+        <View style={noSessionHeader}>
           <View className="h-[52px] flex-row items-center px-2">
             <View className="w-11 items-start">
               <HamburgerBtn />
@@ -1066,7 +1079,7 @@ export function ChatScreen() {
           remeasurePopover();
         })
       }
-      style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}
+      style={screen}
     >
       {searchVisible ? (
         <ChatSearchHeader
@@ -1666,7 +1679,7 @@ export function ChatScreen() {
                     value={modelQuery}
                     onChangeText={setModelQuery}
                     placeholder="Search models…"
-                    placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                    placeholderTextColor={placeholder}
                     keyboardAppearance={dark ? 'dark' : 'light'}
                     autoCapitalize="none"
                     autoCorrect={false}

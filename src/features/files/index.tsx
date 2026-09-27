@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -13,6 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
@@ -38,6 +38,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
+import { placeholderColor, screenStyle } from '../../theme';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -54,6 +55,10 @@ export function FilesScreen() {
   const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
+  // Resolved once per scheme: the list re-renders on every search keystroke
+  // and each value below feeds several rows of the (virtualized) tree.
+  const screen = useMemo(() => screenStyle(dark), [dark]);
+  const placeholder = useMemo(() => placeholderColor(dark, 'file'), [dark]);
 
   const [currentPath, setCurrentPath] = useState<string>('~');
   const [listing, setListing] = useState<ManagedFilesResponse | null>(null);
@@ -135,9 +140,9 @@ export function FilesScreen() {
       setError(null);
       try {
         const targetPath = (path !== undefined ? path : currentPathRef.current || '~').trim();
-        const res: ManagedFilesResponse = await opsGet(
+        const res = (await opsGet(
           targetPath ? api.files(targetPath) : api.filesRoot(),
-        );
+        )) as unknown as ManagedFilesResponse;
         if (seq !== loadSeq.current || getAuthScope() !== scope) return;
         setListing(res);
         setCurrentPath(res.path);
@@ -219,40 +224,46 @@ export function FilesScreen() {
     [getAuthScope, opsMut, previewModalOpen, load, activeDirectory],
   );
 
-  const handleOpenEntry = async (entry: ManagedFileEntry) => {
-    const scope = getAuthScope();
-    if (entry.is_directory) {
-      setSearchQuery('');
-      await load(entry.path);
-    } else {
-      setReadingFile(true);
-      setError(null);
-      try {
-        const res: ManagedFileReadResponse = await opsGet(api.fileRead(entry.path));
-        if (getAuthScope() !== scope) return;
-        setSelectedFile(res);
-        setIsEditingFile(false);
-        if (res.data_url && res.data_url.includes(';base64,')) {
-          const b64 = res.data_url.split(';base64,')[1];
-          setFileTextContent(isTextReadable(res.mime_type, res.name) ? base64ToUtf8(b64) : '');
-        } else {
-          setFileTextContent('');
+  const handleOpenEntry = useCallback(
+    async (entry: ManagedFileEntry) => {
+      const scope = getAuthScope();
+      if (entry.is_directory) {
+        setSearchQuery('');
+        await load(entry.path);
+      } else {
+        setReadingFile(true);
+        setError(null);
+        try {
+          const res = (await opsGet(api.fileRead(entry.path))) as unknown as ManagedFileReadResponse;
+          if (getAuthScope() !== scope) return;
+          setSelectedFile(res);
+          setIsEditingFile(false);
+          if (res.data_url && res.data_url.includes(';base64,')) {
+            const b64 = res.data_url.split(';base64,')[1];
+            setFileTextContent(isTextReadable(res.mime_type, res.name) ? base64ToUtf8(b64) : '');
+          } else {
+            setFileTextContent('');
+          }
+          setPreviewModalOpen(true);
+        } catch (e) {
+          if (getAuthScope() === scope) Alert.alert('Cannot Open File', errMsg(e));
+        } finally {
+          if (getAuthScope() === scope) setReadingFile(false);
         }
-        setPreviewModalOpen(true);
-      } catch (e) {
-        if (getAuthScope() === scope) Alert.alert('Cannot Open File', errMsg(e));
-      } finally {
-        if (getAuthScope() === scope) setReadingFile(false);
       }
-    }
-  };
+    },
+    [getAuthScope, load, opsGet],
+  );
 
-  const handleGoUp = async () => {
+  // Stable identity for the FlashList header: `load` and `listing.parent` are
+  // the only things `handleGoUp` reads, so depending on it (instead of on a
+  // hand-picked subset) is exactly the closure the memoized element needs.
+  const handleGoUp = useCallback(async () => {
     if (listing?.parent) {
       setSearchQuery('');
       await load(listing.parent);
     }
-  };
+  }, [listing?.parent, load, setSearchQuery]);
 
   const handleJumpToPath = async () => {
     const p = pathInput.trim();
@@ -399,8 +410,7 @@ export function FilesScreen() {
     (entry: ManagedFileEntry) => {
       void handleOpenEntry(entry);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [opsGet],
+    [handleOpenEntry],
   );
   const fileKeyExtractor = useCallback((item: ManagedFileEntry) => item.path, []);
   const renderFileRow = useCallback(
@@ -417,10 +427,66 @@ export function FilesScreen() {
     setIsEditingFile(false);
   }, []);
 
+  // Stable list chrome — inline elements would remount header/empty/content on
+  // every keystroke. Memoize so typing in search only refilters data.
+  const fileListContentStyle = useMemo(
+    () => ({
+      paddingBottom: insets.bottom + 24,
+      flexGrow: 1,
+    }),
+    [insets.bottom],
+  );
+  const fileListRefreshControl = useMemo(
+    () => <RefreshControl refreshing={refreshing} onRefresh={() => void load(activeDirectory, true)} />,
+    [refreshing, load, activeDirectory],
+  );
+  const fileListHeader = useMemo(
+    () =>
+      listing?.parent ? (
+        <Pressable
+          onPress={handleGoUp}
+          className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
+        >
+          <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
+            <ArrowUp size={18} color="#f59e0b" />
+          </View>
+          <View className="flex-1">
+            <Text className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</Text>
+            <Text className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</Text>
+          </View>
+        </Pressable>
+      ) : null,
+    [handleGoUp, listing?.parent],
+  );
+  const fileListEmpty = useMemo(
+    () =>
+      loading && !refreshing ? (
+        <View className="items-center justify-center py-16">
+          <ActivityIndicator size="large" color="#1a73e8" />
+          <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</Text>
+        </View>
+      ) : !loading ? (
+        <View className="items-center justify-center py-20 px-6">
+          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
+            <Folder size={28} color={dark ? '#666' : '#999'} />
+          </View>
+          <Text className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            {searchInput ? 'No matching files' : 'Folder is empty'}
+          </Text>
+          <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+            {searchInput
+              ? `No files or folders matching "${searchInput}"`
+              : 'Upload files or create folders using the top buttons.'}
+          </Text>
+        </View>
+      ) : null,
+    [loading, refreshing, searchInput, dark],
+  );
+
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screen}>
       {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
@@ -543,7 +609,7 @@ export function FilesScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search in this folder..."
-              placeholderTextColor={dark ? '#777' : '#9ca3af'}
+              placeholderTextColor={placeholder}
               className="flex-1 text-sm text-neutral-900 dark:text-neutral-100"
               autoCapitalize="none"
               autoCorrect={false}
@@ -574,59 +640,18 @@ export function FilesScreen() {
         )}
 
         {/* File List — virtualized so large folders don't mount every row. */}
-        <FlatList
-          className="flex-1"
+        {/* FlashList v2 sizes rows itself; drawDistance replaces the old
+            windowSize/maxToRenderPerBatch overscan tuning. */}
+        <FlashList
+          style={{ flex: 1 }}
           data={filteredEntries}
           keyExtractor={fileKeyExtractor}
           renderItem={renderFileRow}
-          contentContainerStyle={{
-            paddingBottom: insets.bottom + 24,
-            flexGrow: 1,
-          }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(activeDirectory, true)} />}
-          initialNumToRender={20}
-          maxToRenderPerBatch={20}
-          windowSize={7}
-          updateCellsBatchingPeriod={60}
-          removeClippedSubviews
-          ListHeaderComponent={
-            listing?.parent ? (
-              <Pressable
-                onPress={handleGoUp}
-                className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
-              >
-                <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
-                  <ArrowUp size={18} color="#f59e0b" />
-                </View>
-                <View className="flex-1">
-                  <Text className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</Text>
-                  <Text className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</Text>
-                </View>
-              </Pressable>
-            ) : null
-          }
-          ListEmptyComponent={
-            loading && !refreshing ? (
-              <View className="items-center justify-center py-16">
-                <ActivityIndicator size="large" color="#1a73e8" />
-                <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</Text>
-              </View>
-            ) : !loading ? (
-              <View className="items-center justify-center py-20 px-6">
-                <View className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
-                  <Folder size={28} color={dark ? '#666' : '#999'} />
-                </View>
-                <Text className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  {searchInput ? 'No matching files' : 'Folder is empty'}
-                </Text>
-                <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-                  {searchInput
-                    ? `No files or folders matching "${searchInput}"`
-                    : 'Upload files or create folders using the top buttons.'}
-                </Text>
-              </View>
-            ) : null
-          }
+          contentContainerStyle={fileListContentStyle}
+          refreshControl={fileListRefreshControl}
+          drawDistance={800}
+          ListHeaderComponent={fileListHeader}
+          ListEmptyComponent={fileListEmpty}
         />
 
         {/* Reading File Overlay */}
@@ -781,7 +806,7 @@ export function FilesScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 placeholder={activeDirectory || '~'}
-                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                placeholderTextColor={placeholder}
                 className="mt-3.5 rounded-xl border border-neutral-300 p-3 font-mono text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
               />
 
@@ -824,7 +849,7 @@ export function FilesScreen() {
                 autoCorrect={false}
                 autoFocus
                 placeholder="folder_name"
-                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                placeholderTextColor={placeholder}
                 className="mt-3.5 rounded-xl border border-neutral-300 p-3 text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
               />
 
@@ -905,7 +930,7 @@ export function FilesScreen() {
                 autoCorrect={false}
                 autoFocus
                 placeholder="filename.txt"
-                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                placeholderTextColor={placeholder}
                 className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
               />
             </View>
@@ -920,7 +945,7 @@ export function FilesScreen() {
                 autoCorrect={false}
                 textAlignVertical="top"
                 placeholder="Enter text or code here..."
-                placeholderTextColor={dark ? '#777' : '#9ca3af'}
+                placeholderTextColor={placeholder}
                 className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
               />
             </KeyboardAvoidingView>

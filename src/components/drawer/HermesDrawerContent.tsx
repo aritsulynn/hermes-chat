@@ -1,7 +1,7 @@
 // Custom drawer content, ChatGPT-style: New chat button, Recents list
 // (opens straight into chat), History/Ops links, user footer with
 // theme switch + logout. Extracted from app/_layout.tsx.
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
@@ -25,6 +25,48 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
 import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
+import { brandColor, placeholderColor, screenBg } from '../../theme';
+import type { ScopedSessionSummary } from '../../store/types';
+
+// Memoized recents row: the session list is already windowed to 50 rendered
+// rows (visibleCount) with server pagination, so a FlashList inside the
+// drawer's scroll view would fight the drawer gesture/scroll — memo + stable
+// callbacks keep re-renders to the row that actually changed instead.
+const SessionRow = memo(function SessionRow({
+  session,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  session: ScopedSessionSummary;
+  active: boolean;
+  onOpen: (s: ScopedSessionSummary) => void;
+  onDelete: (s: ScopedSessionSummary) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      accessibilityRole="button"
+      accessibilityLabel={`Open chat ${session.title || '(untitled)'}`}
+      onPress={() => onOpen(session)}
+      onLongPress={() => onDelete(session)}
+      delayLongPress={400}
+      className={`flex-row h-auto items-center justify-start px-3 py-3 ${
+        active ? 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]' : ''
+      }`}
+    >
+      <UIText
+        numberOfLines={1}
+        ellipsizeMode="tail"
+        className={`flex-1 min-w-0 text-[16px] ${
+          active ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'
+        }`}
+      >
+        {session.title || '(untitled)'}
+      </UIText>
+    </Button>
+  );
+});
 
 export function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
@@ -90,8 +132,40 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       });
     }
   };
-  if (!authed) return null;
+  const handleOpenRecent = useCallback(
+    (s: ScopedSessionSummary) => {
+      props.navigation.closeDrawer();
+      void openSession(s);
+    },
+    [openSession, props.navigation],
+  );
+  const handleDeleteRecent = useCallback(
+    (s: ScopedSessionSummary) => {
+      Alert.alert(
+        'Delete chat',
+        `Delete "${s.title || '(untitled)'}"? This can't be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => {
+              void deleteSessionById(s.id).then(() => refreshSessions());
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [deleteSessionById, refreshSessions],
+  );
+  // Theme tokens resolved once per scheme: this panel re-renders on every
+  // streamed token and each value feeds several icon/style props below.
   const dark = theme === 'dark';
+  const brand = useMemo(() => brandColor(dark), [dark]);
+  const screen = useMemo(() => screenBg(dark), [dark]);
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
+  if (!authed) return null;
   const dimColor = dark ? '#a3a3a3' : '#555';
   const activeItemClass = 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]';
   const close = () => props.navigation.closeDrawer();
@@ -106,7 +180,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   const isNewChat = onChat && !hasActiveRecent && messages.length === 0;
   const isMoreActive = MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`);
   return (
-    <View className="flex-1" style={{ backgroundColor: dark ? '#000' : '#fff' }}>
+    <View className="flex-1" style={{ backgroundColor: screen }}>
       <DrawerContentScrollView
         {...props}
         contentContainerStyle={{ paddingBottom: 16 }}
@@ -121,7 +195,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
               value={q}
               onChangeText={setQ}
               placeholder="Search chats…"
-              placeholderTextColor={dark ? '#888' : '#9ca3af'}
+              placeholderTextColor={placeholder}
               autoFocus
               className="flex-1 rounded-lg border border-neutral-300 px-3 py-2.5 text-[16px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
             />
@@ -172,7 +246,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
               isNewChat ? activeItemClass : ''
             } ${busy ? 'opacity-50' : ''}`}
           >
-            <SquarePen size={20} color={isNewChat ? '#1a73e8' : dimColor} />
+            <SquarePen size={20} color={isNewChat ? brand : dimColor} />
             <UIText
               numberOfLines={1}
               className={`flex-1 min-w-0 text-[17px] ${
@@ -199,7 +273,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                   active ? activeItemClass : ''
                 }`}
               >
-                <Icon size={20} color={active ? '#1a73e8' : dimColor} />
+                <Icon size={20} color={active ? brand : dimColor} />
                 <UIText
                   numberOfLines={1}
                   className={`flex-1 min-w-0 text-[17px] ${
@@ -224,7 +298,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
           >
             <Ellipsis
               size={20}
-              color={(showMoreMenu || isMoreActive) ? '#1a73e8' : dimColor}
+              color={(showMoreMenu || isMoreActive) ? brand : dimColor}
             />
             <UIText
               numberOfLines={1}
@@ -261,7 +335,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                       active ? activeItemClass : ''
                     }`}
                   >
-                    <Icon size={18} color={active ? '#1a73e8' : dimColor} />
+                    <Icon size={18} color={active ? brand : dimColor} />
                     <UIText
                       numberOfLines={1}
                       className={`flex-1 min-w-0 text-[15px] ${
@@ -289,53 +363,15 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
           )}
           {visible.map((s) => {
             const active =
-              onChat &&
-              (s.profile ?? activeProfile) === activeProfile &&
-              (s.id === activeId || s.id === openingId);
+              onChat && (s.profile ?? activeProfile) === activeProfile && (s.id === activeId || s.id === openingId);
             return (
-              <Button
+              <SessionRow
                 key={`${s.profile ?? activeProfile}:${s.id}`}
-                variant="ghost"
-                accessibilityRole="button"
-                accessibilityLabel={`Open chat ${s.title || '(untitled)'}`}
-                onPress={() => {
-                  close();
-                  void openSession(s);
-                }}
-                onLongPress={() => {
-                  Alert.alert(
-                    'Delete chat',
-                    `Delete "${s.title || '(untitled)'}"? This can't be undone.`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
-                          void deleteSessionById(s.id).then(() => refreshSessions());
-                        },
-                      },
-                    ],
-                    { cancelable: true },
-                  );
-                }}
-                delayLongPress={400}
-                className={`flex-row h-auto items-center justify-start px-3 py-3 ${
-                  active ? activeItemClass : ''
-                }`}
-              >
-                <UIText
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  className={`flex-1 min-w-0 text-[16px] ${
-                    active
-                      ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                      : 'text-neutral-950 dark:text-neutral-100'
-                  }`}
-                >
-                  {s.title || '(untitled)'}
-                </UIText>
-              </Button>
+                session={s}
+                active={active}
+                onOpen={handleOpenRecent}
+                onDelete={handleDeleteRecent}
+              />
             );
           })}
           {/* Infinite-scroll footer: spinner while the next 100 loads. */}
@@ -444,7 +480,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       <View
         className="border-t border-neutral-200 dark:border-neutral-800"
         style={{
-          backgroundColor: dark ? '#000' : '#fff',
+          backgroundColor: screen,
           paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
@@ -514,7 +550,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                     active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                   }`}
                 >
-                  <Icon size={19} color={active ? '#1a73e8' : dark ? '#ccc' : '#444'} />
+                  <Icon size={19} color={active ? brand : dark ? '#ccc' : '#444'} />
                   <UIText
                     numberOfLines={1}
                     className={`flex-1 min-w-0 text-[15px] font-medium ${

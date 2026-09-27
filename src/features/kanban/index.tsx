@@ -2,7 +2,7 @@
 // board switcher, collapsible columns, cards, create/move/edit/delete tasks.
 // Talks to the plugin's own REST router (see hermes-agent
 // plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Redirect, useNavigation } from 'expo-router';
 import {
   ActivityIndicator,
@@ -30,12 +30,53 @@ import { Textarea } from '../../components/ui/textarea';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { Text as UIText } from '../../components/ui/text';
 import { CardChips } from './components/CardChips';
+import { placeholderColor, screenStyle } from '../../theme';
 import { asTask, dotOf } from './helpers';
 import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';
+
+// Memoized task row: opening/editing one card must not re-render every card
+// on the board. The press binding closes over the row's own task, so the
+// parent only passes the stable onOpen callback.
+const KanbanTaskRow = memo(function KanbanTaskRow({
+  task,
+  dark,
+  onOpen,
+}: {
+  task: KanbanTask;
+  dark: boolean;
+  onOpen: (t: KanbanTask) => void;
+}) {
+  return (
+    <Button
+      onPress={() => onOpen(task)}
+      variant="outline"
+      className="h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
+    >
+      <UIText
+        className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
+        numberOfLines={2}
+      >
+        {task.title}
+      </UIText>
+      {!!task.body && (
+        <UIText
+          className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
+          numberOfLines={2}
+        >
+          {task.body}
+        </UIText>
+      )}
+      <CardChips t={task} dark={dark} />
+    </Button>
+  );
+});
 
 export function KanbanScreen() {
   const { booting, authed, host, username, opsGet, opsMut, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
+  // One placeholder colour per scheme — the create/edit sheets pass it to
+  // four inputs, so it must not be recomputed on every render.
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
@@ -174,8 +215,7 @@ export function KanbanScreen() {
         else setLoading(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loadBoards, loadBoard],
+    [loadBoards, loadBoard, slug, host, username],
   );
 
   // Board body follows the selected slug.
@@ -185,16 +225,19 @@ export function KanbanScreen() {
     setDetail(null);
     setLoading(true);
     void loadBoard().finally(() => setLoading(false));
-  }, [authed, slug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authed, slug, loadBoard]);
 
   useEffect(() => {
     if (authed) void reload();
-  }, [authed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authed, reload]);
 
-  const pickSlug = (s: string) => {
-    setSlug(s);
-    void saveKanbanBoard(s, connectionScope(host, username));
-  };
+  const pickSlug = useCallback(
+    (s: string) => {
+      setSlug(s);
+      void saveKanbanBoard(s, connectionScope(host, username));
+    },
+    [host, username],
+  );
 
   const isCollapsed = (name: string, count: number) =>
     collapsed[name] ?? (name === 'archived' || count === 0);
@@ -205,11 +248,15 @@ export function KanbanScreen() {
   );
   const activeBoard = boards.find((b) => b.slug === slug);
 
-  const openDetail = (t: KanbanTask) => {
+  const openDetail = useCallback((t: KanbanTask) => {
     setDetail(t);
     setEditTitle(t.title);
     setEditBody(t.body ?? '');
-  };
+  }, []);
+
+  const toggleColumn = useCallback((name: string, next: boolean) => {
+    setCollapsed((p) => ({ ...p, [name]: next }));
+  }, []);
 
   const mutate = async (fn: () => Promise<unknown>, after?: () => void) => {
     const scope = getAuthScope();
@@ -304,7 +351,7 @@ export function KanbanScreen() {
     newStatus || statusOptions.find((c) => c === 'todo') || statusOptions.find((c) => c !== 'archived') || '';
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
         <StatusBar style="auto" />
         {/* Board switcher + new-task button */}
@@ -372,7 +419,7 @@ export function KanbanScreen() {
                 className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800"
               >
                 <Button
-                  onPress={() => setCollapsed((p) => ({ ...p, [col.name]: !shut }))}
+                  onPress={() => toggleColumn(col.name, !shut)}
                   variant="ghost"
                   className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
                 >
@@ -391,28 +438,7 @@ export function KanbanScreen() {
                       <Text className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</Text>
                     )}
                     {col.tasks.map((t) => (
-                      <Button
-                        key={t.id}
-                        onPress={() => openDetail(t)}
-                        variant="outline"
-                        className="h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
-                      >
-                        <UIText
-                          className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
-                          numberOfLines={2}
-                        >
-                          {t.title}
-                        </UIText>
-                        {!!t.body && (
-                          <UIText
-                            className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
-                            numberOfLines={2}
-                          >
-                            {t.body}
-                          </UIText>
-                        )}
-                        <CardChips t={t} dark={dark} />
-                      </Button>
+                      <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
                     ))}
                   </View>
                 )}
@@ -441,7 +467,7 @@ export function KanbanScreen() {
                   value={editTitle}
                   onChangeText={setEditTitle}
                   placeholder="Title"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  placeholderTextColor={placeholder}
                   keyboardAppearance={dark ? 'dark' : 'light'}
                   multiline
                 />
@@ -474,7 +500,7 @@ export function KanbanScreen() {
                   value={editBody}
                   onChangeText={setEditBody}
                   placeholder="Details…"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  placeholderTextColor={placeholder}
                   keyboardAppearance={dark ? 'dark' : 'light'}
                   multiline
                   textAlignVertical="top"
@@ -524,7 +550,7 @@ export function KanbanScreen() {
                   value={newTitle}
                   onChangeText={setNewTitle}
                   placeholder="Title"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  placeholderTextColor={placeholder}
                   keyboardAppearance={dark ? 'dark' : 'light'}
                   autoFocus
                   returnKeyType="next"
@@ -534,7 +560,7 @@ export function KanbanScreen() {
                   value={newBody}
                   onChangeText={setNewBody}
                   placeholder="Details (optional)"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  placeholderTextColor={placeholder}
                   keyboardAppearance={dark ? 'dark' : 'light'}
                   multiline
                   textAlignVertical="top"

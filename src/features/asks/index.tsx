@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import {
   SafeAreaView,
@@ -24,6 +24,7 @@ import { Text as UIText } from '../../components/ui/text';
 import { useApp } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
 import { errMsg } from '../../utils/messages';
+import { screenStyle } from '../../theme';
 
 function methodLabel(method: string): string {
   if (method === 'approval') return 'Command approval';
@@ -57,7 +58,7 @@ function requestSummary(entry: AskInboxEntry): string {
   return 'Hermes is waiting for input.';
 }
 
-function AskCard({
+const AskCard = memo(function AskCard({
   entry,
   onApproval,
   onOpen,
@@ -180,7 +181,7 @@ function AskCard({
       )}
     </View>
   );
-}
+});
 
 export function AskInboxScreen() {
   const {
@@ -204,17 +205,41 @@ export function AskInboxScreen() {
     });
   }, [navigation, dark]);
 
-  const pending = askInbox.filter(
-    (entry) =>
-      entry.status === 'pending' ||
-      entry.status === 'answering' ||
-      entry.status === 'sent',
+  const pending = useMemo(
+    () =>
+      askInbox.filter(
+        (entry) => entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent',
+      ),
+    [askInbox],
   );
-  const settled = askInbox.filter(
-    (entry) =>
-      entry.status !== 'pending' &&
-      entry.status !== 'answering' &&
-      entry.status !== 'sent',
+  const settled = useMemo(
+    () =>
+      askInbox.filter(
+        (entry) => entry.status !== 'pending' && entry.status !== 'answering' && entry.status !== 'sent',
+      ),
+    [askInbox],
+  );
+
+  // Stable callbacks so a new approval arriving doesn't rebuild every card's
+  // handlers (AskCard is memoized; settled is capped at 10 rows below, so no
+  // virtualized list is needed here).
+  const handleApproval = useCallback(
+    (key: string, choice: string) => {
+      try {
+        if (!answerInboxApproval(key, choice)) {
+          Alert.alert('Could not answer', 'The gateway is not ready or the request is no longer pending.');
+        }
+      } catch (e) {
+        Alert.alert('Could not answer', errMsg(e));
+      }
+    },
+    [answerInboxApproval],
+  );
+  const handleOpenAsk = useCallback(
+    (entry: AskInboxEntry) => {
+      void openAskEntry(entry);
+    },
+    [openAskEntry],
   );
 
   if (!authed) {
@@ -228,7 +253,7 @@ export function AskInboxScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       <StatusBar style="auto" />
       <SafeAreaView
         className="flex-1 bg-white dark:bg-black"
@@ -269,23 +294,7 @@ export function AskInboxScreen() {
           </View>
 
           {pending.map((entry) => (
-            <AskCard
-              key={entry.key}
-              entry={entry}
-              onApproval={(key, choice) => {
-                try {
-                  if (!answerInboxApproval(key, choice)) {
-                    Alert.alert(
-                      'Could not answer',
-                      'The gateway is not ready or the request is no longer pending.',
-                    );
-                  }
-                } catch (e) {
-                  Alert.alert('Could not answer', errMsg(e));
-                }
-              }}
-              onOpen={(entry) => void openAskEntry(entry)}
-            />
+            <AskCard key={entry.key} entry={entry} onApproval={handleApproval} onOpen={handleOpenAsk} />
           ))}
 
           {pending.length === 0 && (

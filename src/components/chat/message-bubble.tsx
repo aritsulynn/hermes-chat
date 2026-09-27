@@ -1,6 +1,7 @@
 import type * as React from 'react';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Keyboard, Pressable, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Pressable, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import Markdown from 'react-native-markdown-display';
 import { Brain, Check, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react-native';
 import { cleanThinking, flattenLists, renderMediaTags } from '../../utils/messages';
@@ -11,6 +12,7 @@ import { Button } from '../ui/button';
 import { Text as UIText } from '../ui/text';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
 import type { AnchorMeasure } from './composer';
+import { useStreaming } from '../../hooks/app-store';
 import { mdAi, mdAiDark, mdUser, mdUserDark, makeSelectableRules } from './markdown';
 
 // Tokens arrive far faster than markdown needs to re-render. Leading + trailing
@@ -166,7 +168,22 @@ const ToolOutput = memo(function ToolOutput({ text }: { text: string }) {
 // identity every token and forces a native re-resolve/flicker.
 const BubbleThumb = memo(function BubbleThumb({ uri, name }: { uri: string; name: string }) {
   const source = useMemo(() => ({ uri }), [uri]);
-  return <Image key={uri + name} source={source} resizeMode="cover" className="h-20 w-20 rounded-lg bg-black/10" />;
+  return (
+    <Image
+      key={uri + name}
+      source={source}
+      contentFit="cover"
+      cachePolicy="memory-disk"
+      // Rows are recycled by FlashList, so pin the view to this attachment —
+      // without it a reused row can flash the previous message's thumbnail.
+      recyclingKey={uri + name}
+      // Decorative 80px chips must never outrank a real chat image in the
+      // load queue.
+      priority="low"
+      alt={name}
+      className="h-20 w-20 rounded-lg bg-black/10"
+    />
+  );
 });
 
 // Stable tap-to-dismiss for plain bubbles — module-level so the memo()'d
@@ -216,8 +233,14 @@ export const MessageBubble = memo(function MessageBubble({
   onRegenerate: () => void;
 }) {
   const rules = useMemo(() => makeSelectableRules(dark), [dark]);
+  // Streaming deltas arrive via StreamingContext (not a merged `item` prop),
+  // so the list's renderMessage/extraData stay stable per token and only the
+  // live bubble's text changes. Other rows keep stable props for memo().
+  const streamingTexts = useStreaming();
+  const streamDelta = streamingTexts[item.id] ?? '';
+  const mergedText = streamDelta ? item.text + streamDelta : item.text;
   // The streaming bubble changes on every token — see useThrottledText().
-  const liveText = useThrottledText(item.text, item.pending);
+  const liveText = useThrottledText(mergedText, item.pending);
   // `MEDIA:<path>` is the agent's attachment contract — assistant replies only
   // (a user quoting the tag shouldn't turn into an image).
   const body = useMemo(
@@ -233,14 +256,14 @@ export const MessageBubble = memo(function MessageBubble({
   const streamPlain =
     item.role === 'assistant' && !!item.pending && !liveText.includes('MEDIA:');
   const think = item.role === 'thinking';
-  const typing = !think && item.pending && !item.text;
+  const typing = !think && item.pending && !mergedText;
   const markdown =
     !think &&
     item.role !== 'notice' &&
     item.role !== 'interim' &&
     item.role !== 'tool' &&
     item.role !== 'summary';
-  const copyable = (item.role === 'user' || item.role === 'assistant') && !!item.text && !item.pending;
+  const copyable = (item.role === 'user' || item.role === 'assistant') && !!mergedText && !item.pending;
   // A file-editing tool: the gateway renders the diff onto the live bubble, or
   // it rides inside the REST tool result JSON (history). Render either inline.
   const toolDiff = useMemo(
@@ -260,24 +283,57 @@ export const MessageBubble = memo(function MessageBubble({
   // Tooltip peek fired on a footer icon: swallow the onPress that fires on
   // release, so peeking at the label doesn't also trigger the action.
   const tipFired = useRef(false);
-  const fireTip = (ref: { current: View | null }, label: string) => {
-    tipFired.current = true;
-    onTip((cb) =>
-      ref.current?.measureInWindow((x, y, w, h) => {
-        if (w > 0) cb({ x, y, w, h });
-      }),
-      label,
-    );
-  };
-  const guardedPress = (fn: () => void) => () => {
+  const fireTip = useCallback(
+    (ref: { current: View | null }, label: string) => {
+      tipFired.current = true;
+      onTip((cb) =>
+        ref.current?.measureInWindow((x, y, w, h) => {
+          if (w > 0) cb({ x, y, w, h });
+        }),
+        label,
+      );
+    },
+    [onTip],
+  );
+  // Stable press handlers — inline arrows here would break memo() and force a
+  // markdown re-parse + native tree rebuild on every streamed token.
+  const handleCopyPress = useCallback(() => {
     if (tipFired.current) {
       tipFired.current = false;
       return;
     }
-    fn();
-  };
+    onCopy(item.id, mergedText);
+  }, [onCopy, item.id, mergedText]);
+  const handleRegenPress = useCallback(() => {
+    if (tipFired.current) {
+      tipFired.current = false;
+      return;
+    }
+    onRegenerate();
+  }, [onRegenerate]);
+  const handleCopyTip = useCallback(
+    () => fireTip(copyAnchorRef, copied ? 'Copied!' : 'Copy'),
+    [fireTip, copied],
+  );
+  const handleRegenTip = useCallback(() => fireTip(regenAnchorRef, 'Regenerate'), [fireTip]);
   // Whole-bubble anchor for the long-press menu on our own messages.
   const bubbleRef = useRef<View>(null);
+  const handleTogglePress = useCallback(() => {
+    if (longFired.current) {
+      longFired.current = false;
+      return;
+    }
+    onToggleExpand(item.id);
+  }, [onToggleExpand, item.id, longFired]);
+  const handleToggleLongPress = useCallback(() => {
+    longFired.current = true;
+  }, [longFired]);
+  const handleUserLongPress = useCallback(() => {
+    bubbleRef.current?.measureInWindow((x, y, w, h) => {
+      if (w > 0) onUserMenu((cb) => cb({ x, y, w, h }), item.id);
+    });
+  }, [onUserMenu, item.id]);
+  const bubbleStyle = useMemo(() => ({ maxWidth: bubbleMax }), [bubbleMax]);
   // Expand/collapse lives on the root for thinking + tool output: the press
   // must sit on an ANCESTOR of the text so taps anywhere (text included)
   // toggle — a behind-sibling overlay never sees them (touches bubble up the
@@ -303,32 +359,16 @@ export const MessageBubble = memo(function MessageBubble({
                     ? 'self-start bg-transparent'
                     : 'self-start bg-[#f0f0f2] dark:bg-[#272727]'
       }${highlight ? ' border-2 border-[#b45309] dark:border-[#fbbf24]' : ''}`}
-      style={{ maxWidth: bubbleMax }}
-      onPress={
-        toggleable
-          ? () => {
-              if (longFired.current) {
-                longFired.current = false;
-                return;
-              }
-              onToggleExpand(item.id);
-            }
-          : dismissKeyboard
-      }
-      onLongPress={
-        toggleable
-          ? () => {
-              longFired.current = true;
-            }
-          : undefined
-      }
+      style={bubbleStyle}
+      onPress={toggleable ? handleTogglePress : dismissKeyboard}
+      onLongPress={toggleable ? handleToggleLongPress : undefined}
       accessibilityRole={toggleable ? 'button' : undefined}
       accessibilityLabel={toggleable ? `${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}` : undefined}
     >
       {typing ? (
         <TypingDots />
       ) : think ? (
-        item.text ? (
+        mergedText ? (
           <>
           <View className="flex-row gap-1.5">
               {/* Icon is 14px but a text line is 18px tall — center it inside a
@@ -342,7 +382,7 @@ export const MessageBubble = memo(function MessageBubble({
                 className="shrink text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400"
                 numberOfLines={expanded ? undefined : 1}
               >
-                {cleanThinking(item.text)}
+                {cleanThinking(mergedText)}
               </UIText>
             </View>
           </>
@@ -366,7 +406,7 @@ export const MessageBubble = memo(function MessageBubble({
               className="shrink text-[13px] leading-[18px] text-[#3b5bdb] dark:text-[#8fa8ff]"
               numberOfLines={expanded ? undefined : 2}
             >
-              {item.text}
+              {mergedText}
             </UIText>
             {!!toolDiff && (
               <UIText className="shrink-0 text-[11px] font-semibold leading-[18px]">
@@ -407,7 +447,7 @@ export const MessageBubble = memo(function MessageBubble({
         <View className="flex-row items-center gap-1.5">
           <FileText size={12} color={dark ? '#777' : '#999'} />
           <Text selectable className="text-[11px] text-neutral-500 dark:text-neutral-400">
-            {item.text}
+            {mergedText}
           </Text>
         </View>
       ) : markdown ? (
@@ -415,11 +455,7 @@ export const MessageBubble = memo(function MessageBubble({
           // Long-press our own message for the Copy / Edit menu. Plain
           // Pressable (no press tint) so the bubble look doesn't change.
           <Pressable
-            onLongPress={() =>
-              bubbleRef.current?.measureInWindow((x, y, w, h) => {
-                if (w > 0) onUserMenu((cb) => cb({ x, y, w, h }), item.id);
-              })
-            }
+            onLongPress={handleUserLongPress}
             delayLongPress={400}
             accessibilityRole="button"
             accessibilityLabel="Message actions"
@@ -457,7 +493,7 @@ export const MessageBubble = memo(function MessageBubble({
         )
       ) : (
         <Text selectable className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
-          {item.text}
+          {mergedText}
         </Text>
       )}
       {/* Footer: bot time lives in its ⋯ menu, ours in the long-press menu —
@@ -468,8 +504,8 @@ export const MessageBubble = memo(function MessageBubble({
             <Button
               variant="ghost"
               size="icon"
-              onPress={guardedPress(() => onCopy(item.id, item.text))}
-              onLongPress={() => fireTip(copyAnchorRef, copied ? 'Copied!' : 'Copy')}
+              onPress={handleCopyPress}
+              onLongPress={handleCopyTip}
               delayLongPress={400}
               accessibilityRole="button"
               accessibilityLabel={copied ? 'Copied' : 'Copy'}
@@ -489,8 +525,8 @@ export const MessageBubble = memo(function MessageBubble({
             <Button
               variant="ghost"
               size="icon"
-              onPress={guardedPress(onRegenerate)}
-              onLongPress={() => fireTip(regenAnchorRef, 'Regenerate')}
+              onPress={handleRegenPress}
+              onLongPress={handleRegenTip}
               delayLongPress={400}
               accessibilityRole="button"
               accessibilityLabel="Regenerate"
