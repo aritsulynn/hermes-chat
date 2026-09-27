@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, ScrollView, Text, View } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react-native';
 
 import { HamburgerBtn } from '../../components/ui/bits';
+import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
@@ -141,42 +142,40 @@ const AskCard = memo(function AskCard({
           {entry.method === 'approval' && (canAllow || canDeny) ? (
             <>
               {canAllow && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Allow once"
+                <Button
                   onPress={() => onApproval(entry.key, 'once')}
-                  className="flex-1 items-center rounded-xl bg-[#1a73e8] px-3 py-2.5"
+                  accessibilityLabel="Allow once"
+                  className="h-auto flex-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
                 >
-                  <Text className="text-sm font-semibold text-white">
+                  <UIText className="text-sm font-semibold text-white">
                     Allow once
-                  </Text>
-                </Pressable>
+                  </UIText>
+                </Button>
               )}
               {canDeny && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Reject request"
+                <Button
+                  variant="outline"
                   onPress={() => onApproval(entry.key, 'deny')}
-                  className="flex-1 items-center rounded-xl border border-red-200 px-3 py-2.5 dark:border-red-950"
+                  accessibilityLabel="Reject request"
+                  className="h-auto flex-1 rounded-xl border-red-200 px-3 py-2.5 dark:border-red-950"
                 >
-                  <Text className="text-sm font-semibold text-red-600 dark:text-red-400">
+                  <UIText className="text-sm font-semibold text-red-600 dark:text-red-400">
                     Reject
-                  </Text>
-                </Pressable>
+                  </UIText>
+                </Button>
               )}
             </>
           ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open request"
+            <Button
               onPress={() => onOpen(entry)}
-              className="flex-row items-center justify-center gap-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
+              accessibilityLabel="Open request"
+              className="h-auto rounded-xl bg-[#1a73e8] px-3 py-2.5"
             >
-              <Text className="text-sm font-semibold text-white">
+              <UIText className="text-sm font-semibold text-white">
                 Open request
-              </Text>
+              </UIText>
               <ChevronRight size={15} color="#fff" />
-            </Pressable>
+            </Button>
           )}
         </View>
       )}

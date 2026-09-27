@@ -182,26 +182,27 @@ export function UsageScreen() {
           <Text className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</Text>
           <View className="flex-row gap-1">
             {PERIOD_OPTIONS.map((opt) => (
-              <Pressable
+              <Button
                 key={opt.days}
+                variant="ghost"
                 accessibilityRole="radio"
                 accessibilityState={{ selected: days === opt.days }}
                 accessibilityLabel={opt.label}
                 onPress={() => setDays(opt.days)}
-                className={`rounded-lg px-3 py-1.5 border ${
+                className={`h-auto rounded-lg border px-3 py-1.5 ${
                   days === opt.days
                     ? 'border-[#1a73e8] bg-[#1a73e8]'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
               >
-                <Text
+                <UIText
                   className={`text-xs font-semibold ${
                     days === opt.days ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
                   }`}
                 >
                   {opt.label}
-                </Text>
-              </Pressable>
+                </UIText>
+              </Button>
             ))}
           </View>
         </View>

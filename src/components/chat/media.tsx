@@ -48,6 +48,8 @@ import {
   serverFilePending,
 } from '../../services/media-cache';
 import { buildImageSource, shouldAttachDashboardCookie } from '../../services/media-policy';
+import { Button } from '../ui/button';
+import { Text as UIText } from '../ui/text';
 import { deleteAsync, writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
 import * as api from '../../services/api';
 import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../../services/constants';
@@ -239,17 +241,19 @@ function BrokenImage({ src, alt, dark }: { src: string; alt?: string; dark: bool
   const openable = isRemote(p) || isWebPath(p);
   const url = openable ? (isWebPath(p) ? `${base(host)}${p}` : p) : '';
   return (
-    <Pressable
+    <Button
+      variant="outline"
       disabled={!openable}
       onPress={() => void Linking.openURL(url).catch(() => {})}
-      className="my-1 flex-row items-center gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700"
+      accessibilityLabel={alt || basename(p) || 'Open link'}
+      className="my-1 h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700"
     >
       <ImageOff size={15} color={dark ? '#aaa' : '#777'} />
       <Text className="flex-1 text-[13px] text-neutral-600 dark:text-neutral-300" numberOfLines={1}>
         {alt || basename(p) || 'image'}
       </Text>
       {openable && <ChevronRight size={14} color={dark ? '#aaa' : '#777'} />}
-    </Pressable>
+    </Button>
   );
 }
 
@@ -420,27 +424,32 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
             <Text className="text-xs text-white/40">Open it from the Files tab instead.</Text>
           </View>
         )}
-        <Pressable
+        <Button
+          variant="ghost"
+          size="icon"
           onPress={onClose}
+          accessibilityLabel="Close preview"
           hitSlop={12}
-          className="absolute right-3 rounded-full bg-white/15 p-2"
+          className="absolute right-3 h-10 w-10 rounded-full bg-white/15"
           style={{ top: insets.top + 8 }}
         >
           <X size={20} color="#fff" />
-        </Pressable>
+        </Button>
         {(preview.kind === 'image' || preview.kind === 'text') && (
-          <Pressable
+          <Button
+            variant="ghost"
             onPress={() => {
               if (preview.kind === 'image') void shareUri(preview.uri, preview.caption);
               else if (preview.kind === 'text') void Share.share({ message: preview.text }).catch(() => {});
             }}
+            accessibilityLabel="Share"
             hitSlop={12}
-            className="absolute left-3 flex-row items-center gap-1.5 rounded-full bg-white/15 px-3 py-2"
+            className="absolute left-3 h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
             style={{ top: insets.top + 8 }}
           >
             <Share2 size={16} color="#fff" />
-            <Text className="text-[12px] font-semibold text-white">Share</Text>
-          </Pressable>
+            <UIText className="text-[12px] font-semibold text-white">Share</UIText>
+          </Button>
         )}
         <Text className="pt-2 text-center text-[11px] text-white/30">tap to close</Text>
       </View>

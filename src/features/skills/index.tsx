@@ -248,12 +248,24 @@ export function SkillsScreen() {
               <Text className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white" numberOfLines={1}>
                 {viewing ?? ''}
               </Text>
-              <Pressable onPress={() => void Clipboard.setStringAsync(content).catch(() => {})} className="px-2 py-1.5">
-                <Text className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</Text>
-              </Pressable>
-              <Pressable onPress={() => setViewing(null)} hitSlop={8} className="p-1.5">
+              <Button
+                variant="ghost"
+                onPress={() => void Clipboard.setStringAsync(content).catch(() => {})}
+                accessibilityLabel="Copy skill file"
+                className="h-auto px-2 py-1.5"
+              >
+                <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</UIText>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => setViewing(null)}
+                accessibilityLabel="Close skill file"
+                hitSlop={8}
+                className="h-8 w-8 rounded-md"
+              >
                 <X size={20} color={dark ? '#eee' : '#333'} />
-              </Pressable>
+              </Button>
             </View>
             <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
               {contentLoading ? (

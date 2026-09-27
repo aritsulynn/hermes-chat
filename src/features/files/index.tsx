@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -449,18 +448,20 @@ export function FilesScreen() {
   const fileListHeader = useMemo(
     () =>
       listing?.parent ? (
-        <Pressable
+        <Button
+          variant="ghost"
           onPress={handleGoUp}
-          className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
+          accessibilityLabel="Parent directory"
+          className="h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
         >
           <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
             <ArrowUp size={18} color="#f59e0b" />
           </View>
-          <View className="flex-1">
-            <Text className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</Text>
-            <Text className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</Text>
+          <View className="flex-1 items-start">
+            <UIText className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</UIText>
+            <UIText className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</UIText>
           </View>
-        </Pressable>
+        </Button>
       ) : null,
     [handleGoUp, listing?.parent],
   );
@@ -574,19 +575,21 @@ export function FilesScreen() {
                 const isLast = idx === breadcrumbs.length - 1;
                 return (
                   <View key={crumb.path} className="flex-row items-center">
-                    <Pressable
+                    <Button
+                      variant="ghost"
                       disabled={isLast}
+                      accessibilityLabel={isLast ? crumb.label : `Go to ${crumb.label}`}
                       onPress={() => {
                         setSearchQuery('');
                         void load(crumb.path);
                       }}
-                      className={`rounded px-1.5 py-0.5 ${
+                      className={`h-auto rounded px-1.5 py-0.5 ${
                         isLast
                           ? 'bg-neutral-200/60 dark:bg-neutral-800'
                           : 'active:bg-neutral-200 dark:active:bg-neutral-800'
                       }`}
                     >
-                      <Text
+                      <UIText
                         numberOfLines={1}
                         className={`font-mono text-xs ${
                           isLast
@@ -595,8 +598,8 @@ export function FilesScreen() {
                         }`}
                       >
                         {crumb.label}
-                      </Text>
-                    </Pressable>
+                      </UIText>
+                    </Button>
                     {!isLast && <Text className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</Text>}
                   </View>
                 );
@@ -604,15 +607,17 @@ export function FilesScreen() {
             </View>
           </ScrollView>
 
-          <Pressable
+          <Button
+            variant="ghost"
             onPress={() => {
               setPathInput(activeDirectory);
               setPathModalOpen(true);
             }}
-            className="rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
+            accessibilityLabel="Change directory"
+            className="h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
           >
-            <Text className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</Text>
-          </Pressable>
+            <UIText className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</UIText>
+          </Button>
         </View>
 
         {/* Search / Filter Bar */}
@@ -633,9 +638,16 @@ export function FilesScreen() {
               autoCorrect={false}
             />
             {searchQuery ? (
-              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => setSearchQuery('')}
+                accessibilityLabel="Clear search"
+                hitSlop={8}
+                className="h-6 w-6 rounded-md"
+              >
                 <X size={14} color={dark ? '#888' : '#9ca3af'} />
-              </Pressable>
+              </Button>
             ) : null}
           </View>
         </View>
@@ -702,65 +714,77 @@ export function FilesScreen() {
 
               <View className="flex-row items-center gap-2">
                 {fileTextContent && !isEditingFile ? (
-                  <Pressable
+                  <Button
+                    variant="ghost"
                     onPress={handleCopyText}
-                    className="flex-row items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
+                    accessibilityLabel="Copy file contents"
+                    className="h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
                   >
                     {copied ? (
                       <>
                         <Check size={14} color="#10b981" />
-                        <Text className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Copied</Text>
+                        <UIText className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Copied</UIText>
                       </>
                     ) : (
                       <>
                         <Copy size={14} color={dark ? '#ccc' : '#444'} />
-                        <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Copy</Text>
+                        <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Copy</UIText>
                       </>
                     )}
-                  </Pressable>
+                  </Button>
                 ) : null}
 
                 {/* Edit Toggle for Text Files */}
                 {fileTextContent && !selectedFile?.mime_type?.startsWith('image/') ? (
                   isEditingFile ? (
-                    <Pressable
+                    <Button
+                      variant="ghost"
                       onPress={handleSaveEditedFile}
                       disabled={savingFile}
-                      className="rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
+                      accessibilityLabel="Save file"
+                      className="h-auto rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
                     >
                       {savingFile ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text className="text-xs font-bold text-white">Save</Text>
+                        <UIText className="text-xs font-bold text-white">Save</UIText>
                       )}
-                    </Pressable>
+                    </Button>
                   ) : (
-                    <Pressable
+                    <Button
+                      variant="ghost"
                       onPress={() => setIsEditingFile(true)}
-                      className="rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
+                      accessibilityLabel="Edit file"
+                      className="h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
                     >
-                      <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</Text>
-                    </Pressable>
+                      <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</UIText>
+                    </Button>
                   )
                 ) : null}
 
                 {selectedFile && !isEditingFile ? (
-                  <Pressable
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onPress={() => handleDeleteEntry(selectedFile.path, false, selectedFile.name)}
+                    accessibilityLabel="Delete file"
                     hitSlop={8}
-                    className="rounded-lg p-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                    className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800"
                   >
                     <Trash2 size={18} color="#ef4444" />
-                  </Pressable>
+                  </Button>
                 ) : null}
 
-                <Pressable
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onPress={closePreview}
+                  accessibilityLabel="Close preview"
                   hitSlop={8}
-                  className="rounded-lg p-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                  className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800"
                 >
                   <X size={20} color={dark ? '#eee' : '#333'} />
-                </Pressable>
+                </Button>
               </View>
             </View>
 
@@ -924,26 +948,28 @@ export function FilesScreen() {
               </View>
 
               <View className="flex-row items-center gap-2">
-                <Pressable
+                <Button
+                  variant="ghost"
                   onPress={() => setNewFileModalOpen(false)}
-                  className="rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                  accessibilityLabel="Cancel"
+                  className="h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
                 >
-                  <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</Text>
-                </Pressable>
+                  <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+                </Button>
 
-                <Pressable
+                <Button
+                  variant="ghost"
                   onPress={handleCreateFile}
                   disabled={creatingFile || !newFileName.trim()}
-                  className={`rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80 ${
-                    !newFileName.trim() ? 'opacity-50' : ''
-                  }`}
+                  accessibilityLabel="Create file"
+                  className="h-auto rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80"
                 >
                   {creatingFile ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <Text className="text-xs font-bold text-white">Save File</Text>
+                    <UIText className="text-xs font-bold text-white">Save File</UIText>
                   )}
-                </Pressable>
+                </Button>
               </View>
             </View>
 

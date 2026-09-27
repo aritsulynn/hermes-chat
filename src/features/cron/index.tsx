@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -172,72 +171,88 @@ const JobCard = memo(function JobCard({
       {/* Action Buttons Toolbar */}
       <View className="mt-3.5 flex-row items-center justify-between pt-2.5 border-t border-neutral-200/70 dark:border-neutral-800/70">
         {/* Left: Runs History */}
-        <Pressable
+        <Button
+          variant="ghost"
           onPress={() => void onOpenRuns(job)}
-          className="flex-row items-center gap-1.5 rounded-lg border border-[#1a73e8]/30 bg-[#1a73e8]/10 px-2.5 py-1.5 active:bg-[#1a73e8]/20"
+          accessibilityLabel={`Run history for ${job.name || job.id}`}
+          className="h-auto rounded-lg border border-[#1a73e8]/30 bg-[#1a73e8]/10 px-2.5 py-1.5 active:bg-[#1a73e8]/20"
         >
           <History size={13} color="#1a73e8" />
-          <Text className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">History</Text>
-        </Pressable>
+          <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">History</UIText>
+        </Button>
 
         {/* Right: Actions */}
         <View className="flex-row items-center gap-1.5">
           {/* Trigger / Run Now */}
-          <Pressable
+          <Button
+            variant="ghost"
             disabled={busy}
             onPress={() => void onTrigger(job)}
-            className="flex-row items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
+            accessibilityLabel={`Run ${job.name || job.id} now`}
+            className="h-auto rounded-lg border border-neutral-300 px-2.5 py-1.5 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
           >
             {busy ? (
               <ActivityIndicator size="small" color="#1a73e8" />
             ) : (
               <>
                 <Play size={12} color={dark ? '#f5f5f5' : '#111'} fill={dark ? '#f5f5f5' : '#111'} />
-                <Text className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Run</Text>
+                <UIText className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Run</UIText>
               </>
             )}
-          </Pressable>
+          </Button>
 
           {/* Pause or Resume */}
           {isPaused ? (
-            <Pressable
+            <Button
+              variant="ghost"
+              size="icon"
               disabled={busy}
               onPress={() => void onResume(job)}
-              className="rounded-lg border border-neutral-300 p-2 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
+              accessibilityLabel={`Resume ${job.name || job.id}`}
+              className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
               hitSlop={4}
             >
               <RotateCw size={13} color={dark ? '#f5f5f5' : '#111'} />
-            </Pressable>
+            </Button>
           ) : (
-            <Pressable
+            <Button
+              variant="ghost"
+              size="icon"
               disabled={busy}
               onPress={() => void onPause(job)}
-              className="rounded-lg border border-neutral-300 p-2 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
+              accessibilityLabel={`Pause ${job.name || job.id}`}
+              className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
               hitSlop={4}
             >
               <Pause size={13} color={dark ? '#f5f5f5' : '#111'} />
-            </Pressable>
+            </Button>
           )}
 
           {/* Edit */}
-          <Pressable
+          <Button
+            variant="ghost"
+            size="icon"
             disabled={busy}
             onPress={() => onEdit(job)}
-            className="rounded-lg border border-neutral-300 p-2 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
+            accessibilityLabel={`Edit ${job.name || job.id}`}
+            className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
             hitSlop={4}
           >
             <Pencil size={13} color={dark ? '#ccc' : '#555'} />
-          </Pressable>
+          </Button>
 
           {/* Delete */}
-          <Pressable
+          <Button
+            variant="ghost"
+            size="icon"
             disabled={busy}
             onPress={() => onDelete(job)}
-            className="rounded-lg border border-red-200 p-2 active:bg-red-50 dark:border-red-900/60 dark:active:bg-red-950/30"
+            accessibilityLabel={`Delete ${job.name || job.id}`}
+            className="h-8 w-8 rounded-lg border border-red-200 active:bg-red-50 dark:border-red-900/60 dark:active:bg-red-950/30"
             hitSlop={4}
           >
             <Trash size={13} color="#dc2626" />
-          </Pressable>
+          </Button>
         </View>
       </View>
     </View>
@@ -351,21 +366,30 @@ const RunCard = memo(function RunCard({
 
       {/* Action buttons: View Messages / Open in Chat */}
       <View className="mt-3 flex-row items-center justify-between pt-2 border-t border-neutral-200/60 dark:border-neutral-800/60">
-        <Pressable onPress={() => void onToggleRun(run.id)} hitSlop={5} className="flex-row items-center gap-1 py-1">
-          <Text className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
-            {expanded ? 'Hide Messages' : 'View Messages'}
-          </Text>
-          {expanded ? <ChevronUp size={14} color="#1a73e8" /> : <ChevronDown size={14} color="#1a73e8" />}
-        </Pressable>
-
-        <Pressable
-          onPress={() => void onOpenInChat(run)}
+        <Button
+          variant="ghost"
+          onPress={() => void onToggleRun(run.id)}
+          accessibilityState={{ expanded }}
+          accessibilityLabel={expanded ? 'Hide messages' : 'View messages'}
           hitSlop={5}
-          className="flex-row items-center gap-1 rounded-lg bg-neutral-200/70 px-2.5 py-1 active:bg-neutral-300 dark:bg-neutral-800 dark:active:bg-neutral-700"
+          className="h-auto px-0 py-1"
+        >
+          <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
+            {expanded ? 'Hide Messages' : 'View Messages'}
+          </UIText>
+          {expanded ? <ChevronUp size={14} color="#1a73e8" /> : <ChevronDown size={14} color="#1a73e8" />}
+        </Button>
+
+        <Button
+          variant="ghost"
+          onPress={() => void onOpenInChat(run)}
+          accessibilityLabel="Open this run in chat"
+          hitSlop={5}
+          className="h-auto rounded-lg bg-neutral-200/70 px-2.5 py-1 active:bg-neutral-300 dark:bg-neutral-800 dark:active:bg-neutral-700"
         >
           <ExternalLink size={12} color={dark ? '#ddd' : '#333'} />
-          <Text className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Open in Chat</Text>
-        </Pressable>
+          <UIText className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Open in Chat</UIText>
+        </Button>
       </View>
 
       {/* Expanded Transcript Preview */}
@@ -875,13 +899,14 @@ export function CronScreen() {
           <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
             Schedule recurring prompts or automation tasks for Hermes.
           </Text>
-          <Pressable
+          <Button
             onPress={openCreateModal}
-            className="mt-4 flex-row items-center gap-1.5 rounded-xl bg-[#1a73e8] px-4 py-2.5"
+            accessibilityLabel="Create first cron job"
+            className="mt-4 h-auto rounded-xl bg-[#1a73e8] px-4 py-2.5"
           >
             <Plus size={16} color="#fff" />
-            <Text className="text-sm font-semibold text-white">Create First Job</Text>
-          </Pressable>
+            <UIText className="text-sm font-semibold text-white">Create First Job</UIText>
+          </Button>
         </View>
       );
     }
@@ -1074,19 +1099,20 @@ export function CronScreen() {
               <Text className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-1.5">
                 {SCHEDULE_PRESETS.map((preset) => (
-                  <Pressable
+                  <Button
                     key={preset.label}
+                    variant="ghost"
                     accessibilityRole="radio"
                     accessibilityState={{ selected: formSchedule === preset.expr }}
                     accessibilityLabel={`${preset.label} schedule, ${preset.expr}`}
                     onPress={() => setFormSchedule(preset.expr)}
-                    className={`mr-1.5 rounded-lg border px-2.5 py-1 ${
+                    className={`h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
                       formSchedule === preset.expr
                         ? 'border-[#1a73e8] bg-[#1a73e8]/10'
                         : 'border-neutral-300 dark:border-neutral-700'
                     }`}
                   >
-                    <Text
+                    <UIText
                       className={`text-[11px] font-medium ${
                         formSchedule === preset.expr
                           ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
@@ -1094,8 +1120,8 @@ export function CronScreen() {
                       }`}
                     >
                       {preset.label}
-                    </Text>
-                  </Pressable>
+                    </UIText>
+                  </Button>
                 ))}
               </ScrollView>
             </View>
@@ -1135,27 +1161,30 @@ export function CronScreen() {
 
             {/* Action Buttons */}
             <View className="mt-2 flex-row gap-3">
-              <Pressable
+              <Button
+                variant="outline"
                 disabled={formSaving}
                 onPress={() => setModalOpen(false)}
-                className="flex-1 items-center rounded-xl border border-neutral-300 py-3 dark:border-neutral-700"
+                accessibilityLabel="Cancel"
+                className="h-auto flex-1 rounded-xl py-3"
               >
-                <Text className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</Text>
-              </Pressable>
+                <UIText className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+              </Button>
 
-              <Pressable
+              <Button
                 disabled={formSaving}
                 onPress={handleSave}
-                className="flex-1 items-center justify-center rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600"
+                accessibilityLabel={editingJob ? 'Save changes' : 'Create job'}
+                className="h-auto flex-1 rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600"
               >
                 {formSaving ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text className="text-sm font-semibold text-white">
+                  <UIText className="text-sm font-semibold text-white">
                     {editingJob ? 'Save Changes' : 'Create Job'}
-                  </Text>
+                  </UIText>
                 )}
-              </Pressable>
+              </Button>
             </View>
           </BottomSheetScrollView>
         </Sheet>

@@ -59,8 +59,12 @@ export const makeSelectableRules = (dark: boolean) => ({
           }}
         >
           <Text style={{ fontSize: 11, color: dark ? '#9aa0a6' : '#8a8a8a' }}>{lang}</Text>
+          {/* Stays a raw Pressable: it renders inside the markdown <Text> tree,
+              which cannot host a NativeWind-styled component. */}
           <Pressable
             onPress={() => void Clipboard.setStringAsync(String(content))}
+            accessibilityRole="button"
+            accessibilityLabel="Copy code block"
             hitSlop={8}
             style={{ paddingHorizontal: 4, paddingVertical: 2 }}
           >
