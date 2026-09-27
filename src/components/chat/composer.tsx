@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Keyboard, Platform, TextInput, View } from 'react-native';
+import { Keyboard, Platform, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowUp,
@@ -12,6 +13,7 @@ import {
 
 import type { Attachment } from '../../utils/messages';
 import { reasoningLabel } from '../../utils/reasoning';
+import { placeholderColor } from '../../theme';
 import { Button } from '../ui/button';
 import { Text as UIText } from '../ui/text';
 
@@ -141,8 +143,16 @@ export const Composer = memo(function Composer({
                   className="max-w-[220px] gap-1 px-2 py-1 shadow-none"
                 >
                   {isImg ? (
-                    // eslint-disable-next-line jsx-a11y/alt-text
-                    <Image source={{ uri: a.uri }} className="h-7 w-7 rounded-md bg-[#d7e3f7]" />
+                    <Image
+                      source={{ uri: a.uri }}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      recyclingKey={a.uri}
+                      // A 28px chip is never worth pre-empting a real load.
+                      priority="low"
+                      alt={a.name}
+                      className="h-7 w-7 rounded-md bg-[#d7e3f7]"
+                    />
                   ) : (
                     <Paperclip size={12} color="#1a73e8" />
                   )}
@@ -173,7 +183,7 @@ export const Composer = memo(function Composer({
           placeholder={
             generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…'
           }
-          placeholderTextColor={dark ? '#8a8a8a' : '#9ca3af'}
+          placeholderTextColor={placeholderColor(dark, 'composer')}
           keyboardAppearance={dark ? 'dark' : 'light'}
           multiline
           textAlignVertical="top"
