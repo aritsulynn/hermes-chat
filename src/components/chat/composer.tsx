@@ -197,7 +197,9 @@ export const Composer = memo(function Composer({
         />
         {/* The model chip is the only shrinkable item: without it the row (plus
             + chip + effort + Steer + stop/send) is wider than a phone screen and
-            spills past the right edge. */}
+            spills past the right edge. It has no max-width on purpose - flex
+            shrink already caps it on a phone, and a cap here would also clip the
+            name on a wide screen where there is nothing to protect against. */}
         <View className="flex-row items-center gap-1.5">
           <Button
             ref={plusRef as any}
@@ -216,7 +218,7 @@ export const Composer = memo(function Composer({
             variant="ghost"
             size="sm"
             onPress={() => onOpenModelPicker(measurer(modelRef))}
-            className="min-w-0 max-w-[170px] shrink gap-1 px-1.5 py-1.5 shadow-none"
+            className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none"
             hitSlop={8}
           >
             <View className="min-w-0 shrink flex-row items-center gap-0.5">
