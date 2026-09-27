@@ -11,7 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { PortalHost } from '@rn-primitives/portal';
 import { ToastHost } from '../components/ui/toast';
 import {
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react-native';
 import { AppProvider, useApp, useThemeValue } from '../hooks/app-store';
 import { FilePreviewHost } from '../components/chat/media';
+import { ConnectionBanner } from '../components/connection-banner';
 import { HermesDrawerContent } from '../components/drawer/HermesDrawerContent';
 import { drawerIcon } from '../components/drawer/nav-config';
 import { THEME } from '../theme';
@@ -214,19 +215,24 @@ function ThemedRoot() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: bg }}>
       <SafeAreaProvider style={{ backgroundColor: bg }}>
-        <ThemedStatusBar />
-        <SplashGate />
-        <BottomSheetModalProvider>
-          <ThemedDrawer />
-          {/* File links inside markdown preview through this host (a Modal
-              can't live inside the <Text> the markdown pipeline builds). */}
-          <FilePreviewHost />
-          {/* Renders the reusables portal components (Dialog, DropdownMenu,
-              Tooltip, ...) on native. Must stay last in the tree. */}
-          <PortalHost />
-          {/* App-wide toasts (replaces the old Alert.alert error popups). */}
-          <ToastHost />
-        </BottomSheetModalProvider>
+        <View style={{ flex: 1 }}>
+          <ThemedStatusBar />
+          <SplashGate />
+          <BottomSheetModalProvider>
+            <ThemedDrawer />
+            {/* File links inside markdown preview through this host (a Modal
+                can't live inside the <Text> the markdown pipeline builds). */}
+            <FilePreviewHost />
+            {/* Renders the reusables portal components (Dialog, DropdownMenu,
+                Tooltip, ...) on native. Must stay last in the tree. */}
+            <PortalHost />
+            {/* App-wide toasts (replaces the old Alert.alert error popups). */}
+            <ToastHost />
+          </BottomSheetModalProvider>
+          {/* Overlays every screen, so a dropped socket is visible from chat,
+              files or logs alike. Renders null while the connection is ready. */}
+          <ConnectionBanner />
+        </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
