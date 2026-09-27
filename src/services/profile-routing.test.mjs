@@ -35,7 +35,9 @@ test('store-selection gateway calls carry the selected profile', async () => {
     { method: 'session.most_recent', params: { profile: 'work' } },
     {
       method: 'session.create',
-      params: { profile: 'work', model: 'model-x' },
+      // `source: 'local'` is this client's own tag, not a profile concern: the
+      // server keeps it verbatim instead of stamping the gateway's platform.
+      params: { profile: 'work', source: 'local', model: 'model-x' },
     },
     {
       method: 'session.resume',

@@ -702,6 +702,19 @@ export class GatewayWs {
     const selectedProfile = String(profile ?? '').trim();
     const r = await this.call('session.create', {
       ...(selectedProfile ? { profile: selectedProfile } : {}),
+      // Tag the row so the server doesn't label a phone-created session with
+      // its own platform default (`tui`, or `desktop` when the gateway runs
+      // under HERMES_DESKTOP). The server keeps an explicit source verbatim
+      // (_resolve_session_source) and only ever *reads* the ones it knows, so
+      // this must be a value from its vocabulary:
+      //   - not in INTERNAL_LISTING_SOURCES (kanban/tool/oneshot), which would
+      //     hide the session from every listing;
+      //   - not 'unknown', which is barred from auto-resume;
+      //   - in NON_MESSAGING_SESSION_SURFACES — that set is default-deny, so an
+      //     unrecognised source counts as a *messaging* surface and silently
+      //     turns off `verify_on_stop: auto`. 'local' is the id the desktop
+      //     uses for exactly this case (LOCAL_SESSION_SOURCE_IDS).
+      source: 'local',
       ...(opts.title ? { title: opts.title } : {}),
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.provider ? { provider: opts.provider } : {}),
