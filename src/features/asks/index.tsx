@@ -20,6 +20,7 @@ import {
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { toast } from '../../components/ui/toast';
 import { Text as UIText } from '../../components/ui/text';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
@@ -227,10 +228,10 @@ export function AskInboxScreen() {
     (key: string, choice: string) => {
       try {
         if (!answerInboxApproval(key, choice)) {
-          Alert.alert('Could not answer', 'The gateway is not ready or the request is no longer pending.');
+          toast({ title: 'Could not answer', description: 'The gateway is not ready or the request is no longer pending.', variant: 'destructive' });
         }
       } catch (e) {
-        Alert.alert('Could not answer', errMsg(e));
+        toast({ title: 'Could not answer', description: errMsg(e), variant: 'destructive' });
       }
     },
     [answerInboxApproval],

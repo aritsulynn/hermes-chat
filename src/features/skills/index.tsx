@@ -4,7 +4,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -23,6 +22,7 @@ import { HamburgerBtn } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { toast } from '../../components/ui/toast';
 import { Text as UIText } from '../../components/ui/text';
 import { brandColor, screenStyle } from '../../theme';
 import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
@@ -147,7 +147,7 @@ export function SkillsScreen() {
       } catch (e) {
         if (getAuthScope() !== scope) return;
         setSkills((prev) => (prev ?? []).map((s) => (s.name === name ? { ...s, enabled: !enabled } : s)));
-        Alert.alert('Toggle failed', errMsg(e));
+        toast({ title: 'Toggle failed', description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope) setToggling(null);
       }
@@ -194,13 +194,16 @@ export function SkillsScreen() {
               </Text>
             </View>
           </View>
-          <Pressable
+          <Button
+            variant="ghost"
+            size="icon"
+            accessibilityLabel="Refresh skills"
             onPress={() => void load(true)}
             hitSlop={8}
-            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+            className="h-9 w-9 rounded-lg"
           >
             <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-          </Pressable>
+          </Button>
         </View>
 
         <ScrollView

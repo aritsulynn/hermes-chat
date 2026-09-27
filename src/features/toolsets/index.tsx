@@ -4,8 +4,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -22,6 +20,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { toast } from '../../components/ui/toast';
 import { Text as UIText } from '../../components/ui/text';
 import { errMsg } from '../../utils/messages';
 import { brandColor, placeholderColor, screenStyle } from '../../theme';
@@ -188,15 +187,15 @@ export function ToolsetsScreen() {
         const result = await setToolsetEnabled(opsMut, name, enabled, profile);
         if (getAuthScope() !== scope || activeProfile !== profile) return;
         if (result.post_setup_started) {
-          Alert.alert(
-            'Setup started',
-            `${name} was enabled. Hermes is preparing its required dependency in the background.`,
-          );
+          toast({
+            title: 'Setup started',
+            description: `${name} was enabled. Hermes is preparing its required dependency in the background.`,
+          });
         }
       } catch (e) {
         if (getAuthScope() !== scope || activeProfile !== profile) return;
         setToolsets((prev) => (prev ?? []).map((row) => (row.name === name ? { ...row, enabled: !enabled } : row)));
-        Alert.alert('Toolset update failed', errMsg(e));
+        toast({ title: 'Toolset update failed', description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope && activeProfile === profile) setToggling(null);
       }
@@ -241,15 +240,16 @@ export function ToolsetsScreen() {
               </Text>
             </View>
           </View>
-          <Pressable
-            accessibilityRole="button"
+          <Button
+            variant="ghost"
+            size="icon"
             accessibilityLabel="Refresh toolsets"
             onPress={() => void load(true)}
             hitSlop={8}
-            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+            className="h-9 w-9 rounded-lg"
           >
             <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-          </Pressable>
+          </Button>
         </View>
 
         <ScrollView

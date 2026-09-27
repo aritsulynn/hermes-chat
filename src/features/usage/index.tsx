@@ -184,6 +184,9 @@ export function UsageScreen() {
             {PERIOD_OPTIONS.map((opt) => (
               <Pressable
                 key={opt.days}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: days === opt.days }}
+                accessibilityLabel={opt.label}
                 onPress={() => setDays(opt.days)}
                 className={`rounded-lg px-3 py-1.5 border ${
                   days === opt.days

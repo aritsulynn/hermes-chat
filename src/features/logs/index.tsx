@@ -11,6 +11,7 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import type { FlashListRef } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
@@ -326,6 +327,9 @@ export function LogsScreen() {
                 return (
                   <Pressable
                     key={f}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`${f} log`}
                     onPress={() => setFile(f)}
                     className={`flex-row items-center gap-1.5 rounded-xl px-3.5 py-2 border shadow-xs ${
                       isSelected
@@ -412,6 +416,9 @@ export function LogsScreen() {
                       return (
                         <Pressable
                           key={lvl}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: isSelected }}
+                          accessibilityLabel={`${lvl} level`}
                           onPress={() => setLevel(lvl)}
                           className={`rounded-lg border px-3 py-1.5 shadow-xs ${
                             isSelected
@@ -443,6 +450,9 @@ export function LogsScreen() {
                       return (
                         <Pressable
                           key={cnt}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: isSelected }}
+                          accessibilityLabel={`${cnt} lines`}
                           onPress={() => setLineCount(cnt)}
                           className={`flex-1 items-center justify-center rounded-lg border py-1.5 shadow-xs ${
                             isSelected
@@ -507,9 +517,9 @@ export function LogsScreen() {
 
         {/* Error message banner */}
         {error && (
-          <View className="m-3 rounded-xl border border-red-200 bg-red-50 p-2.5 dark:border-red-900/50 dark:bg-red-950/40">
-            <Text className="text-xs text-red-700 dark:text-red-300">{error}</Text>
-          </View>
+          <UIAlert icon={AlertTriangle} variant="destructive" className="m-3 rounded-xl px-4 pt-2.5 pb-2">
+            <AlertDescription className="text-xs text-red-700 dark:text-red-300">{error}</AlertDescription>
+          </UIAlert>
         )}
 
         {/* Log Output Area */}

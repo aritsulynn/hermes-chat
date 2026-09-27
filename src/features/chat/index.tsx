@@ -1691,7 +1691,12 @@ export function ChatScreen() {
                   <Text className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</Text>
                 )}
                 {!!providersError && (
-                  <Text className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]">{providersError}</Text>
+                  <Text
+                    accessibilityRole="alert"
+                    className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]"
+                  >
+                    {providersError}
+                  </Text>
                 )}
                 <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
                   {modelVisibleProviders.map((p) => {
@@ -1733,6 +1738,9 @@ export function ChatScreen() {
                               >
                                 <Button
                                   variant="ghost"
+                                  accessibilityRole="radio"
+                                  accessibilityState={{ selected: on }}
+                                  accessibilityLabel={mm}
                                   onPress={() => {
                                     void pickModel(p.slug, mm);
                                     closePopover();
