@@ -2,7 +2,7 @@
 // board switcher, collapsible columns, cards, create/move/edit/delete tasks.
 // Talks to the plugin's own REST router (see hermes-agent
 // plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Redirect, useNavigation } from 'expo-router';
 import {
   ActivityIndicator,
@@ -100,6 +100,9 @@ export function KanbanScreen() {
   // Bottom sheets: FormSheet drives present/dismiss from these two booleans.
   const detailSheet = useSheet(!!detail);
   const createSheet = useSheet(showCreate);
+  // Last opened task, kept for the duration of the dismiss animation.
+  const detailRef = useRef<KanbanTask | null>(null);
+  if (detail) detailRef.current = detail;
   useEffect(() => {
     if (authed) return;
     setBoards([]);
@@ -431,9 +434,11 @@ export function KanbanScreen() {
           })}
         </ScrollView>
 
-        {/* Task detail sheet */}
+        {/* Task detail sheet. `detailRef` keeps the last task rendered through
+            the dismiss animation - clearing `detail` first would flash an
+            empty sheet on the way out. */}
         <FormSheet ref={detailSheet} onClose={() => setDetail(null)}>
-          {detail && (
+          {detailRef.current && (
             <>
               <Input
                 accessibilityLabel="Title"
@@ -450,14 +455,14 @@ export function KanbanScreen() {
               </Text>
               <View className="flex-row flex-wrap gap-1.5">
                 {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                  const on = detail?.status === s;
+                  const on = detailRef.current?.status === s;
                   return (
                     <Button
                       key={s}
                       accessibilityRole="radio"
                       accessibilityState={{ selected: on }}
                       accessibilityLabel={`Move to ${s}`}
-                      onPress={() => detail && moveTask(detail, s)}
+                      onPress={() => detailRef.current && moveTask(detailRef.current, s)}
                       variant={on ? 'default' : 'outline'}
                       size="sm"
                       className="rounded-full px-3 py-1.5"
@@ -483,7 +488,7 @@ export function KanbanScreen() {
                 multiline
                 textAlignVertical="top"
               />
-              <CardChips t={detail} dark={dark} />
+              <CardChips t={detailRef.current} dark={dark} />
               <View className="flex-row gap-2 pt-1">
                 <Button
                   onPress={saveDetail}

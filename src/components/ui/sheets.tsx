@@ -545,8 +545,11 @@ export function useSheet(open: boolean) {
   useEffect(() => {
     if (open) {
       if (presented.current) return;
+      // Don't latch `presented` before the ref resolves, or a missed present()
+      // leaves the sheet unopenable until the state toggles twice.
+      if (!ref.current) return;
       presented.current = true;
-      ref.current?.present();
+      ref.current.present();
     } else if (presented.current) {
       presented.current = false;
       ref.current?.dismiss();
@@ -579,6 +582,11 @@ export const Sheet = forwardRef<
       backgroundStyle={{ backgroundColor: screenBg(dark) }}
       handleIndicatorStyle={{ backgroundColor: dark ? '#525252' : '#d4d4d4' }}
       enablePanDownToClose
+      // Off, so the sheet actually fills its snap point. Left on (the default)
+      // it sizes to its content instead, which for a short form means a stub
+      // that barely peeks above the bottom edge and whose inputs the keyboard
+      // then covers.
+      enableDynamicSizing={false}
       // Lifts with the keyboard so inputs and submit buttons stay reachable.
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
