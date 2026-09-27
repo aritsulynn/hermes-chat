@@ -4,12 +4,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { rememberCommandsCatalog } from '../../utils/slash-commands';
-import type { StoreRuntime } from '../runtime';
-
-export interface CommandsSliceDeps {
-  runtime: StoreRuntime;
-  sessionId: string | null;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface CommandsSlice {
   catalogAtRef: MutableRefObject<number>;
@@ -17,8 +12,10 @@ export interface CommandsSlice {
   loadCommandsCatalog: () => Promise<void>;
 }
 
-export function useCommandsSlice({ runtime, sessionId }: CommandsSliceDeps): CommandsSlice {
-  const { gw } = runtime;
+export function useCommandsSlice({
+  sessionId,
+  gw,
+}: StoreCtx): CommandsSlice {
   // `commands.catalog` dispositions live in ./slash-commands (module cache); this
   // counter only forces a re-render once the live table lands so the wheel re-filters.
   const [, setCatalogVersion] = useState(0);

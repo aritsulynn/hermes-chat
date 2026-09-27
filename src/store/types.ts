@@ -169,11 +169,9 @@ export interface AppStore {
   searchTranscript: (query: string) => Promise<TranscriptHit[]>;
   /** Window index of a search hit, or -1 when it is not loaded yet. */
   findHitIndex: (hit: TranscriptHit) => number;
-  /** Effective theme after resolving `system`. */
-  theme: ResolvedTheme;
-  /** Persisted user preference: light, dark, or follow the device. */
-  themeMode: Theme;
-  setTheme: (t: Theme) => void;
+  // The theme triple (theme / themeMode / setTheme) is deliberately NOT on
+  // AppStore — it lives on its own context so a theme toggle does not hand all
+  // ~30 useApp() consumers a new object. Read it with useThemeValue().
   renameSession: (title: string) => Promise<void>;
   deleteSessionById: (storedId: string) => Promise<void>;
   redirectLive: (text: string) => Promise<void>;

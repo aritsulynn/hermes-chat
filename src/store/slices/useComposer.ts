@@ -5,13 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { profileSessionKey } from '../helpers';
+import type { StoreCtx } from '../ctx';
 import type { Attachment } from '../../utils/messages';
-
-export interface ComposerSliceDeps {
-  activeProfile: string;
-  sessionKey: string | null;
-  sessionId: string | null;
-}
 
 export interface ComposerSlice {
   input: string;
@@ -26,7 +21,11 @@ export interface ComposerSlice {
   copyText: (id: string, text: string) => Promise<void>;
 }
 
-export function useComposerSlice({ activeProfile, sessionKey, sessionId }: ComposerSliceDeps): ComposerSlice {
+export function useComposerSlice({
+  activeProfile,
+  sessionKey,
+  sessionId,
+}: StoreCtx): ComposerSlice {
   const [inputRaw, setInputRaw] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);

@@ -21,7 +21,7 @@ import { HamburgerBtn } from '../../components/ui/bits';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { Text as UIText } from '../../components/ui/text';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
 import { errMsg } from '../../utils/messages';
 import { screenStyle } from '../../theme';
@@ -189,10 +189,10 @@ export function AskInboxScreen() {
     askInbox,
     pendingAskCount,
     error,
-    theme,
     answerInboxApproval,
     openAskEntry,
   } = useApp();
+  const { theme } = useThemeValue();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const dark = theme === 'dark';

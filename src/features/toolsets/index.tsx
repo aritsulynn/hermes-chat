@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
 import { AlertCircle, Boxes, RefreshCw, Search } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
@@ -123,7 +123,8 @@ const ToolsetRow = memo(function ToolsetRow({
 });
 
 export function ToolsetsScreen() {
-  const { authed, activeProfile, opsGet, opsMut, theme, getAuthScope } = useApp();
+  const { authed, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
 

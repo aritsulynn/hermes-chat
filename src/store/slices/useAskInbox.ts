@@ -9,15 +9,7 @@ import { connectionScope } from '../../services/connection';
 import type { ServerAsk } from '../../services/gateway-ws';
 import { dismissNotification } from '../../services/notifications';
 import { normalizeProfileName, parseProfileSessionKey } from '../helpers';
-import type { AgentProfile } from '../types';
-import type { StoreRuntime } from '../runtime';
-
-export interface AskInboxSliceDeps {
-  runtime: StoreRuntime;
-  profilesRef: MutableRefObject<AgentProfile[]>;
-  latest: MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-  sessionIdRef: MutableRefObject<string | null>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface AskInboxSlice {
   ask: ServerAsk | null;
@@ -35,12 +27,12 @@ export interface AskInboxSlice {
 }
 
 export function useAskInboxSlice({
-  runtime,
   profilesRef,
   latest,
   sessionIdRef,
-}: AskInboxSliceDeps): AskInboxSlice {
-  const { runtimeOwners, runtimeAskOwners } = runtime;
+  runtimeOwners,
+  runtimeAskOwners,
+}: StoreCtx): AskInboxSlice {
   const [ask, setAsk] = useState<ServerAsk | null>(null);
   const askRef = useRef<ServerAsk | null>(null);
   askRef.current = ask;

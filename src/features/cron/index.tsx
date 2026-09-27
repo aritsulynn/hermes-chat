@@ -40,7 +40,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
@@ -449,7 +449,8 @@ const RunCard = memo(function RunCard({
 
 export function CronScreen() {
   const router = useRouter();
-  const { authed, activeProfile, opsGet, opsMut, theme, openSession, getAuthScope } = useApp();
+  const { authed, activeProfile, opsGet, opsMut, openSession, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   // Resolved once per scheme: the job list re-renders on every poll and each

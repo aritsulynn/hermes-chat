@@ -24,7 +24,7 @@ import {
   Sun,
   User,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Separator } from '../../components/ui/separator';
@@ -36,7 +36,8 @@ import { brandColor, screenStyle } from '../../theme';
 import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
 export function SettingsScreen() {
-  const { authed, username, host, conn, activeProfile, theme, themeMode, setTheme, logout, sessionInfo, applyApprovalMode, diagnostics, notificationsEnabled, setNotifications } = useApp();
+  const { authed, username, host, conn, activeProfile, logout, sessionInfo, applyApprovalMode, diagnostics, notificationsEnabled, setNotifications } = useApp();
+  const { theme, themeMode, setTheme } = useThemeValue();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   const isReady = conn === 'ready';

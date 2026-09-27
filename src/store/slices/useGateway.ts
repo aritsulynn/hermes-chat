@@ -2,88 +2,21 @@
 // reconcile, server-ask hydration, and the long-lived openWs() factory.
 // Extracted from store/useAppStore.tsx.
 import { useCallback } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { router } from 'expo-router';
 import { GatewayWs } from '../../services/gateway-ws';
-import type { ConnState, ServerAsk } from '../../services/gateway-ws';
 import { clearSessionMessagesCache, mintWsTicket, toWsUrl } from '../../services/dashboard';
-import type { ModelProviderOption } from '../../services/dashboard';
 import { connectionScope, forgetAll, saveCookie, saveModel } from '../../services/connection';
 import { clearMediaCaches } from '../../services/media-cache';
 import { DEFAULT_PROFILE } from '../../services/constants';
 import { askNotificationCategory, dismissNotification, pushNotification } from '../../services/notifications';
-import type { HermesNotificationResponse } from '../../services/notifications';
 import { upsertAsk } from '../../services/ask-inbox';
-import type { AskInboxEntry, AskInboxInput, AskInboxStatus, AskOwner } from '../../services/ask-inbox';
+import type { AskOwner } from '../../services/ask-inbox';
 import { changedFilesFromDiff } from '../../utils/diff';
 import { formatToolCommand, formatToolResult } from '../../utils/toolResult';
 import { nid, normalizeTodos } from '../../utils/messages';
-import type { Attachment, QueuedPrompt, Role, TodoItem, UiMessage } from '../../utils/messages';
+import type { Role, UiMessage } from '../../utils/messages';
 import { mergeUsageState, normalizeProfileName, profileSessionKey } from '../helpers';
-import type { AgentProfile, ScopedSessionSummary, SessionInfo, UsageInfo } from '../types';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface GatewaySliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  hydrateSessionContext: (g: GatewayWs, sid: string) => void;
-  releaseLocalTurnRef: MutableRefObject<() => void>;
-  askHydrationRef: MutableRefObject<number>;
-  notificationDrainRef: MutableRefObject<(() => void) | null>;
-  pendingNotificationResponsesRef: MutableRefObject<HermesNotificationResponse[]>;
-  handledNotificationResponsesRef: MutableRefObject<Set<string>>;
-  askInboxRef: MutableRefObject<AskInboxEntry[]>;
-  askRef: MutableRefObject<ServerAsk | null>;
-  setAskInbox: Dispatch<SetStateAction<AskInboxEntry[]>>;
-  setAsk: Dispatch<SetStateAction<ServerAsk | null>>;
-  bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
-  resolveAskOwner: (sessionIdValue?: string, params?: Record<string, unknown>) => AskOwner;
-  applyAskInbox: (input: AskInboxInput) => ReturnType<typeof upsertAsk>;
-  markAskByRpc: (rpcId: string, status: AskInboxStatus) => void;
-  dismissAskNotifications: (entries?: AskInboxEntry[]) => void;
-  draftsRef: MutableRefObject<Map<string, string>>;
-  setInputRaw: Dispatch<SetStateAction<string>>;
-  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  queuedRef: MutableRefObject<QueuedPrompt[]>;
-  setQueued: Dispatch<SetStateAction<QueuedPrompt[]>>;
-  queueParkedRef: MutableRefObject<boolean>;
-  setQueueParked: Dispatch<SetStateAction<boolean>>;
-  liveAid: MutableRefObject<string | null>;
-  liveThinkAid: MutableRefObject<string | null>;
-  liveTools: MutableRefObject<Map<string, string>>;
-  liveToolAid: MutableRefObject<string | null>;
-  liveTurnTools: MutableRefObject<string[]>;
-  liveTurnDiffs: MutableRefObject<string[]>;
-  streamingRef: MutableRefObject<Record<string, string>>;
-  setStreamingTexts: Dispatch<SetStateAction<Record<string, string>>>;
-  turnOwnerRef: MutableRefObject<Map<string, string>>;
-  parkedLiveRef: MutableRefObject<Set<string>>;
-  lastTurnEventAt: MutableRefObject<number>;
-  notifyRef: MutableRefObject<boolean>;
-  usageRefreshRef: MutableRefObject<() => void>;
-  setUsageInfo: Dispatch<SetStateAction<UsageInfo | null>>;
-  setSessionInfo: Dispatch<SetStateAction<SessionInfo | null>>;
-  toolRefreshRef: MutableRefObject<() => void>;
-  scheduleToolRefresh: () => void;
-  setTodos: Dispatch<SetStateAction<TodoItem[]>>;
-  setModel: Dispatch<SetStateAction<string>>;
-  setModelProvider: Dispatch<SetStateAction<string>>;
-  setConn: Dispatch<SetStateAction<ConnState>>;
-  setAuthed: Dispatch<SetStateAction<boolean>>;
-  setProfiles: Dispatch<SetStateAction<AgentProfile[]>>;
-  setActiveProfile: Dispatch<SetStateAction<string>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setToolLine: Dispatch<SetStateAction<string | null>>;
-  setSessionId: Dispatch<SetStateAction<string | null>>;
-  setSessionKey: Dispatch<SetStateAction<string | null>>;
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-  setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
-  setGenerating: Dispatch<SetStateAction<boolean>>;
-  setPassword: (value: string) => void;
-  setProviders: Dispatch<SetStateAction<ModelProviderOption[] | null>>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface GatewaySlice {
   probeWorkingSessions: () => Promise<Set<string> | null>;
@@ -92,9 +25,8 @@ export interface GatewaySlice {
   openWs: (h: string, user: string) => Promise<GatewayWs>;
 }
 
-export function useGatewaySlice(deps: GatewaySliceDeps): GatewaySlice {
+export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
   const {
-    runtime,
     latest,
     hydrateSessionContext,
     releaseLocalTurnRef,
@@ -151,8 +83,6 @@ export function useGatewaySlice(deps: GatewaySliceDeps): GatewaySlice {
     setGenerating,
     setPassword,
     setProviders,
-  } = deps;
-  const {
     gw,
     cookie,
     cookieScope,
@@ -172,7 +102,7 @@ export function useGatewaySlice(deps: GatewaySliceDeps): GatewaySlice {
     stampRowIdsRef,
     profilesRef,
     contextPendingSidRef,
-  } = runtime;
+  } = ctx;
 
   // Ask the backend which sessions are actually working right now (desktop
   // parity: the `session.active_list` snapshot behind confirmReconnectSettlesExcept).

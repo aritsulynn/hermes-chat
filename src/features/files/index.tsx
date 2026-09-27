@@ -36,7 +36,7 @@ import {
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { placeholderColor, screenStyle } from '../../theme';
 import { HamburgerBtn } from '../../components/ui/bits';
@@ -52,7 +52,8 @@ import { isTextReadable, joinPath } from './helpers';
 import type { ManagedFileEntry, ManagedFilesResponse, ManagedFileReadResponse } from './types';
 
 export function FilesScreen() {
-  const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();
+  const { authed, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   // Resolved once per scheme: the list re-renders on every search keystroke

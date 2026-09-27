@@ -14,13 +14,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { nid } from '../../utils/messages';
 import type { QueuedPrompt } from '../../utils/messages';
-
-export interface QueueSliceDeps {
-  generatingRef: MutableRefObject<boolean>;
-  sendRef: MutableRefObject<((text?: string) => Promise<void>) | null>;
-  /** The provider's drain slot; this slice installs the drain implementation. */
-  drainRef: MutableRefObject<() => void>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface QueueSlice {
   queued: QueuedPrompt[];
@@ -37,7 +31,11 @@ export interface QueueSlice {
   sendQueuedNow: (id: string) => void;
 }
 
-export function useQueueSlice({ generatingRef, sendRef, drainRef }: QueueSliceDeps): QueueSlice {
+export function useQueueSlice({
+  generatingRef,
+  sendRef,
+  drainRef,
+}: StoreCtx): QueueSlice {
   const [queued, setQueued] = useState<QueuedPrompt[]>([]);
   const [queueParked, setQueueParked] = useState(false);
   const queueParkedRef = useRef(false);

@@ -5,13 +5,7 @@ import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { normalizeSubagents } from '../../utils/messages';
 import type { SubagentRow, TodoItem } from '../../utils/messages';
-import type { StoreRuntime } from '../runtime';
-
-export interface LiveRosterSliceDeps {
-  runtime: StoreRuntime;
-  generating: boolean;
-  sessionId: string | null;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface LiveRosterSlice {
   todos: TodoItem[];
@@ -20,8 +14,11 @@ export interface LiveRosterSlice {
   setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
 }
 
-export function useLiveRosterSlice({ runtime, generating, sessionId }: LiveRosterSliceDeps): LiveRosterSlice {
-  const { gw } = runtime;
+export function useLiveRosterSlice({
+  generating,
+  sessionId,
+  gw,
+}: StoreCtx): LiveRosterSlice {
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [subagents, setSubagents] = useState<SubagentRow[]>([]);
 

@@ -1,85 +1,22 @@
 // Session-ops slice — openSession (resume) and newSession (create).
 import { useCallback } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { router } from 'expo-router';
-import type { GatewayWs, HistoryMessage, ServerAsk } from '../../services/gateway-ws';
+import type { HistoryMessage } from '../../services/gateway-ws';
 import { getSessionMessages } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
-import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
-import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
 import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey, serverAskFromInbox } from '../helpers';
-import type { ScopedSessionSummary, SessionInfo, UsageInfo } from '../types';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface SessionOpsSliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  acceptRotatedCookie: (
-    nextCookie: string,
-    host: string,
-    username: string,
-    connectionEpoch: number,
-    profileEpoch: number,
-  ) => Promise<void>;
-  bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
-  hydrateSessionContext: (g: GatewayWs, sid: string) => void;
-  parkLiveTurn: () => void;
-  clearStreaming: () => void;
-  reanchorLiveTurn: (items: UiMessage[]) => UiMessage[];
-  setAsk: Dispatch<SetStateAction<ServerAsk | null>>;
-  askRef: MutableRefObject<ServerAsk | null>;
-  setOpeningId: Dispatch<SetStateAction<string | null>>;
-  setGenerating: Dispatch<SetStateAction<boolean>>;
-  setToolLine: Dispatch<SetStateAction<string | null>>;
-  setTodos: Dispatch<SetStateAction<TodoItem[]>>;
-  setSessionKey: Dispatch<SetStateAction<string | null>>;
-  setSessionId: Dispatch<SetStateAction<string | null>>;
-  setSessionTitle: Dispatch<SetStateAction<string>>;
-  setInputRaw: (value: string) => void;
-  draftsRef: MutableRefObject<Map<string, string>>;
-  draftKeyRef: MutableRefObject<string>;
-  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  setSessionInfo: Dispatch<SetStateAction<SessionInfo | null>>;
-  setUsageInfo: Dispatch<SetStateAction<UsageInfo | null>>;
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-  setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
-  setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
-  setEditingRowId: Dispatch<SetStateAction<number | null>>;
-  setBusy: Dispatch<SetStateAction<boolean>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setQueued: Dispatch<SetStateAction<QueuedPrompt[]>>;
-  setQueueParked: Dispatch<SetStateAction<boolean>>;
-  askInboxRef: MutableRefObject<AskInboxEntry[]>;
-  queuedRef: MutableRefObject<QueuedPrompt[]>;
-  queueParkedRef: MutableRefObject<boolean>;
-  liveAid: MutableRefObject<string | null>;
-  liveThinkAid: MutableRefObject<string | null>;
-  liveTools: MutableRefObject<Map<string, string>>;
-  liveToolAid: MutableRefObject<string | null>;
-  liveTurnTools: MutableRefObject<string[]>;
-  parkedLiveRef: MutableRefObject<Set<string>>;
-  lastTurnEventAt: MutableRefObject<number>;
-  model: string;
-  modelProvider: string;
-  effort: string;
-  /** Record the loaded tail window after open (limit + exhausted flag). */
-  noteHistoryWindow: (limit: number, exhausted: boolean) => void;
-  /** Clear the window on empty/new sessions. */
-  resetHistoryWindow: () => void;
-}
+import type { ScopedSessionSummary } from '../types';
+import type { StoreCtx } from '../ctx';
 
 export interface SessionOpsSlice {
   openSession: (s: ScopedSessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
 }
 
-export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
+export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
   const {
-    runtime,
     latest,
     acceptRotatedCookie,
     bindAskOwner,
@@ -125,8 +62,6 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
     effort,
     noteHistoryWindow,
     resetHistoryWindow,
-  } = deps;
-  const {
     gw,
     cookie,
     activeProfileRef,
@@ -140,7 +75,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
     editingRowRef: editRowRef,
     openSessionRef,
     newSessionRef,
-  } = runtime;
+  } = ctx;
 
   const openSession = useCallback(
     async (s: ScopedSessionSummary) => {

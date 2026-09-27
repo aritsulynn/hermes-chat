@@ -1,30 +1,14 @@
 // Ask-replies slice — sending a reply to a server ask (foreground or inbox),
 // opening the owning session, and the biometric confirm for sensitive asks.
 import { useCallback } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import * as LocalAuth from 'expo-local-authentication';
 import { router } from 'expo-router';
 import { findAsk, findAskByRpc } from '../../services/ask-inbox';
-import type { AskInboxEntry, AskInboxStatus } from '../../services/ask-inbox';
+import type { AskInboxEntry } from '../../services/ask-inbox';
 import { connectionScope } from '../../services/connection';
-import type { ServerAsk, SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
 import { normalizeProfileName, parseProfileSessionKey, serverAskFromInbox } from '../helpers';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface AskRepliesSliceDeps {
-  runtime: StoreRuntime;
-  askRef: MutableRefObject<ServerAsk | null>;
-  askInboxRef: MutableRefObject<AskInboxEntry[]>;
-  setAsk: Dispatch<SetStateAction<ServerAsk | null>>;
-  markAskStatus: (key: string, status: AskInboxStatus) => void;
-  latest: LatestRef;
-  sessionIdRef: MutableRefObject<string | null>;
-  openSessionRef: MutableRefObject<(s: SessionSummary) => Promise<void>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface AskRepliesSlice {
   respondToInbox: (key: string, result: Record<string, unknown>) => boolean;
@@ -39,7 +23,6 @@ export interface AskRepliesSlice {
 }
 
 export function useAskRepliesSlice({
-  runtime,
   askRef,
   askInboxRef,
   setAsk,
@@ -48,8 +31,10 @@ export function useAskRepliesSlice({
   sessionIdRef,
   openSessionRef,
   setError,
-}: AskRepliesSliceDeps): AskRepliesSlice {
-  const { gw, activeProfileRef, runtimeOwners } = runtime;
+  gw,
+  activeProfileRef,
+  runtimeOwners,
+}: StoreCtx): AskRepliesSlice {
 
   const respondToInbox = useCallback(
     (key: string, result: Record<string, unknown>) => {

@@ -1,13 +1,10 @@
 // Connection slice — the connect pipeline: connect / login / logout.
 // Extracted from store/useAppStore.tsx.
 import { useCallback } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { Platform } from 'react-native';
 import { router } from 'expo-router';
-import type { GatewayWs } from '../../services/gateway-ws';
-import type { ConnState, ServerAsk, SessionSummary } from '../../services/gateway-ws';
+import type { SessionSummary } from '../../services/gateway-ws';
 import { clearSessionMessagesCache, logoutDashboard, probeStatus } from '../../services/dashboard';
-import type { ModelProviderOption } from '../../services/dashboard';
 import {
   connectionScope,
   forgetAll,
@@ -20,81 +17,9 @@ import {
 } from '../../services/connection';
 import { clearMediaCaches } from '../../services/media-cache';
 import { DEFAULT_PROFILE } from '../../services/constants';
-import type { AskInboxEntry } from '../../services/ask-inbox';
-import type { HermesNotificationResponse } from '../../services/notifications';
 import { errMsg } from '../../utils/messages';
-import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
 import { discoverAgentProfiles, withTimeout } from '../helpers';
-import type { AgentProfile, ScopedSessionSummary } from '../types';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface ConnectionSliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  providersRef: MutableRefObject<ModelProviderOption[] | null>;
-  acceptRotatedCookie: (
-    nextCookie: string,
-    host: string,
-    username: string,
-    connectionEpoch: number,
-    profileEpoch: number,
-  ) => Promise<void>;
-  ensureCookie: (h: string, user: string, pw: string, isCurrent?: () => boolean) => Promise<string>;
-  openWs: (h: string, user: string) => Promise<GatewayWs>;
-  refreshSessions: (limit?: number) => Promise<ScopedSessionSummary[]>;
-  rememberPw: boolean;
-  passwordScopeRef: MutableRefObject<string>;
-  host: string;
-  username: string;
-  password: string;
-  dismissAskNotifications: (entries?: AskInboxEntry[]) => void;
-  setAskInbox: Dispatch<SetStateAction<AskInboxEntry[]>>;
-  setAsk: Dispatch<SetStateAction<ServerAsk | null>>;
-  askRef: MutableRefObject<ServerAsk | null>;
-  askInboxRef: MutableRefObject<AskInboxEntry[]>;
-  handledNotificationResponsesRef: MutableRefObject<Set<string>>;
-  pendingNotificationResponsesRef: MutableRefObject<HermesNotificationResponse[]>;
-  askHydrationRef: MutableRefObject<number>;
-  notificationActionInFlightRef: MutableRefObject<boolean>;
-  turnOwnerRef: MutableRefObject<Map<string, string>>;
-  parkedLiveRef: MutableRefObject<Set<string>>;
-  draftsRef: MutableRefObject<Map<string, string>>;
-  queuedRef: MutableRefObject<QueuedPrompt[]>;
-  queueParkedRef: MutableRefObject<boolean>;
-  liveAid: MutableRefObject<string | null>;
-  liveThinkAid: MutableRefObject<string | null>;
-  clearStreaming: () => void;
-  sessionsFetchRef: MutableRefObject<Promise<ScopedSessionSummary[]> | null>;
-  sessionsFetchProfileRef: MutableRefObject<string | null>;
-  setInputRaw: (value: string) => void;
-  setPassword: (value: string) => void;
-  setQueued: Dispatch<SetStateAction<QueuedPrompt[]>>;
-  setQueueParked: Dispatch<SetStateAction<boolean>>;
-  setProviders: Dispatch<SetStateAction<ModelProviderOption[] | null>>;
-  setProfiles: Dispatch<SetStateAction<AgentProfile[]>>;
-  setActiveProfile: Dispatch<SetStateAction<string>>;
-  setBusy: Dispatch<SetStateAction<boolean>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setModel: Dispatch<SetStateAction<string>>;
-  setModelProvider: Dispatch<SetStateAction<string>>;
-  setAuthed: Dispatch<SetStateAction<boolean>>;
-  setConn: Dispatch<SetStateAction<ConnState>>;
-  setSessionId: Dispatch<SetStateAction<string | null>>;
-  setSessionKey: Dispatch<SetStateAction<string | null>>;
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-  setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
-  setSessionInfo: Dispatch<SetStateAction<any>>;
-  setUsageInfo: Dispatch<SetStateAction<any>>;
-  setGenerating: Dispatch<SetStateAction<boolean>>;
-  setToolLine: Dispatch<SetStateAction<string | null>>;
-  setTodos: Dispatch<SetStateAction<TodoItem[]>>;
-  setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
-  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  setEditingRowId: Dispatch<SetStateAction<number | null>>;
-  setInfoOpen: Dispatch<SetStateAction<boolean>>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface ConnectionSlice {
   connect: (h: string, user: string, pw: string) => Promise<void>;
@@ -102,9 +27,8 @@ export interface ConnectionSlice {
   logout: () => Promise<void>;
 }
 
-export function useConnectionSlice(deps: ConnectionSliceDeps): ConnectionSlice {
+export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
   const {
-    runtime,
     latest,
     providersRef,
     acceptRotatedCookie,
@@ -161,8 +85,6 @@ export function useConnectionSlice(deps: ConnectionSliceDeps): ConnectionSlice {
     setAttachments,
     setEditingRowId,
     setInfoOpen,
-  } = deps;
-  const {
     gw,
     cookie,
     cookieScope,
@@ -178,7 +100,7 @@ export function useConnectionSlice(deps: ConnectionSliceDeps): ConnectionSlice {
     sessionIdRef,
     editingRowRef: editRowRef,
     openSessionRef,
-  } = runtime;
+  } = ctx;
 
   const connect = useCallback(
     async (h: string, user: string, pw: string) => {

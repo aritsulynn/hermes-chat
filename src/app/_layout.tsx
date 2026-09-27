@@ -24,7 +24,7 @@ import {
   ScrollText,
   Wrench,
 } from 'lucide-react-native';
-import { AppProvider, useApp } from '../hooks/app-store';
+import { AppProvider, useApp, useThemeValue } from '../hooks/app-store';
 import { FilePreviewHost } from '../components/chat/media';
 import { HermesDrawerContent } from '../components/drawer/HermesDrawerContent';
 import { drawerIcon } from '../components/drawer/nav-config';
@@ -34,7 +34,7 @@ import { THEME } from '../theme';
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function ThemedStatusBar() {
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Android 15 is edge-to-edge: tell the OS which button contrast to use.
   // NOTE: `style` names the *button* colour, not the bar: 'light' = lighter
@@ -50,7 +50,7 @@ function ThemedStatusBar() {
 }
 
 function ThemedDrawer() {
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const bg = dark ? THEME.dark.background : THEME.light.background;
   const fg = dark ? THEME.dark.foreground : THEME.light.foreground;
@@ -196,7 +196,7 @@ export default function RootLayout() {
 // SafeAreaProvider is placed here (inside AppProvider) so the theme is
 // available when we need it.
 function ThemedRoot() {
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const bg = dark ? THEME.dark.background : THEME.light.background;
   // Paint the Android *window* background (DecorView), not just the React

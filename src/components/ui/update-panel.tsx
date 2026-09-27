@@ -28,7 +28,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { asRecord } from '../../utils/ops';
 import { errMsg } from '../../utils/messages';
 import { Button } from './button';
@@ -100,7 +100,8 @@ function formatCommitDate(at: number): string {
 }
 
 export function UpdatePanel() {
-  const { conn, activeProfile, opsGet, opsMut, getAuthScope, theme } = useApp();
+  const { conn, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
 
   const [info, setInfo] = useState<UpdateCheck | null>(null);

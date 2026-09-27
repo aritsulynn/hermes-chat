@@ -6,15 +6,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { nid } from '../../utils/messages';
 import type { UiMessage } from '../../utils/messages';
 import { profileSessionKey } from '../helpers';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface LiveTurnSliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  sessionIdRef: MutableRefObject<string | null>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface LiveTurnSlice {
   streamingTexts: Record<string, string>;
@@ -34,8 +26,12 @@ export interface LiveTurnSlice {
   reanchorLiveTurn: (items: UiMessage[]) => UiMessage[];
 }
 
-export function useLiveTurnSlice({ runtime, latest, sessionIdRef }: LiveTurnSliceDeps): LiveTurnSlice {
-  const { generatingRef, runtimeOwners } = runtime;
+export function useLiveTurnSlice({
+  latest,
+  sessionIdRef,
+  generatingRef,
+  runtimeOwners,
+}: StoreCtx): LiveTurnSlice {
   const [streamingTexts, setStreamingTexts] = useState<Record<string, string>>({});
   const streamingRef = useRef<Record<string, string>>({});
   streamingRef.current = streamingTexts;

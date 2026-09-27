@@ -10,7 +10,7 @@ import { Check, Copy, Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 
 import { parseClarify } from '../../utils/messages';
 import { mergeUsage, contextTone } from '../../utils/usage';
 import { compactNumber } from '../../utils/format';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { placeholderColor, screenBg } from '../../theme';
 import type { GatewayWs, ServerAsk } from '../../services/gateway-ws';
 import { Button } from './button';
@@ -68,7 +68,7 @@ export const InfoSheet = forwardRef<
   }
 >(function InfoSheet({ onClose, title, model, provider, info, usage, usageLoading, onRename, tokenEstimate }, ref) {
   const snapPoints = useMemo(() => ['60%', '90%'], []);
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const [draft, setDraft] = useState(title);
   useEffect(() => setDraft(title), [title]);
@@ -225,7 +225,7 @@ export const AskSheet = forwardRef<
     [],
   );
   const snapPoints = useMemo(() => ['60%', '90%'], []);
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Both the clarify answer box and the sudo/secret field share this colour.
   const placeholder = useMemo(() => placeholderColor(dark), [dark]);

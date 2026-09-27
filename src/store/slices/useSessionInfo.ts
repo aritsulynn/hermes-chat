@@ -5,15 +5,8 @@ import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { errMsg } from '../../utils/messages';
 import { mergeUsageState } from '../helpers';
-import type { StoreRuntime } from '../runtime';
+import type { StoreCtx } from '../ctx';
 import type { SessionInfo, UsageInfo } from '../types';
-
-export interface SessionInfoSliceDeps {
-  runtime: StoreRuntime;
-  activeProfile: string;
-  sessionId: string | null;
-  sessionIdRef: MutableRefObject<string | null>;
-}
 
 export interface SessionInfoSlice {
   infoOpen: boolean;
@@ -32,12 +25,13 @@ export interface SessionInfoSlice {
 }
 
 export function useSessionInfoSlice({
-  runtime,
   activeProfile,
   sessionId,
   sessionIdRef,
-}: SessionInfoSliceDeps): SessionInfoSlice {
-  const { gw, activeProfileRef, profileEpochRef } = runtime;
+  gw,
+  activeProfileRef,
+  profileEpochRef,
+}: StoreCtx): SessionInfoSlice {
   const [infoOpen, setInfoOpen] = useState(false);
   // Monotonic open requests — a boolean edge can get stuck `true` (e.g. a
   // present that never resolved), which would swallow every later tap because

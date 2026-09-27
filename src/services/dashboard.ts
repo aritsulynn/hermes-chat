@@ -15,6 +15,7 @@
 import { Platform } from 'react-native';
 import { normalizeConnectionBase } from './connection-scope';
 import { formatToolCommand } from '../utils/toolResult';
+import { asList, asRecord } from '../utils/ops';
 import {
   DEFAULT_PROFILE,
   HTTP_API_TIMEOUT_MS,
@@ -22,7 +23,6 @@ import {
   HTTP_LOGOUT_TIMEOUT_MS,
   HTTP_MODEL_OPTIONS_TIMEOUT_MS,
   HTTP_PROBE_TIMEOUT_MS,
-  HTTP_PROFILES_TIMEOUT_MS,
   HTTP_SESSION_CHECK_TIMEOUT_MS,
   HTTP_SESSION_MESSAGES_TIMEOUT_MS,
   HTTP_TICKET_TIMEOUT_MS,
@@ -126,16 +126,6 @@ export function getSetCookies(res: Response): string[] {
     console.warn('[dashboard] getSetCookies failed', e);
   }
   return out;
-}
-
-function asList(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
@@ -357,68 +347,6 @@ function capabilityRows(value: unknown): ModelProviderOption['capabilities'] {
     out[model] = row;
   }
   return out;
-}
-
-export interface ProfileSummary {
-  name: string;
-  display_name?: string;
-  description?: string;
-  model?: string | null;
-  provider?: string | null;
-  is_default?: boolean;
-  gateway_running?: boolean;
-  [key: string]: unknown;
-}
-
-function profileRows(payload: unknown): ProfileSummary[] {
-  const maybeProfiles = asRecord(payload).profiles;
-  const rows: unknown[] = Array.isArray(payload) ? payload : Array.isArray(maybeProfiles) ? maybeProfiles : [];
-  return rows
-    .filter(
-      (row): row is Record<string, unknown> =>
-        !!row && typeof row === 'object' && typeof (row as { name?: unknown }).name === 'string',
-    )
-    .filter((row) => String(row.name).trim().length > 0)
-    .map((row) => ({ ...row, name: String(row.name).trim() }));
-}
-
-export async function getProfiles(
-  baseUrl: string,
-  cookie: string,
-  onCookie?: CookieUpdater,
-): Promise<ProfileSummary[]> {
-  const base = normalizeBase(baseUrl);
-  const res = await fetchAuthed(
-    `${base}${api.profiles()}`,
-    cookie ? { headers: { Cookie: cookie } } : {},
-    cookie,
-    HTTP_PROFILES_TIMEOUT_MS,
-    onCookie,
-  );
-  if (!res.ok) throw new Error(`Profiles failed: HTTP ${res.status}`);
-  return profileRows(await res.json());
-}
-
-export async function getCurrentProfile(
-  baseUrl: string,
-  cookie: string,
-  onCookie?: CookieUpdater,
-): Promise<{ active: string; current: string }> {
-  const base = normalizeBase(baseUrl);
-  const res = await fetchAuthed(
-    `${base}${api.activeProfile()}`,
-    cookie ? { headers: { Cookie: cookie } } : {},
-    cookie,
-    HTTP_PROFILES_TIMEOUT_MS,
-    onCookie,
-  );
-  if (!res.ok) throw new Error(`Active profile failed: HTTP ${res.status}`);
-  const body = asRecord(await res.json());
-  return {
-    active: typeof body.active === 'string' && body.active.trim() ? body.active.trim() : DEFAULT_PROFILE,
-    current:
-      typeof body.current === 'string' && body.current.trim() ? body.current.trim() : DEFAULT_PROFILE,
-  };
 }
 
 export async function getModelOptions(

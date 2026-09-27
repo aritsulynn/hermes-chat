@@ -15,15 +15,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AlertCircle, Fingerprint } from 'lucide-react-native';
 import * as LocalAuth from 'expo-local-authentication';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Field } from '../../components/ui/bits';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { BUILD_ID } from '../../build';
 import { getPassword } from '../../services/connection';
 
 export function LoginScreen() {
-  const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login, theme } =
+  const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login } =
     useApp();
+  const { theme } = useThemeValue();
   const [bioAvailable, setBioAvailable] = useState(false);
   // Android edge-to-edge breaks adjustResize, so KeyboardAvoidingView alone
   // can't lift the form — track the keyboard height (like the chat dock does)

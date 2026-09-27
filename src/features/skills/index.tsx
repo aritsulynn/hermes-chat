@@ -17,7 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
 import { AlertCircle, RefreshCw, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
@@ -77,7 +77,8 @@ const SkillRow = memo(function SkillRow({
 });
 
 export function SkillsScreen() {
-  const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();
+  const { authed, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Two spinners on this screen (list load + SKILL.md viewer) — resolve once.
   const brand = useMemo(() => brandColor(dark), [dark]);

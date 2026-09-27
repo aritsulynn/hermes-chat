@@ -16,7 +16,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -39,7 +39,8 @@ const PERIOD_OPTIONS = [
 
 
 export function UsageScreen() {
-  const { authed, opsGet, theme, getAuthScope } = useApp();
+  const { authed, opsGet, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Shared by the spinner and the KPI icon — resolve once per scheme.
   const brand = useMemo(() => brandColor(dark), [dark]);

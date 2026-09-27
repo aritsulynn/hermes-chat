@@ -3,7 +3,7 @@ import { Animated, Keyboard, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { placeholderColor } from '../../theme';
 import { Button } from './button';
 import { Input } from './input';
@@ -81,7 +81,7 @@ export function CtxRing({
 
 // One shared drawer hamburger so every screen looks and behaves the same.
 export function HamburgerBtn() {
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const navigation = useNavigation();
   return (
     <Button
@@ -121,7 +121,7 @@ export function Field({
   onSubmit?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   if (!secure) {
     return (
@@ -169,7 +169,7 @@ export function TypingDots({ dim }: { dim?: boolean }) {
   const d1 = useRef(new Animated.Value(0)).current;
   const d2 = useRef(new Animated.Value(0)).current;
   const d3 = useRef(new Animated.Value(0)).current;
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   useEffect(() => {
     const pulse = (d: Animated.Value, delay: number) =>

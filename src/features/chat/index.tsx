@@ -21,7 +21,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Redirect, useNavigation } from 'expo-router';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil, Search } from 'lucide-react-native';
-import { useApp, useStreaming } from '../../hooks/app-store';
+import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
 import {
   FALLBACK_PROVIDERS,
   applySlashCompletion,
@@ -125,12 +125,14 @@ export function ChatScreen() {
     answerAsk,
     dismissAsk,
     getGw,
-    theme,
   } = useApp();
   // High-frequency token deltas live in their own context (see useStreaming):
   // subscribing here keeps per-token re-renders inside the chat screen while
   // the rest of the app stays put.
   const streamingTexts = useStreaming();
+  // Theme lives on its own context for the same reason: a toggle would
+  // otherwise hand every useApp() consumer a new object.
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const headerIcon = dark ? '#f5f5f5' : '#111';
 

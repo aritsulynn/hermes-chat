@@ -13,9 +13,3 @@ export function asRecord(value: unknown): Record<string, unknown> {
 export function asList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
-
-/** String field of an unknown payload (undefined when missing/not a string). */
-export function strField(value: unknown, key: string): string | undefined {
-  const v = asRecord(value)[key];
-  return typeof v === 'string' ? v : undefined;
-}

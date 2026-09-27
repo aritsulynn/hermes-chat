@@ -26,8 +26,6 @@ export const HTTP_TICKET_TIMEOUT_MS = 10000;
 export const HTTP_SESSION_CHECK_TIMEOUT_MS = 8000;
 /** Best-effort logout — never blocks local cleanup. */
 export const HTTP_LOGOUT_TIMEOUT_MS = 8000;
-/** Profile listing can be slow on a cold gateway. */
-export const HTTP_PROFILES_TIMEOUT_MS = 20000;
 export const HTTP_MODEL_OPTIONS_TIMEOUT_MS = 15000;
 /** Generic ops screens (cron, files, skills, kanban, update). */
 export const HTTP_API_TIMEOUT_MS = 20000;

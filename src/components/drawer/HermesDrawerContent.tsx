@@ -17,7 +17,7 @@ import {
   SquarePen,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Text as UIText } from '../ui/text';
@@ -73,8 +73,9 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   const drawerOpen = useDrawerStatus() === 'open';
   const {
     authed, username, host, busy, activeProfile, profiles, refreshProfiles, switchProfile, sessionId, sessionKey, openingId, sessions, messages, pendingAskCount,
-    newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, theme, deleteSessionById,
+    newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, deleteSessionById,
   } = useApp();
+  const { theme } = useThemeValue();
   // Hooks FIRST — no early return above this line (authed flips at
   // login; returning early before hooks breaks hook order).
   const insets = useSafeAreaInsets();

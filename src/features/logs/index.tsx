@@ -28,7 +28,7 @@ import {
   Terminal,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
 import { placeholderColor, screenStyle } from '../../theme';
@@ -40,7 +40,8 @@ import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
 type LogRow = { line: string; sev: LineSeverity };
 
 export function LogsScreen() {
-  const { authed, opsGet, theme, getAuthScope } = useApp();
+  const { authed, opsGet, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
   // Resolved once per scheme: auto-refresh re-renders this screen every 3.5s

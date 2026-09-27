@@ -19,7 +19,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { TriangleAlert } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
@@ -72,7 +72,8 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
 });
 
 export function KanbanScreen() {
-  const { booting, authed, host, username, opsGet, opsMut, theme, getAuthScope } = useApp();
+  const { booting, authed, host, username, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // One placeholder colour per scheme — the create/edit sheets pass it to
   // four inputs, so it must not be recomputed on every render.
