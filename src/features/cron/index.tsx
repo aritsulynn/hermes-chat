@@ -51,7 +51,16 @@ import * as api from '../../services/api';
 import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
 import { placeholderColor, screenStyle } from '../../theme';
 import { JobPromptPreview } from './components/JobPromptPreview';
-import { SCHEDULE_PRESETS, getScheduleExpr, parseMessageContent, scopedRunKey } from './helpers';
+import {
+  LOCAL_DELIVERY,
+  SCHEDULE_PRESETS,
+  deliveryOptions,
+  getScheduleExpr,
+  normaliseDelivery,
+  parseMessageContent,
+  scopedRunKey,
+} from './helpers';
+import type { DeliveryTarget } from './helpers';
 import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
 
 // Vertical gap between virtualized cards (FlashList v2 ignores `gap` in
@@ -508,9 +517,17 @@ export function CronScreen() {
   const [formSchedule, setFormSchedule] = useState('0 9 * * *');
   const [formPrompt, setFormPrompt] = useState('');
   const [formModel, setFormModel] = useState('');
-  const [formDeliver, setFormDeliver] = useState('local');
+  // Omitted from the payload when empty so the server keeps whatever target the
+  // job already had. It used to be seeded to 'local' and always shipped, which
+  // pinned any job whose delivery was configured elsewhere.
+  const [formDeliver, setFormDeliver] = useState('');
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // `GET /api/cron/delivery-targets` — the server owns this list (connected
+  // platforms + bot-chat targets per profile), so the form never invents a
+  // platform name. Empty means the fetch failed; the form then offers `local`
+  // only rather than offering targets that may not exist.
+  const [deliveryTargets, setDeliveryTargets] = useState<DeliveryTarget[]>([]);
 
   // Run History state
   const [runsModalOpen, setRunsModalOpen] = useState(false);
@@ -569,27 +586,64 @@ export function CronScreen() {
     if (authed) void loadJobs();
   }, [authed, loadJobs]);
 
+  // Loaded once per auth: the target list only changes when a platform is
+  // connected or a home channel is set, and a failed fetch must not block the
+  // job list (the form falls back to `local`).
+  const loadDeliveryTargets = useCallback(async () => {
+    const scope = getAuthScope();
+    try {
+      const data = await opsGet(api.cronDeliveryTargets(activeProfile));
+      if (getAuthScope() !== scope) return;
+      const payload = asRecord(data);
+      const rows = Array.isArray(payload.targets) ? payload.targets : [];
+      const targets: DeliveryTarget[] = [];
+      for (const row of rows) {
+        const t = asRecord(row);
+        const id = typeof t.id === 'string' ? t.id.trim() : '';
+        if (!id) continue;
+        targets.push({
+          id,
+          name: typeof t.name === 'string' && t.name ? t.name : id,
+          home_target_set: t.home_target_set !== false,
+          home_env_var: typeof t.home_env_var === 'string' ? t.home_env_var : null,
+        });
+      }
+      setDeliveryTargets(targets);
+    } catch {
+      if (getAuthScope() === scope) setDeliveryTargets([]);
+    }
+  }, [activeProfile, getAuthScope, opsGet]);
+
+  useEffect(() => {
+    if (authed) void loadDeliveryTargets();
+  }, [authed, loadDeliveryTargets]);
+
   const openCreateModal = useCallback(() => {
     setEditingJob(null);
     setFormName('');
     setFormSchedule('0 9 * * *');
     setFormPrompt('');
     setFormModel('');
-    setFormDeliver('local');
+    setFormDeliver(LOCAL_DELIVERY);
     setFormError(null);
     setModalOpen(true);
   }, []);
 
-  const openEditModal = useCallback((job: CronJobItem) => {
-    setEditingJob(job);
-    setFormName(job.name || '');
-    setFormSchedule(getScheduleExpr(job) || '0 9 * * *');
-    setFormPrompt(job.prompt || '');
-    setFormModel(job.model || '');
-    setFormDeliver(job.deliver || 'local');
-    setFormError(null);
-    setModalOpen(true);
-  }, []);
+  const openEditModal = useCallback(
+    (job: CronJobItem) => {
+      setEditingJob(job);
+      setFormName(job.name || '');
+      setFormSchedule(getScheduleExpr(job) || '0 9 * * *');
+      setFormPrompt(job.prompt || '');
+      setFormModel(job.model || '');
+      setFormDeliver(
+        normaliseDelivery(job.deliver, deliveryOptions(deliveryTargets, { hasOrigin: true })),
+      );
+      setFormError(null);
+      setModalOpen(true);
+    },
+    [deliveryTargets],
+  );
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -816,11 +870,14 @@ export function CronScreen() {
     setFormSaving(true);
     setFormError(null);
 
+    const deliver = formDeliver.trim();
     const payload = {
       name: formName.trim(),
       schedule: formSchedule.trim(),
       prompt: formPrompt.trim(),
-      deliver: formDeliver.trim() || 'local',
+      // Only sent when it differs from what the job already has, so an untouched
+      // field can't rewrite a target the form never showed.
+      ...(deliver && deliver !== (editingJob?.deliver || '') ? { deliver } : {}),
       ...(formModel.trim() ? { model: formModel.trim() } : {}),
     };
 
@@ -878,6 +935,14 @@ export function CronScreen() {
       toggleExpand,
     ],
   );
+  // What the Notify field offers for the job being edited. `origin` only makes
+  // sense for a job that has somewhere to go back to, and the server's list
+  // never includes it (it prepends it per-blueprint, ops.py list_cron_blueprints).
+  const deliverChoices = useMemo(
+    () => deliveryOptions(deliveryTargets, { hasOrigin: Boolean(editingJob) }),
+    [deliveryTargets, editingJob],
+  );
+
   const jobsExtra = useMemo(
     () => ({ actionLoadingId, dark, expandedIds }),
     [actionLoadingId, dark, expandedIds],
@@ -1157,6 +1222,62 @@ export function CronScreen() {
                 autoCorrect={false}
                 className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
+            </View>
+
+            {/* Delivery target — options come from the server, never guessed. */}
+            <View>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Notify
+              </Label>
+              {deliverChoices.length === 1 ? (
+                <View className="rounded-xl border border-dashed border-neutral-300 px-3.5 py-2.5 dark:border-neutral-700">
+                  <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                    This gateway reports no notification targets, so runs are saved without sending
+                    anywhere. Connect a platform on the server to enable delivery.
+                  </Text>
+                </View>
+              ) : (
+                <View className="gap-1.5">
+                  {deliverChoices.map((option) => {
+                    const selected = formDeliver === option.id;
+                    const disabled = !option.home_target_set;
+                    return (
+                      <Button
+                        key={option.id}
+                        variant="ghost"
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected, disabled }}
+                        accessibilityLabel={`Deliver to ${option.name}`}
+                        disabled={disabled}
+                        onPress={() => setFormDeliver(option.id)}
+                        className={`h-auto w-full items-start justify-start rounded-xl border px-3 py-2.5 ${
+                          selected
+                            ? 'border-[#1a73e8] bg-[#1a73e8]/10'
+                            : 'border-neutral-300 dark:border-neutral-700'
+                        } ${disabled ? 'opacity-50' : ''}`}
+                      >
+                        <View className="flex-1">
+                          <UIText
+                            className={`text-sm font-medium ${
+                              selected
+                                ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                                : 'text-neutral-800 dark:text-neutral-200'
+                            }`}
+                          >
+                            {option.name}
+                          </UIText>
+                          {disabled ? (
+                            <UIText className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                              No home channel set
+                              {option.home_env_var ? ` (${option.home_env_var})` : ''}
+                            </UIText>
+                          ) : null}
+                        </View>
+                      </Button>
+                    );
+                  })}
+                </View>
+              )}
             </View>
 
             {/* Action Buttons */}

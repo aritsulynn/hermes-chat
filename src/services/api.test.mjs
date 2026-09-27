@@ -78,6 +78,20 @@ test("cron routes", () => {
   assert.equal(api.cronJobRuns("j 1", "", 5), "/api/cron/jobs/j%201/runs?limit=5");
 });
 
+test("cron delivery targets are profile-scoped, like the other cron routes", () => {
+  // The gateway resolves this per profile: it reads each platform's home
+  // channel through get_secret, which fails closed once the dashboard hosts
+  // more than one profile home. An unscoped call would come back with every
+  // configured platform dropped.
+  assert.equal(api.cronDeliveryTargets(), "/api/cron/delivery-targets");
+  assert.equal(api.cronDeliveryTargets(""), "/api/cron/delivery-targets");
+  assert.equal(api.cronDeliveryTargets("work"), "/api/cron/delivery-targets?profile=work");
+  assert.equal(
+    api.cronDeliveryTargets("work / review"),
+    "/api/cron/delivery-targets?profile=work%20%2F%20review",
+  );
+});
+
 test("kanban routes take a caller-built board query", () => {
   assert.equal(api.kanbanBoards(), "/api/plugins/kanban/boards");
   assert.equal(

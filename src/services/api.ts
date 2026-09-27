@@ -111,6 +111,12 @@ export const cronRunMessages = (
 export const cronJobs = (profile?: string | null): string => withProfile('/api/cron/jobs', profile);
 /** Job list across every profile — the jobs screen's "all" view. */
 export const cronJobsAllProfiles = (): string => '/api/cron/jobs?profile=all';
+/** Where a run's output can be delivered: `local`, the platforms this gateway
+ *  has connected, and one bot-chat target per local profile. `home_target_set`
+ *  is false for a connected platform with no home channel configured yet.
+ *  The server builds the list; a client must not guess a platform name. */
+export const cronDeliveryTargets = (profile?: string | null): string =>
+  withProfile('/api/cron/delivery-targets', String(profile ?? '').trim());
 export const cronJob = (id: string, profile?: string | null): string =>
   withProfile(`/api/cron/jobs/${encodeURIComponent(id)}`, profile);
 export type CronJobAction = 'pause' | 'resume' | 'trigger';
