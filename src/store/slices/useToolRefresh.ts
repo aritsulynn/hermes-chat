@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { inlineDiffFromDetail } from '../../utils/diff';
 import { connectionScope } from '../../services/connection';
+import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { getSessionMessages } from '../../services/dashboard';
 import { formatToolResult } from '../../utils/toolResult';
 import type { UiMessage } from '../../utils/messages';
@@ -65,7 +66,7 @@ export function useToolRefreshSlice({
           ck,
           sk,
           profile,
-          200,
+          CHAT_HISTORY_PAGE,
           connectionScope(h, targetUser),
           async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
         );

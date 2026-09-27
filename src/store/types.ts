@@ -22,6 +22,13 @@ export interface ScopedSessionSummary extends SessionSummary {
   profile?: string;
 }
 
+/** One row of the full-history search index (plain data, not a live bubble). */
+export interface TranscriptHit {
+  role: string;
+  text: string;
+  rowId: number | null;
+}
+
 export interface AppStore {
   booting: boolean;
   authed: boolean;
@@ -46,6 +53,16 @@ export interface AppStore {
   sessionKey: string | null;
   sessionTitle: string;
   messages: UiMessage[];
+  /** True while an older-history page is loading (list header spinner). */
+  historyLoadingMore: boolean;
+  /** True when the server has no rows older than the loaded window. */
+  historyExhausted: boolean;
+  /** Bubbles trimmed from the head by the window cap (refetchable via paging). */
+  trimmedOlder: number;
+  /** Prepend the next older history page (no-op at the start / while loading). */
+  loadOlderMessages: () => Promise<boolean>;
+  /** Drop the window head past the soft cap (refetchable, never the live tail). */
+  trimHead: () => void;
   input: string;
   setInput: (v: string) => void;
   model: string;
@@ -132,6 +149,12 @@ export interface AppStore {
   /** Reply to the current foreground ask with its method-specific result. */
   answerAsk: (result: Record<string, unknown>) => boolean;
   dismissAsk: () => void;
+  /** One transcript row in the full-history search index (not a live bubble). */
+  /** Full-history search: match `query` across the server transcript, not just
+   *  the loaded window. Returns hits oldest-first. */
+  searchTranscript: (query: string) => Promise<TranscriptHit[]>;
+  /** Window index of a search hit, or -1 when it is not loaded yet. */
+  findHitIndex: (hit: TranscriptHit) => number;
   /** Effective theme after resolving `system`. */
   theme: ResolvedTheme;
   /** Persisted user preference: light, dark, or follow the device. */

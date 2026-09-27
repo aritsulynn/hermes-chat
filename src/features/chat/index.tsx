@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Keyboard,
   Modal,
   Platform,
@@ -13,6 +12,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import type { FlashListRef } from '@shopify/flash-list';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
@@ -49,17 +50,11 @@ import { Input } from '../../components/ui/input';
 import { Text as UIText } from '../../components/ui/text';
 import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
 import { FALLBACK_SLASH, messageMatchesSearch } from './helpers';
+import { CHAT_WINDOW_SOFT_CAP } from '../../services/constants';
+import type { TranscriptHit } from '../../store/types';
 
-// Estimated row heights by role for getItemLayout (see usage below).
-const EST_H: Record<string, number> = {
-  user: 90,
-  assistant: 200,
-  thinking: 70,
-  tool: 240,
-  notice: 60,
-  interim: 60,
-  summary: 60,
-};
+// FlashList v2 sizes rows itself (no estimatedItemSize / getItemLayout).
+// Heterogeneous bubbles recycle per role via getItemType below.
 
 export function ChatScreen() {
   const {
@@ -112,6 +107,13 @@ export function ChatScreen() {
     regenerate,
     pasteLarge,
     branchSession,
+    historyLoadingMore,
+    historyExhausted,
+    trimmedOlder,
+    loadOlderMessages,
+    trimHead,
+    searchTranscript,
+    findHitIndex,
     todos,
     subagents,
     refreshToolResults,
@@ -290,7 +292,7 @@ export function ChatScreen() {
     [input, completionKind, completionFrom, setInput],
   );
 
-  const listRef = useRef<FlatList<UiMessage>>(null);
+  const listRef = useRef<FlashListRef<UiMessage>>(null);
   // Latest transcript for stable callbacks (tool expand → REST result fill).
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -310,21 +312,12 @@ export function ChatScreen() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Agent todo checklist above the composer — collapsed to a one-line summary.
   const [todosOpen, setTodosOpen] = useState(false);
-  // True while the list is scrolled up — shows the jump-to-bottom button.
+  // False while the list is scrolled up — shows the jump-to-bottom button.
   const [atBottom, setAtBottom] = useState(true);
-  // True while mounted rows end before the transcript does (windowing) —
-  // drives the jump button even when the (measured) position reads bottom.
-  const [hasMoreBelow, setHasMoreBelow] = useState(false);
-  const totalRef = useRef(0);
-  totalRef.current = messages.length;
-  const handleViewable = useCallback(({ viewableItems }: any) => {
-    let mx = -1;
-    for (const v of viewableItems) mx = Math.max(mx, v?.index ?? -1);
-    setHasMoreBelow((p) => {
-      const v = mx >= 0 && mx < totalRef.current - 1;
-      return p === v ? p : v;
-    });
-  }, []);
+  // True while the transcript actually overflows the viewport. Gates the jump
+  // button so short chats never show it, and so a stale "not at bottom"
+  // reading on a non-scrollable list can't pin the button on screen.
+  const [canScroll, setCanScroll] = useState(false);
   // Height of the bottom footer (panels + composer), keyboard lift included.
   // Feeds the scroll-to-bottom button anchor above it. The transcript no
   // longer slides under the composer (separate fixed footer), so the list
@@ -700,40 +693,57 @@ export function ChatScreen() {
     dismissAsk();
   }, [dismissAsk]);
 
-  // In-conversation search — match message indices, jump between them.
+  // In-conversation search — full-transcript hits (server rows, not just the
+  // loaded window), with jumps that page older history in until the hit is
+  // mounted. Window highlight stays query-local (see highlightIds below).
   const sq = searchQuery.trim().toLowerCase();
-  const matchIndices = useMemo(
-    () =>
-      searchOpen && sq
-        ? messages
-            .map((m, i) => (messageMatchesSearch(m, streamingTexts[m.id], sq) ? i : -1))
-            .filter((i) => i >= 0)
-        : [],
-    [searchOpen, sq, messages, streamingTexts],
-  );
-  const jumpToMatch = useCallback(
-    (n: number) => {
-      if (matchIndices.length === 0) return;
-      const k = ((n % matchIndices.length) + matchIndices.length) % matchIndices.length;
+  const [searchHits, setSearchHits] = useState<TranscriptHit[]>([]);
+  const jumpToHit = useCallback(
+    async (n: number, hits: TranscriptHit[]) => {
+      if (hits.length === 0) return;
+      const k = ((n % hits.length) + hits.length) % hits.length;
       setMatchIdx(k);
       stickEnd.current = false;
+      let idx = findHitIndex(hits[k]);
+      // Page older history in until the hit mounts (bounded; exhausted stops).
+      let guard = 0;
+      while (idx < 0 && guard++ < 8 && !historyExhausted) {
+        const ran = await loadOlderMessages();
+        if (!ran) break;
+        idx = findHitIndex(hits[k]);
+      }
+      if (idx < 0) return;
       try {
-        listRef.current?.scrollToIndex({ index: matchIndices[k], viewPosition: 0.5, animated: true });
+        void listRef.current
+          ?.scrollToIndex({ index: idx, viewPosition: 0.5, animated: true })
+          ?.catch(() => {});
       } catch {}
     },
-    [matchIndices],
+    [findHitIndex, historyExhausted, loadOlderMessages],
   );
+  const jumpToHitRef = useRef(jumpToHit);
+  jumpToHitRef.current = jumpToHit;
+  // Debounced so a burst of keystrokes makes one index filter (the full fetch
+  // itself is cached per transcript revision inside searchTranscript).
   useEffect(() => {
-    setMatchIdx(0);
-    if (matchIndices.length > 0) {
-      const t = setTimeout(() => {
-        try {
-          listRef.current?.scrollToIndex({ index: matchIndices[0], viewPosition: 0.5, animated: true });
-        } catch {}
-      }, 100);
-      return () => clearTimeout(t);
+    if (!searchOpen || !sq) {
+      setSearchHits([]);
+      setMatchIdx(0);
+      return;
     }
-  }, [sq]); // eslint-disable-line react-hooks/exhaustive-deps
+    let live = true;
+    const t = setTimeout(() => {
+      void searchTranscript(sq).then((hits) => {
+        if (!live) return;
+        setSearchHits(hits);
+        void jumpToHitRef.current(0, hits);
+      });
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [searchOpen, sq, searchTranscript]);
 
   // Model picker + list memos must live before the early returns below
   // (hooks can't run after a conditional return). They only read state/props.
@@ -770,30 +780,44 @@ export function ChatScreen() {
     return s;
   }, [searchOpen, sq, messages, streamingTexts]);
   const listContentStyle = useMemo(
-    () => ({ padding: 12, gap: 8, paddingBottom: 0 }),
+    () => ({ padding: 12, paddingBottom: 0 }),
     [],
   );
+  // FlashList วาง cell แบบ absolute — `gap` ใน contentContainerStyle โดนเมิน
+  // ข้อความเลยติดกัน ใช้ separator คั่น 8px แทน (เท่า gap เดิม)
+  const listSeparator = useCallback(() => <View style={{ height: 8 }} />, []);
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
-  // Estimated row heights by role for getItemLayout: lets the list know the
-  // FULL transcript extent (for correct pin-to-bottom offsets) without
-  // mounting every row — windowing (removeClippedSubviews + windowSize) only
-  // measures what's mounted, so a cold pin otherwise lands at the end of the
-  // initial window instead of the transcript (long chats only — hence
-  // "sometimes"). Residual estimate error self-corrects via the follow system.
-  // Matches contentContainer padding/gap below (12 top pad + 8 inter-row gap).
-  const getItemLayout = useCallback(
-    (data: ArrayLike<UiMessage> | null | undefined, index: number) => {
-      const est = (i: number) => EST_H[data?.[i]?.role ?? ''] ?? 120;
-      let offset = 12;
-      for (let j = 0; j < index; j++) offset += est(j) + 8;
-      return { length: est(index), offset, index };
-    },
-    [],
-  );
-  const listMaintainVisible = useMemo(() => ({ minIndexForVisible: 0 }), []);
+  // Recycle per bubble role (user/assistant/tool/thinking/…) — a tall tool
+  // Armed while an older page loads: offset + content height captured after
+  // the fetch resolves, consumed by the next content-size growth (see
+  // handleContentSizeChange). Without it a prepend yanks the viewport upward.
+  const prependAdj = useRef<{ prevY: number; prevContentH: number } | null>(null);
+  // row never reuses a short user cell, so no measure-then-jump on scroll.
+  const listGetItemType = useCallback((m: UiMessage) => m.role, []);
+  // FlashList v2 maintains visible position itself; auto-scroll to bottom is
+  // owned by the stickEnd follow system below, so keep the native helper off.
+  const listMaintainVisible = useMemo(() => ({ disabled: true }), []);
   const handleContentSizeChange = useCallback(
     (_w: number, h: number) => {
+      const prevH = contentH.current;
       contentH.current = h;
+      setCanScroll(h > layoutH.current + 40);
+      // Prepended an older page above the viewport: shift the offset down by
+      // the growth so the row under the finger stays put (no yank to top).
+      if (prependAdj.current) {
+        const { prevY, prevContentH } = prependAdj.current;
+        prependAdj.current = null;
+        const dh = h - (prevContentH ?? prevH);
+        if (dh > 8) {
+          flying.current = true;
+          if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
+          scrollEndTimer.current = setTimeout(() => {
+            flying.current = false;
+          }, 1200);
+          listRef.current?.scrollToOffset({ offset: Math.max(0, prevY + dh), animated: false });
+        }
+        return;
+      }
       if (touching.current) return;
       if (!stickEnd.current || kbResizeRef.current) return;
       // Coalesce: at most one follow per window no matter how many tokens
@@ -819,6 +843,7 @@ export function ChatScreen() {
   const handleListLayout = useCallback(
     (e: any) => {
       layoutH.current = e.nativeEvent.layout.height;
+      setCanScroll(contentH.current > e.nativeEvent.layout.height + 40);
       if (stickEnd.current) scrollEnd(false);
     },
     [scrollEnd],
@@ -904,6 +929,49 @@ export function ChatScreen() {
   useEffect(() => {
     closeSearch();
   }, [closeSearch, sessionId]);
+
+  // ── Transcript window ────────────────────────────────────────────────
+  // Older pages prepend above the viewport: capture the offset AFTER the
+  // fetch resolves (pre-flush, so contentH still excludes the new rows) and
+  // let handleContentSizeChange shift it down by the growth.
+  const onLoadOlder = useCallback(() => {
+    void loadOlderMessages().then((ran) => {
+      if (ran) prependAdj.current = { prevY: scrollY.current, prevContentH: contentH.current };
+    });
+  }, [loadOlderMessages]);
+  const handleStartReached = useCallback(() => {
+    onLoadOlder();
+  }, [onLoadOlder]);
+  // Head trim past the soft cap: only while pinned at the bottom, idle, and
+  // not paging — reading history up top is never yanked. Trimmed rows stay
+  // server-side and come back through onLoadOlder.
+  useEffect(() => {
+    if (messages.length > CHAT_WINDOW_SOFT_CAP && !generating && atBottom && !historyLoadingMore) {
+      trimHead();
+    }
+  }, [messages.length, generating, atBottom, historyLoadingMore, trimHead]);
+  const ListHeader = useCallback(() => {
+    if (historyLoadingMore) {
+      return (
+        <View className="items-center py-3">
+          <ActivityIndicator size="small" />
+          <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</Text>
+        </View>
+      );
+    }
+    if (trimmedOlder > 0 || !historyExhausted) {
+      return (
+        <View className="items-center py-1.5">
+          <Button variant="ghost" onPress={onLoadOlder} hitSlop={8} className="px-3 py-1.5">
+            <UIText className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+              ↑ Load older messages
+            </UIText>
+          </Button>
+        </View>
+      );
+    }
+    return null;
+  }, [historyLoadingMore, historyExhausted, trimmedOlder, onLoadOlder]);
 
   const searchVisible = Boolean(sessionId && searchOpen);
 
@@ -1000,10 +1068,10 @@ export function ChatScreen() {
           iconColor={headerIcon}
           query={searchQuery}
           matchIndex={matchIdx}
-          matchCount={matchIndices.length}
+          matchCount={searchHits.length}
           onChangeQuery={setSearchQuery}
-          onPrevious={() => jumpToMatch(matchIdx - 1)}
-          onNext={() => jumpToMatch(matchIdx + 1)}
+          onPrevious={() => void jumpToHit(matchIdx - 1, searchHits)}
+          onNext={() => void jumpToHit(matchIdx + 1, searchHits)}
           onClose={closeSearch}
         />
       ) : (
@@ -1108,13 +1176,19 @@ export function ChatScreen() {
           explicitly above via kbH (footer padding; the flex layout shrinks
           the list above it automatically). */}
       <View className="flex-1">
-        <FlatList
+        <FlashList
           ref={listRef}
           data={messages}
+          style={{ flex: 1 }}
           keyExtractor={listKeyExtractor}
+          getItemType={listGetItemType}
           extraData={listExtraData}
-          className="flex-1"
+          drawDistance={800}
           contentContainerStyle={listContentStyle}
+          ItemSeparatorComponent={listSeparator}
+          ListHeaderComponent={ListHeader}
+          onStartReached={handleStartReached}
+          onStartReachedThreshold={0.4}
           onContentSizeChange={handleContentSizeChange}
           onLayout={handleListLayout}
           onMomentumScrollBegin={() => {
@@ -1132,14 +1206,7 @@ export function ChatScreen() {
           automaticallyAdjustKeyboardInsets={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="none"
-          removeClippedSubviews
-          windowSize={11}
-          maxToRenderPerBatch={12}
-          updateCellsBatchingPeriod={80}
-          initialNumToRender={12}
           renderItem={renderMessage}
-          getItemLayout={getItemLayout}
-          onViewableItemsChanged={handleViewable}
         />
         {/* Fixed footer: opaque card tone edge-to-edge, so no black can show
             through anywhere in the input zone (tail is 0, insets paint the
@@ -1424,9 +1491,9 @@ export function ChatScreen() {
         />
         </View>
       </View>
-      {/* Jump to the newest message (shown once the user scrolls up, or while
-          windowing still hides tail rows below the mounted window). */}
-      {(!atBottom || hasMoreBelow) && (
+      {/* Jump to the newest message — shown only when the transcript
+          overflows and the user has scrolled up. */}
+      {canScroll && !atBottom && (
         <Button
           variant="ghost"
           size="icon"

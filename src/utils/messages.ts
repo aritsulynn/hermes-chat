@@ -38,6 +38,32 @@ export interface QueuedPrompt {
   text: string;
 }
 
+// ── Transcript windowing ───────────────────────────────────────────────────
+// The REST transcript has no cursor (only `order + limit`), so older pages are
+// fetched as a growing tail limit and merged by anchor: the oldest durable
+// (rowId-bearing) bubble in the current window is located in the fresh fetch
+// and only the rows before it are prepended. Fresh fetches mint new `nid()`
+// ids, so reusing the current tail's objects keeps memo()/expanded state for
+// every already-mounted bubble.
+
+/**
+ * Older bubbles to prepend when paging history: everything in `fetched`
+ * before the current window's oldest durable message. Returns [] when there
+ * is nothing older (anchor at index 0), the anchor is gone (history was
+ * rewritten — keep the current window), or neither side can anchor.
+ */
+export function sliceOlderThan(fetched: UiMessage[], current: UiMessage[]): UiMessage[] {
+  if (current.length === 0) return fetched;
+  if (fetched.length === 0) return [];
+  for (const a of current) {
+    if ((a.role === 'user' || a.role === 'assistant') && a.rowId != null) {
+      const k = fetched.findIndex((f) => f.role === a.role && f.rowId === a.rowId);
+      return k < 0 ? [] : fetched.slice(0, k);
+    }
+  }
+  return [];
+}
+
 /** One row of the agent's live todo list (`todo.updated` /
  *  `session.todo_state`). Field names are read defensively: the backend passes
  *  the TodoStore snapshot through unchanged. */

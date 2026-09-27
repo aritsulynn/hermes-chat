@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import type { GatewayWs, HistoryMessage, ServerAsk } from '../../services/gateway-ws';
 import { getSessionMessages } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
+import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
 import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
@@ -65,6 +66,10 @@ export interface SessionOpsSliceDeps {
   model: string;
   modelProvider: string;
   effort: string;
+  /** Record the loaded tail window after open (limit + exhausted flag). */
+  noteHistoryWindow: (limit: number, exhausted: boolean) => void;
+  /** Clear the window on empty/new sessions. */
+  resetHistoryWindow: () => void;
 }
 
 export interface SessionOpsSlice {
@@ -118,6 +123,8 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
     model,
     modelProvider,
     effort,
+    noteHistoryWindow,
+    resetHistoryWindow,
   } = deps;
   const {
     gw,
@@ -200,7 +207,10 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         setTodos(normalizeTodos(r?.todo_state));
         // Full transcript via REST first (tool RESULT content + reasoning) —
         // WS session.history is only a compact projection. Stored id, not live.
+        // Windowed: the latest page only — older rows page in on demand so a
+        // 10k-message transcript never lands in JS memory all at once.
         let hist: HistoryMessage[];
+        let historyExhausted = true;
         try {
           // Gate on the cookie ONLY as a fallback signal: on web the jar is empty
           // (JS can't read Set-Cookie) while the browser cookie still authenticates
@@ -210,10 +220,11 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
             cookie.current,
             s.id,
             profile,
-            200,
+            CHAT_HISTORY_PAGE,
             connectionScope(targetHost, targetUser),
             async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
           );
+          historyExhausted = hist.length < CHAT_HISTORY_PAGE;
         } catch {
           hist = [];
         }
@@ -279,6 +290,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         } else {
           setMessages(items);
         }
+        noteHistoryWindow(CHAT_HISTORY_PAGE, historyExhausted);
         queuedRef.current = [];
         setQueued([]);
         queueParkedRef.current = false;
@@ -319,7 +331,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile) setOpeningId(null);
       }
     },
-    [acceptRotatedCookie, hydrateSessionContext, bindAskOwner],
+    [acceptRotatedCookie, hydrateSessionContext, bindAskOwner, noteHistoryWindow],
   );
   openSessionRef.current = openSession;
 
@@ -386,6 +398,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
       setSessionId(sid);
       setSessionTitle('');
       setMessages([]);
+      resetHistoryWindow();
       clearStreaming();
       queuedRef.current = [];
       setQueued([]);
@@ -431,7 +444,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         setBusy(false);
       }
     }
-  }, [model, modelProvider, effort, bindAskOwner]);
+  }, [model, modelProvider, effort, bindAskOwner, resetHistoryWindow]);
   newSessionRef.current = newSession;
 
   return { openSession, newSession };

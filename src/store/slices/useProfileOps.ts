@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import type { GatewayWs, HistoryMessage } from '../../services/gateway-ws';
 import type { ModelProviderOption } from '../../services/dashboard';
 import { connectionScope, getModel, saveActiveProfile, saveLastSession } from '../../services/connection';
+import { CHAT_HISTORY_PAGE, CHAT_WINDOW_TRIM_KEEP } from '../../services/constants';
 import { clearSessionMessagesCache } from '../../services/dashboard';
 import { clearMediaCaches } from '../../services/media-cache';
 import { nid, errMsg } from '../../utils/messages';
@@ -78,6 +79,10 @@ export interface ProfileOpsSliceDeps {
   setProvidersError: Dispatch<SetStateAction<string | null>>;
   setModel: Dispatch<SetStateAction<string>>;
   setModelProvider: Dispatch<SetStateAction<string>>;
+  /** Record the loaded tail window after branch (limit + exhausted flag). */
+  noteHistoryWindow: (limit: number, exhausted: boolean) => void;
+  /** Clear the window when leaving the session. */
+  resetHistoryWindow: () => void;
 }
 
 export interface ProfileOpsSlice {
@@ -148,6 +153,8 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
     setProvidersError,
     setModel,
     setModelProvider,
+    noteHistoryWindow,
+    resetHistoryWindow,
   } = deps;
   const {
     gw,
@@ -201,6 +208,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
       setSessionKey(null);
       setSessionTitle('');
       setMessages([]);
+      resetHistoryWindow();
       clearStreaming();
       liveAid.current = null;
       liveThinkAid.current = null;
@@ -264,7 +272,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
         }
       }
     },
-    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions, host, username],
+    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions, host, username, resetHistoryWindow],
   );
 
   // Fork the current chat into an independent copy (session.branch) and open it.
@@ -315,7 +323,13 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
       sessionIdRef.current = liveId;
       setSessionId(liveId);
       setSessionTitle(String(r?.title ?? ''));
-      setMessages(historyToItems(hist));
+      // Windowed like openSession: a branch of a 10k-message transcript opens
+      // on the tail page instead of loading everything into JS memory.
+      const fullBranch = historyToItems(hist);
+      const branchItems =
+        fullBranch.length > CHAT_WINDOW_TRIM_KEEP ? fullBranch.slice(-CHAT_WINDOW_TRIM_KEEP) : fullBranch;
+      setMessages(branchItems);
+      noteHistoryWindow(CHAT_HISTORY_PAGE, fullBranch.length <= branchItems.length);
       clearStreaming();
       queuedRef.current = [];
       setQueued([]);
@@ -348,7 +362,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
       }
     }
-  }, [sessionId, hydrateSessionContext]);
+  }, [sessionId, hydrateSessionContext, noteHistoryWindow]);
 
   return { switchProfile, branchSession };
 }

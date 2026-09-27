@@ -28,12 +28,13 @@ import {
   saveCookie,
 } from '../services/connection';
 import { DEFAULT_PROFILE } from '../services/constants';
+import { CHAT_HISTORY_MAX_ROWS, CHAT_HISTORY_PAGE, CHAT_WINDOW_SOFT_CAP, CHAT_WINDOW_TRIM_KEEP } from '../services/constants';
 import { dismissNotification } from '../services/notifications';
 import { askKey, pendingAsks } from '../services/ask-inbox';
 import type { AskInboxEntry, AskOwner } from '../services/ask-inbox';
 import { GatewayWs } from '../services/gateway-ws';
 import type { ConnState, HistoryMessage } from '../services/gateway-ws';
-import { errMsg, nid } from '../utils/messages';
+import { errMsg, nid, sliceOlderThan } from '../utils/messages';
 import type { Attachment, UiMessage } from '../utils/messages';
 import type { Role } from '../utils/messages';
 import {
@@ -45,7 +46,7 @@ import {
   scheduleContextHydration,
   withTimeout,
 } from './helpers';
-import type { AgentProfile, AppStore } from './types';
+import type { AgentProfile, AppStore, TranscriptHit } from './types';
 import { useThemeSlice } from './slices/useTheme';
 import { useNotificationsSlice } from './slices/useNotifications';
 import { useQueueSlice } from './slices/useQueue';
@@ -125,6 +126,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
   const [sessionTitle, setSessionTitle] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  // Transcript window (10k+ sessions): only a tail page lives in `messages`;
+  // older rows are paged in on demand and the head auto-trims past the cap.
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyExhausted, setHistoryExhausted] = useState(true);
+  const [trimmedOlder, setTrimmedOlder] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
@@ -151,6 +157,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sendRef,
     drainRef,
     messagesRef,
+    historyLimitRef,
+    historyLoadingRef,
+    historyExhaustedRef,
     profilesRef,
     sessionIdRef,
     editingRowRef: editRowRef,
@@ -331,6 +340,158 @@ export function AppProvider({ children }: { children: ReactNode }) {
     acceptRotatedCookie,
     setMessages,
   });
+  // ── Transcript windowing ──────────────────────────────────────────────
+  // Steady state keeps ~1 page of bubbles in `messages`; older rows page in
+  // via a growing tail limit (REST has no cursor) and the head auto-trims
+  // past the soft cap. Trimmed/paged-out rows stay server-side and come back
+  // through loadOlderMessages — nothing durable is lost.
+  const noteHistoryWindow = useCallback((limit: number, exhausted: boolean) => {
+    historyLimitRef.current = limit;
+    historyExhaustedRef.current = exhausted;
+    setHistoryExhausted(exhausted);
+  }, []);
+  const resetHistoryWindow = useCallback(() => {
+    historyLimitRef.current = 0;
+    historyLoadingRef.current = false;
+    historyExhaustedRef.current = true;
+    setHistoryLoadingMore(false);
+    setHistoryExhausted(true);
+    setTrimmedOlder(0);
+  }, []);
+  // Drop the head past the soft cap. Never the live tail, never while a turn
+  // runs, and the screen only calls this while pinned at the bottom — reading
+  // history up top is never yanked.
+  const trimHead = useCallback(() => {
+    const cur = messagesRef.current;
+    if (cur.length <= CHAT_WINDOW_SOFT_CAP || generatingRef.current) return;
+    const drop = cur.length - CHAT_WINDOW_TRIM_KEEP;
+    if (drop <= 0) return;
+    const next = cur.slice(drop);
+    messagesRef.current = next;
+    setMessages(next);
+    setTrimmedOlder((c) => c + drop);
+    // Trimmed rows are refetchable, so the window is no longer exhaustive.
+    historyExhaustedRef.current = false;
+    setHistoryExhausted(false);
+  }, []);
+  // Fetch the next older page and prepend just the older slice (anchor = the
+  // window's oldest durable row). Returns true when a fetch ran (even with an
+  // empty head) so the screen can hold the scroll position; false when skipped.
+  const loadOlderMessages = useCallback(async (): Promise<boolean> => {
+    const h = latest.current.host;
+    const profile = latest.current.activeProfile;
+    const epoch = profileEpochRef.current;
+    const sk = latest.current.sessionKey;
+    const connectionEpoch = connectionEpochRef.current;
+    const targetUser = latest.current.username;
+    const cur = messagesRef.current;
+    if (!h || !sk || cur.length === 0) return false;
+    if (historyLoadingRef.current || historyExhaustedRef.current || generatingRef.current) return false;
+    const nextLimit = Math.min(historyLimitRef.current + CHAT_HISTORY_PAGE, CHAT_HISTORY_MAX_ROWS);
+    if (nextLimit <= historyLimitRef.current) {
+      historyExhaustedRef.current = true;
+      setHistoryExhausted(true);
+      return false;
+    }
+    historyLoadingRef.current = true;
+    setHistoryLoadingMore(true);
+    try {
+      const items = await getSessionMessages(
+        h,
+        cookie.current,
+        sk,
+        profile,
+        nextLimit,
+        connectionScope(h, targetUser),
+        async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+      );
+      if (
+        activeProfileRef.current !== profile ||
+        profileEpochRef.current !== epoch ||
+        connectionEpochRef.current !== connectionEpoch ||
+        latest.current.sessionKey !== sk
+      )
+        return true;
+      historyLimitRef.current = nextLimit;
+      const head = sliceOlderThan(historyToItems(items), messagesRef.current);
+      if (head.length > 0) {
+        setMessages((prev) => [...head, ...prev]);
+        setTrimmedOlder((c) => Math.max(0, c - head.length));
+        // Older rows existed beyond the anchor — the window is not exhaustive.
+        historyExhaustedRef.current = false;
+        setHistoryExhausted(false);
+      } else if (items.length < nextLimit) {
+        historyExhaustedRef.current = true;
+        setHistoryExhausted(true);
+      }
+      return true;
+    } catch {
+      return true;
+    } finally {
+      historyLoadingRef.current = false;
+      setHistoryLoadingMore(false);
+    }
+  }, [acceptRotatedCookie]);
+  // ── Full-history search ─────────────────────────────────────────────
+  // In-conversation search must cover the server transcript, not just the
+  // loaded window (windowing would otherwise hide older matches). The backend
+  // has no search endpoint, so build a transient plain-data index (capped at
+  // CHAT_HISTORY_MAX_ROWS) once per transcript revision and filter per
+  // keystroke. Thinking bubbles stay excluded, mirroring messageMatchesSearch.
+  const searchIndexRef = useRef<{ key: string; rows: TranscriptHit[] } | null>(null);
+  const searchTranscript = useCallback(
+    async (query: string): Promise<TranscriptHit[]> => {
+      const q = query.trim().toLowerCase();
+      if (!q) return [];
+      const h = latest.current.host;
+      const profile = latest.current.activeProfile;
+      const epoch = profileEpochRef.current;
+      const sk = latest.current.sessionKey;
+      const connectionEpoch = connectionEpochRef.current;
+      const targetUser = latest.current.username;
+      if (!h || !sk) return [];
+      const key = JSON.stringify([h, targetUser, profile, sk, messagesRef.current.length]);
+      let rows = searchIndexRef.current?.key === key ? searchIndexRef.current.rows : null;
+      if (!rows) {
+        try {
+          const items = await getSessionMessages(
+            h,
+            cookie.current,
+            sk,
+            profile,
+            CHAT_HISTORY_MAX_ROWS,
+            connectionScope(h, targetUser),
+            async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+          );
+          if (
+            activeProfileRef.current !== profile ||
+            profileEpochRef.current !== epoch ||
+            connectionEpochRef.current !== connectionEpoch ||
+            latest.current.sessionKey !== sk
+          )
+            return [];
+          rows = historyToItems(items)
+            .filter((m) => m.role !== 'thinking')
+            .map((m) => ({ role: m.role, text: m.text, rowId: m.rowId ?? null }));
+          searchIndexRef.current = { key, rows };
+        } catch {
+          return [];
+        }
+      }
+      return rows.filter((r) => r.text.toLowerCase().includes(q));
+    },
+    [acceptRotatedCookie],
+  );
+  // Locate a global hit inside the loaded window: durable rows by rowId,
+  // transient ones (tool labels) by exact text. -1 means "page it in first".
+  const findHitIndex = useCallback((hit: TranscriptHit): number => {
+    const cur = messagesRef.current;
+    if (hit.rowId != null) {
+      const i = cur.findIndex((m) => m.role === hit.role && m.rowId === hit.rowId);
+      if (i >= 0) return i;
+    }
+    return cur.findIndex((m) => m.role === hit.role && m.text === hit.text);
+  }, []);
   // Stamp durable row ids onto live messages (edit/rewind targets) by aligning
   // the REST transcript tail with the local transcript from the end.
   stampRowIdsRef.current = () => {
@@ -348,7 +509,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           cookie.current,
           sk,
           profile,
-          200,
+          CHAT_HISTORY_PAGE,
           connectionScope(h, targetUser),
           async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
         );
@@ -392,12 +553,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!h || !sk || !runtime) return;
     void (async () => {
       try {
+        // Rebuild the loaded window (not a fixed 200): paging/trim state stays
+        // intact across a reconnect instead of collapsing back to a full load.
         const hist = await getSessionMessages(
           h,
           cookie.current,
           sk,
           profile,
-          200,
+          historyLimitRef.current > 0 ? historyLimitRef.current : CHAT_HISTORY_PAGE,
           connectionScope(h, targetUser),
           async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
         );
@@ -777,6 +940,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     model,
     modelProvider,
     effort,
+    noteHistoryWindow,
+    resetHistoryWindow,
   });
 
 
@@ -842,6 +1007,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProvidersError,
     setModel,
     setModelProvider,
+    noteHistoryWindow,
+    resetHistoryWindow,
   });
 
   // ── Chat ─────────────────────────────────────────────────────────────────
@@ -1064,6 +1231,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionKey,
       sessionTitle,
       messages,
+      historyLoadingMore,
+      historyExhausted,
+      trimmedOlder,
+      loadOlderMessages,
+      trimHead,
+      searchTranscript,
+      findHitIndex,
       input,
       setInput,
       model,
@@ -1163,6 +1337,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionKey,
       sessionTitle,
       messages,
+      historyLoadingMore,
+      historyExhausted,
+      trimmedOlder,
+      loadOlderMessages,
+      trimHead,
+      searchTranscript,
+      findHitIndex,
       input,
       setInput,
       model,
