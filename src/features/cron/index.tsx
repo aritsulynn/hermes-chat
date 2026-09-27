@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -15,11 +14,17 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { toast } from '../../components/ui/toast';
+import { Button } from '../../components/ui/button';
+import { ConfirmDialog } from '../../components/ui/dialog';
+import { Text as UIText } from '../../components/ui/text';
 import { Textarea } from '../../components/ui/textarea';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect, useRouter } from 'expo-router';
 import {
+  AlertCircle,
   AlertTriangle,
   Bot,
   Check,
@@ -154,10 +159,16 @@ const JobCard = memo(function JobCard({
 
       {/* Last Error Banner if any */}
       {Boolean(job.last_error) && (
-        <View className="mt-2.5 flex-row items-start gap-1.5 rounded-lg bg-red-50 p-2 dark:bg-red-950/40">
-          <AlertTriangle size={14} color="#dc2626" className="mt-0.5" />
-          <Text className="flex-1 text-[11px] text-red-700 dark:text-red-300">{job.last_error}</Text>
-        </View>
+        <UIAlert
+          icon={AlertTriangle}
+          variant="destructive"
+          className="mt-2.5 rounded-lg px-3 pt-2.5 pb-2"
+          iconClassName="size-3.5"
+        >
+          <AlertDescription className="pl-5 text-[11px] font-medium text-red-700 dark:text-red-300">
+            {job.last_error}
+          </AlertDescription>
+        </UIAlert>
       )}
 
       {/* Action Buttons Toolbar */}
@@ -464,6 +475,8 @@ export function CronScreen() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  // Themed replacement for the old Alert.alert delete confirm.
+  const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // Modal State for Create / Edit
@@ -683,7 +696,7 @@ export function CronScreen() {
         await openSession(summary);
         if (getAuthScope() === scope) router.push('/chat');
       } catch (e) {
-        if (getAuthScope() === scope) Alert.alert('Open Chat Failed', errMsg(e));
+        if (getAuthScope() === scope) toast({ title: 'Open Chat Failed', description: errMsg(e), variant: 'destructive' });
       }
     },
     [activeProfile, getAuthScope, openSession, router, selectedJobForRuns],
@@ -700,7 +713,7 @@ export function CronScreen() {
         notify(`Triggered "${job.name || job.id}"`);
         await loadJobs(true);
       } catch (e) {
-        if (getAuthScope() === scope) Alert.alert('Trigger Failed', errMsg(e));
+        if (getAuthScope() === scope) toast({ title: 'Trigger Failed', description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope) setActionLoadingId(null);
       }
@@ -719,7 +732,7 @@ export function CronScreen() {
         notify(`Paused "${job.name || job.id}"`);
         await loadJobs(true);
       } catch (e) {
-        if (getAuthScope() === scope) Alert.alert('Pause Failed', errMsg(e));
+        if (getAuthScope() === scope) toast({ title: 'Pause Failed', description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope) setActionLoadingId(null);
       }
@@ -738,7 +751,7 @@ export function CronScreen() {
         notify(`Resumed "${job.name || job.id}"`);
         await loadJobs(true);
       } catch (e) {
-        if (getAuthScope() === scope) Alert.alert('Resume Failed', errMsg(e));
+        if (getAuthScope() === scope) toast({ title: 'Resume Failed', description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope) setActionLoadingId(null);
       }
@@ -749,27 +762,24 @@ export function CronScreen() {
   // Delete
   const handleDelete = useCallback(
     (job: CronJobItem) => {
-      Alert.alert('Delete Cron Job', `Are you sure you want to delete "${job.name || job.id}"?`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const scope = getAuthScope();
-            setActionLoadingId(job.id);
-            try {
-              await opsMut(api.cronJob(job.id, job.profile || activeProfile), 'DELETE');
-              if (getAuthScope() !== scope) return;
-              notify(`Deleted "${job.name || job.id}"`);
-              await loadJobs(true);
-            } catch (e) {
-              if (getAuthScope() === scope) Alert.alert('Delete Failed', errMsg(e));
-            } finally {
-              if (getAuthScope() === scope) setActionLoadingId(null);
-            }
-          },
+      setConfirmDelete({
+        title: 'Delete Cron Job',
+        body: `Are you sure you want to delete "${job.name || job.id}"?`,
+        run: async () => {
+          const scope = getAuthScope();
+          setActionLoadingId(job.id);
+          try {
+            await opsMut(api.cronJob(job.id, job.profile || activeProfile), 'DELETE');
+            if (getAuthScope() !== scope) return;
+            notify(`Deleted "${job.name || job.id}"`);
+            await loadJobs(true);
+          } catch (e) {
+            if (getAuthScope() === scope) toast({ title: 'Delete Failed', description: errMsg(e), variant: 'destructive' });
+          } finally {
+            if (getAuthScope() === scope) setActionLoadingId(null);
+          }
         },
-      ]);
+      });
     },
     [activeProfile, getAuthScope, loadJobs, opsMut],
   );
@@ -921,12 +931,17 @@ export function CronScreen() {
   const runsHeader = useMemo(
     () =>
       runsError ? (
-        <View className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/40">
-          <Text className="text-xs font-medium text-red-700 dark:text-red-300">{runsError}</Text>
-          <Pressable onPress={() => void handleRefreshRuns()} className="mt-2 self-start rounded bg-red-600 px-2.5 py-1">
-            <Text className="text-xs font-medium text-white">Retry</Text>
-          </Pressable>
-        </View>
+        <UIAlert icon={AlertCircle} variant="destructive" className="mb-3 rounded-xl px-4 pt-3">
+          <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{runsError}</AlertDescription>
+          <Button
+            variant="destructive"
+            size="sm"
+            onPress={() => void handleRefreshRuns()}
+            className="ml-6 mt-1 self-start"
+          >
+            <UIText className="text-xs font-semibold">Retry</UIText>
+          </Button>
+        </UIAlert>
       ) : null,
     [handleRefreshRuns, runsError],
   );
@@ -999,12 +1014,17 @@ export function CronScreen() {
         )}
 
         {error && (
-          <View className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/40">
-            <Text className="text-xs font-medium text-red-700 dark:text-red-300">{error}</Text>
-            <Pressable onPress={() => void loadJobs()} className="mt-2 self-start rounded bg-red-600 px-2.5 py-1">
-              <Text className="text-xs font-medium text-white">Retry</Text>
-            </Pressable>
-          </View>
+          <UIAlert icon={AlertCircle} variant="destructive" className="m-4 rounded-xl px-4 pt-3">
+            <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{error}</AlertDescription>
+            <Button
+              variant="destructive"
+              size="sm"
+              onPress={() => void loadJobs()}
+              className="ml-6 mt-1 self-start"
+            >
+              <UIText className="text-xs font-semibold">Retry</UIText>
+            </Button>
+          </UIAlert>
         )}
 
         <FlashList
@@ -1039,17 +1059,27 @@ export function CronScreen() {
                 <Text className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
                   {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
                 </Text>
-                <Pressable onPress={() => !formSaving && setModalOpen(false)} hitSlop={10} className="p-1.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  accessibilityLabel="Close"
+                  disabled={formSaving}
+                  onPress={() => setModalOpen(false)}
+                  hitSlop={10}
+                  className="h-8 w-8 rounded-lg"
+                >
                   <X size={20} color={dark ? '#ccc' : '#444'} />
-                </Pressable>
+                </Button>
               </View>
 
               {/* Modal Body Form */}
               <ScrollView className="mt-3" contentContainerStyle={{ gap: 14, paddingBottom: 24 }}>
                 {formError && (
-                  <View className="rounded-xl bg-red-50 p-3 dark:bg-red-950/40">
-                    <Text className="text-xs font-medium text-red-700 dark:text-red-300">{formError}</Text>
-                  </View>
+                  <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
+                    <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
+                      {formError}
+                    </AlertDescription>
+                  </UIAlert>
                 )}
 
                 {/* Name */}
@@ -1086,6 +1116,9 @@ export function CronScreen() {
                     {SCHEDULE_PRESETS.map((preset) => (
                       <Pressable
                         key={preset.label}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: formSchedule === preset.expr }}
+                        accessibilityLabel={`${preset.label} schedule, ${preset.expr}`}
                         onPress={() => setFormSchedule(preset.expr)}
                         className={`mr-1.5 rounded-lg border px-2.5 py-1 ${
                           formSchedule === preset.expr
@@ -1189,25 +1222,31 @@ export function CronScreen() {
                 </View>
 
                 <View className="flex-row items-center gap-1">
-                  <Pressable
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    accessibilityLabel="Refresh runs"
                     disabled={runsLoading}
                     onPress={() => void handleRefreshRuns()}
                     hitSlop={10}
-                    className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                    className="h-9 w-9 rounded-lg"
                   >
                     {runsLoading ? (
                       <ActivityIndicator size="small" color="#1a73e8" />
                     ) : (
                       <RefreshCw size={18} color={dark ? '#ccc' : '#444'} />
                     )}
-                  </Pressable>
-                  <Pressable
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    accessibilityLabel="Close run history"
                     onPress={() => setRunsModalOpen(false)}
                     hitSlop={10}
-                    className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+                    className="h-9 w-9 rounded-lg"
                   >
                     <X size={20} color={dark ? '#ccc' : '#444'} />
-                  </Pressable>
+                  </Button>
                 </View>
               </View>
 
@@ -1227,6 +1266,18 @@ export function CronScreen() {
           </View>
         </Modal>
       </SafeAreaView>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.title ?? ''}
+        description={confirmDelete?.body}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => confirmDelete?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDelete(null);
+        }}
+      />
     </View>
   );
 }

@@ -555,7 +555,7 @@ export const MessageBubble = memo(function MessageBubble({
                   <Ellipsis size={12} color={dark ? '#aaa' : '#999'} />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent side="top" align="end" className="w-48 p-1.5">
+              <PopoverContent side="top" align="end" className="p-1.5">
                 {!!item.ts && (
                   <View className="flex-row items-center gap-2.5 px-3 py-2">
                     <Clock size={17} color={dark ? '#888' : '#999'} />
@@ -569,7 +569,7 @@ export const MessageBubble = memo(function MessageBubble({
                     variant="ghost"
                     testID="menu-branch"
                     onPress={onBranchChat}
-                    className="flex-row items-center gap-2.5 px-3 py-2.5"
+                    className="flex-row items-center justify-start gap-2.5 px-3 py-2.5"
                   >
                     <GitFork size={17} color={dark ? '#aaa' : '#999'} />
                     <UIText className="text-[15px]">Branch chat</UIText>

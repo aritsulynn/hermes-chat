@@ -76,13 +76,13 @@ export function ChatNormalHeader({
                 <MoreVertical size={20} color={iconColor} />
               </Button>
             </PopoverTrigger>
-            <PopoverContent side="bottom" align="end" className="w-52 p-1.5">
+            <PopoverContent side="bottom" align="end" className="p-1.5">
               <PopoverClose asChild>
                 <Button
                   variant="ghost"
                   testID="menu-info"
                   onPress={onSelectInfo}
-                  className="flex-row items-center gap-2.5 px-3 py-2.5"
+                  className="flex-row items-center justify-start gap-2.5 px-3 py-2.5"
                 >
                   <Info size={17} color={iconColor} />
                   <UIText className="text-[15px]">Session info</UIText>

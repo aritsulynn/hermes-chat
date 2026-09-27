@@ -1,6 +1,5 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -30,6 +29,7 @@ import { Switch } from '../../components/ui/switch';
 import { Separator } from '../../components/ui/separator';
 import { Avatar, AvatarFallback } from '../../components/ui/avatar';
 import { Text as UIText } from '../../components/ui/text';
+import { ConfirmDialog } from '../../components/ui/dialog';
 import { UpdatePanel } from '../../components/ui/update-panel';
 import { notificationsSupported } from '../../services/notifications';
 import { brandColor, screenStyle } from '../../theme';
@@ -51,23 +51,11 @@ export function SettingsScreen() {
     { value: 'off', label: 'Off (YOLO)', hint: 'Never ask — run everything' },
   ];
 
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
   const handleLogout = useCallback(() => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out of Hermes?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: () => {
-            void logout();
-          },
-        },
-      ],
-      { cancelable: true }
-    );
-  }, [logout]);
+    setConfirmLogout(true);
+  }, []);
 
   if (!authed) return <Redirect href="/login" />;
 
@@ -231,6 +219,10 @@ export function SettingsScreen() {
                   <Pressable
                     key={a.value}
                     testID={`approval-${a.value}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={a.label}
+                    accessibilityHint={a.hint}
                     onPress={() => void applyApprovalMode(a.value)}
                     className={`flex-row items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
                       on
@@ -469,6 +461,16 @@ export function SettingsScreen() {
         </Pressable>
       </ScrollView>
     </SafeAreaView>
+
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log Out"
+        description="Are you sure you want to log out of Hermes?"
+        confirmLabel="Log Out"
+        destructive
+        onConfirm={() => void logout()}
+        onOpenChange={setConfirmLogout}
+      />
     </View>
   );
 }

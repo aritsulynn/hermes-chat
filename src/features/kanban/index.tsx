@@ -6,7 +6,6 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Redirect, useNavigation } from 'expo-router';
 import {
   ActivityIndicator,
-  Alert,
   Keyboard,
   Modal,
   Platform,
@@ -28,6 +27,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { ConfirmDialog } from '../../components/ui/dialog';
 import { Text as UIText } from '../../components/ui/text';
 import { CardChips } from './components/CardChips';
 import { placeholderColor, screenStyle } from '../../theme';
@@ -91,6 +91,8 @@ export function KanbanScreen() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Detail sheet task + its editable fields.
   const [detail, setDetail] = useState<KanbanTask | null>(null);
+  // Themed replacement for the old Alert.alert delete confirm.
+  const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editBody, setEditBody] = useState('');
   const [saving, setSaving] = useState(false);
@@ -305,15 +307,11 @@ export function KanbanScreen() {
   const deleteDetail = () => {
     if (!detail) return;
     const t = detail;
-    Alert.alert('Delete task', `"${t.title}"? This can't be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () =>
-          void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'DELETE')),
-      },
-    ]);
+    setConfirmDelete({
+      title: 'Delete task',
+      body: `"${t.title}"? This can't be undone.`,
+      run: () => void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'DELETE')),
+    });
   };
 
   const createTask = () => {
@@ -363,6 +361,9 @@ export function KanbanScreen() {
               return (
                 <Button
                   key={b.slug}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={b.name || b.slug}
                   onPress={() => pickSlug(b.slug)}
                   variant={active ? 'default' : 'outline'}
                   size="sm"
@@ -464,6 +465,7 @@ export function KanbanScreen() {
             >
               <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
                 <Input
+                  accessibilityLabel="Title"
                   className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
                   value={editTitle}
                   onChangeText={setEditTitle}
@@ -481,6 +483,9 @@ export function KanbanScreen() {
                     return (
                       <Button
                         key={s}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: on }}
+                        accessibilityLabel={`Move to ${s}`}
                         onPress={() => detail && moveTask(detail, s)}
                         variant={on ? 'default' : 'outline'}
                         size="sm"
@@ -497,6 +502,7 @@ export function KanbanScreen() {
                   Notes
                 </Text>
                 <Textarea
+                  accessibilityLabel="Notes"
                   className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
                   value={editBody}
                   onChangeText={setEditBody}
@@ -558,6 +564,7 @@ export function KanbanScreen() {
                 />
                 <Textarea
                   className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                  accessibilityLabel="Notes"
                   value={newBody}
                   onChangeText={setNewBody}
                   placeholder="Details (optional)"
@@ -597,6 +604,18 @@ export function KanbanScreen() {
           </View>
         </Modal>
       </SafeAreaView>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.title ?? ''}
+        description={confirmDelete?.body}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => confirmDelete?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDelete(null);
+        }}
+      />
     </View>
   );
 }

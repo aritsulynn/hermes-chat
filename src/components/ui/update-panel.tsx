@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   ScrollView,
@@ -35,6 +34,7 @@ import { Button } from './button';
 import { Badge } from './badge';
 import { Alert as UIAlert, AlertDescription } from './alert';
 import { Text as UIText } from './text';
+import { ConfirmDialog } from './dialog';
 import * as api from '../../services/api';
 import {
   actionOutcomeLabel,
@@ -112,6 +112,13 @@ export function UpdatePanel() {
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [exitCode, setExitCode] = useState<number | null>(null);
+// Themed replacement for the old Alert.alert confirms.
+const [confirm, setConfirm] = useState<{
+  title: string;
+  body: string;
+  confirmLabel: string;
+  run: () => void;
+} | null>(null);
   const [receipt, setReceipt] = useState<UpdateReceiptSummary | null>(null);
   const [note, setNote] = useState('');
   // While true, new log lines keep the view pinned to the bottom. The user
@@ -281,10 +288,7 @@ export function UpdatePanel() {
     try {
       const res = asRecord(await opsMut(api.updateApply(), 'POST', {}));
       if (res && res.ok === false) {
-        Alert.alert(
-          'Update not applied',
-          String(res.message || 'Updates are managed outside this dashboard.'),
-        );
+        setError(String(res.message || 'Updates are managed outside this dashboard.'));
         return;
       }
       beginStream(typeof res.name === 'string' && res.name ? res.name : UPDATE_ACTION);
@@ -302,10 +306,12 @@ export function UpdatePanel() {
       behind && behind > 0
         ? `This runs \`${cmd}\` and pulls ${behind} new commit${behind === 1 ? '' : 's'}. The gateway restarts when the update finishes.`
         : `This runs \`${cmd}\` and restarts the gateway when it finishes.`;
-    Alert.alert('Update Hermes?', body, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Update now', style: 'destructive', onPress: () => void runUpdate() },
-    ]);
+    setConfirm({
+      title: 'Update Hermes?',
+      body,
+      confirmLabel: 'Update now',
+      run: () => void runUpdate(),
+    });
   }, [info, runUpdate]);
 
   const runRestart = useCallback(async () => {
@@ -318,10 +324,12 @@ export function UpdatePanel() {
   }, [beginStream, opsMut]);
 
   const restartGateway = useCallback(() => {
-    Alert.alert('Restart gateway?', 'The gateway restarts and reconnects in a few seconds.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Restart', style: 'destructive', onPress: () => void runRestart() },
-    ]);
+    setConfirm({
+      title: 'Restart gateway?',
+      body: 'The gateway restarts and reconnects in a few seconds.',
+      confirmLabel: 'Restart',
+      run: () => void runRestart(),
+    });
   }, [runRestart]);
 
   const busy = checking || starting;
@@ -532,6 +540,18 @@ export function UpdatePanel() {
           )}
         </View>
       )}
+
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title ?? ''}
+        description={confirm?.body}
+        confirmLabel={confirm?.confirmLabel}
+        destructive
+        onConfirm={() => confirm?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirm(null);
+        }}
+      />
     </View>
   );
 }

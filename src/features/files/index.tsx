@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -42,8 +41,19 @@ import { placeholderColor, screenStyle } from '../../theme';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import {
+  ConfirmDialog,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogPortal,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import { toast } from '../../components/ui/toast';
 import { Text as UIText } from '../../components/ui/text';
 import * as api from '../../services/api';
 import { formatBytes } from '../../utils/format';
@@ -66,6 +76,8 @@ export function FilesScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Themed replacement for the old Alert.alert delete confirm.
+  const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
 
   // Jump to Path Modal
   const [pathModalOpen, setPathModalOpen] = useState(false);
@@ -193,34 +205,27 @@ export function FilesScreen() {
 
   const handleDeleteEntry = useCallback(
     (targetPath: string, isDir: boolean, name: string) => {
-      Alert.alert(
-        isDir ? 'Delete Folder' : 'Delete File',
-        `Are you sure you want to delete "${name}"? This action cannot be undone.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              const scope = getAuthScope();
-              try {
-                await opsMut(api.filesRoot(), 'DELETE', {
-                  path: targetPath,
-                  recursive: isDir,
-                });
-                if (getAuthScope() !== scope) return;
-                if (previewModalOpen) {
-                  setPreviewModalOpen(false);
-                  setSelectedFile(null);
-                }
-                await load(activeDirectory);
-              } catch (e) {
-                if (getAuthScope() === scope) Alert.alert('Delete Failed', errMsg(e));
-              }
-            },
-          },
-        ],
-      );
+      setConfirmDelete({
+        title: isDir ? 'Delete Folder' : 'Delete File',
+        body: `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+        run: async () => {
+          const scope = getAuthScope();
+          try {
+            await opsMut(api.filesRoot(), 'DELETE', {
+              path: targetPath,
+              recursive: isDir,
+            });
+            if (getAuthScope() !== scope) return;
+            if (previewModalOpen) {
+              setPreviewModalOpen(false);
+              setSelectedFile(null);
+            }
+            await load(activeDirectory);
+          } catch (e) {
+            if (getAuthScope() === scope) toast({ title: 'Delete Failed', description: errMsg(e), variant: 'destructive' });
+          }
+        },
+      });
     },
     [getAuthScope, opsMut, previewModalOpen, load, activeDirectory],
   );
@@ -247,7 +252,7 @@ export function FilesScreen() {
           }
           setPreviewModalOpen(true);
         } catch (e) {
-          if (getAuthScope() === scope) Alert.alert('Cannot Open File', errMsg(e));
+          if (getAuthScope() === scope) toast({ title: 'Cannot Open File', description: errMsg(e), variant: 'destructive' });
         } finally {
           if (getAuthScope() === scope) setReadingFile(false);
         }
@@ -287,7 +292,7 @@ export function FilesScreen() {
       setNewFolderModalOpen(false);
       await load(activeDirectory);
     } catch (e) {
-      if (getAuthScope() === scope) Alert.alert('Create Folder Failed', errMsg(e));
+      if (getAuthScope() === scope) toast({ title: 'Create Folder Failed', description: errMsg(e), variant: 'destructive' });
     } finally {
       if (getAuthScope() === scope) setCreatingFolder(false);
     }
@@ -313,7 +318,7 @@ export function FilesScreen() {
       setNewFileModalOpen(false);
       await load(activeDirectory);
     } catch (e) {
-      if (getAuthScope() === scope) Alert.alert('Create File Failed', errMsg(e));
+      if (getAuthScope() === scope) toast({ title: 'Create File Failed', description: errMsg(e), variant: 'destructive' });
     } finally {
       if (getAuthScope() === scope) setCreatingFile(false);
     }
@@ -334,10 +339,10 @@ export function FilesScreen() {
       });
       if (getAuthScope() !== scope) return;
       setIsEditingFile(false);
-      Alert.alert('Saved', 'File saved successfully.');
+      toast({ title: 'Saved', description: 'File saved successfully.', variant: 'success' });
       await load(activeDirectory);
     } catch (e) {
-      if (getAuthScope() === scope) Alert.alert('Save Failed', errMsg(e));
+      if (getAuthScope() === scope) toast({ title: 'Save Failed', description: errMsg(e), variant: 'destructive' });
     } finally {
       if (getAuthScope() === scope) setSavingFile(false);
     }
@@ -370,7 +375,7 @@ export function FilesScreen() {
         await load(activeDirectory);
       }
     } catch (e) {
-      if (getAuthScope() === scope) Alert.alert('Upload Failed', errMsg(e));
+      if (getAuthScope() === scope) toast({ title: 'Upload Failed', description: errMsg(e), variant: 'destructive' });
     } finally {
       if (getAuthScope() === scope) setUploading(false);
     }
@@ -507,43 +512,55 @@ export function FilesScreen() {
             </View>
           </View>
 
-          <View className="flex-row items-center gap-1">
-            <Pressable
+          <View className="flex-row items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="New folder"
               onPress={() => setNewFolderModalOpen(true)}
               hitSlop={8}
-              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+              className="h-9 w-9 rounded-lg"
             >
               <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
-            </Pressable>
+            </Button>
 
-            <Pressable
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="New file"
               onPress={() => setNewFileModalOpen(true)}
               hitSlop={8}
-              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+              className="h-9 w-9 rounded-lg"
             >
               <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
-            </Pressable>
+            </Button>
 
-            <Pressable
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="Upload image"
               onPress={handlePickAndUploadImage}
               disabled={uploading}
               hitSlop={8}
-              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+              className="h-9 w-9 rounded-lg"
             >
               {uploading ? (
                 <ActivityIndicator size="small" color="#1a73e8" />
               ) : (
                 <Upload size={19} color={dark ? '#e5e5e5' : '#333'} />
               )}
-            </Pressable>
+            </Button>
 
-            <Pressable
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="Refresh"
               onPress={() => void load(activeDirectory, true)}
               hitSlop={8}
-              className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
+              className="h-9 w-9 rounded-lg"
             >
               <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-            </Pressable>
+            </Button>
           </View>
         </View>
 
@@ -790,97 +807,107 @@ export function FilesScreen() {
         </Modal>
 
         {/* Change / Jump to Path Modal */}
-        <Modal visible={pathModalOpen} transparent animationType="none" onRequestClose={() => setPathModalOpen(false)}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            className="flex-1 items-center justify-center bg-black/60 p-4"
-          >
-            <View className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-neutral-900">
-              <Text className="text-base font-bold text-neutral-900 dark:text-white">Navigate to Directory</Text>
-              <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                Enter absolute directory path on the server
-              </Text>
+        <Dialog open={pathModalOpen} onOpenChange={setPathModalOpen}>
+          <DialogPortal>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              className="w-full"
+            >
+              <DialogContent className="max-w-sm p-5">
+                <DialogTitle className="text-base font-bold text-neutral-900 dark:text-white">
+                  Navigate to Directory
+                </DialogTitle>
+                <DialogDescription className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Enter absolute directory path on the server
+                </DialogDescription>
 
-              <Input
-                value={pathInput}
-                onChangeText={setPathInput}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder={activeDirectory || '~'}
-                placeholderTextColor={placeholder}
-                className="mt-3.5 rounded-xl border border-neutral-300 p-3 font-mono text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
-              />
+                <Input
+                  value={pathInput}
+                  onChangeText={setPathInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="Directory path"
+                  placeholder={activeDirectory || '~'}
+                  placeholderTextColor={placeholder}
+                  className="mt-1 rounded-xl border border-neutral-300 p-3 font-mono text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
+                />
 
-              <View className="mt-4 flex-row items-center justify-end gap-2">
-                <Pressable
-                  onPress={() => setPathModalOpen(false)}
-                  className="rounded-xl px-4 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-                >
-                  <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</Text>
-                </Pressable>
-                <Pressable onPress={handleJumpToPath} className="rounded-xl bg-[#1a73e8] px-5 py-2.5 active:opacity-80">
-                  <Text className="text-sm font-bold text-white">Go</Text>
-                </Pressable>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10 rounded-xl px-4"
+                    onPress={() => setPathModalOpen(false)}
+                  >
+                    <UIText className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-10 rounded-xl bg-[#1a73e8] px-5"
+                    onPress={handleJumpToPath}
+                  >
+                    <UIText className="text-sm font-bold text-white">Go</UIText>
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </KeyboardAvoidingView>
+          </DialogPortal>
+        </Dialog>
 
         {/* Create Folder Modal */}
-        <Modal
-          visible={newFolderModalOpen}
-          transparent
-          animationType="none"
-          onRequestClose={() => setNewFolderModalOpen(false)}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            className="flex-1 items-center justify-center bg-black/60 p-4"
-          >
-            <View className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-neutral-900">
-              <Text className="text-base font-bold text-neutral-900 dark:text-white">New Folder</Text>
-              <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                Create folder in: {activeDirectory || '~'}
-              </Text>
+        <Dialog open={newFolderModalOpen} onOpenChange={setNewFolderModalOpen}>
+          <DialogPortal>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              className="w-full"
+            >
+              <DialogContent className="max-w-sm p-5">
+                <DialogTitle className="text-base font-bold text-neutral-900 dark:text-white">New Folder</DialogTitle>
+                <DialogDescription className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Create folder in: {activeDirectory || '~'}
+                </DialogDescription>
 
-              <Input
-                value={newFolderName}
-                onChangeText={setNewFolderName}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoFocus
-                placeholder="folder_name"
-                placeholderTextColor={placeholder}
-                className="mt-3.5 rounded-xl border border-neutral-300 p-3 text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
-              />
+                <Input
+                  value={newFolderName}
+                  onChangeText={setNewFolderName}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  accessibilityLabel="Folder name"
+                  placeholder="folder_name"
+                  placeholderTextColor={placeholder}
+                  className="mt-1 rounded-xl border border-neutral-300 p-3 text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
+                />
 
-              <View className="mt-4 flex-row items-center justify-end gap-2">
-                <Pressable
-                  onPress={() => {
-                    setNewFolderName('');
-                    setNewFolderModalOpen(false);
-                  }}
-                  className="rounded-xl px-4 py-2.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-                >
-                  <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleCreateFolder}
-                  disabled={creatingFolder || !newFolderName.trim()}
-                  className={`rounded-xl bg-[#1a73e8] px-5 py-2.5 active:opacity-80 ${
-                    !newFolderName.trim() ? 'opacity-50' : ''
-                  }`}
-                >
-                  {creatingFolder ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text className="text-sm font-bold text-white">Create</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10 rounded-xl px-4"
+                    onPress={() => {
+                      setNewFolderName('');
+                      setNewFolderModalOpen(false);
+                    }}
+                  >
+                    <UIText className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-10 rounded-xl bg-[#1a73e8] px-5"
+                    disabled={creatingFolder || !newFolderName.trim()}
+                    onPress={handleCreateFolder}
+                  >
+                    {creatingFolder ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <UIText className="text-sm font-bold text-white">Create</UIText>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </KeyboardAvoidingView>
+          </DialogPortal>
+        </Dialog>
 
         {/* Create New File Modal */}
         <Modal
@@ -921,9 +948,9 @@ export function FilesScreen() {
             </View>
 
             <View className="p-3 border-b border-neutral-200 dark:border-neutral-800">
-              <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">
+              <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
                 File Name (e.g. notes.txt, script.py, config.json)
-              </Text>
+              </Label>
               <Input
                 value={newFileName}
                 onChangeText={setNewFileName}
@@ -932,15 +959,17 @@ export function FilesScreen() {
                 autoFocus
                 placeholder="filename.txt"
                 placeholderTextColor={placeholder}
+                accessibilityLabel="File name"
                 className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
               />
             </View>
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 p-3">
-              <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 mb-1">File Content</Text>
+              <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">File Content</Label>
               <Textarea
                 value={newFileContent}
                 onChangeText={setNewFileContent}
+                accessibilityLabel="File content"
                 multiline
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -953,6 +982,18 @@ export function FilesScreen() {
           </SafeAreaView>
         </Modal>
       </SafeAreaView>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.title ?? ''}
+        description={confirmDelete?.body}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => confirmDelete?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDelete(null);
+        }}
+      />
     </View>
   );
 }

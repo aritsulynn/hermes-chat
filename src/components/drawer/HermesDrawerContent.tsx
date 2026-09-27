@@ -2,7 +2,7 @@
 // (opens straight into chat), History/Ops links, user footer with
 // theme switch + logout. Extracted from app/_layout.tsx.
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { usePathname } from 'expo-router';
@@ -20,6 +20,8 @@ import {
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { ConfirmDialog } from '../ui/dialog';
 import { Text as UIText } from '../ui/text';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Badge } from '../ui/badge';
@@ -80,8 +82,12 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   // login; returning early before hooks breaks hook order).
   const insets = useSafeAreaInsets();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  // Themed replacement for the old Alert.alert delete confirm.
+  const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
+  // Bumped to force the user-menu Popover closed when the drawer closes (its
+  // root is uncontrolled, so remounting is the only way to dismiss it).
+  const [userMenuKey, setUserMenuKey] = useState(0);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [profilePickerOpen, setProfilePickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState('');
   // Infinite scroll: render in pages of 50, grow on scroll-bottom. Network
@@ -98,6 +104,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       }
     } else {
       setShowUserMenu(false);
+      setUserMenuKey((k) => k + 1);
     }
   }, [drawerOpen, pathname, refreshProfiles, refreshSessions]);
   // Inline filter replaces the removed /sessions page (drawer is the list now).
@@ -142,21 +149,13 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   );
   const handleDeleteRecent = useCallback(
     (s: ScopedSessionSummary) => {
-      Alert.alert(
-        'Delete chat',
-        `Delete "${s.title || '(untitled)'}"? This can't be undone.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => {
-              void deleteSessionById(s.id).then(() => refreshSessions());
-            },
-          },
-        ],
-        { cancelable: true },
-      );
+      setConfirmDelete({
+        title: 'Delete chat',
+        body: `Delete "${s.title || '(untitled)'}"? This can't be undone.`,
+        run: () => {
+          void deleteSessionById(s.id).then(() => refreshSessions());
+        },
+      });
     },
     [deleteSessionById, refreshSessions],
   );
@@ -213,26 +212,128 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
             </Button>
           </View>
         ) : (
-          <View className="flex-row items-center px-4 pt-2">
-            <Button
-              variant="ghost"
-              testID="profile-selector"
-              accessibilityRole="button"
-              accessibilityLabel={`Switch profile. Active profile: ${activeProfile}`}
-              onPress={() => setProfilePickerOpen(true)}
-              hitSlop={8}
-              className="min-w-0 h-auto flex-1 shrink flex-row items-center justify-start gap-2 px-1 py-1"
-            >
-              <UIText className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</UIText>
-              <ChevronDown size={17} color={dimColor} />
-            </Button>
-            <Button variant="ghost" size="icon" onPress={() => setSearchOpen(true)} hitSlop={10}>
-              <Search size={20} color={dimColor} />
-            </Button>
-            <Button variant="ghost" size="icon" onPress={close} hitSlop={10}>
-              <X size={20} color={dimColor} />
-            </Button>
-          </View>
+          /* The native Popover root keeps `open` in its own state (no controlled
+             `open` prop), so the root is unmounted with the drawer instead —
+             that is what tears the portal down when the drawer closes. */
+          drawerOpen && (
+            <Popover className="flex-row items-center px-4 pt-2">
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  testID="profile-selector"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Switch profile. Active profile: ${activeProfile}`}
+                  hitSlop={8}
+                  className="min-w-0 h-auto flex-1 shrink flex-row items-center justify-start gap-2 px-1 py-1"
+                >
+                  <UIText className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</UIText>
+                  <ChevronDown size={17} color={dimColor} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="start" className="w-72 p-2">
+                <View className="flex-row items-center justify-between px-3 py-2.5">
+                  <View>
+                    <Text className="text-base font-bold text-neutral-950 dark:text-neutral-100">Switch profile</Text>
+                    <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                      Chat and toolsets use this profile
+                    </Text>
+                  </View>
+                  <PopoverClose asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      accessibilityRole="button"
+                      accessibilityLabel="Close profile picker"
+                      hitSlop={8}
+                    >
+                      <X size={18} color={dimColor} />
+                    </Button>
+                  </PopoverClose>
+                </View>
+                <ScrollView
+                  className="max-h-[420px]"
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={false}
+                >
+                  {profiles.length === 0 ? (
+                    <View className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
+                      <Text className="text-sm text-neutral-600 dark:text-neutral-300">{activeProfile}</Text>
+                    </View>
+                  ) : (
+                    profiles.map((profile) => {
+                      const selected = profile.name === activeProfile;
+                      const row = (
+                        <Button
+                          variant="ghost"
+                          testID={`profile-option-${profile.name}`}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          disabled={busy || selected}
+                          onPress={() => {
+                            close();
+                            void switchProfile(profile.name);
+                          }}
+                          className={`h-auto w-full flex-row items-center justify-start gap-3 px-3 py-3 ${
+                            selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
+                          } ${busy && !selected ? 'opacity-50' : ''}`}
+                        >
+                          <View
+                            className={`h-9 w-9 items-center justify-center rounded-xl ${
+                              selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-neutral-100 dark:bg-neutral-900'
+                            }`}
+                          >
+                            <CircleUserRound
+                              size={17}
+                              color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor}
+                            />
+                          </View>
+                          <View className="min-w-0 flex-1">
+                            <UIText
+                              numberOfLines={1}
+                              className={`min-w-0 text-sm font-semibold ${
+                                selected
+                                  ? 'text-sky-700 dark:text-sky-300'
+                                  : 'text-neutral-900 dark:text-neutral-100'
+                              }`}
+                            >
+                              {profile.display_name || profile.name}
+                            </UIText>
+                            {!!profile.description && (
+                              <UIText
+                                numberOfLines={1}
+                                className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400"
+                              >
+                                {profile.description}
+                              </UIText>
+                            )}
+                          </View>
+                          {selected && (
+                            <UIText className="text-xs font-semibold text-sky-700 dark:text-sky-300">Active</UIText>
+                          )}
+                        </Button>
+                      );
+                      // A disabled row can't run PopoverClose's onPress, so the
+                      // active row stays a plain Button (tapping it does nothing,
+                      // same as before).
+                      return selected || busy ? (
+                        <View key={profile.name}>{row}</View>
+                      ) : (
+                        <PopoverClose asChild key={profile.name}>
+                          {row}
+                        </PopoverClose>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </PopoverContent>
+              <Button variant="ghost" size="icon" onPress={() => setSearchOpen(true)} hitSlop={10}>
+                <Search size={20} color={dimColor} />
+              </Button>
+              <Button variant="ghost" size="icon" onPress={close} hitSlop={10}>
+                <X size={20} color={dimColor} />
+              </Button>
+            </Popover>
+          )
         )}
         <View className="px-3 pt-2 gap-1">
           <Button
@@ -385,98 +486,6 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
         </View>
       </DrawerContentScrollView>
 
-      <Modal
-        visible={profilePickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setProfilePickerOpen(false)}
-      >
-        <Pressable
-          style={{ flex: 1, backgroundColor: dark ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.28)' }}
-          onPress={() => setProfilePickerOpen(false)}
-        >
-          <Pressable
-            className="mx-4 mt-14 rounded-2xl border border-neutral-200 bg-white p-2 dark:border-neutral-700 dark:bg-[#1c1c1e]"
-            onPress={(event) => event.stopPropagation()}
-          >
-            <View className="flex-row items-center justify-between px-3 py-2.5">
-              <View>
-                <Text className="text-base font-bold text-neutral-950 dark:text-neutral-100">Switch profile</Text>
-                <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                  Chat and toolsets use this profile
-                </Text>
-              </View>
-              <Button
-                variant="ghost"
-                size="icon"
-                accessibilityRole="button"
-                accessibilityLabel="Close profile picker"
-                onPress={() => setProfilePickerOpen(false)}
-                hitSlop={8}
-              >
-                <X size={18} color={dimColor} />
-              </Button>
-            </View>
-            <ScrollView className="max-h-[420px]" nestedScrollEnabled showsVerticalScrollIndicator={false}>
-              {profiles.length === 0 ? (
-                <View className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
-                  <Text className="text-sm text-neutral-600 dark:text-neutral-300">{activeProfile}</Text>
-                </View>
-              ) : (
-                profiles.map((profile) => {
-                  const selected = profile.name === activeProfile;
-                  return (
-                    <Button
-                      key={profile.name}
-                      variant="ghost"
-                      testID={`profile-option-${profile.name}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      disabled={busy || selected}
-                      onPress={() => {
-                        setProfilePickerOpen(false);
-                        close();
-                        void switchProfile(profile.name);
-                      }}
-                      className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
-                        selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
-                      } ${busy && !selected ? 'opacity-50' : ''}`}
-                    >
-                      <View
-                        className={`h-9 w-9 items-center justify-center rounded-xl ${
-                          selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-neutral-100 dark:bg-neutral-900'
-                        }`}
-                      >
-                        <CircleUserRound
-                          size={17}
-                          color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor}
-                        />
-                      </View>
-                      <View className="min-w-0 flex-1">
-                        <UIText
-                          numberOfLines={1}
-                          className={`min-w-0 text-sm font-semibold ${
-                            selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
-                          }`}
-                        >
-                          {profile.display_name || profile.name}
-                        </UIText>
-                        {!!profile.description && (
-                          <UIText numberOfLines={1} className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">
-                            {profile.description}
-                          </UIText>
-                        )}
-                      </View>
-                      {selected && <UIText className="text-xs font-semibold text-sky-700 dark:text-sky-300">Active</UIText>}
-                    </Button>
-                  );
-                })
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
       {/* Sticky footer: Account bar */}
       <View
         className="border-t border-neutral-200 dark:border-neutral-800"
@@ -485,109 +494,102 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
           paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
-        <Button
-          variant="ghost"
-          onPress={() => setShowUserMenu(!showUserMenu)}
-          className="flex-row h-auto items-center justify-start gap-3 px-4 py-4"
-        >
-          <Avatar alt={username || 'Profile'} className="size-11 bg-[#1a73e8]">
-            <AvatarFallback className="bg-[#1a73e8]">
-              <UIText className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</UIText>
-            </AvatarFallback>
-          </Avatar>
-          <View className="flex-1">
-            <UIText
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              className="min-w-0 text-[16px] font-semibold text-neutral-950 dark:text-neutral-100"
-            >
-              {username || 'Hermes'}
-            </UIText>
-            <UIText className="min-w-0 text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</UIText>
-          </View>
-          <ChevronRight
-            size={18}
-            color={dimColor}
-            style={{ transform: [{ rotate: showUserMenu ? '-90deg' : '0deg' }] }}
-          />
-        </Button>
-      </View>
-
-      {/* Floating Popover Menu right above the profile bar */}
-      {showUserMenu && (
-        <>
-          {/* Backdrop to dismiss when clicking anywhere outside */}
-          <Pressable
-            onPress={() => setShowUserMenu(false)}
-            className="absolute inset-0 z-40 bg-black/20 dark:bg-black/40"
-          />
-
-          {/* Floating Menu Card */}
-          <View
-            className="absolute left-3 right-3 z-50 rounded-2xl border border-neutral-200 bg-white p-1.5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
-            style={{
-              bottom: Math.max(insets.bottom, 8) + 72,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: -4 },
-              shadowOpacity: dark ? 0.5 : 0.15,
-              shadowRadius: 12,
-              elevation: 12,
-            }}
-          >
+        {/* `key` force-closes the popover when the drawer closes: the native
+            root keeps `open` in its own state, so there is no controlled prop
+            to flip, and a portal survives the drawer being dismissed. */}
+        <Popover key={userMenuKey} onOpenChange={setShowUserMenu}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" className="flex-row h-auto w-full items-center justify-start gap-3 px-4 py-4">
+              <Avatar alt={username || 'Profile'} className="size-11 bg-[#1a73e8]">
+                <AvatarFallback className="bg-[#1a73e8]">
+                  <UIText className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</UIText>
+                </AvatarFallback>
+              </Avatar>
+              <View className="flex-1">
+                <UIText
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  className="min-w-0 text-[16px] font-semibold text-neutral-950 dark:text-neutral-100"
+                >
+                  {username || 'Hermes'}
+                </UIText>
+                <UIText className="min-w-0 text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</UIText>
+              </View>
+              <ChevronRight
+                size={18}
+                color={dimColor}
+                style={{ transform: [{ rotate: showUserMenu ? '-90deg' : '0deg' }] }}
+              />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="start" className="w-72 p-1.5">
             {/* Logs & Usage quick nav */}
             {PROFILE_NAV_ITEMS.map((item) => {
               const active = pathname === `/${item.name}`;
               const Icon = item.icon;
               return (
-                <Button
-                  key={item.name}
-                  variant="ghost"
-                  onPress={() => {
-                    setShowUserMenu(false);
-                    close();
-                    props.navigation.navigate(item.name);
-                  }}
-                  className={`flex-row h-auto items-center justify-start gap-3 px-3.5 py-3 ${
-                    active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                  }`}
-                >
-                  <Icon size={19} color={active ? brand : dark ? '#ccc' : '#444'} />
-                  <UIText
-                    numberOfLines={1}
-                    className={`flex-1 min-w-0 text-[15px] font-medium ${
-                      active
-                        ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
-                        : 'text-neutral-900 dark:text-neutral-100'
+                <PopoverClose asChild key={item.name}>
+                  <Button
+                    variant="ghost"
+                    onPress={() => {
+                      close();
+                      props.navigation.navigate(item.name);
+                    }}
+                    className={`h-auto w-full flex-row items-center justify-start gap-3 px-3.5 py-3 ${
+                      active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                     }`}
                   >
-                    {item.label}
-                  </UIText>
-                </Button>
+                    <Icon size={19} color={active ? brand : dark ? '#ccc' : '#444'} />
+                    <UIText
+                      numberOfLines={1}
+                      className={`flex-1 min-w-0 text-[15px] font-medium ${
+                        active
+                          ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                          : 'text-neutral-900 dark:text-neutral-100'
+                      }`}
+                    >
+                      {item.label}
+                    </UIText>
+                  </Button>
+                </PopoverClose>
               );
             })}
 
             <Separator className="my-0.5 bg-neutral-100 dark:bg-neutral-800" />
 
-            <Button
-              variant="ghost"
-              onPress={() => {
-                setShowUserMenu(false);
-                close();
-                props.navigation.navigate('settings');
-              }}
-              className="flex-row h-auto items-center justify-start gap-3 px-3.5 py-3"
-            >
-              <Settings size={19} color={dark ? '#ccc' : '#444'} />
-              <UIText
-                numberOfLines={1}
-                className="flex-1 min-w-0 text-[15px] font-medium text-neutral-900 dark:text-neutral-100"
+            <PopoverClose asChild>
+              <Button
+                variant="ghost"
+                onPress={() => {
+                  close();
+                  props.navigation.navigate('settings');
+                }}
+                className="h-auto w-full flex-row items-center justify-start gap-3 px-3.5 py-3"
               >
-                Settings
-              </UIText>
-            </Button>
-          </View>
-        </>
-      )}
+                <Settings size={19} color={dark ? '#ccc' : '#444'} />
+                <UIText
+                  numberOfLines={1}
+                  className="flex-1 min-w-0 text-[15px] font-medium text-neutral-900 dark:text-neutral-100"
+                >
+                  Settings
+                </UIText>
+              </Button>
+            </PopoverClose>
+          </PopoverContent>
+        </Popover>
+      </View>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.title ?? ''}
+        description={confirmDelete?.body}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => confirmDelete?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDelete(null);
+        }}
+      />
     </View>
   );
 }
