@@ -1030,9 +1030,10 @@ export function CronScreen() {
 
         {/* Create / Edit sheet */}
         <Sheet
-          ref={formSheet}
+          ref={formSheet.ref}
+          onDismiss={formSheet.onDismiss}
           snapPoints={['90%']}
-          onClose={() => !formSaving && setModalOpen(false)}
+          onClose={() => setModalOpen(false)}
         >
           {/* Header */}
           <View className="flex-row items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
@@ -1185,7 +1186,12 @@ export function CronScreen() {
         </Sheet>
 
         {/* Runs History sheet */}
-        <Sheet ref={runsSheet} snapPoints={['85%']} onClose={() => setRunsModalOpen(false)}>
+        <Sheet
+          ref={runsSheet.ref}
+          onDismiss={runsSheet.onDismiss}
+          snapPoints={['85%']}
+          onClose={() => setRunsModalOpen(false)}
+        >
           {/* Header */}
           <View className="flex-row items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
                 <View className="flex-1 pr-2">

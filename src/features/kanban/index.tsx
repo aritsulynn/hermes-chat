@@ -437,7 +437,11 @@ export function KanbanScreen() {
         {/* Task detail sheet. `detailRef` keeps the last task rendered through
             the dismiss animation - clearing `detail` first would flash an
             empty sheet on the way out. */}
-        <FormSheet ref={detailSheet} onClose={() => setDetail(null)}>
+        <FormSheet
+          ref={detailSheet.ref}
+          onDismiss={detailSheet.onDismiss}
+          onClose={() => setDetail(null)}
+        >
           {detailRef.current && (
             <>
               <Input
@@ -512,7 +516,12 @@ export function KanbanScreen() {
         </FormSheet>
 
         {/* New task sheet */}
-        <FormSheet ref={createSheet} onClose={() => setShowCreate(false)} snapPoints={['70%']}>
+        <FormSheet
+          ref={createSheet.ref}
+          onDismiss={createSheet.onDismiss}
+          onClose={() => setShowCreate(false)}
+          snapPoints={['70%']}
+        >
           <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
           <Input
             accessibilityLabel="Title"

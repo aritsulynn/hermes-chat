@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -533,11 +533,15 @@ export const AskSheet = forwardRef<
 
 /**
  * Drives a BottomSheetModal from a boolean so callers never touch present()
- * themselves. gorhom's dismiss() on a sheet that was never presented flips its
- * internal status to DISMISSING, and the portal then renders nothing — silently,
- * forever — so `presented` is tracked and an unpresented sheet is never
- * dismissed. A user-swiped sheet already closed itself, which is why onDismiss
- * only has to push the state back to false.
+ * themselves.
+ *
+ * `presented` exists because gorhem is unforgiving: dismiss() on a sheet that
+ * is not currently open flips it to DISMISSED, and its portal then refuses to
+ * render it again — silently, forever. Two cases must therefore be kept apart:
+ * closing programmatically (dismiss) and the user closing it by swiping, the
+ * backdrop or the back button (no dismiss, the flag is just cleared). Wiring
+ * `onDismiss` into the sheet is what tells the two apart; without it the sheet
+ * opens once and can never be opened again.
  */
 export function useSheet(open: boolean) {
   const ref = useRef<BottomSheetModal>(null);
@@ -555,7 +559,10 @@ export function useSheet(open: boolean) {
       ref.current?.dismiss();
     }
   }, [open]);
-  return ref;
+  const onDismiss = useCallback(() => {
+    presented.current = false;
+  }, []);
+  return { ref, onDismiss };
 }
 
 /**
@@ -567,10 +574,12 @@ export const Sheet = forwardRef<
   BottomSheetModal,
   {
     onClose: () => void;
+    /** Fires when the sheet closed itself. Feed this from `useSheet`. */
+    onDismiss?: () => void;
     snapPoints?: Array<string | number>;
     children: React.ReactNode;
   }
->(function Sheet({ onClose, snapPoints, children }, ref) {
+>(function Sheet({ onClose, onDismiss, snapPoints, children }, ref) {
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   return (
@@ -590,7 +599,10 @@ export const Sheet = forwardRef<
       // Lifts with the keyboard so inputs and submit buttons stay reachable.
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      onDismiss={onClose}
+      onDismiss={() => {
+        onDismiss?.();
+        onClose();
+      }}
     >
       {children}
     </BottomSheetModal>
@@ -606,14 +618,15 @@ export const FormSheet = forwardRef<
   BottomSheetModal,
   {
     onClose: () => void;
+    onDismiss?: () => void;
     snapPoints?: Array<string | number>;
     /** Pinned above the scroller so it stays put while the body scrolls. */
     header?: React.ReactNode;
     children: React.ReactNode;
   }
->(function FormSheet({ onClose, snapPoints, header, children }, ref) {
+>(function FormSheet({ onClose, onDismiss, snapPoints, header, children }, ref) {
   return (
-    <Sheet ref={ref} onClose={onClose} snapPoints={snapPoints}>
+    <Sheet ref={ref} onClose={onClose} onDismiss={onDismiss} snapPoints={snapPoints}>
       {header}
       <BottomSheetScrollView
         className="bg-white dark:bg-black"
