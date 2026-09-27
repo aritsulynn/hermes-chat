@@ -136,7 +136,9 @@ export function ChatSearchHeader({
             <Input
               testID="conversation-search"
               accessibilityLabel="Search conversation"
-              className="ml-2 min-w-0 flex-1 bg-transparent px-0 py-0 text-[16px] text-neutral-950 dark:text-neutral-100"
+              // The pill around this draws the field; the base border inside it
+              // would read as a frame within a frame.
+              className="ml-2 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-[16px] text-neutral-950 dark:text-neutral-100"
               value={query}
               onChangeText={onChangeQuery}
               placeholder="Search conversation…"

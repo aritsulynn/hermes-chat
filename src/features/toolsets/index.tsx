@@ -271,7 +271,9 @@ export function ToolsetsScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 accessibilityLabel="Search toolsets"
-                className="min-h-11 min-w-0 flex-1 px-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
+                // The wrapper draws the field; the base border + background
+                // inside it would read as a frame within a frame.
+                className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
               />
             </View>
           )}

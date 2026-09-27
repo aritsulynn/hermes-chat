@@ -624,7 +624,9 @@ export function FilesScreen() {
               onChangeText={setSearchQuery}
               placeholder="Search in this folder..."
               placeholderTextColor={placeholder}
-              className="flex-1 text-sm text-neutral-900 dark:text-neutral-100"
+              // The pill around this draws the field; a second border and the
+              // base background inside it read as a frame within a frame.
+              className="flex-1 border-0 bg-transparent text-sm text-neutral-900 dark:text-neutral-100"
               autoCapitalize="none"
               autoCorrect={false}
             />
