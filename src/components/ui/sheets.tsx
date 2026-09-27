@@ -535,33 +535,68 @@ export const AskSheet = forwardRef<
  * Drives a BottomSheetModal from a boolean so callers never touch present()
  * themselves.
  *
- * `presented` exists because gorhem is unforgiving: dismiss() on a sheet that
- * is not currently open flips it to DISMISSED, and its portal then refuses to
- * render it again — silently, forever. Two cases must therefore be kept apart:
- * closing programmatically (dismiss) and the user closing it by swiping, the
- * backdrop or the back button (no dismiss, the flag is just cleared). Wiring
- * `onDismiss` into the sheet is what tells the two apart; without it the sheet
- * opens once and can never be opened again.
+ * Two gorhom behaviours have to be worked around, and both show up as "the
+ * sheet only opens once":
+ *
+ * 1. dismiss() on a sheet that is not currently open flips it to DISMISSED, and
+ *    its portal then refuses to render it again - silently, forever. So
+ *    `presented` tracks whether it is actually up, and a self-close (swipe,
+ *    backdrop, back button - which fires onDismiss without our dismiss()) only
+ *    clears the flag.
+ * 2. handlePresent reads `mount` from the render it was created in, and skips
+ *    snapToIndex() when it is false so the sheet mounts closed and animates
+ *    itself open. Calling present() from inside onDismiss therefore lands
+ *    *before* the unmount re-render, sees a stale `mount: true`, and snaps the
+ *    sheet to its index while it is still animating shut - it ends up stranded
+ *    partway up the screen. So a reopen requested mid-close is replayed from an
+ *    effect, i.e. after that commit, and only then is the mount path the same
+ *    one a first-ever open takes.
  */
 export function useSheet(open: boolean) {
   const ref = useRef<BottomSheetModal>(null);
   const presented = useRef(false);
+  const dismissing = useRef(false);
+  const queued = useRef(false);
+  // Bumped to ask for the deferred present; state, not a ref, so the effect
+  // below runs after gorhom's own unmount commit.
+  const [replay, setReplay] = useState(0);
+
+  useEffect(() => {
+    if (replay === 0 || !ref.current) return;
+    presented.current = true;
+    ref.current.present();
+  }, [replay]);
+
   useEffect(() => {
     if (open) {
       if (presented.current) return;
-      // Don't latch `presented` before the ref resolves, or a missed present()
-      // leaves the sheet unopenable until the state toggles twice.
+      if (dismissing.current) {
+        queued.current = true;
+        return;
+      }
       if (!ref.current) return;
       presented.current = true;
       ref.current.present();
     } else if (presented.current) {
       presented.current = false;
+      queued.current = false;
+      dismissing.current = true;
       ref.current?.dismiss();
     }
   }, [open]);
+
+  /** @returns true when it is reopening, so the caller must not close. */
   const onDismiss = useCallback(() => {
+    dismissing.current = false;
+    if (queued.current) {
+      queued.current = false;
+      setReplay((n) => n + 1);
+      return true;
+    }
     presented.current = false;
+    return false;
   }, []);
+
   return { ref, onDismiss };
 }
 
@@ -574,8 +609,12 @@ export const Sheet = forwardRef<
   BottomSheetModal,
   {
     onClose: () => void;
-    /** Fires when the sheet closed itself. Feed this from `useSheet`. */
-    onDismiss?: () => void;
+    /**
+     * Fires when the sheet closed itself. Feed this from `useSheet`; returning
+     * true means it is reopening right now, so the sheet stays up and
+     * `onClose` is not called.
+     */
+    onDismiss?: () => boolean | void;
     snapPoints?: Array<string | number>;
     children: React.ReactNode;
   }
@@ -591,16 +630,18 @@ export const Sheet = forwardRef<
       backgroundStyle={{ backgroundColor: screenBg(dark) }}
       handleIndicatorStyle={{ backgroundColor: dark ? '#525252' : '#d4d4d4' }}
       enablePanDownToClose
-      // Off, so the sheet actually fills its snap point. Left on (the default)
-      // it sizes to its content instead, which for a short form means a stub
-      // that barely peeks above the bottom edge and whose inputs the keyboard
-      // then covers.
+      // Off, so the sheet fills its snap point. Left on (the default) it hugs
+      // its content instead, which for a short form is the stubby sheet that
+      // prompted the change. A little dead space under the submit button is the
+      // cheaper trade.
       enableDynamicSizing={false}
       // Lifts with the keyboard so inputs and submit buttons stay reachable.
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       onDismiss={() => {
-        onDismiss?.();
+        // useSheet replays a queued present() from here; closing on top of it
+        // would immediately tear the sheet back down.
+        if (onDismiss?.() === true) return;
         onClose();
       }}
     >
@@ -618,7 +659,7 @@ export const FormSheet = forwardRef<
   BottomSheetModal,
   {
     onClose: () => void;
-    onDismiss?: () => void;
+    onDismiss?: () => boolean | void;
     snapPoints?: Array<string | number>;
     /** Pinned above the scroller so it stays put while the body scrolls. */
     header?: React.ReactNode;

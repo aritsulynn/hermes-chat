@@ -441,6 +441,7 @@ export function KanbanScreen() {
           ref={detailSheet.ref}
           onDismiss={detailSheet.onDismiss}
           onClose={() => setDetail(null)}
+          snapPoints={['70%']}
         >
           {detailRef.current && (
             <>
