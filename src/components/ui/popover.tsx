@@ -39,7 +39,10 @@ function PopoverContent({
                 align={align}
                 sideOffset={sideOffset}
                 className={cn(
-                  'bg-popover border-border outline-hidden z-50 w-72 rounded-md border p-4 shadow-md shadow-black/5',
+                  // No base width: menus size to their content. A base w-* here
+                  // silently wins over `min-w-*` tweaks at call sites, so the
+                  // popover stays wide no matter what the caller passes.
+                  'bg-popover border-border outline-hidden z-50 rounded-md border p-4 shadow-md shadow-black/5',
                   Platform.select({
                     web: cn(
                       'animate-in fade-in-0 zoom-in-95 origin-(--radix-popover-content-transform-origin) cursor-auto',

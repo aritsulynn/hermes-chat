@@ -13,6 +13,7 @@ import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import { Platform } from 'react-native';
 import { PortalHost } from '@rn-primitives/portal';
+import { ToastHost } from '../components/ui/toast';
 import {
   Activity,
   BellRing,
@@ -223,6 +224,8 @@ function ThemedRoot() {
           {/* Renders the reusables portal components (Dialog, DropdownMenu,
               Tooltip, ...) on native. Must stay last in the tree. */}
           <PortalHost />
+          {/* App-wide toasts (replaces the old Alert.alert error popups). */}
+          <ToastHost />
         </BottomSheetModalProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
