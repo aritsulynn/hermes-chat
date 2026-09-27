@@ -231,8 +231,9 @@ export function Field({
       <View className="flex-row items-center rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black pr-1">
         <Input
           // The row around this draws the field; the base border + background
-          // inside it would read as a frame within a frame.
-          className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
+          // inside it would read as a frame within a frame. dark:bg-transparent
+          // is required — the base sets dark:bg-input/30.
+          className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
           value={value}
           onChangeText={onChange}
           secureTextEntry={!visible}

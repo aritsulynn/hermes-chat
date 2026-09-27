@@ -626,7 +626,9 @@ export function FilesScreen() {
               placeholderTextColor={placeholder}
               // The pill around this draws the field; a second border and the
               // base background inside it read as a frame within a frame.
-              className="flex-1 border-0 bg-transparent text-sm text-neutral-900 dark:text-neutral-100"
+              // dark:bg-transparent is required — the base sets
+              // dark:bg-input/30, which a plain bg-transparent does not cancel.
+              className="flex-1 border-0 bg-transparent text-sm text-neutral-900 dark:bg-transparent dark:text-neutral-100"
               autoCapitalize="none"
               autoCorrect={false}
             />

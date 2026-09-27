@@ -272,8 +272,10 @@ export function ToolsetsScreen() {
                 autoCorrect={false}
                 accessibilityLabel="Search toolsets"
                 // The wrapper draws the field; the base border + background
-                // inside it would read as a frame within a frame.
-                className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
+                // inside it would read as a frame within a frame. dark: is
+                // needed too — the base sets dark:bg-input/30, which a plain
+                // bg-transparent does not cancel in dark mode.
+                className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
               />
             </View>
           )}
