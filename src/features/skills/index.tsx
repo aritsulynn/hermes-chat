@@ -18,7 +18,7 @@ import { AlertCircle, RefreshCw, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ErrorRetry, ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
@@ -181,30 +181,23 @@ export function SkillsScreen() {
         <StatusBar style="auto" />
 
         {/* Header */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <View>
-              <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Skills</Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                {loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
-              </Text>
-            </View>
-          </View>
-          <Button
-            variant="ghost"
-            size="icon"
-            accessibilityLabel="Refresh skills"
-            onPress={() => void load(true)}
-            hitSlop={8}
-            className="h-9 w-9 rounded-lg"
-          >
-            <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-          </Button>
-        </View>
+        <ScreenHeader
+          title="Skills"
+          insetTop={insets.top}
+          subtitle={loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
+          actions={
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="Refresh skills"
+              onPress={() => void load(true)}
+              hitSlop={8}
+              className="h-9 w-9 rounded-lg"
+            >
+              <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+            </Button>
+          }
+        />
 
         <ScrollView
           className="flex-1 px-4 py-4"
@@ -222,17 +215,7 @@ export function SkillsScreen() {
               </Text>
             </View>
           ) : error ? (
-            <UIAlert icon={AlertCircle} variant="destructive">
-              <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
-              <Button
-                variant="destructive"
-                size="sm"
-                onPress={() => void load()}
-                className="ml-6 mt-1 self-start"
-              >
-                <UIText className="text-xs font-semibold">Retry</UIText>
-              </Button>
-            </UIAlert>
+            <ErrorRetry error={error} onRetry={() => void load()} />
           ) : !skills?.length ? (
             <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</Text>

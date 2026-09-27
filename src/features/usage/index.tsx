@@ -18,7 +18,7 @@ import {
 } from 'lucide-react-native';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ScreenHeader } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
@@ -159,23 +159,23 @@ export function UsageScreen() {
         <StatusBar style="auto" />
 
         {/* Header */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Usage & Analytics</Text>
-          </View>
-          <Pressable
-            disabled={loading || refreshing}
-            onPress={() => void fetchUsage(true)}
-            hitSlop={10}
-            className="p-2 rounded-lg border border-neutral-300 dark:border-neutral-700"
-          >
-            <RefreshCw size={15} color={dark ? '#ccc' : '#444'} />
-          </Pressable>
-        </View>
+        <ScreenHeader
+          title="Usage & Analytics"
+          insetTop={insets.top}
+          actions={
+            <Button
+              variant="outline"
+              size="icon"
+              accessibilityLabel="Refresh usage"
+              disabled={loading || refreshing}
+              onPress={() => void fetchUsage(true)}
+              hitSlop={10}
+              className="h-8 w-8 rounded-lg border border-neutral-300 dark:border-neutral-700"
+            >
+              <RefreshCw size={15} color={dark ? '#ccc' : '#444'} />
+            </Button>
+          }
+        />
 
         {/* Period Selector Bar */}
         <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">

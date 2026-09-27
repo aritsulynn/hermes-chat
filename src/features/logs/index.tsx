@@ -11,6 +11,8 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import type { FlashListRef } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
+import { Button } from '../../components/ui/button';
+import { Text as UIText } from '../../components/ui/text';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -33,7 +35,7 @@ import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
 import { placeholderColor, screenStyle } from '../../theme';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ScreenHeader } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
 import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
@@ -234,79 +236,85 @@ export function LogsScreen() {
         <StatusBar style="auto" />
 
         {/* Header */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <View>
-              <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Logs</Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                {file}.log · {stats.total} lines
-              </Text>
-            </View>
-          </View>
-
-          {/* Header Action Buttons with generous spacing and touch targets */}
-          <View className="flex-row items-center" style={{ gap: 8 }}>
-            {/* Live / Auto refresh toggle button */}
-            <Pressable
-              onPress={() => setAutoRefresh((prev) => !prev)}
-              hitSlop={6}
-              className={`h-9 flex-row items-center gap-1.5 rounded-xl px-3 border ${
-                autoRefresh
-                  ? 'border-emerald-500/40 bg-emerald-500/10 active:bg-emerald-500/20'
-                  : 'border-neutral-200 bg-neutral-100/70 active:bg-neutral-200/70 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800'
-              }`}
-            >
-              <View
-                className={`h-2 w-2 rounded-full ${
-                  autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
-                }`}
-              />
-              <Text
-                className={`text-xs font-semibold ${
-                  autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
+        <ScreenHeader
+          title="Logs"
+          insetTop={insets.top}
+          subtitle={`${file}.log · ${stats.total} lines`}
+          actions={
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              {/* Live / Auto refresh toggle button */}
+              <Button
+                onPress={() => setAutoRefresh((prev) => !prev)}
+                hitSlop={6}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: autoRefresh }}
+                accessibilityLabel="Live refresh"
+                className={`h-9 rounded-xl border px-3 ${
+                  autoRefresh
+                    ? 'border-emerald-500/40 bg-emerald-500/10'
+                    : 'border-neutral-200 bg-neutral-100/70 dark:border-neutral-800 dark:bg-neutral-900'
                 }`}
               >
-                {autoRefresh ? 'Live' : 'Paused'}
-              </Text>
-            </Pressable>
+                <View
+                  className={`h-2 w-2 rounded-full ${
+                    autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
+                  }`}
+                />
+                <UIText
+                  className={`text-xs font-semibold ${
+                    autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
+                  }`}
+                >
+                  {autoRefresh ? 'Live' : 'Paused'}
+                </UIText>
+              </Button>
 
-            {/* Copy button */}
-            <Pressable
-              onPress={handleCopy}
-              hitSlop={6}
-              className={`h-9 flex-row items-center gap-1.5 rounded-xl border px-3 ${
-                copied
-                  ? 'border-emerald-500/40 bg-emerald-500/10'
-                  : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800'
-              }`}
-            >
-              {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />}
-              <Text
-                className={`text-xs font-medium ${
+              {/* Copy button */}
+              <Button
+                onPress={handleCopy}
+                hitSlop={6}
+                accessibilityLabel="Copy log"
+                className={`h-9 rounded-xl border px-3 ${
                   copied
-                    ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
-                    : 'text-neutral-700 dark:text-neutral-300'
+                    ? 'border-emerald-500/40 bg-emerald-500/10'
+                    : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
                 }`}
               >
-                {copied ? 'Copied' : 'Copy'}
-              </Text>
-            </Pressable>
+                {copied ? (
+                  <Check size={14} color="#10b981" />
+                ) : (
+                  <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />
+                )}
+                <UIText
+                  className={`text-xs font-medium ${
+                    copied
+                      ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
+                      : 'text-neutral-700 dark:text-neutral-300'
+                  }`}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </UIText>
+              </Button>
 
-            {/* Manual refresh button */}
-            <Pressable
-              disabled={loading || refreshing}
-              onPress={() => void fetchLogs()}
-              hitSlop={6}
-              className="h-9 w-9 items-center justify-center rounded-xl border border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800"
-            >
-              <RefreshCw size={15} color={dark ? '#9ca3af' : '#6b7280'} className={refreshing ? 'animate-spin' : ''} />
-            </Pressable>
-          </View>
-        </View>
+              {/* Manual refresh button */}
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={loading || refreshing}
+                onPress={() => void fetchLogs()}
+                hitSlop={6}
+                accessibilityLabel="Refresh logs"
+                className="h-9 w-9 rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+              >
+                <RefreshCw
+                  size={15}
+                  color={dark ? '#9ca3af' : '#6b7280'}
+                  className={refreshing ? 'animate-spin' : ''}
+                />
+              </Button>
+            </View>
+          }
+        />
 
         {/* Filter Toolbar Card */}
         <View className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">

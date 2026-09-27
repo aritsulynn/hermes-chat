@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Keyboard, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { Menu as MenuIcon } from 'lucide-react-native';
+import { AlertCircle, Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { placeholderColor } from '../../theme';
+import { cn } from '../../utils/cn';
+import { Alert as UIAlert, AlertDescription } from './alert';
 import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
@@ -101,6 +103,87 @@ export function HamburgerBtn() {
     >
       <MenuIcon size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
     </Button>
+  );
+}
+
+// One shared screen header. Every non-chat screen had its own copy of the same
+// bar - hamburger, title, optional subtitle, optional right-hand actions - and
+// they drifted: two of them sized the title colour differently and only some
+// passed a subtitle. `subtitle` is a node because Files, Logs, Skills and
+// Toolsets all interpolate counts into it.
+export function ScreenHeader({
+  title,
+  subtitle,
+  insetTop,
+  actions,
+}: {
+  title: string;
+  subtitle?: React.ReactNode;
+  /** Pass insets.top; the +10 keeps the bar off the status bar. */
+  insetTop: number;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <View
+      className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
+      style={{ paddingTop: insetTop + 10 }}
+    >
+      <View className="min-w-0 flex-1 flex-row items-center gap-3">
+        <HamburgerBtn />
+        <View className="min-w-0 flex-1">
+          <UIText
+            numberOfLines={1}
+            className="text-xl font-bold text-neutral-950 dark:text-neutral-100"
+          >
+            {title}
+          </UIText>
+          {!!subtitle && (
+            <UIText numberOfLines={1} className="text-xs text-neutral-500 dark:text-neutral-400">
+              {subtitle}
+            </UIText>
+          )}
+        </View>
+      </View>
+      {actions}
+    </View>
+  );
+}
+
+// The "something failed, here is the message, try again" block that every list
+// screen repeated verbatim. Rendered only when `error` is set, so callers can
+// drop their own conditional.
+export function ErrorRetry({
+  error,
+  onRetry,
+  className,
+  retryLabel = 'Retry',
+  compact,
+}: {
+  error: string | null;
+  onRetry: () => void;
+  className?: string;
+  retryLabel?: string;
+  /** Denser variant for banners that sit inside a card or a list header. */
+  compact?: boolean;
+}) {
+  if (!error) return null;
+  return (
+    <UIAlert
+      icon={AlertCircle}
+      variant="destructive"
+      className={cn(compact ? 'rounded-xl px-4 pt-3' : 'rounded-2xl', className)}
+    >
+      <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{error}</AlertDescription>
+      <Button
+        variant="destructive"
+        size="sm"
+        onPress={onRetry}
+        className="ml-6 mt-1 self-start"
+        accessibilityLabel={retryLabel}
+      >
+        <UIText className="text-xs font-semibold">{retryLabel}</UIText>
+      </Button>
+    </UIAlert>
   );
 }
 

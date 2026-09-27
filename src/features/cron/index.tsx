@@ -47,7 +47,7 @@ import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ErrorRetry, ScreenHeader } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
 import { placeholderColor, screenStyle } from '../../theme';
@@ -920,17 +920,7 @@ export function CronScreen() {
   const runsHeader = useMemo(
     () =>
       runsError ? (
-        <UIAlert icon={AlertCircle} variant="destructive" className="mb-3 rounded-xl px-4 pt-3">
-          <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{runsError}</AlertDescription>
-          <Button
-            variant="destructive"
-            size="sm"
-            onPress={() => void handleRefreshRuns()}
-            className="ml-6 mt-1 self-start"
-          >
-            <UIText className="text-xs font-semibold">Retry</UIText>
-          </Button>
-        </UIAlert>
+        <ErrorRetry error={runsError} onRetry={() => void handleRefreshRuns()} className="mb-3" compact />
       ) : null,
     [handleRefreshRuns, runsError],
   );
@@ -977,23 +967,20 @@ export function CronScreen() {
         <StatusBar style="auto" />
 
         {/* Header */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Cron Jobs</Text>
-          </View>
-          <Pressable
-            onPress={openCreateModal}
-            hitSlop={10}
-            className="flex-row items-center gap-1.5 rounded-lg bg-[#1a73e8] px-3 py-1.5"
-          >
-            <Plus size={16} color="#fff" />
-            <Text className="text-xs font-semibold text-white">New</Text>
-          </Pressable>
-        </View>
+        <ScreenHeader
+          title="Cron Jobs"
+          insetTop={insets.top}
+          actions={
+            <Button
+              onPress={openCreateModal}
+              hitSlop={10}
+              className="h-8 rounded-lg bg-[#1a73e8] px-3"
+            >
+              <Plus size={16} color="#fff" />
+              <UIText className="text-xs font-semibold text-white">New</UIText>
+            </Button>
+          }
+        />
 
         {/* Status feedback toast */}
         {statusNotice && (
@@ -1002,19 +989,7 @@ export function CronScreen() {
           </View>
         )}
 
-        {error && (
-          <UIAlert icon={AlertCircle} variant="destructive" className="m-4 rounded-xl px-4 pt-3">
-            <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{error}</AlertDescription>
-            <Button
-              variant="destructive"
-              size="sm"
-              onPress={() => void loadJobs()}
-              className="ml-6 mt-1 self-start"
-            >
-              <UIText className="text-xs font-semibold">Retry</UIText>
-            </Button>
-          </UIAlert>
-        )}
+        <ErrorRetry error={error} onRetry={() => void loadJobs()} className="m-4" compact />
 
         <FlashList
           data={jobs}

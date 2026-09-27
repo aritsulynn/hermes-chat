@@ -24,7 +24,7 @@ import {
   User,
 } from 'lucide-react-native';
 import { useApp, useThemeValue } from '../../hooks/app-store';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Separator } from '../../components/ui/separator';
 import { Avatar, AvatarFallback } from '../../components/ui/avatar';
@@ -68,17 +68,7 @@ export function SettingsScreen() {
       <StatusBar style="auto" />
 
       {/* Header */}
-      <View
-        className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-        style={{ paddingTop: insets.top + 10 }}
-      >
-        <View className="flex-row items-center gap-3">
-          <HamburgerBtn />
-          <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">
-            Settings
-          </Text>
-        </View>
-      </View>
+      <ScreenHeader title="Settings" insetTop={insets.top} />
 
       <ScrollView
         className="flex-1 px-4 py-4"

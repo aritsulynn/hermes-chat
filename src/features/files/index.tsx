@@ -38,7 +38,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { placeholderColor, screenStyle } from '../../theme';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ScreenHeader } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -498,71 +498,67 @@ export function FilesScreen() {
         <StatusBar style="auto" />
 
         {/* Header Bar */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-4 dark:border-neutral-800"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <View>
-              <Text className="text-xl font-bold text-neutral-900 dark:text-white">Files</Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                {loading ? 'Loading...' : `${folderCount} folders · ${fileCount} files`}
-              </Text>
+        <ScreenHeader
+          title="Files"
+          insetTop={insets.top}
+          subtitle={loading ? 'Loading...' : `${folderCount} folders · ${fileCount} files`}
+          actions={
+            <View className="flex-row items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                accessibilityLabel="New folder"
+                onPress={() => setNewFolderModalOpen(true)}
+                hitSlop={8}
+                className="h-9 w-9 rounded-lg"
+              >
+                <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                accessibilityLabel="New file"
+                onPress={() => setNewFileModalOpen(true)}
+                hitSlop={8}
+                className="h-9 w-9 rounded-lg"
+              >
+                <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                accessibilityLabel="Upload image"
+                onPress={handlePickAndUploadImage}
+                disabled={uploading}
+                hitSlop={8}
+                className="h-9 w-9 rounded-lg"
+              >
+                {uploading ? (
+                  <ActivityIndicator size="small" color="#1a73e8" />
+                ) : (
+                  <Upload size={19} color={dark ? '#e5e5e5' : '#333'} />
+                )}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                accessibilityLabel="Refresh"
+                onPress={() => void load(activeDirectory, true)}
+                hitSlop={8}
+                className="h-9 w-9 rounded-lg"
+              >
+                <RefreshCw
+                  size={18}
+                  color={dark ? '#e5e5e5' : '#333'}
+                  className={refreshing ? 'animate-spin' : ''}
+                />
+              </Button>
             </View>
-          </View>
-
-          <View className="flex-row items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              accessibilityLabel="New folder"
-              onPress={() => setNewFolderModalOpen(true)}
-              hitSlop={8}
-              className="h-9 w-9 rounded-lg"
-            >
-              <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              accessibilityLabel="New file"
-              onPress={() => setNewFileModalOpen(true)}
-              hitSlop={8}
-              className="h-9 w-9 rounded-lg"
-            >
-              <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              accessibilityLabel="Upload image"
-              onPress={handlePickAndUploadImage}
-              disabled={uploading}
-              hitSlop={8}
-              className="h-9 w-9 rounded-lg"
-            >
-              {uploading ? (
-                <ActivityIndicator size="small" color="#1a73e8" />
-              ) : (
-                <Upload size={19} color={dark ? '#e5e5e5' : '#333'} />
-              )}
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              accessibilityLabel="Refresh"
-              onPress={() => void load(activeDirectory, true)}
-              hitSlop={8}
-              className="h-9 w-9 rounded-lg"
-            >
-              <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-            </Button>
-          </View>
-        </View>
+          }
+        />
 
         {/* Path Bar & Breadcrumbs */}
         <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
