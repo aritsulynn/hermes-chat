@@ -28,12 +28,18 @@ import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
 import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
 import { brandColor, placeholderColor, screenBg } from '../../theme';
+import { formatRelative, formatSessionSource } from '../../utils/format';
 import type { ScopedSessionSummary } from '../../store/types';
 
 // Memoized recents row: the session list is already windowed to 50 rendered
 // rows (visibleCount) with server pagination, so a FlashList inside the
 // drawer's scroll view would fight the drawer gesture/scroll — memo + stable
 // callbacks keep re-renders to the row that actually changed instead.
+//
+// `preview`/`startedAt` come from `session.list` and were fetched all along but
+// never rendered, which made every row look identical. The preview answers
+// "which one of these five same-titled chats was that?"; the stamp answers
+// "is the one I want recent?".
 const SessionRow = memo(function SessionRow({
   session,
   active,
@@ -45,6 +51,11 @@ const SessionRow = memo(function SessionRow({
   onOpen: (s: ScopedSessionSummary) => void;
   onDelete: (s: ScopedSessionSummary) => void;
 }) {
+  const preview = (session.preview || '').trim();
+  const when = formatRelative(session.startedAt);
+  // null for the interactive defaults (`tui`/`desktop`/`mobile`) — see
+  // formatSessionSource for where this vocabulary comes from.
+  const tag = formatSessionSource(session.source);
   return (
     <Button
       variant="ghost"
@@ -53,19 +64,51 @@ const SessionRow = memo(function SessionRow({
       onPress={() => onOpen(session)}
       onLongPress={() => onDelete(session)}
       delayLongPress={400}
-      className={`flex-row h-auto items-center justify-start px-3 py-3 ${
+      className={`flex-row h-auto items-start justify-start px-3 py-2.5 ${
         active ? 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]' : ''
       }`}
     >
-      <UIText
-        numberOfLines={1}
-        ellipsizeMode="tail"
-        className={`flex-1 min-w-0 text-[16px] ${
-          active ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'
-        }`}
-      >
-        {session.title || '(untitled)'}
-      </UIText>
+      <View className="flex-1 min-w-0">
+        <UIText
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          className={`text-[16px] ${
+            active ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'
+          }`}
+        >
+          {session.title || '(untitled)'}
+        </UIText>
+        {(preview || when || tag) && (
+          <View className="mt-0.5 flex-row items-center gap-2">
+            {when ? (
+              <UIText
+                numberOfLines={1}
+                className={`shrink-0 text-[11px] ${
+                  active ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-400 dark:text-neutral-500'
+                }`}
+              >
+                {when}
+              </UIText>
+            ) : null}
+            {tag ? (
+              <Badge variant="secondary" className="border-neutral-300 px-1.5 py-0 dark:border-neutral-700">
+                <UIText className="text-[10px] font-medium text-neutral-600 dark:text-neutral-300">
+                  {tag}
+                </UIText>
+              </Badge>
+            ) : null}
+            {preview ? (
+              <UIText
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                className="min-w-0 flex-1 text-[11px] text-neutral-500 dark:text-neutral-400"
+              >
+                {preview}
+              </UIText>
+            ) : null}
+          </View>
+        )}
+      </View>
     </Button>
   );
 });
@@ -112,7 +155,14 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   // MUST stay above the `!authed` early return — hooks can't run after one.
   const ql = q.trim().toLowerCase();
   const filtered = useMemo(
-    () => (ql ? sessions.filter((s) => (s.title || '').toLowerCase().includes(ql)) : sessions),
+    () =>
+      ql
+        ? sessions.filter(
+            (s) =>
+              (s.title || '').toLowerCase().includes(ql) ||
+              (s.preview || '').toLowerCase().includes(ql),
+          )
+        : sessions,
     [sessions, ql],
   );
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);

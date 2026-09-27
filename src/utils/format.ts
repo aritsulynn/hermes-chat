@@ -37,6 +37,61 @@ export function formatDate(mtime: number): string {
   });
 }
 
+/**
+ * `session.list` row `source` → a short badge label, or null when the row is
+ * not worth tagging.
+ *
+ * The vocabulary is the gateway's, not ours (hermes-agent):
+ * `_resolve_session_source` falls back to the *server's* platform env when a
+ * client sends none — `desktop` with HERMES_DESKTOP=1, else `tui` — and never
+ * rewrites an explicit caller value. `kanban`/`tool`/`oneshot` are dropped from
+ * every listing by INTERNAL_LISTING_SOURCES; `unknown` is listed but never
+ * auto-resumed.
+ *
+ * So `tui`/`desktop`/`local` all mean "a human opened a chat" — the
+ * uninteresting default — and only rows the user did not type into this app are
+ * worth a badge. This app sends `source: 'local'` on create so its own sessions
+ * stop inheriting the server's `tui` label.
+ */
+const AUTOMATED_SESSION_SOURCES: Record<string, string> = {
+  cron: 'Cron',
+  telegram: 'Telegram',
+  api: 'API',
+  bot_room: 'Room',
+  unknown: 'Unknown',
+};
+
+export function formatSessionSource(source: string | null | undefined): string | null {
+  const key = String(source ?? '')
+    .trim()
+    .toLowerCase();
+  if (!key) return null;
+  return AUTOMATED_SESSION_SOURCES[key] ?? null;
+}
+
+/**
+ * Epoch-seconds → "now" / "12m" / "3h" / "2d", falling back to an absolute
+ * date past a week. For chat rows, where "Sep 24" is easier to place than a
+ * bare "14d". Returns '' for missing/unusable values so callers can render the
+ * row without a placeholder.
+ */
+export function formatRelative(
+  epochSeconds: number | null | undefined,
+  nowMs: number = Date.now(),
+): string {
+  if (epochSeconds === null || epochSeconds === undefined) return '';
+  // Accept millis too — a caller that already normalised shouldn't have to care.
+  const ms = epochSeconds < 1e11 ? epochSeconds * 1000 : epochSeconds;
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const diff = Math.round((nowMs - ms) / 1000);
+  // A stamp in the future is clock skew, not age — don't render "in -3m".
+  if (diff < 60) return 'now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+  return formatDate(epochSeconds);
+}
+
 /** Normalize a seconds-or-millis timestamp (number or string) to epoch millis. */
 export function toEpochMs(ts: number | string | null | undefined): number | null {
   if (ts === null || ts === undefined || ts === '') return null;
