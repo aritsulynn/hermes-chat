@@ -1,5 +1,6 @@
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { CODE_SURFACE, MARKDOWN_INK, brandColor } from '../../theme';
 import { ChatImage, FileChip } from './media';
 
 // Plain text out of a markdown AST node (link labels are inline children).
@@ -63,7 +64,7 @@ export const makeSelectableRules = (dark: boolean) => ({
             hitSlop={8}
             style={{ paddingHorizontal: 4, paddingVertical: 2 }}
           >
-            <Text style={{ fontSize: 11, fontWeight: '600', color: dark ? '#7aa7ff' : '#1a73e8' }}>Copy</Text>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: brandColor(dark) }}>Copy</Text>
           </Pressable>
         </View>
         <Text selectable style={[inheritedStyles, styles.fence]}>
@@ -103,16 +104,16 @@ export const makeSelectableRules = (dark: boolean) => ({
 });
 
 export const mdAi = StyleSheet.create({
-  body: { fontSize: 15, lineHeight: 21, color: '#111' },
-  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: '#111' },
-  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: '#111' },
-  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: '#111' },
+  body: { fontSize: 15, lineHeight: 21, color: MARKDOWN_INK },
+  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: MARKDOWN_INK },
+  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: MARKDOWN_INK },
+  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: MARKDOWN_INK },
   paragraph: { marginVertical: 4 },
-  link: { color: '#1a73e8' },
-  blockquote: { backgroundColor: '#e8eef7', borderLeftWidth: 3, borderLeftColor: '#1a73e8', paddingHorizontal: 8, paddingVertical: 4 },
+  link: { color: brandColor(false) },
+  blockquote: { backgroundColor: '#e8eef7', borderLeftWidth: 3, borderLeftColor: brandColor(false), paddingHorizontal: 8, paddingVertical: 4 },
   code_inline: { backgroundColor: '#e4e4e8', borderRadius: 4, paddingHorizontal: 4, fontSize: 13 },
-  fence: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  code_block: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  fence: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  code_block: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
   bullet_list: { marginVertical: 4 },
   ordered_list: { marginVertical: 4 },
   list_item: { flexDirection: 'row', marginVertical: 2 },
@@ -131,8 +132,8 @@ export const mdAiDark = StyleSheet.create({
   heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: '#e8e8ea' },
   heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: '#e8e8ea' },
   paragraph: { marginVertical: 4 },
-  link: { color: '#7aa7ff' },
-  blockquote: { backgroundColor: '#232a3a', borderLeftWidth: 3, borderLeftColor: '#7aa7ff', paddingHorizontal: 8, paddingVertical: 4 },
+  link: { color: brandColor(true) },
+  blockquote: { backgroundColor: '#232a3a', borderLeftWidth: 3, borderLeftColor: brandColor(true), paddingHorizontal: 8, paddingVertical: 4 },
   code_inline: { backgroundColor: '#2b2b31', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#e8e8ea' },
   fence: { backgroundColor: '#212121', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
   code_block: { backgroundColor: '#212121', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
@@ -157,8 +158,8 @@ export const mdUserDark = StyleSheet.create({
   link: { color: '#93c5fd' },
   blockquote: { backgroundColor: 'rgba(147,197,253,.12)', borderLeftWidth: 3, borderLeftColor: '#93c5fd', paddingHorizontal: 8, paddingVertical: 4 },
   code_inline: { backgroundColor: 'rgba(255,255,255,.1)', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#f3f4f6' },
-  fence: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  code_block: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  fence: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  code_block: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
   bullet_list: { marginVertical: 4 },
   ordered_list: { marginVertical: 4 },
   list_item: { flexDirection: 'row', marginVertical: 2 },
@@ -176,8 +177,8 @@ export const mdUser = StyleSheet.create({
   link: { color: '#0b57d0' },
   blockquote: { backgroundColor: 'rgba(4,30,73,.08)', borderLeftWidth: 3, borderLeftColor: '#0b57d0', paddingHorizontal: 8, paddingVertical: 4 },
   code_inline: { backgroundColor: 'rgba(4,30,73,.1)', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#041e49' },
-  fence: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  code_block: { backgroundColor: '#1e1e24', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  fence: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
+  code_block: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
   bullet_list: { marginVertical: 4 },
   ordered_list: { marginVertical: 4 },
   list_item: { flexDirection: 'row', marginVertical: 2 },

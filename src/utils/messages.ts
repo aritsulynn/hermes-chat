@@ -77,7 +77,7 @@ export interface TodoItem {
 
 /** Normalise a todo snapshot; returns [] for malformed/empty payloads. */
 export function normalizeTodos(payload: unknown): TodoItem[] {
-  const rows = (payload as any)?.todos;
+  const rows = asRecord(payload).todos;
   return Array.isArray(rows) ? rows.filter((r) => r && typeof r === 'object') : [];
 }
 
@@ -96,10 +96,17 @@ export interface SubagentRow {
 }
 
 export function normalizeSubagents(payload: unknown): SubagentRow[] {
-  const rows = (payload as any)?.subagents;
+  const rows = asRecord(payload).subagents;
   return Array.isArray(rows)
-    ? rows.filter((r) => r && typeof r === 'object' && typeof r.subagent_id === 'string')
+    ? rows.filter((r) => r && typeof r === 'object' && typeof (r as { subagent_id?: unknown }).subagent_id === 'string')
     : [];
+}
+
+/** Plain-object view of an unknown payload ({} for anything else). */
+function asRecord(payload: unknown): Record<string, unknown> {
+  return payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : {};
 }
 
 /** Terminal statuses — a finished child no longer needs the live roster. */
@@ -118,7 +125,9 @@ export function base64ToUtf8(base64: string): string {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       return new TextDecoder('utf-8').decode(bytes);
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[messages] base64ToUtf8 decode failed', e);
+  }
   return '';
 }
 
@@ -134,7 +143,9 @@ export function utf8ToBase64(text: string): string {
       }
       return btoa(binary);
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[messages] utf8ToBase64 encode failed', e);
+  }
   return '';
 }
 
@@ -215,22 +226,27 @@ export interface ClarifyQ {
   lockedAnswer?: string;
 }
 
-export function parseClarify(ask: { params: Record<string, any> }): { single: boolean; questions: ClarifyQ[] } {
+export function parseClarify(ask: { params: Record<string, unknown> }): {
+  single: boolean;
+  questions: ClarifyQ[];
+} {
   const p = ask.params;
-  const locked = p?.answers && typeof p.answers === 'object' && !Array.isArray(p.answers)
-    ? p.answers as Record<string, unknown>
-    : {};
+  const locked =
+    p.answers && typeof p.answers === 'object' && !Array.isArray(p.answers)
+      ? (p.answers as Record<string, unknown>)
+      : {};
   if (Array.isArray(p.questions) && p.questions.length > 0) {
     return {
       single: false,
-      questions: p.questions.map((q: any, i: number) => {
-        const qid = String(q?.qid ?? `q${i}`);
+      questions: (p.questions as unknown[]).map((q, i: number) => {
+        const row = q && typeof q === 'object' ? (q as Record<string, unknown>) : {};
+        const qid = String(row.qid ?? `q${i}`);
         return {
           qid,
-          question: String(q?.question ?? ''),
-          choices: Array.isArray(q?.choices) ? q.choices.map(String) : [],
-          multiSelect: q?.multi_select === true,
-          ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] } : {}),
+          question: String(row.question ?? ''),
+          choices: Array.isArray(row.choices) ? row.choices.map(String) : [],
+          multiSelect: row.multi_select === true,
+          ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] as string } : {}),
         };
       }),
     };
@@ -243,12 +259,12 @@ export function parseClarify(ask: { params: Record<string, any> }): { single: bo
         qid,
         question: String(p.question ?? p.text ?? ''),
         choices: Array.isArray(p.choices)
-          ? p.choices.map(String)
+          ? (p.choices as unknown[]).map(String)
           : Array.isArray(p.options)
-            ? p.options.map(String)
+            ? (p.options as unknown[]).map(String)
             : [],
         multiSelect: p.multi_select === true,
-        ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] } : {}),
+        ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] as string } : {}),
       },
     ],
   };

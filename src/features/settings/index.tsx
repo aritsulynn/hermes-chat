@@ -32,6 +32,7 @@ import { Avatar, AvatarFallback } from '../../components/ui/avatar';
 import { Text as UIText } from '../../components/ui/text';
 import { UpdatePanel } from '../../components/ui/update-panel';
 import { notificationsSupported } from '../../services/notifications';
+import { brandColor, screenStyle } from '../../theme';
 import { BUILD_ID } from '../../build';
 import * as Clipboard from 'expo-clipboard';
 export function SettingsScreen() {
@@ -70,7 +71,7 @@ export function SettingsScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
     {/* No 'bottom' edge: the only bottom padding lives in the ScrollView
         content (insets.bottom + 24). Keeping 'bottom' doubles the gap
         above the gesture bar on edge-to-edge Android. */}
@@ -246,7 +247,7 @@ export function SettingsScreen() {
                       </Text>
                       <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">{a.hint}</Text>
                     </View>
-                    {on && <Check size={15} color={dark ? '#7aa7ff' : '#1a73e8'} />}
+                    {on && <Check size={15} color={brandColor(dark)} />}
                   </Pressable>
                 );
               })}

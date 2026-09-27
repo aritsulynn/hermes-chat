@@ -12,7 +12,7 @@ import { nid, errMsg } from '../../utils/messages';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
 import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
 import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey } from '../helpers';
-import type { AgentProfile, ScopedSessionSummary } from '../types';
+import type { AgentProfile, ScopedSessionSummary, SessionInfo, UsageInfo } from '../types';
 import type { StoreRuntime } from '../runtime';
 
 type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
@@ -66,8 +66,8 @@ export interface ProfileOpsSliceDeps {
   setEditingRowId: Dispatch<SetStateAction<number | null>>;
   setInfoOpen: Dispatch<SetStateAction<boolean>>;
   setInputRaw: (value: string) => void;
-  setSessionInfo: Dispatch<SetStateAction<any>>;
-  setUsageInfo: Dispatch<SetStateAction<any>>;
+  setSessionInfo: Dispatch<SetStateAction<SessionInfo | null>>;
+  setUsageInfo: Dispatch<SetStateAction<UsageInfo | null>>;
   setUsageLoading: Dispatch<SetStateAction<boolean>>;
   setOpeningId: Dispatch<SetStateAction<string | null>>;
   setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
@@ -345,7 +345,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
         .usage(liveId)
         .then((info) => {
           if (connectionEpochRef.current === connectionEpoch && sessionIdRef.current === liveId) {
-            setUsageInfo((prev: any) => mergeUsageState(prev, info));
+            setUsageInfo((prev) => mergeUsageState(prev, info));
           }
         })
         .catch(() => {});

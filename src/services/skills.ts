@@ -18,29 +18,34 @@ function rowsOf(payload: unknown): SkillInfo[] {
   if (Array.isArray(payload)) {
     return payload.filter((r) => r && typeof r === 'object') as SkillInfo[];
   }
-  const rows = (payload as any)?.skills;
+  const rows =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as { skills?: unknown }).skills
+      : undefined;
   return Array.isArray(rows) ? rows.filter((r) => r && typeof r === 'object') : [];
 }
 
-export async function getSkills(opsGet: (path: string) => Promise<any>): Promise<SkillInfo[]> {
+export async function getSkills(opsGet: (path: string) => Promise<unknown>): Promise<SkillInfo[]> {
   const res = await opsGet(skills());
   return rowsOf(res);
 }
 
 export async function getSkillContent(
-  opsGet: (path: string) => Promise<any>,
+  opsGet: (path: string) => Promise<unknown>,
   name: string,
 ): Promise<{ content: string; name: string; path: string }> {
   const res = await opsGet(skillContent(name));
+  const rec =
+    res && typeof res === 'object' && !Array.isArray(res) ? (res as Record<string, unknown>) : {};
   return {
-    content: String((res as any)?.content ?? ''),
-    name: String((res as any)?.name ?? name),
-    path: String((res as any)?.path ?? ''),
+    content: String(rec.content ?? ''),
+    name: String(rec.name ?? name),
+    path: String(rec.path ?? ''),
   };
 }
 
 export async function setSkillEnabled(
-  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>,
+  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<unknown>,
   name: string,
   enabled: boolean,
 ): Promise<void> {

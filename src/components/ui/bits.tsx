@@ -4,6 +4,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
 import { useApp } from '../../hooks/app-store';
+import { placeholderColor } from '../../theme';
 import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
@@ -131,7 +132,7 @@ export function Field({
           value={value}
           onChangeText={onChange}
           placeholder={placeholder}
-          placeholderTextColor={dark ? '#888' : '#9ca3af'}
+          placeholderTextColor={placeholderColor(dark)}
           keyboardAppearance={dark ? 'dark' : 'light'}
           autoCapitalize="none"
           autoCorrect={false}

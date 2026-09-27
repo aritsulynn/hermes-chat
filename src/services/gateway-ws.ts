@@ -35,10 +35,28 @@ import {
 
 export type ConnState = 'idle' | 'connecting' | 'ready' | 'reconnecting' | 'closed' | 'auth-expired';
 
+/** Decoded JSON-RPC result object (free-form keys; narrow per method). */
+export type RpcResult = Record<string, unknown>;
+
+/** `true` for plain JSON objects (not arrays/null). Narrows `unknown` payloads. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Minimal socket surface used here (RN's WebSocket type lacks readyState). */
+interface WsLike {
+  readyState?: number;
+  close?: () => void;
+  send: (data: string) => void;
+}
+function asWsLike(ws: WebSocket | null): WsLike | null {
+  return ws as unknown as WsLike | null;
+}
+
 export interface RpcError {
   code: number;
   message: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface SessionSummary {
@@ -84,21 +102,29 @@ export interface SlashCompletionsResult {
 }
 
 /** Normalise a `complete.*` result's `items` rows (same shape for slash + path). */
-function completionItems(r: any): SlashCompletionItem[] {
-  const rows = Array.isArray(r?.items) ? r.items : [];
+function completionItems(r: unknown): SlashCompletionItem[] {
+  const rows = Array.isArray(asResult(r).items) ? (asResult(r).items as unknown[]) : [];
   return rows
-    .map((it: any): SlashCompletionItem => ({
-      text: typeof it?.text === 'string' ? it.text : '',
-      display: typeof it?.display === 'string' ? it.display : '',
-      meta: typeof it?.meta === 'string' ? it.meta : '',
-      ...(typeof it?.kind === 'string' ? { kind: it.kind } : {}),
-    }))
+    .map((it): SlashCompletionItem => {
+      const row = isRecord(it) ? it : {};
+      return {
+        text: typeof row.text === 'string' ? row.text : '',
+        display: typeof row.display === 'string' ? row.display : '',
+        meta: typeof row.meta === 'string' ? row.meta : '',
+        ...(typeof row.kind === 'string' ? { kind: row.kind } : {}),
+      };
+    })
     .filter((it: SlashCompletionItem) => it.text.trim().length > 0);
+}
+
+function asResult(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
 }
 
 /** Assistant detail sidecars (see _history_to_messages): reasoning arrives on
  *  the assistant message itself, not as its own role. */
-function reasoningTextOf(m: any): string {
+function reasoningTextOf(m: unknown): string {
+  const rec = isRecord(m) ? m : {};
   const parts: string[] = [];
   const push = (v: unknown): void => {
     if (typeof v === 'string') {
@@ -115,9 +141,9 @@ function reasoningTextOf(m: any): string {
       }
     }
   };
-  push(m?.reasoning);
-  push(m?.reasoning_content);
-  push(m?.reasoning_details);
+  push(rec.reasoning);
+  push(rec.reasoning_content);
+  push(rec.reasoning_details);
   const seen = new Set<string>();
   return parts
     .filter((p) => (seen.has(p) ? false : (seen.add(p), true)))
@@ -129,7 +155,7 @@ export interface ServerAsk {
   rpcId: string; // "srq-..." — reply with this id
   method: string; // e.g. "clarify", "approval", "sudo", "secret", "vault.unlock_prompt"
   sessionId?: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
   /** True when restored from `open_requests` after a reconnect. */
   replayed?: boolean;
 }
@@ -159,13 +185,13 @@ export interface GatewayEvents {
       phase: 'start' | 'progress' | 'generating' | 'complete';
     },
   ) => void;
-  onComplete?: (sessionId: string, text: string, raw?: any) => void;
+  onComplete?: (sessionId: string, text: string, raw?: RpcResult) => void;
   onNotice?: (sessionId: string, text: string) => void;
-  onSessionInfo?: (sid: string, info: any) => void;
+  onSessionInfo?: (sid: string, info: unknown) => void;
   /** Live token/context snapshot while a turn runs — `session.usage`. */
-  onUsage?: (sid: string, usage: any) => void;
+  onUsage?: (sid: string, usage: unknown) => void;
   /** Agent todo snapshot (`{todos, revision}`) — `todo.updated`. */
-  onTodo?: (sessionId: string, payload: any) => void;
+  onTodo?: (sessionId: string, payload: unknown) => void;
   /** After a reconnect, the replay ring had already dropped the gap — callers
    *  should reload the transcript instead of trusting the partial replay. */
   onReplayTruncated?: (sessionId: string) => void;
@@ -173,7 +199,7 @@ export interface GatewayEvents {
   onAskCancel?: (rpcId: string, info?: AskCancelInfo) => void;
   /** Snapshot of open requests for a session, including an empty list. */
   onAskSnapshot?: (sessionId: string, rpcIds: string[], snapshotAt: number) => void;
-  onEvent?: (type: string, params: any) => void;
+  onEvent?: (type: string, params: unknown) => void;
 }
 
 export interface ConnectOpts {
@@ -219,7 +245,7 @@ export class GatewayWs {
   private pending = new Map<
     number | string,
     {
-      ok: (r: any) => void;
+      ok: (r: RpcResult) => void;
       fail: (e: RpcError) => void;
       timer: ReturnType<typeof setTimeout>;
       generation: number;
@@ -228,8 +254,8 @@ export class GatewayWs {
   private state: ConnState = 'idle';
   private closed = false;
   private backoff = WS_INITIAL_BACKOFF_MS;
-  private pingTimer: any = null;
-  private reconnectTimer: any = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectScheduled = false;
   private readyResolve: ((v: boolean) => void) | null = null;
   private dbg: WsDebug = { opens: 0, errors: 0, closes: [], lastEvent: null };
@@ -240,7 +266,7 @@ export class GatewayWs {
   private replayGeneration = 0;
   private replaying = false;
   private replayOverflow = false;
-  private replayHold: Array<{ type: string; params: any }> | null = null;
+  private replayHold: Array<{ type: string; params: Record<string, unknown> }> | null = null;
   // Server requests are one-shot. Keep their responder state across socket
   // generations so a reconnect replay cannot create a second wire response.
   private socketGeneration = 0;
@@ -302,7 +328,7 @@ export class GatewayWs {
     this.reasoningBuf.clear();
     this.clearTimers();
     try {
-      (this.ws as any)?.close?.();
+      asWsLike(this.ws)?.close?.();
     } catch {}
     this.ws = null;
     this.askRecords.clear();
@@ -349,7 +375,7 @@ export class GatewayWs {
     const previous = this.ws;
     this.ws = ws;
     try {
-      (previous as any)?.close?.();
+      asWsLike(previous)?.close?.();
     } catch {}
 
     ws.onopen = () => {
@@ -362,11 +388,11 @@ export class GatewayWs {
       this.call('client.capabilities', { server_requests: true }).catch(() => {});
     };
 
-    ws.onmessage = (ev: any) => {
+    ws.onmessage = (ev: { data?: unknown }) => {
       if (this.ws !== ws || generation !== this.socketGeneration) return;
-      let msg: any;
+      let msg: unknown;
       try {
-        msg = JSON.parse(String(ev.data));
+        msg = JSON.parse(String(ev.data)) as unknown;
       } catch {
         return;
       }
@@ -379,12 +405,12 @@ export class GatewayWs {
       this.dbg.errors++;
     };
 
-    ws.onclose = (ev: any) => {
+    ws.onclose = (ev: { code?: unknown; reason?: unknown }) => {
       if (this.ws !== ws || generation !== this.socketGeneration) return;
       this.clearTimers();
       this.dbg.closes.push({
         code: typeof ev?.code === 'number' ? ev.code : undefined,
-        reason: ev?.reason ? String(ev.reason) : undefined,
+        reason: typeof ev?.reason === 'string' && ev.reason ? ev.reason : undefined,
       });
       if (this.dbg.closes.length > WS_CLOSE_LOG_MAX) this.dbg.closes.shift();
       if (this.closed) return;
@@ -408,9 +434,10 @@ export class GatewayWs {
       try {
         this.url = await this.refreshUrl();
         this.backoff = WS_INITIAL_BACKOFF_MS;
-      } catch (e: any) {
+      } catch (e: unknown) {
         // A rejected session cookie cannot be repaired by another ticket mint.
-        if (e?.status === 401 || e?.status === 403) {
+        const status = isRecord(e) ? e.status : undefined;
+        if (status === 401 || status === 403) {
           this.reconnectScheduled = false;
           this.setState('auth-expired');
           this.readyResolve?.(false);
@@ -472,13 +499,10 @@ export class GatewayWs {
 
   // ── RPC ────────────────────────────────────────────────────────────────
 
-  call(
-    method: string,
-    params: Record<string, any> = {},
-    timeoutMs = WS_RPC_TIMEOUT_MS,
-  ): Promise<any> {
+  call(method: string, params: Record<string, unknown> = {}, timeoutMs = WS_RPC_TIMEOUT_MS): Promise<RpcResult> {
     return new Promise((resolve, reject) => {
-      if (!this.ws || (this.ws as any).readyState !== 1) {
+      const sock = asWsLike(this.ws);
+      if (!sock || sock.readyState !== 1) {
         reject({ code: -32000, message: 'not connected' } satisfies RpcError);
         return;
       }
@@ -509,7 +533,7 @@ export class GatewayWs {
         generation: this.socketGeneration,
       });
       try {
-        this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+        sock.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
       } catch (e) {
         const p = this.pending.get(id);
         if (p) {
@@ -522,11 +546,11 @@ export class GatewayWs {
   }
 
   /** Reply once to a server→client ask (id "srq-..."). */
-  replyToAsk(rpcId: string, result: Record<string, any>): boolean {
+  replyToAsk(rpcId: string, result: Record<string, unknown>): boolean {
     const record = this.askRecords.get(rpcId);
     if (!record || record.sent || record.cancelled || record.generation !== this.socketGeneration) return false;
-    const ws = this.ws;
-    if (!ws || (ws as any).readyState !== 1) return false;
+    const ws = asWsLike(this.ws);
+    if (!ws || ws.readyState !== 1) return false;
     try {
       ws.send(JSON.stringify({ jsonrpc: '2.0', id: rpcId, result }));
       record.sent = true;
@@ -566,7 +590,7 @@ export class GatewayWs {
           this.events.onAskSnapshot?.(
             id,
             result.open_requests
-              .map((request: any) => String(request?.id ?? ''))
+              .map((request) => String(asResult(request).id ?? ''))
               .filter((rpcId: string) => Boolean(rpcId)),
             snapshotAt,
           );
@@ -609,13 +633,16 @@ export class GatewayWs {
     return true;
   }
 
-  private deliverOpenRequests(result: any): void {
-    const rows = Array.isArray(result?.open_requests) ? result.open_requests : [];
+  private deliverOpenRequests(result: unknown): void {
+    const rows = Array.isArray(asResult(result).open_requests)
+      ? (asResult(result).open_requests as unknown[])
+      : [];
     for (const req of rows) {
-      const id = String(req?.id ?? '');
-      const method = String(req?.method ?? '');
+      const rec = asResult(req);
+      const id = String(rec.id ?? '');
+      const method = String(rec.method ?? '');
       if (!id || !method) continue;
-      const params = (req?.params ?? {}) as Record<string, any>;
+      const params = isRecord(rec.params) ? rec.params : {};
       this.registerAsk(
         {
           rpcId: id,
@@ -636,16 +663,19 @@ export class GatewayWs {
       limit,
       ...(selectedProfile ? { profile: selectedProfile } : {}),
     });
-    const rows = r?.sessions ?? [];
-    return rows.map((s: any) => ({
-      id: String(s?.id ?? ''),
-      title: String(s?.title ?? ''),
-      preview: String(s?.preview ?? ''),
-      messageCount: Number(s?.message_count ?? 0),
-      source: String(s?.source ?? ''),
-      startedAt: Number(s?.started_at ?? 0),
-      ...(selectedProfile ? { profile: selectedProfile } : {}),
-    }));
+    const rows = Array.isArray(r.sessions) ? r.sessions : [];
+    return (rows as unknown[]).map((s) => {
+      const row = asResult(s);
+      return {
+        id: String(row.id ?? ''),
+        title: String(row.title ?? ''),
+        preview: String(row.preview ?? ''),
+        messageCount: Number(row.message_count ?? 0),
+        source: String(row.source ?? ''),
+        startedAt: Number(row.started_at ?? 0),
+        ...(selectedProfile ? { profile: selectedProfile } : {}),
+      };
+    });
   }
 
   async mostRecent(profile?: string): Promise<string | null> {
@@ -686,13 +716,13 @@ export class GatewayWs {
   }
 
   /** Attach to a live session / reload durable one. Returns live payload. */
-  resume(sessionId: string, omitMessages?: boolean, profile?: string): Promise<any>;
-  resume(sessionId: string, profile?: string, omitMessages?: boolean): Promise<any>;
+  resume(sessionId: string, omitMessages?: boolean, profile?: string): Promise<RpcResult>;
+  resume(sessionId: string, profile?: string, omitMessages?: boolean): Promise<RpcResult>;
   resume(
     sessionId: string,
     omitMessagesOrProfile: boolean | string = false,
     profileOrOmitMessages?: boolean | string,
-  ): Promise<any> {
+  ): Promise<RpcResult> {
     const profileFirst = typeof omitMessagesOrProfile === 'string';
     const omitMessages = profileFirst ? Boolean(profileOrOmitMessages) : Boolean(omitMessagesOrProfile);
     const selectedProfile = String(
@@ -707,14 +737,15 @@ export class GatewayWs {
 
   async history(sessionId: string): Promise<HistoryMessage[]> {
     const r = await this.call('session.history', { session_id: sessionId });
-    const msgs = r?.messages ?? [];
+    const msgs = Array.isArray(r.messages) ? r.messages : [];
     // Server shape is {role, text, ...} (see _history_to_messages); older
     // payloads used `content`. Prefer text, fall back to content.
-    return msgs.map((m: any) => {
+    return (msgs as unknown[]).map((m) => {
+      const row = asResult(m);
       // Tool rows are {role:'tool', name, context, args} — no text/content.
-      if (m?.role === 'tool') {
-        const name = typeof m?.name === 'string' ? m.name : '';
-        const ctx = typeof m?.context === 'string' ? m.context : '';
+      if (row.role === 'tool') {
+        const name = typeof row.name === 'string' ? row.name : '';
+        const ctx = typeof row.context === 'string' ? row.context : '';
         return {
           role: 'tool',
           content: ctx || name,
@@ -722,21 +753,21 @@ export class GatewayWs {
         };
       }
       let text = '';
-      if (typeof m?.text === 'string') text = m.text;
-      else if (typeof m?.content === 'string') text = m.content;
-      else if (m?.text != null || m?.content != null) {
+      if (typeof row.text === 'string') text = row.text;
+      else if (typeof row.content === 'string') text = row.content;
+      else if (row.text != null || row.content != null) {
         try {
-          text = JSON.stringify(m?.text ?? m?.content);
+          text = JSON.stringify(row.text ?? row.content);
         } catch {
           text = '';
         }
       }
-      const reasoning = reasoningTextOf(m);
+      const reasoning = reasoningTextOf(row);
       return {
-        role: String(m?.role ?? ''),
+        role: String(row.role ?? ''),
         content: text,
-        ...(typeof m?.row_id === 'number' ? { rowId: m.row_id } : {}),
-        ...(typeof m?.timestamp === 'number' ? { ts: m.timestamp } : {}),
+        ...(typeof row.row_id === 'number' ? { rowId: row.row_id } : {}),
+        ...(typeof row.timestamp === 'number' ? { ts: row.timestamp } : {}),
         ...(reasoning ? { reasoning } : {}),
       };
     });
@@ -773,23 +804,23 @@ export class GatewayWs {
     return r?.status === 'queued' ? 'queued' : 'streaming';
   }
 
-  interrupt(sessionId: string): Promise<any> {
+  interrupt(sessionId: string): Promise<RpcResult> {
     return this.call('session.interrupt', { session_id: sessionId });
   }
 
   /** Steer the live turn (correction while generating; backend queues or rewrites). */
-  redirect(sessionId: string, text: string): Promise<any> {
+  redirect(sessionId: string, text: string): Promise<RpcResult> {
     return this.call('session.redirect', { session_id: sessionId, text });
   }
 
-  rename(sessionId: string, title: string): Promise<any> {
+  rename(sessionId: string, title: string): Promise<RpcResult> {
     return this.call('session.title', { session_id: sessionId, title });
   }
 
   // ── Model picker ───────────────────────────────────────────────────────
   // Same payload builder as REST GET /api/model/options (see dashboard.ts).
 
-  async modelOptions(sessionId?: string, profile?: string): Promise<any> {
+  async modelOptions(sessionId?: string, profile?: string): Promise<RpcResult> {
     const selectedProfile = String(profile ?? '').trim();
     return this.call(
       'model.options',
@@ -812,7 +843,7 @@ export class GatewayWs {
     });
   }
 
-  deleteSession(sessionId: string, profile?: string): Promise<any> {
+  deleteSession(sessionId: string, profile?: string): Promise<RpcResult> {
     const selectedProfile = String(profile ?? '').trim();
     return this.call('session.delete', {
       session_id: sessionId,
@@ -821,14 +852,14 @@ export class GatewayWs {
   }
 
   /** Fork the current session into an independent copy (`session.branch`). */
-  branchSession(sessionId: string, name?: string): Promise<any> {
+  branchSession(sessionId: string, name?: string): Promise<RpcResult> {
     return this.call('session.branch', {
       session_id: sessionId,
       ...(name ? { name } : {}),
     });
   }
 
-  closeSession(sessionId: string): Promise<any> {
+  closeSession(sessionId: string): Promise<RpcResult> {
     return this.call('session.close', { session_id: sessionId });
   }
 
@@ -861,13 +892,13 @@ export class GatewayWs {
 
   /** Run one slash command (live shortcut or the session's slash worker). The
    *  result is plain `{output}` text or a `command.dispatch` directive (`{type}`). */
-  slashExec(sessionId: string, command: string): Promise<any> {
+  slashExec(sessionId: string, command: string): Promise<RpcResult> {
     return this.call('slash.exec', { session_id: sessionId, command });
   }
 
   /** Structured fallback for skill / quick / bundle / alias commands that the
    *  slash worker refuses (4018) — see command.dispatch. */
-  commandDispatch(sessionId: string, name: string, arg = ''): Promise<any> {
+  commandDispatch(sessionId: string, name: string, arg = ''): Promise<RpcResult> {
     return this.call('command.dispatch', {
       name: name.replace(/^\/+/, ''),
       arg,
@@ -878,7 +909,7 @@ export class GatewayWs {
   /** Categorized slash catalog: per-command `desktop=` disposition (which surface
    *  owns it) plus alias mapping. This is the live authority behind
    *  ./slash-commands — the pasted registry is only the offline fallback. */
-  commandsCatalog(sessionId?: string): Promise<any> {
+  commandsCatalog(sessionId?: string): Promise<RpcResult> {
     return this.call('commands.catalog', sessionId ? { session_id: sessionId } : {});
   }
 
@@ -892,7 +923,7 @@ export class GatewayWs {
     sessionId?: string,
     scope?: 'global' | 'session',
     profile?: string,
-  ): Promise<any> {
+  ): Promise<RpcResult> {
     const selectedProfile = String(profile ?? '').trim();
     return this.call('config.set', {
       key,
@@ -903,7 +934,7 @@ export class GatewayWs {
     });
   }
 
-  configGet(key: string, sessionId?: string, profile?: string): Promise<any> {
+  configGet(key: string, sessionId?: string, profile?: string): Promise<RpcResult> {
     const selectedProfile = String(profile ?? '').trim();
     return this.call('config.get', {
       key,
@@ -913,13 +944,18 @@ export class GatewayWs {
   }
 
   /** Live child agents owned by this session (`subagent.list`). */
-  subagents(sessionId: string): Promise<any> {
+  subagents(sessionId: string): Promise<RpcResult> {
     return this.call('subagent.list', { session_id: sessionId });
   }
 
   /** Spill a large paste to a file on the server, returning its inline placeholder. */
-  pasteCollapse(text: string): Promise<{ placeholder: string; path: string; lines: number }> {
-    return this.call('paste.collapse', { text });
+  async pasteCollapse(text: string): Promise<{ placeholder: string; path: string; lines: number }> {
+    const r = await this.call('paste.collapse', { text });
+    return {
+      placeholder: String(r.placeholder ?? ''),
+      path: String(r.path ?? ''),
+      lines: Number(r.lines ?? 0),
+    };
   }
 
   /**
@@ -935,22 +971,25 @@ export class GatewayWs {
       'session.active_list',
       currentSessionId ? { current_session_id: currentSessionId } : {},
       WS_CONNECT_TIMEOUT_MS,
-    ).then((r: any) => {
-      const rows = Array.isArray(r?.sessions) ? r.sessions : [];
-      return rows.map((s: any) => ({
-        id: String(s?.id ?? ''),
-        sessionKey: String(s?.session_key ?? ''),
-        status: String(s?.status ?? ''),
-        ...(typeof s?.profile === 'string' && s.profile
-          ? { profile: s.profile }
-          : typeof s?.profile_name === 'string' && s.profile_name
-            ? { profile: s.profile_name }
-            : {}),
-      }));
+    ).then((r: RpcResult) => {
+      const rows = Array.isArray(r.sessions) ? r.sessions : [];
+      return (rows as unknown[]).map((s) => {
+        const row = asResult(s);
+        return {
+          id: String(row.id ?? ''),
+          sessionKey: String(row.session_key ?? ''),
+          status: String(row.status ?? ''),
+          ...(typeof row.profile === 'string' && row.profile
+            ? { profile: row.profile }
+            : typeof row.profile_name === 'string' && row.profile_name
+              ? { profile: row.profile_name }
+              : {}),
+        };
+      });
     });
   }
 
-  usage(sessionId: string): Promise<any> {
+  usage(sessionId: string): Promise<RpcResult> {
     return this.call('session.usage', { session_id: sessionId });
   }
 
@@ -959,50 +998,61 @@ export class GatewayWs {
    * restored transcript. Unlike session.usage's provider-anchored counters,
    * this is available before an old session has run another turn.
    */
-  contextBreakdown(sessionId: string): Promise<any> {
+  contextBreakdown(sessionId: string): Promise<RpcResult> {
     return this.call('session.context_breakdown', { session_id: sessionId });
   }
 
   // ── Frame routing ──────────────────────────────────────────────────────
 
-  private route(msg: any) {
+  private route(msg: unknown) {
+    const frame = asResult(msg);
     // 1. Reply to our own RPC (has id, no method).
-    if (msg?.id !== undefined && msg?.method === undefined) {
-      const p = this.pending.get(msg.id);
+    if (frame.id !== undefined && frame.method === undefined) {
+      if (typeof frame.id !== 'number' && typeof frame.id !== 'string') return;
+      const p = this.pending.get(frame.id);
       if (p) {
-        this.pending.delete(msg.id);
+        this.pending.delete(frame.id);
         clearTimeout(p.timer);
         if (p.generation !== this.socketGeneration) return;
-        if (msg.error) p.fail(msg.error as RpcError);
-        else p.ok(msg.result);
+        if (frame.error) {
+          const errRec = asResult(frame.error);
+          p.fail({
+            code: typeof errRec.code === 'number' ? errRec.code : -32000,
+            message: typeof errRec.message === 'string' ? errRec.message : 'RPC error',
+            ...('data' in errRec ? { data: errRec.data } : {}),
+          });
+        } else p.ok(asResult(frame.result));
       }
       return;
     }
     // 2. Server→client ask (has BOTH id "srq-*" and method) — must be answered.
-    if (msg?.id !== undefined && typeof msg?.method === 'string' && String(msg.id).startsWith('srq-')) {
+    if (frame.id !== undefined && typeof frame.method === 'string' && String(frame.id).startsWith('srq-')) {
+      const params = asResult(frame.params);
       this.registerAsk(
         {
-          rpcId: String(msg.id),
-          method: String(msg.method),
-          sessionId: msg?.params?.session_id,
-          params: (msg?.params ?? {}) as Record<string, any>,
+          rpcId: String(frame.id),
+          method: String(frame.method),
+          sessionId: typeof params.session_id === 'string' ? params.session_id : undefined,
+          params,
         },
         false,
       );
       return;
     }
     // 3. Plain event notification.
-    const method = msg?.method;
-    const params = msg?.params ?? {};
-    if (method === 'event' && typeof params?.type === 'string') {
+    const method = frame.method;
+    const params = asResult(frame.params);
+    if (method === 'event' && typeof params.type === 'string') {
       this.routeEvent(String(params.type), params);
       return;
     }
     // Unknown frame — surface for debugging, ignore otherwise.
   }
 
-  private sidOf(params: any): string {
-    return String(params?.session_id ?? params?.sid ?? '');
+  private sidOf(params: unknown): string {
+    const rec = asResult(params);
+    const sid = rec.session_id ?? rec.sid;
+    return typeof sid === 'string' ? sid : String(sid ?? '');
   }
 
   /**
@@ -1029,7 +1079,7 @@ export class GatewayWs {
     try {
       for (const sid of targets) {
         const lastSeen = this.lastSeq.get(sid) ?? 0;
-        let r: any = null;
+        let r: RpcResult | null = null;
         try {
           r = await this.call(
             'session.events.since',
@@ -1040,17 +1090,18 @@ export class GatewayWs {
           replayFailed = true;
           break;
         }
-        const events = Array.isArray(r?.events) ? r.events : [];
-        for (const ev of events) {
-          const t = typeof ev?.type === 'string' ? ev.type : '';
+        const events = r && Array.isArray(r.events) ? r.events : [];
+        for (const ev of events as unknown[]) {
+          const evRec = asResult(ev);
+          const t = typeof evRec.type === 'string' ? evRec.type : '';
           if (!t) continue;
-          const evSid = typeof ev?.session_id === 'string' && ev.session_id ? ev.session_id : sid;
-          const seq = typeof ev?.seq === 'number' ? ev.seq : undefined;
+          const evSid = typeof evRec.session_id === 'string' && evRec.session_id ? evRec.session_id : sid;
+          const seq = typeof evRec.seq === 'number' ? evRec.seq : undefined;
           if (seq !== undefined) {
             if (seq <= (this.lastSeq.get(evSid) ?? 0)) continue;
             this.lastSeq.set(evSid, seq);
           }
-          this.dispatch(t, evSid, (ev?.payload ?? {}) as Record<string, any>);
+          this.dispatch(t, evSid, asResult(evRec.payload));
         }
         if (r?.truncated) {
           this.lastSeq.delete(sid);
@@ -1070,18 +1121,20 @@ export class GatewayWs {
         return;
       }
       for (const h of held) {
-        const seq = typeof h.params?.seq === 'number' ? h.params.seq : undefined;
-        const hsid = this.sidOf(h.params);
+        const hParams = asResult(h.params);
+        const seq = typeof hParams.seq === 'number' ? hParams.seq : undefined;
+        const hsid = this.sidOf(hParams);
         if (seq !== undefined && seq <= (this.lastSeq.get(hsid) ?? 0)) continue;
         if (seq !== undefined) this.lastSeq.set(hsid, seq);
-        this.dispatch(h.type, hsid, (h.params?.payload ?? h.params ?? {}) as Record<string, any>);
+        this.dispatch(h.type, hsid, asResult(hParams.payload ?? hParams));
       }
     }
   }
 
-  private routeEvent(type: string, params: any) {
-    const sid = this.sidOf(params);
-    const seq = typeof params?.seq === 'number' ? params.seq : undefined;
+  private routeEvent(type: string, params: unknown) {
+    const rec = asResult(params);
+    const sid = this.sidOf(rec);
+    const seq = typeof rec.seq === 'number' ? rec.seq : undefined;
     // gateway.ready is per-connection handshake, never a replayed event — always
     // deliver it, or a reconnect could be dedup-skipped and never go 'ready'.
     if (type !== 'gateway.ready' && seq !== undefined) {
@@ -1090,7 +1143,7 @@ export class GatewayWs {
       // past the gap we're filling.
       if (this.replaying) {
         if (this.replayHold && this.replayHold.length < WS_REPLAY_HOLD_MAX) {
-          this.replayHold?.push({ type, params });
+          this.replayHold?.push({ type, params: asResult(params) });
         } else {
           this.replayOverflow = true;
         }
@@ -1107,7 +1160,7 @@ export class GatewayWs {
     }
     // Server nests event data under params.payload (see _event_frame in
     // tui_gateway/server.py) — top-level params only carries type/session_id.
-    this.dispatch(type, sid, (params?.payload ?? params ?? {}) as Record<string, any>);
+    this.dispatch(type, sid, asResult(rec.payload ?? rec));
   }
 
   /** Fan one event out to the registered callbacks (live or replayed). */
@@ -1134,14 +1187,15 @@ export class GatewayWs {
     this.flushTimer = setTimeout(() => this.flushBuffers(), WS_TOKEN_FLUSH_MS);
   }
 
-  private dispatch(type: string, sid: string, body: Record<string, any>) {
+  private dispatch(type: string, sid: string, body: Record<string, unknown>) {
     this.dbg.lastEvent = type;
     const strOf = (v: unknown) => (typeof v === 'string' ? v : '');
+    const strOrUndef = (v: unknown) => (typeof v === 'string' ? v : undefined);
     switch (type) {
       case 'gateway.ready': {
         // The backend stamps a per-process `replay_epoch`; when it changes the
         // seq numbering reset, so our watermarks are meaningless — drop them.
-        const epoch = strOf(body?.replay_epoch);
+        const epoch = strOf(body.replay_epoch);
         if (epoch) {
           if (this.replayEpoch && epoch !== this.replayEpoch) {
             this.lastSeq.clear();
@@ -1186,36 +1240,36 @@ export class GatewayWs {
         break;
       case 'tool.start':
         this.events.onTool?.(sid, {
-          name: body?.name,
-          args: body?.args,
-          context: body?.context,
-          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
+          name: strOrUndef(body.name),
+          args: body.args,
+          context: strOrUndef(body.context),
+          toolId: strOf(body.tool_id ?? body.id) || undefined,
           phase: 'start',
         });
         break;
       case 'tool.progress':
         this.events.onTool?.(sid, {
-          name: body?.name,
-          preview: body?.preview,
-          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
+          name: strOrUndef(body.name),
+          preview: strOrUndef(body.preview),
+          toolId: strOf(body.tool_id ?? body.id) || undefined,
           phase: 'progress',
         });
         break;
       case 'tool.generating':
         this.events.onTool?.(sid, {
-          name: body?.name,
-          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
+          name: strOrUndef(body.name),
+          toolId: strOf(body.tool_id ?? body.id) || undefined,
           phase: 'generating',
         });
         break;
       case 'tool.complete':
         this.events.onTool?.(sid, {
-          name: body?.name,
-          toolId: strOf(body?.tool_id ?? body?.id) || undefined,
-          summary: strOf(body?.summary) || strOf(body?.preview) || undefined,
-          inlineDiff: strOf(body?.inline_diff) || undefined,
-          result: body?.result,
-          args: body?.args,
+          name: strOrUndef(body.name),
+          toolId: strOf(body.tool_id ?? body.id) || undefined,
+          summary: strOf(body.summary) || strOf(body.preview) || undefined,
+          inlineDiff: strOf(body.inline_diff) || undefined,
+          result: body.result,
+          args: body.args,
           phase: 'complete',
         });
         break;
@@ -1223,19 +1277,19 @@ export class GatewayWs {
         this.events.onSessionInfo?.(sid, body);
         break;
       case 'session.usage':
-        this.events.onUsage?.(sid, body?.usage ?? body);
+        this.events.onUsage?.(sid, body.usage ?? body);
         break;
       case 'todo.updated':
         this.events.onTodo?.(sid, body);
         break;
       case 'request.cancel': {
-        const id = String(body?.id ?? '');
+        const id = String(body.id ?? '');
         if (id) {
           const record = this.askRecords.get(id);
           if (record) record.cancelled = true;
           this.events.onAskCancel?.(id, {
-            method: strOf(body?.method) || undefined,
-            reason: strOf(body?.reason) || undefined,
+            method: strOf(body.method) || undefined,
+            reason: strOf(body.reason) || undefined,
             sessionId: sid || undefined,
           });
         }

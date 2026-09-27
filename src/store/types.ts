@@ -22,6 +22,20 @@ export interface ScopedSessionSummary extends SessionSummary {
   profile?: string;
 }
 
+/** Session detail snapshot (`session.info`) — free-form JSON, kept verbatim. */
+export type SessionInfo = Record<string, unknown>;
+/** Live usage snapshot (`session.usage`) — free-form JSON, merged per turn. */
+export type UsageInfo = Record<string, unknown>;
+/** Honest result of the generic ops REST helpers (JSON of any shape). */
+export type OpsResult = unknown;
+/** Cookie-authed GET against the dashboard (`services/dashboard`). */
+export type OpsGet = (path: string) => Promise<OpsResult>;
+/** Cookie-authed mutation against the dashboard (`services/dashboard`). */
+export type OpsMut = (
+  path: string,
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  body?: unknown,
+) => Promise<OpsResult>;
 /** One row of the full-history search index (plain data, not a live bubble). */
 export interface TranscriptHit {
   role: string;
@@ -82,8 +96,8 @@ export interface AppStore {
   infoOpen: boolean;
   setInfoOpen: (v: boolean) => void;
   infoSeq: number;
-  sessionInfo: any;
-  usageInfo: any;
+  sessionInfo: SessionInfo | null;
+  usageInfo: UsageInfo | null;
   usageLoading: boolean;
   toolLine: string | null;
   ask: ServerAsk | null;
@@ -164,8 +178,8 @@ export interface AppStore {
   deleteSessionById: (storedId: string) => Promise<void>;
   redirectLive: (text: string) => Promise<void>;
   setGlobalModel: (providerSlug: string, modelId: string) => Promise<void>;
-  opsGet: (path: string) => Promise<any>;
-  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>;
+  opsGet: OpsGet;
+  opsMut: OpsMut;
   /** Session cookie — media components need it to load authed URLs. */
   getCookie: () => string;
   /** Connection + profile generation for auth-scoped REST screens. */

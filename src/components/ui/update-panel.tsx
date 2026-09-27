@@ -29,6 +29,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
+import { asRecord } from '../../utils/ops';
 import { errMsg } from '../../utils/messages';
 import { Button } from './button';
 import { Badge } from './badge';
@@ -182,7 +183,7 @@ export function UpdatePanel() {
         opsGet(api.updateReceipt())
           .then((r) => {
             if (!aliveRef.current || getAuthScope() !== scope) return;
-            const summary = normalizeReceiptSummary((r as any)?.summary);
+            const summary = normalizeReceiptSummary(asRecord(r).summary);
             if (summary) setReceipt(summary);
           })
           .catch(() => {});
@@ -277,7 +278,7 @@ export function UpdatePanel() {
     setStarting(true);
     setError('');
     try {
-      const res = await opsMut(api.updateApply(), 'POST', {});
+      const res = asRecord(await opsMut(api.updateApply(), 'POST', {}));
       if (res && res.ok === false) {
         Alert.alert(
           'Update not applied',
@@ -285,7 +286,7 @@ export function UpdatePanel() {
         );
         return;
       }
-      beginStream(typeof res?.name === 'string' && res.name ? res.name : UPDATE_ACTION);
+      beginStream(typeof res.name === 'string' && res.name ? res.name : UPDATE_ACTION);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -308,8 +309,8 @@ export function UpdatePanel() {
 
   const runRestart = useCallback(async () => {
     try {
-      const res = await opsMut(api.gatewayRestart(), 'POST', {});
-      beginStream(typeof res?.name === 'string' && res.name ? res.name : 'gateway-restart');
+      const res = asRecord(await opsMut(api.gatewayRestart(), 'POST', {}));
+      beginStream(typeof res.name === 'string' && res.name ? res.name : 'gateway-restart');
     } catch (e) {
       setError(errMsg(e));
     }

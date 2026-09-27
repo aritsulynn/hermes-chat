@@ -35,7 +35,9 @@ export function formatToolCommand(args: unknown): string {
   try {
     const j = JSON.stringify(a);
     if (j && j !== '{}') return j.length > 300 ? `${j.slice(0, 300)}…` : j;
-  } catch {}
+  } catch (e) {
+    console.warn('[toolResult] formatToolCommand stringify failed', e);
+  }
   return '';
 }
 

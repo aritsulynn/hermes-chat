@@ -20,7 +20,7 @@ import { formatToolCommand, formatToolResult } from '../../utils/toolResult';
 import { nid, normalizeTodos } from '../../utils/messages';
 import type { Attachment, QueuedPrompt, Role, TodoItem, UiMessage } from '../../utils/messages';
 import { mergeUsageState, normalizeProfileName, profileSessionKey } from '../helpers';
-import type { AgentProfile, ScopedSessionSummary } from '../types';
+import type { AgentProfile, ScopedSessionSummary, SessionInfo, UsageInfo } from '../types';
 import type { StoreRuntime } from '../runtime';
 
 type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
@@ -63,8 +63,8 @@ export interface GatewaySliceDeps {
   lastTurnEventAt: MutableRefObject<number>;
   notifyRef: MutableRefObject<boolean>;
   usageRefreshRef: MutableRefObject<() => void>;
-  setUsageInfo: Dispatch<SetStateAction<any>>;
-  setSessionInfo: Dispatch<SetStateAction<any>>;
+  setUsageInfo: Dispatch<SetStateAction<UsageInfo | null>>;
+  setSessionInfo: Dispatch<SetStateAction<SessionInfo | null>>;
   toolRefreshRef: MutableRefObject<() => void>;
   scheduleToolRefresh: () => void;
   setTodos: Dispatch<SetStateAction<TodoItem[]>>;
@@ -669,20 +669,24 @@ export function useGatewaySlice(deps: GatewaySliceDeps): GatewaySlice {
           },
           onSessionInfo: (sid, info) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-            setSessionInfo(info);
-            if (info?.usage) setUsageInfo((prev: any) => mergeUsageState(prev, info.usage));
+            const infoRec =
+              info && typeof info === 'object' && !Array.isArray(info)
+                ? (info as Record<string, unknown>)
+                : null;
+            setSessionInfo(infoRec);
+            if (infoRec?.usage) setUsageInfo((prev) => mergeUsageState(prev, infoRec.usage));
             if (contextPendingSidRef.current === sid && gw.current) {
               hydrateSessionContext(gw.current, sid);
             }
             // Server truth wins when present (e.g. the global default changed on
             // desktop) — and persists for the next boot.
-            if (info && typeof info.model === 'string' && info.model) {
-              const prov = typeof info.provider === 'string' ? info.provider : '';
+            if (infoRec && typeof infoRec.model === 'string' && infoRec.model) {
+              const prov = typeof infoRec.provider === 'string' ? infoRec.provider : '';
               setModelProvider(prov);
-              setModel(info.model);
+              setModel(infoRec.model);
               void saveModel(
                 prov,
-                info.model,
+                infoRec.model,
                 latest.current.activeProfile,
                 connectionScope(latest.current.host, latest.current.username),
               );
@@ -690,7 +694,7 @@ export function useGatewaySlice(deps: GatewaySliceDeps): GatewaySlice {
           },
           onUsage: (sid, usage) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-            setUsageInfo((prev: any) => mergeUsageState(prev, usage));
+            setUsageInfo((prev) => mergeUsageState(prev, usage));
           },
           onTodo: (sid, payload) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;

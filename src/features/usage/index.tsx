@@ -24,6 +24,7 @@ import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { Progress } from '../../components/ui/progress';
 import { Text as UIText } from '../../components/ui/text';
+import { brandColor, screenStyle } from '../../theme';
 import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
@@ -40,6 +41,8 @@ const PERIOD_OPTIONS = [
 export function UsageScreen() {
   const { authed, opsGet, theme, getAuthScope } = useApp();
   const dark = theme === 'dark';
+  // Shared by the spinner and the KPI icon — resolve once per scheme.
+  const brand = useMemo(() => brandColor(dark), [dark]);
   const insets = useSafeAreaInsets();
 
   const [days, setDays] = useState<number>(30);
@@ -149,7 +152,7 @@ export function UsageScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       {/* No 'bottom' edge: ScrollView content pads insets.bottom + 32. */}
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
@@ -227,7 +230,7 @@ export function UsageScreen() {
         >
           {loading && !refreshing ? (
             <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#1a73e8" />
+              <ActivityIndicator size="large" color={brand} />
               <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading usage analytics…</Text>
             </View>
           ) : (
@@ -237,7 +240,7 @@ export function UsageScreen() {
                 {/* Total Tokens */}
                 <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
                   <View className="flex-row items-center gap-1.5">
-                    <TrendingUp size={16} color="#1a73e8" />
+                    <TrendingUp size={16} color={brand} />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</Text>
                   </View>
                   <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">

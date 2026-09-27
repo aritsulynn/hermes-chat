@@ -11,6 +11,7 @@ import { parseClarify } from '../../utils/messages';
 import { mergeUsage, contextTone } from '../../utils/usage';
 import { compactNumber } from '../../utils/format';
 import { useApp } from '../../hooks/app-store';
+import { placeholderColor, screenBg } from '../../theme';
 import type { GatewayWs, ServerAsk } from '../../services/gateway-ws';
 import { Button } from './button';
 import { Input } from './input';
@@ -93,7 +94,7 @@ export const InfoSheet = forwardRef<
       index={0}
       snapPoints={snapPoints}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: dark ? '#000' : '#fff' }}
+      backgroundStyle={{ backgroundColor: screenBg(dark) }}
       handleIndicatorStyle={{ backgroundColor: dark ? '#525252' : '#d4d4d4' }}
       onDismiss={onClose}
     >
@@ -121,7 +122,7 @@ export const InfoSheet = forwardRef<
             value={draft}
             onChangeText={setDraft}
             placeholder="Rename session…"
-            placeholderTextColor={dark ? '#888' : '#9ca3af'}
+            placeholderTextColor={placeholderColor(dark)}
             keyboardAppearance={dark ? 'dark' : 'light'}
             autoCapitalize="none"
             returnKeyType="done"
@@ -226,11 +227,23 @@ export const AskSheet = forwardRef<
   const snapPoints = useMemo(() => ['60%', '90%'], []);
   const { theme } = useApp();
   const dark = theme === 'dark';
+  // Both the clarify answer box and the sudo/secret field share this colour.
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
 
+  // Fresh `ask` for the reset effect below. The store hands back a new object
+  // for the same RPC whenever it re-hydrates an ask (reconnect, room switch,
+  // inbox reply), so `ask` is not a stable identity: depending on it directly
+  // would wipe the user's in-progress answer on each of those. Reading it
+  // through a ref keeps the effect firing on new requests only (keyed by
+  // rpcId) while never capturing a stale payload — same pattern the chat
+  // screen uses for its own ask mirror.
+  const askMirror = useRef(ask);
+  askMirror.current = ask;
   useEffect(() => {
     for (const timer of Object.values(lockTimers.current)) clearTimeout(timer);
     lockTimers.current = {};
-    const parsed = ask?.method === 'clarify' ? parseClarify(ask) : null;
+    const current = askMirror.current;
+    const parsed = current?.method === 'clarify' ? parseClarify(current) : null;
     const restored: Record<string, string[]> = {};
     for (const question of parsed?.questions ?? []) {
       if (question.lockedAnswer) restored[question.qid] = [question.lockedAnswer];
@@ -239,7 +252,6 @@ export const AskSheet = forwardRef<
     setPicked(restored);
     setSent(null);
     setCmdCopied(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ask?.rpcId]);
 
   const renderBody = () => {
@@ -308,7 +320,7 @@ export const AskSheet = forwardRef<
                   value={text}
                   onChangeText={setText}
                   placeholder="Type your answer…"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
+                  placeholderTextColor={placeholder}
                   keyboardAppearance={dark ? 'dark' : 'light'}
                   multiline
                 />
@@ -470,7 +482,7 @@ export const AskSheet = forwardRef<
           value={text}
           onChangeText={setText}
           placeholder="…"
-          placeholderTextColor={dark ? '#888' : '#9ca3af'}
+          placeholderTextColor={placeholder}
           keyboardAppearance={dark ? 'dark' : 'light'}
           secureTextEntry
           autoFocus
@@ -496,7 +508,7 @@ export const AskSheet = forwardRef<
       index={0}
       snapPoints={snapPoints}
       backdropComponent={renderStaticBackdrop}
-      backgroundStyle={{ backgroundColor: dark ? '#000' : '#fff' }}
+      backgroundStyle={{ backgroundColor: screenBg(dark) }}
       handleIndicatorStyle={{ backgroundColor: dark ? '#525252' : '#d4d4d4' }}
       enablePanDownToClose={false}
       // Lifts the sheet with the keyboard so the sudo/secret input and the

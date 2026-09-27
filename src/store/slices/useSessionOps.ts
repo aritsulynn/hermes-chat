@@ -10,7 +10,7 @@ import { errMsg, normalizeTodos } from '../../utils/messages';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
 import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
 import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey, serverAskFromInbox } from '../helpers';
-import type { ScopedSessionSummary } from '../types';
+import type { ScopedSessionSummary, SessionInfo, UsageInfo } from '../types';
 import type { StoreRuntime } from '../runtime';
 
 type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
@@ -43,8 +43,8 @@ export interface SessionOpsSliceDeps {
   draftsRef: MutableRefObject<Map<string, string>>;
   draftKeyRef: MutableRefObject<string>;
   setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  setSessionInfo: Dispatch<SetStateAction<any>>;
-  setUsageInfo: Dispatch<SetStateAction<any>>;
+  setSessionInfo: Dispatch<SetStateAction<SessionInfo | null>>;
+  setUsageInfo: Dispatch<SetStateAction<UsageInfo | null>>;
   setMessages: Dispatch<SetStateAction<UiMessage[]>>;
   setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
   setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
@@ -269,7 +269,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
           .usage(liveId)
           .then((info) => {
             if (isLatestOpen() && isSameConnection() && sessionIdRef.current === liveId) {
-              setUsageInfo((prev: any) => mergeUsageState(prev, info));
+              setUsageInfo((prev) => mergeUsageState(prev, info));
             }
           })
           .catch(() => {});

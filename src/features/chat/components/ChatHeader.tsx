@@ -7,6 +7,7 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Text as UIText } from '../../../components/ui/text';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
+import { placeholderColor } from '../../../theme';
 
 export function ChatNormalHeader({
   insetTop,
@@ -139,7 +140,7 @@ export function ChatSearchHeader({
               value={query}
               onChangeText={onChangeQuery}
               placeholder="Search conversation…"
-              placeholderTextColor={dark ? '#888' : '#9ca3af'}
+              placeholderTextColor={placeholderColor(dark)}
               autoCapitalize="none"
               autoCorrect={false}
               autoFocus

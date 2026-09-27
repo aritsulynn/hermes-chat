@@ -29,8 +29,10 @@ export function useThemeSlice(): ThemeSlice {
       // NativeWind synced if the device appearance changes later.
       try {
         setColorScheme(t === 'system' ? systemTheme : t);
-      } catch {}
-      void saveTheme(t);
+      } catch (e) {
+        console.warn('[theme] setColorScheme failed', e);
+      }
+      void saveTheme(t).catch((e: unknown) => console.warn('[theme] saveTheme failed', e));
     },
     [setColorScheme, systemTheme],
   );
@@ -38,7 +40,9 @@ export function useThemeSlice(): ThemeSlice {
   useEffect(() => {
     try {
       setColorScheme(theme);
-    } catch {}
+    } catch (e) {
+      console.warn('[theme] sync colorScheme failed', e);
+    }
   }, [setColorScheme, theme]);
 
   const hydrateTheme = useCallback(
@@ -46,7 +50,9 @@ export function useThemeSlice(): ThemeSlice {
       if (saved) setThemeMode(saved);
       try {
         setColorScheme(saved === 'system' || !saved ? systemTheme : saved);
-      } catch {}
+      } catch (e) {
+        console.warn('[theme] hydrate colorScheme failed', e);
+      }
     },
     [setColorScheme, systemTheme],
   );
