@@ -46,7 +46,7 @@ import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
-import { ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
 import { placeholderColor, screenStyle } from '../../theme';

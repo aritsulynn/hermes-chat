@@ -14,7 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
 import { AlertCircle, Boxes, RefreshCw, Search } from 'lucide-react-native';
 import { useApp, useThemeValue } from '../../hooks/app-store';
-import { ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -251,14 +251,14 @@ export function ToolsetsScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
         >
-          <View className="mb-3 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <Card className="mb-3">
             <View className="flex-row items-start gap-2.5">
               <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
               <Text className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
                 Toolsets group the tools Hermes can use. Changes apply to new chats.
               </Text>
             </View>
-          </View>
+          </Card>
 
           {!loading && !unsupported && !error && (
             <View className="mb-3 flex-row items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
@@ -285,20 +285,20 @@ export function ToolsetsScreen() {
               <ActivityIndicator size="large" color={brandColor(dark)} />
             </View>
           ) : unsupported ? (
-            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <Card>
               <Text className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
                 Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability toolsets
                 here.
               </Text>
-            </View>
+            </Card>
           ) : error ? (
             <ErrorRetry error={error} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <Card>
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">
                 {query ? `No toolsets match “${query.trim()}”.` : 'No configurable toolsets were returned.'}
               </Text>
-            </View>
+            </Card>
           ) : (
             <View className="gap-2">
               {filtered.map((toolset) => (

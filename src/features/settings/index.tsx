@@ -24,7 +24,7 @@ import {
   User,
 } from 'lucide-react-native';
 import { useApp, useThemeValue } from '../../hooks/app-store';
-import { ScreenHeader } from '../../components/ui/bits';
+import { Card, ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Separator } from '../../components/ui/separator';
@@ -84,7 +84,7 @@ export function SettingsScreen() {
               Appearance
             </Text>
           </View>
-          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <Card>
             <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
               Theme Mode
             </Text>
@@ -185,7 +185,7 @@ export function SettingsScreen() {
                 )}
               </Pressable>
             </View>
-          </View>
+          </Card>
         </View>
 
         {/* Agent / runtime Section */}
@@ -196,7 +196,7 @@ export function SettingsScreen() {
               Agent
             </Text>
           </View>
-          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <Card>
             <Text className="mb-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               Dangerous-command approvals
             </Text>
@@ -276,7 +276,7 @@ export function SettingsScreen() {
                 ))}
               </>
             )}
-          </View>
+          </Card>
         </View>
 
         {/* Hermes Update Section */}
@@ -298,7 +298,7 @@ export function SettingsScreen() {
               Notifications
             </Text>
           </View>
-          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <Card>
             <View className="flex-row items-center gap-3">
               <View className="min-w-0 flex-1">
                 <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
@@ -316,7 +316,7 @@ export function SettingsScreen() {
                 onCheckedChange={(v) => void setNotifications(v)}
               />
             </View>
-          </View>
+          </Card>
         </View>
 
         {/* Account & Server Section */}
@@ -327,7 +327,7 @@ export function SettingsScreen() {
               Account & Server
             </Text>
           </View>
-          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <Card>
             {/* User row */}
             <View className="flex-row items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-800">
               <View className="flex-row items-center gap-2.5">
@@ -394,7 +394,7 @@ export function SettingsScreen() {
                 </Text>
               </View>
             </View>
-          </View>
+          </Card>
         </View>
 
         {/* About / System Info */}
@@ -405,7 +405,7 @@ export function SettingsScreen() {
               About
             </Text>
           </View>
-          <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <Card>
             <View className="flex-row items-center justify-between py-1 border-b border-neutral-200 dark:border-neutral-800">
               <Text className="text-xs text-neutral-600 dark:text-neutral-300">Client</Text>
               <Text className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
@@ -436,7 +436,7 @@ export function SettingsScreen() {
                 Copy diagnostics
               </UIText>
             </Button>
-          </View>
+          </Card>
 
         </View>
 

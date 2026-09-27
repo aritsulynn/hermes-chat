@@ -18,7 +18,7 @@ import { AlertCircle, RefreshCw, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
@@ -48,7 +48,7 @@ const SkillRow = memo(function SkillRow({
   const enabled = skill.enabled !== false;
   const canToggle = typeof skill.enabled === 'boolean';
   return (
-    <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+    <Card>
       <View className="flex-row items-center gap-2">
         <Pressable className="min-w-0 flex-1" onPress={() => void onOpen(name)}>
           <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100" numberOfLines={1}>
@@ -72,7 +72,7 @@ const SkillRow = memo(function SkillRow({
             <Switch checked={enabled} onCheckedChange={(v) => void onToggle(name, v)} />
           ))}
       </View>
-    </View>
+    </Card>
   );
 });
 
@@ -209,17 +209,17 @@ export function SkillsScreen() {
               <ActivityIndicator size="large" color={brand} />
             </View>
           ) : unsupported ? (
-            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <Card>
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">
                 Skills aren&apos;t available on this backend — run skills from the chat with /name instead.
               </Text>
-            </View>
+            </Card>
           ) : error ? (
             <ErrorRetry error={error} onRetry={() => void load()} />
           ) : !skills?.length ? (
-            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <Card>
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</Text>
-            </View>
+            </Card>
           ) : (
             <View className="gap-2">
               {skills.map((s) => (

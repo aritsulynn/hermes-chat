@@ -18,7 +18,7 @@ import {
 } from 'lucide-react-native';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { ScreenHeader } from '../../components/ui/bits';
+import { Card, ScreenHeader } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
@@ -243,7 +243,7 @@ export function UsageScreen() {
               {/* KPI Cards Grid */}
               <View className="flex-row flex-wrap gap-2.5">
                 {/* Total Tokens */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
                     <TrendingUp size={16} color={brand} />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</Text>
@@ -252,10 +252,10 @@ export function UsageScreen() {
                     {compactNumber(totalTokens)}
                   </Text>
                   <Text className="mt-0.5 text-[11px] text-neutral-400">in {days} days</Text>
-                </View>
+                </Card>
 
                 {/* Estimated Cost */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
                     <DollarSign size={16} color="#16a34a" />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Est. Cost</Text>
@@ -266,10 +266,10 @@ export function UsageScreen() {
                   <Text className="mt-0.5 text-[11px] text-neutral-400">
                     Actual: {formatCost(totals?.total_actual_cost)}
                   </Text>
-                </View>
+                </Card>
 
                 {/* Sessions */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
                     <MessageSquare size={16} color="#8b5cf6" />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Sessions</Text>
@@ -278,10 +278,10 @@ export function UsageScreen() {
                     {totals?.total_sessions?.toLocaleString() || '0'}
                   </Text>
                   <Text className="mt-0.5 text-[11px] text-neutral-400">conversations</Text>
-                </View>
+                </Card>
 
                 {/* API Calls */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
                     <Zap size={16} color="#f59e0b" />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">API Calls</Text>
@@ -290,11 +290,11 @@ export function UsageScreen() {
                     {totals?.total_api_calls?.toLocaleString() || '0'}
                   </Text>
                   <Text className="mt-0.5 text-[11px] text-neutral-400">requests</Text>
-                </View>
+                </Card>
               </View>
 
               {/* Token Breakdown Card */}
-              <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Card>
                 <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Token Breakdown</Text>
                 <View className="mt-3 gap-2.5">
                   {/* Input Tokens */}
@@ -361,10 +361,10 @@ export function UsageScreen() {
                     </View>
                   )}
                 </View>
-              </View>
+              </Card>
 
               {/* Daily Activity Chart */}
-              <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Card>
                 <View className="flex-row items-center justify-between">
                   <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Daily Activity</Text>
                   {selectedDay && (
@@ -396,10 +396,10 @@ export function UsageScreen() {
                     </View>
                   </ScrollView>
                 )}
-              </View>
+              </Card>
 
               {/* Usage by Model */}
-              <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Card>
                 <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</Text>
                 <View className="mt-3 gap-2.5">
                   {modelEntries.length === 0 ? (
@@ -446,11 +446,11 @@ export function UsageScreen() {
                     })
                   )}
                 </View>
-              </View>
+              </Card>
 
               {/* Tools & Skills Breakdown */}
               {(toolsList.length > 0 || skillsList.length > 0) && (
-                <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card>
                   <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Tools & Skills</Text>
 
                   {/* Tools */}
@@ -512,7 +512,7 @@ export function UsageScreen() {
                       </View>
                     </View>
                   )}
-                </View>
+                </Card>
               )}
             </>
           )}

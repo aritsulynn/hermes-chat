@@ -149,6 +149,24 @@ export function ScreenHeader({
   );
 }
 
+// The card surface every settings/usage/skills/toolsets section sits on. The
+// class string was pasted into 19 places and had already started drifting
+// (two padding sizes, one background variant), so it lives here now. `className`
+// still wins, which is how the compact `p-3.5` variant stays honest.
+export function Card({ className, children, ...props }: React.ComponentProps<typeof View>) {
+  return (
+    <View
+      className={cn(
+        'rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </View>
+  );
+}
+
 // The "something failed, here is the message, try again" block that every list
 // screen repeated verbatim. Rendered only when `error` is set, so callers can
 // drop their own conditional.
