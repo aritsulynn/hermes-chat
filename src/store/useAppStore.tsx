@@ -47,6 +47,7 @@ import {
   withTimeout,
 } from './helpers';
 import type { AgentProfile, AppStore, TranscriptHit } from './types';
+import { useAppStorePublish } from './useAppSelector';
 import { useThemeSlice } from './slices/useTheme';
 import { useNotificationsSlice } from './slices/useNotifications';
 import { useQueueSlice } from './slices/useQueue';
@@ -232,7 +233,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
         return;
       setProfiles(discovered.profiles);
-    } catch {}
+    } catch (e) {
+      console.warn('[store] profile refresh failed', e);
+    }
   }, [acceptRotatedCookie, host, username]);
   // Live runtime session id for callbacks frozen in openWs (reconnect replay).
   sessionIdRef.current = sessionId;
@@ -537,7 +540,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         if (!fill.size) return;
         setMessages((prev) => prev.map((m) => (fill.has(m.id) ? { ...m, rowId: fill.get(m.id) } : m)));
-      } catch {}
+      } catch (e) {
+        console.warn('[store] stampRowIds failed', e);
+      }
     })();
   };
   // Post-reconnect resync: the replay ring had already dropped the gap, so the
@@ -584,7 +589,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           setToolLine(null);
         }
-      } catch {}
+      } catch (e) {
+        console.warn('[store] resync failed', e);
+      }
     })();
   };
 
@@ -597,7 +604,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       () => sessionIdRef.current === sid,
       (snapshot) => {
         if (contextPendingSidRef.current === sid) contextPendingSidRef.current = null;
-        setUsageInfo((prev: any) => mergeUsageState(prev, snapshot));
+        setUsageInfo((prev) => mergeUsageState(prev, snapshot));
       },
     );
   }, []);
@@ -1317,13 +1324,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getCookie,
       getAuthScope,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       booting,
       authed,
       busy,
       error,
       host,
+      setPassword,
       username,
       password,
       conn,
@@ -1421,6 +1428,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getAuthScope,
     ],
   );
+
+  // Mirror the context value into the external store so `useAppSelector`
+  // consumers can subscribe to a slice instead of the whole store. Publishes
+  // the same object the context already carries; renders nothing extra.
+  useAppStorePublish(value);
 
   return (
     <AppContext.Provider value={value}>
