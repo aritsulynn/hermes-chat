@@ -15,10 +15,15 @@
 //
 // Server files are cookie-gated, so the system browser can't open them — they
 // are read in-app instead.
+//
+// Rendering goes through expo-image (not RN's Image) so every source gets disk
+// + memory caching, downsampling to the on-screen box, and a progressive
+// fade-in over a themed placeholder. Its `source` takes the same
+// `{uri, headers}` shape buildImageSource() already produced, so the
+// cookie-leak guard below is unchanged.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Linking,
   Modal,
   Platform,
@@ -30,6 +35,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import type { StyleProp, TextStyle } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, ImageOff, Share2, X } from 'lucide-react-native';
 import { useApp } from '../../hooks/app-store';
@@ -42,6 +48,8 @@ import {
   serverFilePending,
 } from '../../services/media-cache';
 import { buildImageSource, shouldAttachDashboardCookie } from '../../services/media-policy';
+import { Button } from '../ui/button';
+import { Text as UIText } from '../ui/text';
 import { deleteAsync, writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
 import * as api from '../../services/api';
 import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../../services/constants';
@@ -64,6 +72,12 @@ const looksLikeFilePath = (s: string) => {
 const base = (host: string) => host.replace(/\/+$/, '');
 const basename = (s: string) => s.split(/[\\/]/).pop()?.split('?')[0] || s;
 
+// Disk caching is a win for network sources only. A `data:`/`blob:` source is
+// already resident in JS memory, and its multi-MB URL would become the cache
+// key — so those are held in the memory cache alone.
+const cachePolicyFor = (uri: string): 'memory' | 'memory-disk' =>
+  /^(data|blob):/i.test(uri) ? 'memory' : 'memory-disk';
+
 // Text-ish payloads get an in-app preview; anything else (pdf, zip, video…)
 // says so rather than dumping mojibake into a <Text>.
 const TEXT_MIME = /^(text\/|application\/(json|xml|yaml|x-yaml|javascript|csv)|image\/svg)/i;
@@ -84,7 +98,7 @@ function pathOfHref(href: string): string | null {
 // Results are memoized per authenticated scope + path so scrolling an
 // image-heavy transcript doesn't refetch the same file per bubble mount.
 async function readServerFile(
-  opsGet: (path: string) => Promise<any>,
+  opsGet: (path: string) => Promise<unknown>,
   path: string,
   cacheScope: string,
 ): Promise<string> {
@@ -94,10 +108,12 @@ async function readServerFile(
   if (hit !== undefined) return hit;
   const inflight = serverFilePending.get(cacheKey);
   if (inflight) return inflight;
-  const attempts: [string, (r: any) => unknown][] = [
-    [api.media(path), (r) => r?.data_url],
-    [api.mediaReadDataUrl(path), (r) => r?.dataUrl],
-    [api.mediaViaFiles(path), (r) => r?.data_url],
+  const fieldOf = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const attempts: [string, (r: unknown) => unknown][] = [
+    [api.media(path), (r) => fieldOf(r).data_url],
+    [api.mediaReadDataUrl(path), (r) => fieldOf(r).dataUrl],
+    [api.mediaViaFiles(path), (r) => fieldOf(r).data_url],
   ];
   const p = (async () => {
     for (const [url, pick] of attempts) {
@@ -123,7 +139,9 @@ async function readServerFile(
           serverFileCache.set(cacheKey, v);
           return v;
         }
-      } catch {}
+      } catch (e) {
+        console.warn('[media] server file fetch failed', e);
+      }
     }
     return '';
   })().finally(() => {
@@ -223,17 +241,19 @@ function BrokenImage({ src, alt, dark }: { src: string; alt?: string; dark: bool
   const openable = isRemote(p) || isWebPath(p);
   const url = openable ? (isWebPath(p) ? `${base(host)}${p}` : p) : '';
   return (
-    <Pressable
+    <Button
+      variant="outline"
       disabled={!openable}
       onPress={() => void Linking.openURL(url).catch(() => {})}
-      className="my-1 flex-row items-center gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700"
+      accessibilityLabel={alt || basename(p) || 'Open link'}
+      className="my-1 h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700"
     >
       <ImageOff size={15} color={dark ? '#aaa' : '#777'} />
       <Text className="flex-1 text-[13px] text-neutral-600 dark:text-neutral-300" numberOfLines={1}>
         {alt || basename(p) || 'image'}
       </Text>
       {openable && <ChevronRight size={14} color={dark ? '#aaa' : '#777'} />}
-    </Pressable>
+    </Button>
   );
 }
 
@@ -262,38 +282,31 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     [boxW, boxH, dark],
   );
 
-  // Cached aspect ratios so thumbnail + preview of the same URI cost one native call.
+  // Cached aspect ratios. The rendered image reports its own pixel size in
+  // onLoad, so this costs no extra native probe — and unlike the Image.getSize
+  // call it replaces, the event carries the source's headers, so a
+  // cookie-gated dashboard image finally resolves a real ratio instead of
+  // quietly keeping the 0.75 default.
+  const rememberRatio = useCallback(
+    (w: number, h: number) => {
+      if (!uri || w <= 0 || h <= 0) return;
+      const r = w / h;
+      if (ratioCache.size > 200) {
+        const oldest = ratioCache.keys().next().value;
+        if (oldest !== undefined) ratioCache.delete(oldest);
+      }
+      ratioCache.set(mediaCacheKey(cacheScope, uri), r);
+      setRatio(r);
+    },
+    [uri, cacheScope],
+  );
+
+  // Seed from the cache so a re-visited image lays out at its true height on
+  // the first frame instead of after the load lands.
   useEffect(() => {
     if (!uri) return;
-    const ratioKey = mediaCacheKey(cacheScope, uri);
-    const cached = ratioCache.get(ratioKey);
-    if (cached) {
-      setRatio(cached);
-      return;
-    }
-    let alive = true;
-    try {
-      // No headers here (getSize has none) — authed sources just keep the
-      // default ratio instead of reporting a false error.
-      Image.getSize(
-        uri,
-        (w, h) => {
-          if (alive && w > 0 && h > 0) {
-            const r = w / h;
-            if (ratioCache.size > 200) {
-              const oldest = ratioCache.keys().next().value;
-              if (oldest !== undefined) ratioCache.delete(oldest);
-            }
-            ratioCache.set(ratioKey, r);
-            setRatio(r);
-          }
-        },
-        () => {},
-      );
-    } catch {}
-    return () => {
-      alive = false;
-    };
+    const cached = ratioCache.get(mediaCacheKey(cacheScope, uri));
+    if (cached) setRatio(cached);
   }, [uri, cacheScope]);
 
   // Falls back to the file name so the viewer always has a caption.
@@ -320,7 +333,20 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
       className="my-1"
       style={{ width: boxW, height: boxH }}
     >
-      <Image source={imgSource} resizeMode="contain" onError={() => setBroken(true)} style={boxStyle} />
+      <Image
+        source={imgSource}
+        contentFit="contain"
+        cachePolicy={cachePolicyFor(uri)}
+        onLoad={(e) => rememberRatio(e.source.width, e.source.height)}
+        onError={() => setBroken(true)}
+        // No blurhash ships with these sources, so the box's own themed fill
+        // (boxStyle.backgroundColor) is the placeholder; the transition fades
+        // the decoded frame in over it.
+        transition={220}
+        recyclingKey={uri}
+        alt={caption}
+        style={boxStyle}
+      />
     </Pressable>
   );
 }
@@ -369,7 +395,13 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
             <Pressable className="flex-1 items-center justify-center p-3" onPress={onClose}>
               <Image
                 source={buildImageSource(preview.uri, host, previewCookie)}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy={cachePolicyFor(preview.uri)}
+                // The user just asked for this one full size — let it take
+                // priority over whatever is still loading behind the modal.
+                priority="high"
+                transition={200}
+                alt={preview.caption}
                 style={{ width: '100%', height: '100%' }}
               />
             </Pressable>
@@ -392,27 +424,32 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
             <Text className="text-xs text-white/40">Open it from the Files tab instead.</Text>
           </View>
         )}
-        <Pressable
+        <Button
+          variant="ghost"
+          size="icon"
           onPress={onClose}
+          accessibilityLabel="Close preview"
           hitSlop={12}
-          className="absolute right-3 rounded-full bg-white/15 p-2"
+          className="absolute right-3 h-10 w-10 rounded-full bg-white/15"
           style={{ top: insets.top + 8 }}
         >
           <X size={20} color="#fff" />
-        </Pressable>
+        </Button>
         {(preview.kind === 'image' || preview.kind === 'text') && (
-          <Pressable
+          <Button
+            variant="ghost"
             onPress={() => {
               if (preview.kind === 'image') void shareUri(preview.uri, preview.caption);
               else if (preview.kind === 'text') void Share.share({ message: preview.text }).catch(() => {});
             }}
+            accessibilityLabel="Share"
             hitSlop={12}
-            className="absolute left-3 flex-row items-center gap-1.5 rounded-full bg-white/15 px-3 py-2"
+            className="absolute left-3 h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
             style={{ top: insets.top + 8 }}
           >
             <Share2 size={16} color="#fff" />
-            <Text className="text-[12px] font-semibold text-white">Share</Text>
-          </Pressable>
+            <UIText className="text-[12px] font-semibold text-white">Share</UIText>
+          </Button>
         )}
         <Text className="pt-2 text-center text-[11px] text-white/30">tap to close</Text>
       </View>

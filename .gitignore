@@ -21,6 +21,9 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
+# agent tooling output (screenshots from the browser panel)
+.openchamber/
+
 # debug
 npm-debug.*
 yarn-debug.*

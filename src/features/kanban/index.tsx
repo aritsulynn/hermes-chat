@@ -2,37 +2,80 @@
 // board switcher, collapsible columns, cards, create/move/edit/delete tasks.
 // Talks to the plugin's own REST router (see hermes-agent
 // plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Redirect, useNavigation } from 'expo-router';
 import {
   ActivityIndicator,
-  Alert,
-  Keyboard,
-  Modal,
-  Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useApp } from '../../hooks/app-store';
+import { TriangleAlert } from 'lucide-react-native';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn, Tap } from '../../components/ui/bits';
+import { HamburgerBtn } from '../../components/ui/bits';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Textarea } from '../../components/ui/textarea';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { ConfirmDialog } from '../../components/ui/dialog';
+import { FormSheet, useSheet } from '../../components/ui/sheets';
+import { Text as UIText } from '../../components/ui/text';
 import { CardChips } from './components/CardChips';
+import { placeholderColor, screenStyle } from '../../theme';
 import { asTask, dotOf } from './helpers';
 import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';
 
+// Memoized task row: opening/editing one card must not re-render every card
+// on the board. The press binding closes over the row's own task, so the
+// parent only passes the stable onOpen callback.
+const KanbanTaskRow = memo(function KanbanTaskRow({
+  task,
+  dark,
+  onOpen,
+}: {
+  task: KanbanTask;
+  dark: boolean;
+  onOpen: (t: KanbanTask) => void;
+}) {
+  return (
+    <Button
+      onPress={() => onOpen(task)}
+      variant="outline"
+      className="h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
+    >
+      <UIText
+        className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
+        numberOfLines={2}
+      >
+        {task.title}
+      </UIText>
+      {!!task.body && (
+        <UIText
+          className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
+          numberOfLines={2}
+        >
+          {task.body}
+        </UIText>
+      )}
+      <CardChips t={task} dark={dark} />
+    </Button>
+  );
+});
+
 export function KanbanScreen() {
-  const { booting, authed, host, username, opsGet, opsMut, theme, getAuthScope } = useApp();
+  const { booting, authed, host, username, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
+  // One placeholder colour per scheme — the create/edit sheets pass it to
+  // four inputs, so it must not be recomputed on every render.
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
 
   const [boards, setBoards] = useState<BoardMeta[]>([]);
   const [slug, setSlug] = useState('');
@@ -44,6 +87,8 @@ export function KanbanScreen() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Detail sheet task + its editable fields.
   const [detail, setDetail] = useState<KanbanTask | null>(null);
+  // Themed replacement for the old Alert.alert delete confirm.
+  const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editBody, setEditBody] = useState('');
   const [saving, setSaving] = useState(false);
@@ -52,9 +97,12 @@ export function KanbanScreen() {
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newStatus, setNewStatus] = useState('');
-  // Bottom sheets sit under the keyboard on Android (edge-to-edge ignores
-  // adjustResize), so lift them by hand like the chat dock does.
-  const [kbH, setKbH] = useState(0);
+  // Bottom sheets: FormSheet drives present/dismiss from these two booleans.
+  const detailSheet = useSheet(!!detail);
+  const createSheet = useSheet(showCreate);
+  // Last opened task, kept for the duration of the dismiss animation.
+  const detailRef = useRef<KanbanTask | null>(null);
+  if (detail) detailRef.current = detail;
   useEffect(() => {
     if (authed) return;
     setBoards([]);
@@ -64,20 +112,6 @@ export function KanbanScreen() {
     setDetail(null);
     setError(null);
   }, [authed]);
-  useEffect(() => {
-    const show = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e: any) => setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0))),
-    );
-    const hide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKbH(0),
-    );
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   useEffect(() => {
     (navigation as any).setOptions?.({
@@ -169,8 +203,7 @@ export function KanbanScreen() {
         else setLoading(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loadBoards, loadBoard],
+    [loadBoards, loadBoard, slug, host, username],
   );
 
   // Board body follows the selected slug.
@@ -180,16 +213,19 @@ export function KanbanScreen() {
     setDetail(null);
     setLoading(true);
     void loadBoard().finally(() => setLoading(false));
-  }, [authed, slug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authed, slug, loadBoard]);
 
   useEffect(() => {
     if (authed) void reload();
-  }, [authed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authed, reload]);
 
-  const pickSlug = (s: string) => {
-    setSlug(s);
-    void saveKanbanBoard(s, connectionScope(host, username));
-  };
+  const pickSlug = useCallback(
+    (s: string) => {
+      setSlug(s);
+      void saveKanbanBoard(s, connectionScope(host, username));
+    },
+    [host, username],
+  );
 
   const isCollapsed = (name: string, count: number) =>
     collapsed[name] ?? (name === 'archived' || count === 0);
@@ -200,11 +236,15 @@ export function KanbanScreen() {
   );
   const activeBoard = boards.find((b) => b.slug === slug);
 
-  const openDetail = (t: KanbanTask) => {
+  const openDetail = useCallback((t: KanbanTask) => {
     setDetail(t);
     setEditTitle(t.title);
     setEditBody(t.body ?? '');
-  };
+  }, []);
+
+  const toggleColumn = useCallback((name: string, next: boolean) => {
+    setCollapsed((p) => ({ ...p, [name]: next }));
+  }, []);
 
   const mutate = async (fn: () => Promise<unknown>, after?: () => void) => {
     const scope = getAuthScope();
@@ -252,15 +292,11 @@ export function KanbanScreen() {
   const deleteDetail = () => {
     if (!detail) return;
     const t = detail;
-    Alert.alert('Delete task', `"${t.title}"? This can't be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () =>
-          void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'DELETE')),
-      },
-    ]);
+    setConfirmDelete({
+      title: 'Delete task',
+      body: `"${t.title}"? This can't be undone.`,
+      run: () => void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'DELETE')),
+    });
   };
 
   const createTask = () => {
@@ -299,7 +335,7 @@ export function KanbanScreen() {
     newStatus || statusOptions.find((c) => c === 'todo') || statusOptions.find((c) => c !== 'archived') || '';
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
         <StatusBar style="auto" />
         {/* Board switcher + new-task button */}
@@ -308,17 +344,21 @@ export function KanbanScreen() {
             {boards.map((b) => {
               const active = b.slug === slug || (!slug && b.is_current);
               return (
-                <Tap
+                <Button
                   key={b.slug}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={b.name || b.slug}
                   onPress={() => pickSlug(b.slug)}
-                  radius={999}
-                  className={`rounded-full border px-3 py-1.5 ${active ? 'border-[#1a73e8] bg-[#1a73e8]' : 'border-neutral-300 dark:border-neutral-700'}`}
+                  variant={active ? 'default' : 'outline'}
+                  size="sm"
+                  className="rounded-full px-3 py-1.5"
                 >
-                  <Text className={`text-[13px] font-semibold ${active ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                  <UIText className="text-[13px] font-semibold">
                     {b.name || b.slug}
                     {typeof b.total === 'number' ? ` · ${b.total}` : ''}
-                  </Text>
-                </Tap>
+                  </UIText>
+                </Button>
               );
             })}
             {boards.length === 0 && !loading && (
@@ -327,18 +367,24 @@ export function KanbanScreen() {
               </Text>
             )}
           </ScrollView>
-          <Tap
+          <Button
             onPress={() => setShowCreate(true)}
             accessibilityRole="button"
             accessibilityLabel="New task"
-            radius={999}
-            highlight="#1667d0"
-            className="h-9 w-9 items-center justify-center rounded-full bg-[#1a73e8]"
+            variant="default"
+            size="icon"
+            className="h-9 w-9 rounded-full"
           >
-            <Text className="text-[20px] leading-[20px] text-white">+</Text>
-          </Tap>
+            <UIText className="text-[20px] leading-[20px]">+</UIText>
+          </Button>
         </View>
-        {!!error && <Text className="px-3.5 pt-2 text-[#c5221f] dark:text-[#ff7b72]">{error}</Text>}
+        {!!error && (
+          <View className="px-3.5 pt-2">
+            <UIAlert icon={TriangleAlert} variant="destructive">
+              <AlertDescription className="text-[#c5221f] dark:text-[#ff7b72]">{error}</AlertDescription>
+            </UIAlert>
+          </View>
+        )}
         <ScrollView
           contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void reload(true)} />}
@@ -359,48 +405,27 @@ export function KanbanScreen() {
                 key={col.name}
                 className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800"
               >
-                <Tap
-                  onPress={() => setCollapsed((p) => ({ ...p, [col.name]: !shut }))}
-                  radius={0}
-                  className="flex-row items-center gap-2 bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
+                <Button
+                  onPress={() => toggleColumn(col.name, !shut)}
+                  variant="ghost"
+                  className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
                 >
                   <View className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
-                  <Text className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
+                  <UIText className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
                     {col.name}
-                  </Text>
-                  <Text className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+                  </UIText>
+                  <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
                     {col.tasks.length}
-                  </Text>
-                  <Text className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</Text>
-                </Tap>
+                  </UIText>
+                  <UIText className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</UIText>
+                </Button>
                 {!shut && (
                   <View className="gap-2 p-2.5">
                     {col.tasks.length === 0 && (
                       <Text className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</Text>
                     )}
                     {col.tasks.map((t) => (
-                      <Tap
-                        key={t.id}
-                        onPress={() => openDetail(t)}
-                        radius={12}
-                        className="rounded-xl border border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
-                      >
-                        <Text
-                          className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
-                          numberOfLines={2}
-                        >
-                          {t.title}
-                        </Text>
-                        {!!t.body && (
-                          <Text
-                            className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
-                            numberOfLines={2}
-                          >
-                            {t.body}
-                          </Text>
-                        )}
-                        <CardChips t={t} dark={dark} />
-                      </Tap>
+                      <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
                     ))}
                   </View>
                 )}
@@ -409,155 +434,163 @@ export function KanbanScreen() {
           })}
         </ScrollView>
 
-        {/* Task detail sheet */}
-        <Modal
-          visible={!!detail}
-          transparent
-          animationType="slide"
-          statusBarTranslucent
-          onRequestClose={() => setDetail(null)}
+        {/* Task detail sheet. `detailRef` keeps the last task rendered through
+            the dismiss animation - clearing `detail` first would flash an
+            empty sheet on the way out. */}
+        <FormSheet
+          ref={detailSheet.ref}
+          onDismiss={detailSheet.onDismiss}
+          onClose={() => setDetail(null)}
+          snapPoints={['70%']}
         >
-          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
-            <Pressable style={{ position: 'absolute', inset: 0 }} onPress={() => setDetail(null)} />
-            <View
-              className="rounded-t-3xl border-t border-neutral-200 bg-white dark:border-neutral-800 dark:bg-[#141414]"
-              style={{ maxHeight: '85%', paddingBottom: Math.max(insets.bottom, 12), marginBottom: kbH }}
-            >
-              <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
-                <TextInput
-                  className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
-                  value={editTitle}
-                  onChangeText={setEditTitle}
-                  placeholder="Title"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  multiline
-                />
-                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Move to
-                </Text>
-                <View className="flex-row flex-wrap gap-1.5">
-                  {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                    const on = detail?.status === s;
-                    return (
-                      <Tap
-                        key={s}
-                        onPress={() => detail && moveTask(detail, s)}
-                        radius={999}
-                        className={`rounded-full border px-3 py-1.5 ${on ? 'border-[#1a73e8] bg-[#1a73e8]' : 'border-neutral-300 dark:border-neutral-700'}`}
-                      >
-                        <Text className={`text-[13px] font-medium capitalize ${on ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
-                          {s}
-                        </Text>
-                      </Tap>
-                    );
-                  })}
-                </View>
-                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Notes
-                </Text>
-                <TextInput
-                  className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                  value={editBody}
-                  onChangeText={setEditBody}
-                  placeholder="Details…"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  multiline
-                  textAlignVertical="top"
-                />
-                {detail && <CardChips t={detail} dark={dark} />}
-                <View className="flex-row gap-2 pt-1">
-                  <Tap
-                    onPress={saveDetail}
-                    radius={12}
-                    highlight="#1667d0"
-                    className={`flex-1 items-center rounded-xl bg-[#1a73e8] px-4 py-3 ${saving ? 'opacity-50' : ''}`}
-                    disabled={saving}
-                  >
-                    <Text className="text-[15px] font-semibold text-white">{saving ? 'Saving…' : 'Save'}</Text>
-                  </Tap>
-                  <Tap
-                    onPress={deleteDetail}
-                    radius={12}
-                    className="items-center rounded-xl border border-[#c5221f] px-4 py-3 dark:border-[#ff7b72]"
-                    disabled={saving}
-                  >
-                    <Text className="text-[15px] font-semibold text-[#c5221f] dark:text-[#ff7b72]">Delete</Text>
-                  </Tap>
-                </View>
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
+          {detailRef.current && (
+            <>
+              <Input
+                accessibilityLabel="Title"
+                // Input is a fixed 40px single-line field; a title long enough
+                // to wrap has to grow the box and hang from the top, or the
+                // second line spills over the label below.
+                className="h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Title"
+                placeholderTextColor={placeholder}
+                keyboardAppearance={dark ? 'dark' : 'light'}
+                multiline
+              />
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Move to
+              </Text>
+              <View className="flex-row flex-wrap gap-1.5">
+                {statusOptions.filter((s) => s !== 'archived').map((s) => {
+                  const on = detailRef.current?.status === s;
+                  return (
+                    <Button
+                      key={s}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Move to ${s}`}
+                      onPress={() => detailRef.current && moveTask(detailRef.current, s)}
+                      variant={on ? 'default' : 'outline'}
+                      size="sm"
+                      className="rounded-full px-3 py-1.5"
+                    >
+                      <UIText className="text-[13px] font-medium capitalize">
+                        {s}
+                      </UIText>
+                    </Button>
+                  );
+                })}
+              </View>
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Notes
+              </Text>
+              <Textarea
+                accessibilityLabel="Notes"
+                className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                value={editBody}
+                onChangeText={setEditBody}
+                placeholder="Details…"
+                placeholderTextColor={placeholder}
+                keyboardAppearance={dark ? 'dark' : 'light'}
+                multiline
+                textAlignVertical="top"
+              />
+              <CardChips t={detailRef.current} dark={dark} />
+              <View className="flex-row gap-2 pt-1">
+                <Button
+                  onPress={saveDetail}
+                  variant="default"
+                  className="flex-1 rounded-xl px-4 py-3"
+                  disabled={saving}
+                >
+                  <UIText className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</UIText>
+                </Button>
+                <Button
+                  onPress={deleteDetail}
+                  variant="destructive"
+                  className="rounded-xl px-4 py-3"
+                  disabled={saving}
+                >
+                  <UIText className="text-[15px] font-semibold">Delete</UIText>
+                </Button>
+              </View>
+            </>
+          )}
+        </FormSheet>
 
         {/* New task sheet */}
-        <Modal
-          visible={showCreate}
-          transparent
-          animationType="slide"
-          statusBarTranslucent
-          onRequestClose={() => setShowCreate(false)}
+        <FormSheet
+          ref={createSheet.ref}
+          onDismiss={createSheet.onDismiss}
+          onClose={() => setShowCreate(false)}
+          snapPoints={['70%']}
         >
-          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
-            <Pressable style={{ position: 'absolute', inset: 0 }} onPress={() => setShowCreate(false)} />
-            <View
-              className="rounded-t-3xl border-t border-neutral-200 bg-white dark:border-neutral-800 dark:bg-[#141414]"
-              style={{ maxHeight: '85%', paddingBottom: Math.max(insets.bottom, 12), marginBottom: kbH }}
-            >
-              <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
-                <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
-                <TextInput
-                  className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                  value={newTitle}
-                  onChangeText={setNewTitle}
-                  placeholder="Title"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  autoFocus
-                  returnKeyType="next"
-                />
-                <TextInput
-                  className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                  value={newBody}
-                  onChangeText={setNewBody}
-                  placeholder="Details (optional)"
-                  placeholderTextColor={dark ? '#888' : '#9ca3af'}
-                  keyboardAppearance={dark ? 'dark' : 'light'}
-                  multiline
-                  textAlignVertical="top"
-                />
-                <View className="flex-row flex-wrap gap-1.5">
-                  {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                    const on = createStatus === s;
-                    return (
-                      <Tap
-                        key={s}
-                        onPress={() => setNewStatus(s)}
-                        radius={999}
-                        className={`border px-3 py-1.5 ${on ? 'border-[#1a73e8] bg-[#1a73e8]' : 'border-neutral-300 dark:border-neutral-700'}`}
-                      >
-                        <Text className={`text-[13px] font-medium capitalize ${on ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
-                          {s}
-                        </Text>
-                      </Tap>
-                    );
-                  })}
-                </View>
-                <Tap
-                  onPress={createTask}
-                  radius={12}
-                  highlight="#1667d0"
-                  className={`items-center rounded-xl bg-[#1a73e8] px-4 py-3 ${!newTitle.trim() || saving ? 'opacity-50' : ''}`}
-                  disabled={!newTitle.trim() || saving}
+          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
+          <Input
+            accessibilityLabel="Title"
+            className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+            value={newTitle}
+            onChangeText={setNewTitle}
+            placeholder="Title"
+            placeholderTextColor={placeholder}
+            keyboardAppearance={dark ? 'dark' : 'light'}
+            returnKeyType="next"
+          />
+          <Textarea
+            className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+            accessibilityLabel="Notes"
+            value={newBody}
+            onChangeText={setNewBody}
+            placeholder="Details (optional)"
+            placeholderTextColor={placeholder}
+            keyboardAppearance={dark ? 'dark' : 'light'}
+            multiline
+            textAlignVertical="top"
+          />
+          <View className="flex-row flex-wrap gap-1.5">
+            {statusOptions.filter((s) => s !== 'archived').map((s) => {
+              const on = createStatus === s;
+              return (
+                <Button
+                  key={s}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Create in ${s}`}
+                  onPress={() => setNewStatus(s)}
+                  variant={on ? 'default' : 'outline'}
+                  size="sm"
+                  className="px-3 py-1.5"
                 >
-                  <Text className="text-[15px] font-semibold text-white">{saving ? 'Creating…' : 'Create task'}</Text>
-                </Tap>
-              </ScrollView>
-            </View>
+                  <UIText className="text-[13px] font-medium capitalize">
+                    {s}
+                  </UIText>
+                </Button>
+              );
+            })}
           </View>
-        </Modal>
+          <Button
+            onPress={createTask}
+            variant="default"
+            className="rounded-xl px-4 py-3"
+            disabled={!newTitle.trim() || saving}
+          >
+            <UIText className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</UIText>
+          </Button>
+        </FormSheet>
       </SafeAreaView>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.title ?? ''}
+        description={confirmDelete?.body}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => confirmDelete?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDelete(null);
+        }}
+      />
     </View>
   );
 }

@@ -5,24 +5,18 @@ import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { errMsg } from '../../utils/messages';
 import { mergeUsageState } from '../helpers';
-import type { StoreRuntime } from '../runtime';
-
-export interface SessionInfoSliceDeps {
-  runtime: StoreRuntime;
-  activeProfile: string;
-  sessionId: string | null;
-  sessionIdRef: MutableRefObject<string | null>;
-}
+import type { StoreCtx } from '../ctx';
+import type { SessionInfo, UsageInfo } from '../types';
 
 export interface SessionInfoSlice {
   infoOpen: boolean;
   setInfoOpen: Dispatch<SetStateAction<boolean>>;
   infoSeq: number;
   setInfoSeq: Dispatch<SetStateAction<number>>;
-  sessionInfo: any;
-  setSessionInfo: Dispatch<SetStateAction<any>>;
-  usageInfo: any;
-  setUsageInfo: Dispatch<SetStateAction<any>>;
+  sessionInfo: SessionInfo | null;
+  setSessionInfo: Dispatch<SetStateAction<SessionInfo | null>>;
+  usageInfo: UsageInfo | null;
+  setUsageInfo: Dispatch<SetStateAction<UsageInfo | null>>;
   usageLoading: boolean;
   setUsageLoading: Dispatch<SetStateAction<boolean>>;
   /** Refresh the composer status strip at each turn end. */
@@ -31,19 +25,20 @@ export interface SessionInfoSlice {
 }
 
 export function useSessionInfoSlice({
-  runtime,
   activeProfile,
   sessionId,
   sessionIdRef,
-}: SessionInfoSliceDeps): SessionInfoSlice {
-  const { gw, activeProfileRef, profileEpochRef } = runtime;
+  gw,
+  activeProfileRef,
+  profileEpochRef,
+}: StoreCtx): SessionInfoSlice {
   const [infoOpen, setInfoOpen] = useState(false);
   // Monotonic open requests — a boolean edge can get stuck `true` (e.g. a
   // present that never resolved), which would swallow every later tap because
   // the effect below only fires on change. A counter refires every time.
   const [infoSeq, setInfoSeq] = useState(0);
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
-  const [usageInfo, setUsageInfo] = useState<any>(null);
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
+  const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
 
   // Refresh the composer status strip at each turn end (session.info isn't
@@ -56,9 +51,11 @@ export function useSessionInfoSlice({
     void g
       .usage(sid)
       .then((info) => {
-        if (sessionIdRef.current === sid) setUsageInfo((prev: any) => mergeUsageState(prev, info));
+        if (sessionIdRef.current === sid) setUsageInfo((prev) => mergeUsageState(prev, info));
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        console.warn('[session-info] usage refresh failed', e);
+      });
   };
 
   const openInfo = useCallback(async () => {
@@ -72,7 +69,7 @@ export function useSessionInfoSlice({
     setUsageLoading(true);
     try {
       const info = await g.usage(sid);
-      if (sessionIdRef.current === sid) setUsageInfo((prev: any) => mergeUsageState(prev, info));
+      if (sessionIdRef.current === sid) setUsageInfo((prev) => mergeUsageState(prev, info));
     } catch (e) {
       if (sessionIdRef.current === sid) setUsageInfo({ error: errMsg(e) });
     } finally {

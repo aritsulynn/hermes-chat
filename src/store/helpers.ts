@@ -40,14 +40,18 @@ export function normalizeProfileName(name: string | null | undefined): string {
 }
 
 export function profilesOf(payload: unknown): AgentProfile[] {
-  const rows = Array.isArray(payload)
-    ? payload
-    : Array.isArray((payload as any)?.profiles)
-      ? (payload as any).profiles
-      : [];
+  const maybeProfiles =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as { profiles?: unknown }).profiles
+      : undefined;
+  const rows: unknown[] = Array.isArray(payload) ? payload : Array.isArray(maybeProfiles) ? maybeProfiles : [];
   return rows
-    .filter((row: any) => row && typeof row === 'object' && typeof row.name === 'string' && row.name.trim())
-    .map((row: any) => ({ ...row, name: normalizeProfileName(row.name) }));
+    .filter(
+      (row): row is Record<string, unknown> =>
+        !!row && typeof row === 'object' && typeof (row as { name?: unknown }).name === 'string',
+    )
+    .filter((row) => String(row.name).trim().length > 0)
+    .map((row) => ({ ...row, name: normalizeProfileName(String(row.name)) }));
 }
 
 export async function discoverAgentProfiles(
@@ -61,8 +65,12 @@ export async function discoverAgentProfiles(
   ]);
   const rows = listResult.status === 'fulfilled' ? profilesOf(listResult.value) : [];
   const currentPayload = currentResult.status === 'fulfilled' ? currentResult.value : null;
+  const currentRec =
+    currentPayload && typeof currentPayload === 'object' && !Array.isArray(currentPayload)
+      ? (currentPayload as Record<string, unknown>)
+      : {};
   const current = normalizeProfileName(
-    typeof currentPayload?.current === 'string' ? currentPayload.current : rows[0]?.name,
+    typeof currentRec.current === 'string' ? currentRec.current : rows[0]?.name,
   );
   return { profiles: rows, current };
 }
@@ -104,10 +112,13 @@ export function notificationResponseKey(response: HermesNotificationResponse): s
 }
 
 /** Keep the raw gateway usage shape in state; `readUsage` normalizes at render. */
-export function mergeUsageState(previous: unknown, patch: unknown): any {
-  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return previous;
-  const base =
-    previous && typeof previous === 'object' && !Array.isArray(previous) ? (previous as Record<string, unknown>) : {};
+export function mergeUsageState(
+  previous: Record<string, unknown> | null,
+  patch: unknown,
+): Record<string, unknown> | null {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch))
+    return previous && typeof previous === 'object' ? previous : null;
+  const base = previous && typeof previous === 'object' ? previous : {};
   return { ...base, ...(patch as Record<string, unknown>) };
 }
 
@@ -120,7 +131,7 @@ export function scheduleContextHydration(
   gateway: GatewayWs,
   sessionId: string,
   isCurrent: () => boolean,
-  publish: (snapshot: any) => void,
+  publish: (snapshot: Record<string, unknown>) => void,
   delays = CONTEXT_WAKEUP_DELAYS_MS,
 ): () => void {
   let stopped = false;
@@ -194,7 +205,7 @@ export async function uploadAttachments(
     if (!b64) throw new Error(`${name}: could not read the file`);
     if (b64.length > MAX_UPLOAD_BYTES * 1.4) throw new Error(`${name}: too large (10 MB max)`);
     const dataUrl = `data:${f.mime || 'application/octet-stream'};base64,${b64}`;
-    const result: any = image
+    const result: Record<string, unknown> = image
       ? await gateway.call('image.attach_bytes', {
           session_id: sessionId,
           content_base64: b64,

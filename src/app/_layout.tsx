@@ -12,6 +12,8 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import { Platform } from 'react-native';
+import { PortalHost } from '@rn-primitives/portal';
+import { ToastHost } from '../components/ui/toast';
 import {
   Activity,
   BellRing,
@@ -23,16 +25,17 @@ import {
   ScrollText,
   Wrench,
 } from 'lucide-react-native';
-import { AppProvider, useApp } from '../hooks/app-store';
+import { AppProvider, useApp, useThemeValue } from '../hooks/app-store';
 import { FilePreviewHost } from '../components/chat/media';
 import { HermesDrawerContent } from '../components/drawer/HermesDrawerContent';
 import { drawerIcon } from '../components/drawer/nav-config';
+import { THEME } from '../theme';
 
 // Hold the native splash until the silent reconnect finishes (booting).
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function ThemedStatusBar() {
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Android 15 is edge-to-edge: tell the OS which button contrast to use.
   // NOTE: `style` names the *button* colour, not the bar: 'light' = lighter
@@ -48,17 +51,17 @@ function ThemedStatusBar() {
 }
 
 function ThemedDrawer() {
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
-  const bg = dark ? '#000' : '#fff';
-  const fg = dark ? '#f5f5f5' : '#111';
+  const bg = dark ? THEME.dark.background : THEME.light.background;
+  const fg = dark ? THEME.dark.foreground : THEME.light.foreground;
   return (
     <Drawer
       initialRouteName="login"
       drawerContent={(p) => <HermesDrawerContent {...p} />}
       screenOptions={{
         swipeEnabled: true,
-        drawerActiveTintColor: '#1a73e8',
+        drawerActiveTintColor: dark ? THEME.dark.primary : THEME.light.primary,
         headerStyle: { backgroundColor: bg },
         headerShadowVisible: false,
         headerTintColor: fg,
@@ -194,8 +197,9 @@ export default function RootLayout() {
 // SafeAreaProvider is placed here (inside AppProvider) so the theme is
 // available when we need it.
 function ThemedRoot() {
-  const { theme } = useApp();
-  const bg = theme === 'dark' ? '#000' : '#fff';
+  const { theme } = useThemeValue();
+  const dark = theme === 'dark';
+  const bg = dark ? THEME.dark.background : THEME.light.background;
   // Paint the Android *window* background (DecorView), not just the React
   // root. On edge-to-edge Android the gesture-nav region sits outside the
   // React tree, so a themed window background is what stops the default white
@@ -204,6 +208,9 @@ function ThemedRoot() {
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(bg).catch(() => {});
   }, [bg]);
+  // No <ThemeProvider> here: NativeWind v4 has none, and this Drawer builds
+  // its own navigation container. The reusables tokens switch on `.dark:root`,
+  // which the store already drives through NativeWind's setColorScheme.
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: bg }}>
       <SafeAreaProvider style={{ backgroundColor: bg }}>
@@ -214,6 +221,11 @@ function ThemedRoot() {
           {/* File links inside markdown preview through this host (a Modal
               can't live inside the <Text> the markdown pipeline builds). */}
           <FilePreviewHost />
+          {/* Renders the reusables portal components (Dialog, DropdownMenu,
+              Tooltip, ...) on native. Must stay last in the tree. */}
+          <PortalHost />
+          {/* App-wide toasts (replaces the old Alert.alert error popups). */}
+          <ToastHost />
         </BottomSheetModalProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

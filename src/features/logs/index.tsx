@@ -2,14 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
-  FlatList,
   Platform,
-  Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import type { FlashListRef } from '@shopify/flash-list';
+import { Input } from '../../components/ui/input';
+import { Button } from '../../components/ui/button';
+import { Text as UIText } from '../../components/ui/text';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
@@ -27,18 +30,27 @@ import {
   Terminal,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { asRecord } from '../../utils/ops';
+import { placeholderColor, screenStyle } from '../../theme';
+import { ScreenHeader } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
 import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
 
+type LogRow = { line: string; sev: LineSeverity };
+
 export function LogsScreen() {
-  const { authed, opsGet, theme, getAuthScope } = useApp();
+  const { authed, opsGet, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const insets = useSafeAreaInsets();
-  const listRef = useRef<FlatList>(null);
+  // Resolved once per scheme: auto-refresh re-renders this screen every 3.5s
+  // and each value feeds the header/filter chrome plus the list surface.
+  const screen = useMemo(() => screenStyle(dark), [dark]);
+  const placeholder = useMemo(() => placeholderColor(dark, 'log'), [dark]);
+  const listRef = useRef<FlashListRef<LogRow>>(null);
 
   const [file, setFile] = useState<LogFile>('agent');
   const [level, setLevel] = useState<LogLevelFilter>('ALL');
@@ -59,6 +71,11 @@ export function LogsScreen() {
     setLoading(true);
   }, [authed]);
 
+  // `search` is submit-driven (not live): read it through a ref so typing in
+  // the box doesn't recreate `fetchLogs` and refetch on every keystroke.
+  const searchRef = useRef(search);
+  searchRef.current = search;
+
   const fetchLogs = useCallback(
     async (isBackground = false) => {
       const scope = getAuthScope();
@@ -72,11 +89,14 @@ export function LogsScreen() {
             file,
             lines: lineCount,
             level: level !== 'ALL' ? level : undefined,
-            search: search.trim() || undefined,
+            search: searchRef.current.trim() || undefined,
           }),
         );
         if (getAuthScope() !== scope) return;
-        const rawLines: string[] = Array.isArray(res?.lines) ? res.lines : [];
+        const raw = asRecord(res).lines;
+        const rawLines: string[] = Array.isArray(raw)
+          ? raw.filter((l): l is string => typeof l === 'string')
+          : [];
         setLines(rawLines);
       } catch (e) {
         if (getAuthScope() === scope) setError(errMsg(e));
@@ -87,13 +107,13 @@ export function LogsScreen() {
         }
       }
     },
-    [file, getAuthScope, lineCount, level, opsGet, search],
+    [file, getAuthScope, lineCount, level, opsGet],
   );
 
   // Initial load & when file/level/lines change
   useEffect(() => {
     if (authed) void fetchLogs();
-  }, [authed, file, level, lineCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authed, fetchLogs]);
 
   // Auto-refresh interval (every 3.5 seconds) — skips when backgrounded
   // so the Drawer keeping this screen mounted doesn't poll forever.
@@ -127,7 +147,9 @@ export function LogsScreen() {
       setCopied(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 2000);
-    } catch {}
+    } catch (e) {
+      console.warn('[logs] copy failed', e);
+    }
   };
 
   // Statistics + per-row severity in one pass — old code ran classifyLine
@@ -147,22 +169,25 @@ export function LogsScreen() {
     if (rows.length > 0) {
       try {
         listRef.current?.scrollToEnd({ animated: true });
-      } catch {}
+      } catch (e) {
+        console.warn('[logs] scrollToEnd failed', e);
+      }
     }
   }, [rows.length]);
 
   const scrollToTop = useCallback(() => {
     if (rows.length > 0) {
       try {
-        listRef.current?.scrollToIndex({ index: 0, animated: true });
-      } catch {}
+        void listRef.current?.scrollToIndex({ index: 0, animated: true });
+      } catch (e) {
+        console.warn('[logs] scrollToIndex failed', e);
+      }
     }
   }, [rows.length]);
-  const logKeyExtractor = useCallback(
-    (item: { line: string }, index: number) => `${index}-${item.line.length}-${item.line.slice(0, 24)}`,
-    [],
-  );
-  const renderLogRow = useCallback(({ item, index }: { item: { line: string; sev: LineSeverity }; index: number }) => {
+  // Index prefix keeps keys unique across refreshes; length suffix disambiguates
+  // same-index edits without slicing the line (avoids a per-cell string alloc).
+  const logKeyExtractor = useCallback((item: { line: string }, index: number) => `${index}-${item.line.length}`, []);
+  const renderLogRow = useCallback(({ item, index }: { item: LogRow; index: number }) => {
     const isErr = item.sev === 'error';
     const isWarn = item.sev === 'warning';
     const isDbg = item.sev === 'debug';
@@ -191,88 +216,104 @@ export function LogsScreen() {
     );
   }, []);
 
+  // Stable content style — FlashList re-measures on contentContainerStyle
+  // identity change, so keep the ref stable across renders.
+  const logListContentStyle = useMemo(
+    () => ({
+      padding: 10,
+      paddingBottom: insets.bottom + 48,
+    }),
+    [insets.bottom],
+  );
+
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screen}>
       {/* No 'bottom' edge: the list content already pads insets.bottom + 48. */}
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
 
         {/* Header */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <View>
-              <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Logs</Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                {file}.log · {stats.total} lines
-              </Text>
-            </View>
-          </View>
-
-          {/* Header Action Buttons with generous spacing and touch targets */}
-          <View className="flex-row items-center" style={{ gap: 8 }}>
-            {/* Live / Auto refresh toggle button */}
-            <Pressable
-              onPress={() => setAutoRefresh((prev) => !prev)}
-              hitSlop={6}
-              className={`h-9 flex-row items-center gap-1.5 rounded-xl px-3 border ${
-                autoRefresh
-                  ? 'border-emerald-500/40 bg-emerald-500/10 active:bg-emerald-500/20'
-                  : 'border-neutral-200 bg-neutral-100/70 active:bg-neutral-200/70 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800'
-              }`}
-            >
-              <View
-                className={`h-2 w-2 rounded-full ${
-                  autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
-                }`}
-              />
-              <Text
-                className={`text-xs font-semibold ${
-                  autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
+        <ScreenHeader
+          title="Logs"
+          insetTop={insets.top}
+          subtitle={`${file}.log · ${stats.total} lines`}
+          actions={
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              {/* Live / Auto refresh toggle button */}
+              <Button
+                onPress={() => setAutoRefresh((prev) => !prev)}
+                hitSlop={6}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: autoRefresh }}
+                accessibilityLabel="Live refresh"
+                className={`h-9 rounded-xl border px-3 ${
+                  autoRefresh
+                    ? 'border-emerald-500/40 bg-emerald-500/10'
+                    : 'border-neutral-200 bg-neutral-100/70 dark:border-neutral-800 dark:bg-neutral-900'
                 }`}
               >
-                {autoRefresh ? 'Live' : 'Paused'}
-              </Text>
-            </Pressable>
+                <View
+                  className={`h-2 w-2 rounded-full ${
+                    autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
+                  }`}
+                />
+                <UIText
+                  className={`text-xs font-semibold ${
+                    autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
+                  }`}
+                >
+                  {autoRefresh ? 'Live' : 'Paused'}
+                </UIText>
+              </Button>
 
-            {/* Copy button */}
-            <Pressable
-              onPress={handleCopy}
-              hitSlop={6}
-              className={`h-9 flex-row items-center gap-1.5 rounded-xl border px-3 ${
-                copied
-                  ? 'border-emerald-500/40 bg-emerald-500/10'
-                  : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800'
-              }`}
-            >
-              {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />}
-              <Text
-                className={`text-xs font-medium ${
+              {/* Copy button */}
+              <Button
+                onPress={handleCopy}
+                hitSlop={6}
+                accessibilityLabel="Copy log"
+                className={`h-9 rounded-xl border px-3 ${
                   copied
-                    ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
-                    : 'text-neutral-700 dark:text-neutral-300'
+                    ? 'border-emerald-500/40 bg-emerald-500/10'
+                    : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
                 }`}
               >
-                {copied ? 'Copied' : 'Copy'}
-              </Text>
-            </Pressable>
+                {copied ? (
+                  <Check size={14} color="#10b981" />
+                ) : (
+                  <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />
+                )}
+                <UIText
+                  className={`text-xs font-medium ${
+                    copied
+                      ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
+                      : 'text-neutral-700 dark:text-neutral-300'
+                  }`}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </UIText>
+              </Button>
 
-            {/* Manual refresh button */}
-            <Pressable
-              disabled={loading || refreshing}
-              onPress={() => void fetchLogs()}
-              hitSlop={6}
-              className="h-9 w-9 items-center justify-center rounded-xl border border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800"
-            >
-              <RefreshCw size={15} color={dark ? '#9ca3af' : '#6b7280'} className={refreshing ? 'animate-spin' : ''} />
-            </Pressable>
-          </View>
-        </View>
+              {/* Manual refresh button */}
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={loading || refreshing}
+                onPress={() => void fetchLogs()}
+                hitSlop={6}
+                accessibilityLabel="Refresh logs"
+                className="h-9 w-9 rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+              >
+                <RefreshCw
+                  size={15}
+                  color={dark ? '#9ca3af' : '#6b7280'}
+                  className={refreshing ? 'animate-spin' : ''}
+                />
+              </Button>
+            </View>
+          }
+        />
 
         {/* Filter Toolbar Card */}
         <View className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
@@ -291,32 +332,39 @@ export function LogsScreen() {
               {LOG_FILES.map((f) => {
                 const isSelected = file === f;
                 return (
-                  <Pressable
+                  <Button
                     key={f}
+                    variant="ghost"
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`${f} log`}
                     onPress={() => setFile(f)}
-                    className={`flex-row items-center gap-1.5 rounded-xl px-3.5 py-2 border shadow-xs ${
+                    className={`h-auto rounded-xl border px-3.5 py-2 ${
                       isSelected
                         ? 'border-[#1a73e8] bg-[#1a73e8]'
                         : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                     }`}
                   >
                     <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
-                    <Text
+                    <UIText
                       className={`text-xs font-semibold ${
                         isSelected ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
                       }`}
                     >
                       {f}
-                    </Text>
-                  </Pressable>
+                    </UIText>
+                  </Button>
                 );
               })}
             </ScrollView>
 
-            <Pressable
+            <Button
+              variant="ghost"
               onPress={() => setShowFilters((v) => !v)}
               hitSlop={6}
-              className={`h-9 flex-row items-center gap-1.5 rounded-xl border px-3 ${
+              accessibilityState={{ expanded: showFilters }}
+              accessibilityLabel="Toggle filters"
+              className={`h-9 rounded-xl border px-3 ${
                 showFilters
                   ? 'border-[#1a73e8]/40 bg-[#1a73e8]/10'
                   : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
@@ -330,33 +378,37 @@ export function LogsScreen() {
               >
                 Filter
               </Text>
-            </Pressable>
+            </Button>
           </View>
 
           {showFilters && (
             <View className="mt-3 pt-3 border-t border-neutral-200/70 dark:border-neutral-800/70" style={{ gap: 12 }}>
-              {/* Search Input */}
-              <View className="flex-row items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+              {/* Search Input — border lives on the Input itself */}
+              <View className="flex-row items-center gap-2">
                 <Search size={15} color={dark ? '#737373' : '#9ca3af'} />
-                <TextInput
+                <Input
                   value={search}
                   onChangeText={setSearch}
                   placeholder="Filter logs (substring)..."
-                  placeholderTextColor={dark ? '#666' : '#999'}
+                  placeholderTextColor={placeholder}
                   autoCapitalize="none"
                   autoCorrect={false}
                   className="flex-1 text-xs text-neutral-950 dark:text-neutral-100 py-0.5"
                   onSubmitEditing={() => void fetchLogs()}
                 />
                 {Boolean(search) && (
-                  <Pressable
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onPress={() => {
                       setSearch('');
                     }}
                     hitSlop={8}
+                    accessibilityLabel="Clear filter"
+                    className="h-6 w-6 rounded-md"
                   >
                     <X size={15} color={dark ? '#888' : '#999'} />
-                  </Pressable>
+                  </Button>
                 )}
               </View>
 
@@ -377,23 +429,27 @@ export function LogsScreen() {
                       const color = LEVEL_COLORS[lvl];
 
                       return (
-                        <Pressable
+                        <Button
                           key={lvl}
+                          variant="ghost"
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: isSelected }}
+                          accessibilityLabel={`${lvl} level`}
                           onPress={() => setLevel(lvl)}
-                          className={`rounded-lg border px-3 py-1.5 shadow-xs ${
+                          className={`h-auto rounded-lg border px-3 py-1.5 ${
                             isSelected
                               ? `${color.activeBg} ${color.activeBorder}`
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                           }`}
                         >
-                          <Text
+                          <UIText
                             className={`text-xs font-semibold ${
                               isSelected ? color.activeText : 'text-neutral-600 dark:text-neutral-400'
                             }`}
                           >
                             {lvl}
-                          </Text>
-                        </Pressable>
+                          </UIText>
+                        </Button>
                       );
                     })}
                   </ScrollView>
@@ -408,23 +464,27 @@ export function LogsScreen() {
                     {LINE_COUNTS.map((cnt) => {
                       const isSelected = lineCount === cnt;
                       return (
-                        <Pressable
+                        <Button
                           key={cnt}
+                          variant="ghost"
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: isSelected }}
+                          accessibilityLabel={`${cnt} lines`}
                           onPress={() => setLineCount(cnt)}
-                          className={`flex-1 items-center justify-center rounded-lg border py-1.5 shadow-xs ${
+                          className={`h-auto flex-1 rounded-lg border py-1.5 ${
                             isSelected
                               ? 'border-neutral-900 bg-neutral-900 dark:border-neutral-100 dark:bg-neutral-100'
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                           }`}
                         >
-                          <Text
+                          <UIText
                             className={`text-xs font-semibold ${
                               isSelected ? 'text-white dark:text-neutral-950' : 'text-neutral-600 dark:text-neutral-400'
                             }`}
                           >
                             {cnt}
-                          </Text>
-                        </Pressable>
+                          </UIText>
+                        </Button>
                       );
                     })}
                   </View>
@@ -440,9 +500,13 @@ export function LogsScreen() {
             </Text>
             <View className="flex-row items-center" style={{ gap: 8 }}>
               {stats.errorCount > 0 && (
-                <Pressable
+                <Button
+                  variant="ghost"
                   onPress={() => setLevel((prev) => (prev === 'ERROR' ? 'ALL' : 'ERROR'))}
-                  className={`flex-row items-center gap-1.5 rounded-lg border px-2.5 py-1 ${
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: level === 'ERROR' }}
+                  accessibilityLabel={`Show only errors, ${stats.errorCount} found`}
+                  className={`h-auto rounded-lg border px-2.5 py-1 ${
                     level === 'ERROR'
                       ? 'border-rose-500 bg-rose-500/20'
                       : 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40'
@@ -452,12 +516,16 @@ export function LogsScreen() {
                   <Text className="text-xs font-semibold text-rose-700 dark:text-rose-300">
                     {stats.errorCount} Error{stats.errorCount > 1 ? 's' : ''}
                   </Text>
-                </Pressable>
+                </Button>
               )}
               {stats.warnCount > 0 && (
-                <Pressable
+                <Button
+                  variant="ghost"
                   onPress={() => setLevel((prev) => (prev === 'WARNING' ? 'ALL' : 'WARNING'))}
-                  className={`flex-row items-center gap-1.5 rounded-lg border px-2.5 py-1 ${
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: level === 'WARNING' }}
+                  accessibilityLabel={`Show only warnings, ${stats.warnCount} found`}
+                  className={`h-auto rounded-lg border px-2.5 py-1 ${
                     level === 'WARNING'
                       ? 'border-amber-500 bg-amber-500/20'
                       : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40'
@@ -466,7 +534,7 @@ export function LogsScreen() {
                   <Text className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                     {stats.warnCount} Warn{stats.warnCount > 1 ? 's' : ''}
                   </Text>
-                </Pressable>
+                </Button>
               )}
             </View>
           </View>
@@ -474,9 +542,9 @@ export function LogsScreen() {
 
         {/* Error message banner */}
         {error && (
-          <View className="m-3 rounded-xl border border-red-200 bg-red-50 p-2.5 dark:border-red-900/50 dark:bg-red-950/40">
-            <Text className="text-xs text-red-700 dark:text-red-300">{error}</Text>
-          </View>
+          <UIAlert icon={AlertTriangle} variant="destructive" className="m-3 rounded-xl px-4 pt-2.5 pb-2">
+            <AlertDescription className="text-xs text-red-700 dark:text-red-300">{error}</AlertDescription>
+          </UIAlert>
         )}
 
         {/* Log Output Area */}
@@ -497,38 +565,39 @@ export function LogsScreen() {
           </View>
         ) : (
           <View className="flex-1 bg-[#101014]">
-            <FlatList
+            {/* FlashList v2 sizes rows itself; drawDistance replaces the old
+                windowSize/maxToRenderPerBatch overscan tuning. */}
+            <FlashList
               ref={listRef}
               data={rows}
               keyExtractor={logKeyExtractor}
-              contentContainerStyle={{
-                padding: 10,
-                paddingBottom: insets.bottom + 48,
-              }}
+              contentContainerStyle={logListContentStyle}
               renderItem={renderLogRow}
-              initialNumToRender={30}
-              maxToRenderPerBatch={30}
-              windowSize={7}
-              updateCellsBatchingPeriod={80}
-              removeClippedSubviews
+              drawDistance={800}
             />
 
             {/* Quick Jump Buttons (Floating) */}
             <View className="absolute bottom-6 right-5 flex-col" style={{ gap: 12 }}>
-              <Pressable
+              <Button
+                variant="ghost"
+                size="icon"
                 onPress={scrollToTop}
-                className="h-11 w-11 items-center justify-center rounded-full bg-neutral-900/90 shadow-xl active:bg-neutral-800 border border-neutral-700/80"
+                accessibilityLabel="Scroll to top"
+                className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800"
                 style={{ elevation: 4 }}
               >
                 <ArrowUp size={18} color="#fff" />
-              </Pressable>
-              <Pressable
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
                 onPress={scrollToBottom}
-                className="h-11 w-11 items-center justify-center rounded-full bg-[#1a73e8] shadow-xl active:bg-blue-600 border border-blue-400/30"
+                accessibilityLabel="Scroll to bottom"
+                className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600"
                 style={{ elevation: 4 }}
               >
                 <ArrowDown size={18} color="#fff" />
-              </Pressable>
+              </Button>
             </View>
           </View>
         )}

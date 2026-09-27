@@ -31,39 +31,40 @@ export interface ToolsetToggleResult {
 }
 
 function rowsOf(payload: unknown): ToolsetInfo[] {
-  const rows: unknown[] = Array.isArray(payload)
-    ? payload
-    : Array.isArray((payload as any)?.toolsets)
-      ? (payload as any).toolsets
-      : [];
+  const maybeToolsets =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as { toolsets?: unknown }).toolsets
+      : undefined;
+  const rows: unknown[] = Array.isArray(payload) ? payload : Array.isArray(maybeToolsets) ? maybeToolsets : [];
   return rows
-    .filter((row: unknown) => row && typeof row === 'object' && typeof (row as any).name === 'string')
-    .map((row: any) => ({
-      ...(row as any),
-      name: String((row as any).name),
-      label: typeof (row as any).label === 'string' ? (row as any).label : undefined,
-      description: typeof (row as any).description === 'string' ? (row as any).description : '',
-      enabled: (row as any).enabled !== false,
-      configured: (row as any).configured === true,
-      tools: Array.isArray((row as any).tools)
-        ? (row as any).tools.filter((tool: unknown) => typeof tool === 'string')
-        : [],
+    .filter((row): row is Record<string, unknown> => !!row && typeof row === 'object')
+    .filter((row) => typeof row.name === 'string')
+    .map((row) => ({
+      ...row,
+      name: String(row.name),
+      label: typeof row.label === 'string' ? row.label : undefined,
+      description: typeof row.description === 'string' ? row.description : '',
+      enabled: row.enabled !== false,
+      configured: row.configured === true,
+      tools: Array.isArray(row.tools) ? row.tools.filter((tool): tool is string => typeof tool === 'string') : [],
     })) as ToolsetInfo[];
 }
 
 export async function getToolsets(
-  opsGet: (path: string) => Promise<any>,
+  opsGet: (path: string) => Promise<unknown>,
   profile: string,
 ): Promise<ToolsetInfo[]> {
   return rowsOf(await opsGet(toolsetsPath(profile)));
 }
 
 export async function setToolsetEnabled(
-  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>,
+  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<unknown>,
   name: string,
   enabled: boolean,
   profile: string,
 ): Promise<ToolsetToggleResult> {
   const result = await opsMut(toolsetToggle(name, profile), 'PUT', { enabled });
-  return result && typeof result === 'object' ? (result as ToolsetToggleResult) : {};
+  return result && typeof result === 'object' && !Array.isArray(result)
+    ? (result as ToolsetToggleResult)
+    : {};
 }

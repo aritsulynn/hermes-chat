@@ -22,6 +22,27 @@ export interface ScopedSessionSummary extends SessionSummary {
   profile?: string;
 }
 
+/** Session detail snapshot (`session.info`) — free-form JSON, kept verbatim. */
+export type SessionInfo = Record<string, unknown>;
+/** Live usage snapshot (`session.usage`) — free-form JSON, merged per turn. */
+export type UsageInfo = Record<string, unknown>;
+/** Honest result of the generic ops REST helpers (JSON of any shape). */
+export type OpsResult = unknown;
+/** Cookie-authed GET against the dashboard (`services/dashboard`). */
+export type OpsGet = (path: string) => Promise<OpsResult>;
+/** Cookie-authed mutation against the dashboard (`services/dashboard`). */
+export type OpsMut = (
+  path: string,
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  body?: unknown,
+) => Promise<OpsResult>;
+/** One row of the full-history search index (plain data, not a live bubble). */
+export interface TranscriptHit {
+  role: string;
+  text: string;
+  rowId: number | null;
+}
+
 export interface AppStore {
   booting: boolean;
   authed: boolean;
@@ -46,11 +67,16 @@ export interface AppStore {
   sessionKey: string | null;
   sessionTitle: string;
   messages: UiMessage[];
-  /** Live streaming deltas by bubble id — kept outside `messages` so per-token
-   *  updates are O(1) instead of mapping the whole transcript. Merged into
-   *  `messages` once on turn end (desktop parity: hot state local, durable
-   *  transcript appended, not rewritten). */
-  streamingTexts: Record<string, string>;
+  /** True while an older-history page is loading (list header spinner). */
+  historyLoadingMore: boolean;
+  /** True when the server has no rows older than the loaded window. */
+  historyExhausted: boolean;
+  /** Bubbles trimmed from the head by the window cap (refetchable via paging). */
+  trimmedOlder: number;
+  /** Prepend the next older history page (no-op at the start / while loading). */
+  loadOlderMessages: () => Promise<boolean>;
+  /** Drop the window head past the soft cap (refetchable, never the live tail). */
+  trimHead: () => void;
   input: string;
   setInput: (v: string) => void;
   model: string;
@@ -70,8 +96,8 @@ export interface AppStore {
   infoOpen: boolean;
   setInfoOpen: (v: boolean) => void;
   infoSeq: number;
-  sessionInfo: any;
-  usageInfo: any;
+  sessionInfo: SessionInfo | null;
+  usageInfo: UsageInfo | null;
   usageLoading: boolean;
   toolLine: string | null;
   ask: ServerAsk | null;
@@ -137,17 +163,21 @@ export interface AppStore {
   /** Reply to the current foreground ask with its method-specific result. */
   answerAsk: (result: Record<string, unknown>) => boolean;
   dismissAsk: () => void;
-  /** Effective theme after resolving `system`. */
-  theme: ResolvedTheme;
-  /** Persisted user preference: light, dark, or follow the device. */
-  themeMode: Theme;
-  setTheme: (t: Theme) => void;
+  /** One transcript row in the full-history search index (not a live bubble). */
+  /** Full-history search: match `query` across the server transcript, not just
+   *  the loaded window. Returns hits oldest-first. */
+  searchTranscript: (query: string) => Promise<TranscriptHit[]>;
+  /** Window index of a search hit, or -1 when it is not loaded yet. */
+  findHitIndex: (hit: TranscriptHit) => number;
+  // The theme triple (theme / themeMode / setTheme) is deliberately NOT on
+  // AppStore — it lives on its own context so a theme toggle does not hand all
+  // ~30 useApp() consumers a new object. Read it with useThemeValue().
   renameSession: (title: string) => Promise<void>;
   deleteSessionById: (storedId: string) => Promise<void>;
   redirectLive: (text: string) => Promise<void>;
   setGlobalModel: (providerSlug: string, modelId: string) => Promise<void>;
-  opsGet: (path: string) => Promise<any>;
-  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<any>;
+  opsGet: OpsGet;
+  opsMut: OpsMut;
   /** Session cookie — media components need it to load authed URLs. */
   getCookie: () => string;
   /** Connection + profile generation for auth-scoped REST screens. */

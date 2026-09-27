@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Keyboard, Platform, Text, TextInput, View } from 'react-native';
+import { Keyboard, Platform, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowUp,
@@ -12,7 +13,9 @@ import {
 
 import type { Attachment } from '../../utils/messages';
 import { reasoningLabel } from '../../utils/reasoning';
-import { Tap } from '../ui/bits';
+import { placeholderColor } from '../../theme';
+import { Button } from '../ui/button';
+import { Text as UIText } from '../ui/text';
 
 // How a control reports its position for a screen-level popover. The popover
 // lives in the chat screen (not here) so it can float above the list and still
@@ -122,7 +125,6 @@ export const Composer = memo(function Composer({
   }, []);
   const trimmedInput = input.trim();
   const hasText = trimmedInput.length > 0;
-  const canSend = hasText || attachments.length > 0;
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
   return (
     <View className="px-2.5 pt-2" style={{ paddingBottom: webKb > 0 ? webKb + 18 : kbOpen ? 18 : Math.max(insets.bottom, 10) }}>
@@ -133,24 +135,32 @@ export const Composer = memo(function Composer({
               const isImg =
                 (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(a.name);
               return (
-                <Tap
+                <Button
                   key={a.uri + a.name}
+                  variant="secondary"
+                  size="sm"
                   onPress={() => setAttachments(attachments.filter((x) => x.uri !== a.uri))}
-                  radius={12}
-                  highlight={dark ? '#4a4a4a' : '#d7e3f7'}
-                  className="max-w-[220px] flex-row items-center gap-1 bg-[#e8eef7] px-2 py-1 dark:bg-[#272727]"
+                  className="max-w-[220px] gap-1 px-2 py-1 shadow-none"
                 >
                   {isImg ? (
-                    // eslint-disable-next-line jsx-a11y/alt-text
-                    <Image source={{ uri: a.uri }} className="h-7 w-7 rounded-md bg-[#d7e3f7]" />
+                    <Image
+                      source={{ uri: a.uri }}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      recyclingKey={a.uri}
+                      // A 28px chip is never worth pre-empting a real load.
+                      priority="low"
+                      alt={a.name}
+                      className="h-7 w-7 rounded-md bg-[#d7e3f7]"
+                    />
                   ) : (
                     <Paperclip size={12} color="#1a73e8" />
                   )}
-                  <Text className="shrink text-xs text-[#1a73e8] dark:text-[#7aa7ff]" numberOfLines={1}>
+                  <UIText className="min-w-0 shrink text-xs text-[#1a73e8] dark:text-[#7aa7ff]" numberOfLines={1}>
                     {a.name}
-                  </Text>
+                  </UIText>
                   <X size={12} color="#1a73e8" />
-                </Tap>
+                </Button>
               );
             })}
           </View>
@@ -173,7 +183,7 @@ export const Composer = memo(function Composer({
           placeholder={
             generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…'
           }
-          placeholderTextColor={dark ? '#8a8a8a' : '#9ca3af'}
+          placeholderTextColor={placeholderColor(dark, 'composer')}
           keyboardAppearance={dark ? 'dark' : 'light'}
           multiline
           textAlignVertical="top"
@@ -187,93 +197,98 @@ export const Composer = memo(function Composer({
         />
         {/* The model chip is the only shrinkable item: without it the row (plus
             + chip + effort + Steer + stop/send) is wider than a phone screen and
-            spills past the right edge. */}
+            spills past the right edge. It has no max-width on purpose - flex
+            shrink already caps it on a phone, and a cap here would also clip the
+            name on a wide screen where there is nothing to protect against. */}
         <View className="flex-row items-center gap-1.5">
-          <Tap
-            ref={plusRef}
+          <Button
+            ref={plusRef as any}
+            variant="ghost"
+            size="icon"
             accessibilityRole="button"
             accessibilityLabel="Attach"
             onPress={() => onOpenAttachPicker(measurer(plusRef))}
-            radius={16}
-            className="h-8 w-8 shrink-0 items-center justify-center"
+            className="h-8 w-8 shrink-0 shadow-none"
             hitSlop={8}
           >
             <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
-          </Tap>
-          <Tap
-            ref={modelRef}
+          </Button>
+          <Button
+            ref={modelRef as any}
+            variant="ghost"
+            size="sm"
             onPress={() => onOpenModelPicker(measurer(modelRef))}
-            radius={8}
-            className="min-w-0 max-w-[170px] shrink flex-row items-center gap-1 px-1.5 py-1.5"
+            className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none"
             hitSlop={8}
           >
-            <View className="flex-row items-center gap-0.5">
-              <Text className="shrink text-[13px] font-semibold text-neutral-700 dark:text-neutral-200" numberOfLines={1}>
+            <View className="min-w-0 shrink flex-row items-center gap-0.5">
+              <UIText className="min-w-0 shrink text-[13px] font-semibold text-neutral-700 dark:text-neutral-200" numberOfLines={1}>
                 {modelLabel}
-              </Text>
+              </UIText>
               <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
             </View>
-          </Tap>
+          </Button>
           {showEffort && (
-            <Tap
-              ref={effortRef}
+            <Button
+              ref={effortRef as any}
+              variant="ghost"
+              size="sm"
               onPress={() => onOpenEffortPicker(measurer(effortRef))}
-              radius={8}
-              className="shrink-0 px-2 py-1.5"
+              className="shrink-0 px-2 py-1.5 shadow-none"
               hitSlop={8}
             >
-              <Text className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
+              <UIText className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
                 {reasoningLabel(effort, effortWire)}
-              </Text>
-            </Tap>
+              </UIText>
+            </Button>
           )}
           <View className="flex-1" />
           {generating ? (
             <>
               {hasText && !attachments.length && (
-                <Tap
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onPress={() => onQueue(input)}
-                  radius={8}
-                  highlight={dark ? '#525252' : '#d4d4d4'}
-                  className="shrink-0 items-center rounded-lg bg-neutral-200 px-2.5 py-1.5 dark:bg-neutral-700"
+                  className="shrink-0 rounded-lg px-2.5 py-1.5 shadow-none"
                   hitSlop={8}
                 >
-                  <Text className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</Text>
-                </Tap>
+                  <UIText className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</UIText>
+                </Button>
               )}
               {hasText && (
-                <Tap
+                <Button
+                  variant="outline"
+                  size="sm"
                   onPress={() => onRedirect(input)}
-                  radius={8}
-                  className="shrink-0 items-center rounded-lg border border-neutral-300 px-2 py-1.5 dark:border-neutral-700"
+                  className="shrink-0 rounded-lg px-2 py-1.5 shadow-none"
                   hitSlop={8}
                 >
-                  <Text className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</Text>
-                </Tap>
+                  <UIText className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</UIText>
+                </Button>
               )}
-              <Tap
+              <Button
+                variant="destructive"
+                size="icon"
                 onPress={stop}
                 accessibilityRole="button"
                 accessibilityLabel="Stop"
-                radius={18}
-                highlight="#a01a17"
-                className="h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#c5221f]"
+                className="h-9 w-9 shrink-0 rounded-full shadow-none"
               >
                 <Square size={13} color="#fff" fill="#fff" />
-              </Tap>
+              </Button>
             </>
           ) : (
-            <Tap
+            <Button
+              variant="default"
+              size="icon"
               onPress={send}
               accessibilityRole="button"
               accessibilityLabel="Send"
-              radius={18}
-              highlight="#d4d4d4"
-              className={`h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-200 ${!canSend ? 'opacity-40' : ''}`}
-              disabled={!canSend}
+              className="h-9 w-9 shrink-0 rounded-full shadow-none"
             >
-              <ArrowUp size={19} color="#1c1c1c" />
-            </Tap>
+              <ArrowUp size={19} color={dark ? '#111' : '#fff'} />
+            </Button>
           )}
         </View>
       </View>

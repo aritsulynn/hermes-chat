@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { router } from 'expo-router';
 import { findAsk, findAskByRpc } from '../../services/ask-inbox';
-import type { AskInboxEntry } from '../../services/ask-inbox';
 import { connectionScope } from '../../services/connection';
 import {
   ensureAndroidChannel,
@@ -20,20 +19,7 @@ import {
 } from '../../services/notifications';
 import type { HermesNotificationResponse } from '../../services/notifications';
 import { normalizeProfileName, notificationResponseKey } from '../helpers';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface NotificationResponsesSliceDeps {
-  runtime: StoreRuntime;
-  askInboxRef: MutableRefObject<AskInboxEntry[]>;
-  answerInboxApproval: (key: string, choice: string) => boolean;
-  answerInboxValue: (key: string, value: string) => boolean;
-  openAskEntry: (entry: AskInboxEntry) => Promise<void>;
-  respondToInbox: (key: string, result: Record<string, unknown>) => boolean;
-  confirmSensitiveNotification: () => Promise<boolean>;
-  latest: LatestRef;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface NotificationResponsesSlice {
   pendingNotificationResponsesRef: MutableRefObject<HermesNotificationResponse[]>;
@@ -48,7 +34,6 @@ export interface NotificationResponsesSlice {
 }
 
 export function useNotificationResponsesSlice({
-  runtime,
   askInboxRef,
   answerInboxApproval,
   answerInboxValue,
@@ -56,8 +41,9 @@ export function useNotificationResponsesSlice({
   respondToInbox,
   confirmSensitiveNotification,
   latest,
-}: NotificationResponsesSliceDeps): NotificationResponsesSlice {
-  const { gw, activeProfileRef } = runtime;
+  gw,
+  activeProfileRef,
+}: StoreCtx): NotificationResponsesSlice {
   const pendingNotificationResponsesRef = useRef<HermesNotificationResponse[]>([]);
   const notificationDrainRef = useRef<(() => void) | null>(null);
   const notificationActionInFlightRef = useRef(false);

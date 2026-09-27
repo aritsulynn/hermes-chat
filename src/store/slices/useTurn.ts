@@ -1,50 +1,12 @@
 // Turn slice — the turn engine: beginTurn / runSlash / edit / regenerate /
 // pasteLarge / send / releaseLocalTurn / stop.
 import { useCallback } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { isSlashCommand, nid, errMsg, parseSlashCommand, utf8ToBase64 } from '../../utils/messages';
-import type { Attachment, Role, UiMessage } from '../../utils/messages';
+import type { Attachment, Role } from '../../utils/messages';
 import { slashBlockedMessage, slashMobileAction, slashMobileHint } from '../../utils/slash-commands';
 import { connectionScope } from '../../services/connection';
-import type { AskOwner } from '../../services/ask-inbox';
-import type { SubagentRow } from '../../utils/messages';
 import { cutsWholeTranscript, isImageAttachment, profileSessionKey, uploadAttachments } from '../helpers';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface TurnSliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  queueParkedRef: MutableRefObject<boolean>;
-  activeProfile: string;
-  sessionId: string | null;
-  sessionKey: string | null;
-  generating: boolean;
-  input: string;
-  attachments: Attachment[];
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-  setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
-  setGenerating: Dispatch<SetStateAction<boolean>>;
-  setToolLine: Dispatch<SetStateAction<string | null>>;
-  setSessionId: Dispatch<SetStateAction<string | null>>;
-  setEditingRowId: Dispatch<SetStateAction<number | null>>;
-  setInput: (v: string) => void;
-  setQueueParked: Dispatch<SetStateAction<boolean>>;
-  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  enqueueQueued: (text: string) => void;
-  bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
-  clearStreaming: () => void;
-  liveAid: MutableRefObject<string | null>;
-  liveThinkAid: MutableRefObject<string | null>;
-  liveTools: MutableRefObject<Map<string, string>>;
-  liveToolAid: MutableRefObject<string | null>;
-  liveTurnTools: MutableRefObject<string[]>;
-  liveTurnDiffs: MutableRefObject<string[]>;
-  turnOwnerRef: MutableRefObject<Map<string, string>>;
-  parkedLiveRef: MutableRefObject<Set<string>>;
-  lastTurnEventAt: MutableRefObject<number>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface TurnSlice {
   beginTurn: (
@@ -63,9 +25,8 @@ export interface TurnSlice {
   stop: () => void;
 }
 
-export function useTurnSlice(deps: TurnSliceDeps): TurnSlice {
+export function useTurnSlice(ctx: StoreCtx): TurnSlice {
   const {
-    runtime,
     latest,
     queueParkedRef,
     activeProfile,
@@ -95,8 +56,6 @@ export function useTurnSlice(deps: TurnSliceDeps): TurnSlice {
     turnOwnerRef,
     parkedLiveRef,
     lastTurnEventAt,
-  } = deps;
-  const {
     gw,
     activeProfileRef,
     profileEpochRef,
@@ -114,7 +73,7 @@ export function useTurnSlice(deps: TurnSliceDeps): TurnSlice {
     renameSessionRef,
     releaseLocalTurnRef,
     uploadingRef: uploading,
-  } = runtime;
+  } = ctx;
 
   // Start an agent turn: echo the user line (when this call owns it), pin the
   // pending assistant bubble, submit, and recover from an expired live runtime.

@@ -2,28 +2,13 @@
 // expanded tool bubbles resolve without waiting for the turn to end, and
 // debounces the refresh after each `tool.complete`.
 import { useCallback, useEffect, useRef } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { MutableRefObject } from 'react';
 import { inlineDiffFromDetail } from '../../utils/diff';
 import { connectionScope } from '../../services/connection';
+import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { getSessionMessages } from '../../services/dashboard';
 import { formatToolResult } from '../../utils/toolResult';
-import type { UiMessage } from '../../utils/messages';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface ToolRefreshSliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  acceptRotatedCookie: (
-    nextCookie: string,
-    host: string,
-    username: string,
-    connectionEpoch: number,
-    profileEpoch: number,
-  ) => Promise<void>;
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface ToolRefreshSlice {
   toolRefreshRef: MutableRefObject<() => void>;
@@ -32,12 +17,15 @@ export interface ToolRefreshSlice {
 }
 
 export function useToolRefreshSlice({
-  runtime,
   latest,
   acceptRotatedCookie,
   setMessages,
-}: ToolRefreshSliceDeps): ToolRefreshSlice {
-  const { cookie, messagesRef, activeProfileRef, profileEpochRef, connectionEpochRef } = runtime;
+  cookie,
+  messagesRef,
+  activeProfileRef,
+  profileEpochRef,
+  connectionEpochRef,
+}: StoreCtx): ToolRefreshSlice {
   const toolRefreshRef = useRef<() => void>(() => {});
   const toolRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -65,7 +53,7 @@ export function useToolRefreshSlice({
           ck,
           sk,
           profile,
-          200,
+          CHAT_HISTORY_PAGE,
           connectionScope(h, targetUser),
           async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
         );

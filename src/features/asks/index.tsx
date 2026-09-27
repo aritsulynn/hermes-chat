@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo } from 'react';
+import { Alert, ScrollView, Text, View } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -18,9 +18,15 @@ import {
 } from 'lucide-react-native';
 
 import { HamburgerBtn } from '../../components/ui/bits';
-import { useApp } from '../../hooks/app-store';
+import { Button } from '../../components/ui/button';
+import { Badge } from '../../components/ui/badge';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { toast } from '../../components/ui/toast';
+import { Text as UIText } from '../../components/ui/text';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
 import { errMsg } from '../../utils/messages';
+import { screenStyle } from '../../theme';
 
 function methodLabel(method: string): string {
   if (method === 'approval') return 'Command approval';
@@ -54,7 +60,7 @@ function requestSummary(entry: AskInboxEntry): string {
   return 'Hermes is waiting for input.';
 }
 
-function AskCard({
+const AskCard = memo(function AskCard({
   entry,
   onApproval,
   onOpen,
@@ -101,17 +107,17 @@ function AskCard({
           </Text>
         </View>
         {waiting ? (
-          <View className="rounded-full bg-amber-100 px-2 py-1 dark:bg-amber-950/60">
-            <Text className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
+          <Badge variant="secondary" className="border-transparent py-1">
+            <UIText className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
               {entry.status === 'sent' ? 'Sent' : 'Waiting'}
-            </Text>
-          </View>
+            </UIText>
+          </Badge>
         ) : (
-          <View className="rounded-full bg-neutral-100 px-2 py-1 dark:bg-neutral-800">
-            <Text className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">
+          <Badge variant="secondary" className="border-transparent py-1">
+            <UIText className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">
               {entry.status}
-            </Text>
-          </View>
+            </UIText>
+          </Badge>
         )}
       </View>
 
@@ -136,48 +142,46 @@ function AskCard({
           {entry.method === 'approval' && (canAllow || canDeny) ? (
             <>
               {canAllow && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Allow once"
+                <Button
                   onPress={() => onApproval(entry.key, 'once')}
-                  className="flex-1 items-center rounded-xl bg-[#1a73e8] px-3 py-2.5"
+                  accessibilityLabel="Allow once"
+                  className="h-auto flex-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
                 >
-                  <Text className="text-sm font-semibold text-white">
+                  <UIText className="text-sm font-semibold text-white">
                     Allow once
-                  </Text>
-                </Pressable>
+                  </UIText>
+                </Button>
               )}
               {canDeny && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Reject request"
+                <Button
+                  variant="outline"
                   onPress={() => onApproval(entry.key, 'deny')}
-                  className="flex-1 items-center rounded-xl border border-red-200 px-3 py-2.5 dark:border-red-950"
+                  accessibilityLabel="Reject request"
+                  className="h-auto flex-1 rounded-xl border-red-200 px-3 py-2.5 dark:border-red-950"
                 >
-                  <Text className="text-sm font-semibold text-red-600 dark:text-red-400">
+                  <UIText className="text-sm font-semibold text-red-600 dark:text-red-400">
                     Reject
-                  </Text>
-                </Pressable>
+                  </UIText>
+                </Button>
               )}
             </>
           ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open request"
+            <Button
               onPress={() => onOpen(entry)}
-              className="flex-row items-center justify-center gap-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
+              accessibilityLabel="Open request"
+              className="h-auto rounded-xl bg-[#1a73e8] px-3 py-2.5"
             >
-              <Text className="text-sm font-semibold text-white">
+              <UIText className="text-sm font-semibold text-white">
                 Open request
-              </Text>
+              </UIText>
               <ChevronRight size={15} color="#fff" />
-            </Pressable>
+            </Button>
           )}
         </View>
       )}
     </View>
   );
-}
+});
 
 export function AskInboxScreen() {
   const {
@@ -185,10 +189,10 @@ export function AskInboxScreen() {
     askInbox,
     pendingAskCount,
     error,
-    theme,
     answerInboxApproval,
     openAskEntry,
   } = useApp();
+  const { theme } = useThemeValue();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const dark = theme === 'dark';
@@ -201,17 +205,41 @@ export function AskInboxScreen() {
     });
   }, [navigation, dark]);
 
-  const pending = askInbox.filter(
-    (entry) =>
-      entry.status === 'pending' ||
-      entry.status === 'answering' ||
-      entry.status === 'sent',
+  const pending = useMemo(
+    () =>
+      askInbox.filter(
+        (entry) => entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent',
+      ),
+    [askInbox],
   );
-  const settled = askInbox.filter(
-    (entry) =>
-      entry.status !== 'pending' &&
-      entry.status !== 'answering' &&
-      entry.status !== 'sent',
+  const settled = useMemo(
+    () =>
+      askInbox.filter(
+        (entry) => entry.status !== 'pending' && entry.status !== 'answering' && entry.status !== 'sent',
+      ),
+    [askInbox],
+  );
+
+  // Stable callbacks so a new approval arriving doesn't rebuild every card's
+  // handlers (AskCard is memoized; settled is capped at 10 rows below, so no
+  // virtualized list is needed here).
+  const handleApproval = useCallback(
+    (key: string, choice: string) => {
+      try {
+        if (!answerInboxApproval(key, choice)) {
+          toast({ title: 'Could not answer', description: 'The gateway is not ready or the request is no longer pending.', variant: 'destructive' });
+        }
+      } catch (e) {
+        toast({ title: 'Could not answer', description: errMsg(e), variant: 'destructive' });
+      }
+    },
+    [answerInboxApproval],
+  );
+  const handleOpenAsk = useCallback(
+    (entry: AskInboxEntry) => {
+      void openAskEntry(entry);
+    },
+    [openAskEntry],
   );
 
   if (!authed) {
@@ -225,7 +253,7 @@ export function AskInboxScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       <StatusBar style="auto" />
       <SafeAreaView
         className="flex-1 bg-white dark:bg-black"
@@ -246,11 +274,9 @@ export function AskInboxScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {!!error && (
-            <View className="rounded-xl border border-red-200 bg-red-50/70 px-3 py-2.5 dark:border-red-950/60 dark:bg-red-950/20">
-              <Text className="text-sm text-red-700 dark:text-red-300">
-                {error}
-              </Text>
-            </View>
+            <UIAlert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="text-red-700 dark:text-red-300">{error}</AlertDescription>
+            </UIAlert>
           )}
           <View className="mb-1 flex-row items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
             <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
@@ -268,23 +294,7 @@ export function AskInboxScreen() {
           </View>
 
           {pending.map((entry) => (
-            <AskCard
-              key={entry.key}
-              entry={entry}
-              onApproval={(key, choice) => {
-                try {
-                  if (!answerInboxApproval(key, choice)) {
-                    Alert.alert(
-                      'Could not answer',
-                      'The gateway is not ready or the request is no longer pending.',
-                    );
-                  }
-                } catch (e) {
-                  Alert.alert('Could not answer', errMsg(e));
-                }
-              }}
-              onOpen={(entry) => void openAskEntry(entry)}
-            />
+            <AskCard key={entry.key} entry={entry} onApproval={handleApproval} onOpen={handleOpenAsk} />
           ))}
 
           {pending.length === 0 && (

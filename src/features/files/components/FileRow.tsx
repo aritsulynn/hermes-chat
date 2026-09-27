@@ -1,5 +1,5 @@
 // Memoized file/folder row — the old ScrollView.map rebuilt every icon/date/bytes per keystroke.
-import { memo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { ChevronRight, Folder } from 'lucide-react-native';
 import { formatBytes, formatDate } from '../../../utils/format';
@@ -22,13 +22,21 @@ export const FileRow = memo(function FileRow({
   const Icon = isDir ? Folder : category.icon;
   const iconColor = isDir ? '#f59e0b' : category.color;
   const iconBg = isDir ? '#f59e0b18' : category.bgColor;
+  // Stable handlers + memoized style: inline arrows/objects here would defeat
+  // memo() and re-render every row on each parent render.
+  const handlePress = useCallback(() => onOpen(entry), [onOpen, entry]);
+  const handleLongPress = useCallback(
+    () => onDelete(entry.path, entry.is_directory, entry.name),
+    [onDelete, entry],
+  );
+  const iconStyle = useMemo(() => ({ backgroundColor: iconBg }), [iconBg]);
   return (
     <Pressable
-      onPress={() => onOpen(entry)}
-      onLongPress={() => onDelete(entry.path, entry.is_directory, entry.name)}
+      onPress={handlePress}
+      onLongPress={handleLongPress}
       className="flex-row items-center gap-3 border-b border-neutral-100 px-4 py-2.5 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
     >
-      <View className="h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: iconBg }}>
+      <View className="h-10 w-10 items-center justify-center rounded-xl" style={iconStyle}>
         <Icon size={20} color={iconColor} />
       </View>
       <View className="flex-1 justify-center">

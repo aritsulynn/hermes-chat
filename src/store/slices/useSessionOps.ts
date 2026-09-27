@@ -1,80 +1,22 @@
 // Session-ops slice — openSession (resume) and newSession (create).
 import { useCallback } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { router } from 'expo-router';
-import type { GatewayWs, HistoryMessage, ServerAsk } from '../../services/gateway-ws';
+import type { HistoryMessage } from '../../services/gateway-ws';
 import { getSessionMessages } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
+import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
-import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
-import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
 import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey, serverAskFromInbox } from '../helpers';
 import type { ScopedSessionSummary } from '../types';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface SessionOpsSliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  acceptRotatedCookie: (
-    nextCookie: string,
-    host: string,
-    username: string,
-    connectionEpoch: number,
-    profileEpoch: number,
-  ) => Promise<void>;
-  bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
-  hydrateSessionContext: (g: GatewayWs, sid: string) => void;
-  parkLiveTurn: () => void;
-  clearStreaming: () => void;
-  reanchorLiveTurn: (items: UiMessage[]) => UiMessage[];
-  setAsk: Dispatch<SetStateAction<ServerAsk | null>>;
-  askRef: MutableRefObject<ServerAsk | null>;
-  setOpeningId: Dispatch<SetStateAction<string | null>>;
-  setGenerating: Dispatch<SetStateAction<boolean>>;
-  setToolLine: Dispatch<SetStateAction<string | null>>;
-  setTodos: Dispatch<SetStateAction<TodoItem[]>>;
-  setSessionKey: Dispatch<SetStateAction<string | null>>;
-  setSessionId: Dispatch<SetStateAction<string | null>>;
-  setSessionTitle: Dispatch<SetStateAction<string>>;
-  setInputRaw: (value: string) => void;
-  draftsRef: MutableRefObject<Map<string, string>>;
-  draftKeyRef: MutableRefObject<string>;
-  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  setSessionInfo: Dispatch<SetStateAction<any>>;
-  setUsageInfo: Dispatch<SetStateAction<any>>;
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-  setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
-  setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
-  setEditingRowId: Dispatch<SetStateAction<number | null>>;
-  setBusy: Dispatch<SetStateAction<boolean>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setQueued: Dispatch<SetStateAction<QueuedPrompt[]>>;
-  setQueueParked: Dispatch<SetStateAction<boolean>>;
-  askInboxRef: MutableRefObject<AskInboxEntry[]>;
-  queuedRef: MutableRefObject<QueuedPrompt[]>;
-  queueParkedRef: MutableRefObject<boolean>;
-  liveAid: MutableRefObject<string | null>;
-  liveThinkAid: MutableRefObject<string | null>;
-  liveTools: MutableRefObject<Map<string, string>>;
-  liveToolAid: MutableRefObject<string | null>;
-  liveTurnTools: MutableRefObject<string[]>;
-  parkedLiveRef: MutableRefObject<Set<string>>;
-  lastTurnEventAt: MutableRefObject<number>;
-  model: string;
-  modelProvider: string;
-  effort: string;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface SessionOpsSlice {
   openSession: (s: ScopedSessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
 }
 
-export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
+export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
   const {
-    runtime,
     latest,
     acceptRotatedCookie,
     bindAskOwner,
@@ -118,8 +60,8 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
     model,
     modelProvider,
     effort,
-  } = deps;
-  const {
+    noteHistoryWindow,
+    resetHistoryWindow,
     gw,
     cookie,
     activeProfileRef,
@@ -133,7 +75,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
     editingRowRef: editRowRef,
     openSessionRef,
     newSessionRef,
-  } = runtime;
+  } = ctx;
 
   const openSession = useCallback(
     async (s: ScopedSessionSummary) => {
@@ -200,7 +142,10 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         setTodos(normalizeTodos(r?.todo_state));
         // Full transcript via REST first (tool RESULT content + reasoning) —
         // WS session.history is only a compact projection. Stored id, not live.
+        // Windowed: the latest page only — older rows page in on demand so a
+        // 10k-message transcript never lands in JS memory all at once.
         let hist: HistoryMessage[];
+        let historyExhausted = true;
         try {
           // Gate on the cookie ONLY as a fallback signal: on web the jar is empty
           // (JS can't read Set-Cookie) while the browser cookie still authenticates
@@ -210,10 +155,11 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
             cookie.current,
             s.id,
             profile,
-            200,
+            CHAT_HISTORY_PAGE,
             connectionScope(targetHost, targetUser),
             async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
           );
+          historyExhausted = hist.length < CHAT_HISTORY_PAGE;
         } catch {
           hist = [];
         }
@@ -258,7 +204,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
           .usage(liveId)
           .then((info) => {
             if (isLatestOpen() && isSameConnection() && sessionIdRef.current === liveId) {
-              setUsageInfo((prev: any) => mergeUsageState(prev, info));
+              setUsageInfo((prev) => mergeUsageState(prev, info));
             }
           })
           .catch(() => {});
@@ -279,6 +225,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         } else {
           setMessages(items);
         }
+        noteHistoryWindow(CHAT_HISTORY_PAGE, historyExhausted);
         queuedRef.current = [];
         setQueued([]);
         queueParkedRef.current = false;
@@ -319,7 +266,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         if (isLatestOpen() && isSameConnection() && activeProfileRef.current === profile) setOpeningId(null);
       }
     },
-    [acceptRotatedCookie, hydrateSessionContext, bindAskOwner],
+    [acceptRotatedCookie, hydrateSessionContext, bindAskOwner, noteHistoryWindow],
   );
   openSessionRef.current = openSession;
 
@@ -386,6 +333,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
       setSessionId(sid);
       setSessionTitle('');
       setMessages([]);
+      resetHistoryWindow();
       clearStreaming();
       queuedRef.current = [];
       setQueued([]);
@@ -431,7 +379,7 @@ export function useSessionOpsSlice(deps: SessionOpsSliceDeps): SessionOpsSlice {
         setBusy(false);
       }
     }
-  }, [model, modelProvider, effort, bindAskOwner]);
+  }, [model, modelProvider, effort, bindAskOwner, resetHistoryWindow]);
   newSessionRef.current = newSession;
 
   return { openSession, newSession };

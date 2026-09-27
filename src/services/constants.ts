@@ -26,8 +26,6 @@ export const HTTP_TICKET_TIMEOUT_MS = 10000;
 export const HTTP_SESSION_CHECK_TIMEOUT_MS = 8000;
 /** Best-effort logout — never blocks local cleanup. */
 export const HTTP_LOGOUT_TIMEOUT_MS = 8000;
-/** Profile listing can be slow on a cold gateway. */
-export const HTTP_PROFILES_TIMEOUT_MS = 20000;
 export const HTTP_MODEL_OPTIONS_TIMEOUT_MS = 15000;
 /** Generic ops screens (cron, files, skills, kanban, update). */
 export const HTTP_API_TIMEOUT_MS = 20000;
@@ -38,6 +36,21 @@ export const SESSION_MESSAGES_TTL_MS = 5000;
 export const SESSION_MESSAGES_LIMIT = 200;
 /** Bounded so long sessions don't grow the map without limit. */
 export const SESSION_MESSAGES_CACHE_MAX = 20;
+
+// ── Chat transcript windowing (store + chat screen) ────────────────────────
+// The REST transcript has no cursor — only `order + limit` — so paging grows
+// the tail limit and the client prepends just the older slice (see
+// sliceOlderThan in utils/messages). Steady state keeps ~1 page in JS memory
+// instead of the whole 10k-message transcript.
+
+/** REST rows fetched for the initial transcript tail. */
+export const CHAT_HISTORY_PAGE = 120;
+/** Safety ceiling for one growing-limit history fetch. */
+export const CHAT_HISTORY_MAX_ROWS = 1200;
+/** Bubbles that trigger a head trim (live accumulation guard). */
+export const CHAT_WINDOW_SOFT_CAP = 800;
+/** Bubbles kept after a head trim. */
+export const CHAT_WINDOW_TRIM_KEEP = 600;
 
 // ── Gateway WebSocket (src/services/gateway-ws.ts) ──────────────────────────
 

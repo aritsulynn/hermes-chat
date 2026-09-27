@@ -1,32 +1,87 @@
 // Skills route — agent skill inventory ported from Hermes Desktop's
 // Capabilities pane (`apps/desktop/src/api/skills.ts` + `store/agent-plugins.ts`).
 // Same backend REST contract over the mobile app's authed ops helpers.
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
-  Switch,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
-import { RefreshCw, X } from 'lucide-react-native';
+import { AlertCircle, RefreshCw, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { Switch } from '../../components/ui/switch';
+import { Button } from '../../components/ui/button';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { toast } from '../../components/ui/toast';
+import { Text as UIText } from '../../components/ui/text';
+import { brandColor, screenStyle } from '../../theme';
 import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
 
+// Memoized row: the installed-skills list is small and bounded, so no
+// virtualized list is needed — but toggling one switch must not re-render
+// every row. Press/switch bindings close over the row's own skill.
+const SkillRow = memo(function SkillRow({
+  skill,
+  dark,
+  toggling,
+  onToggle,
+  onOpen,
+}: {
+  skill: SkillInfo;
+  dark: boolean;
+  toggling: boolean;
+  onToggle: (name: string, enabled: boolean) => void;
+  onOpen: (name: string) => void;
+}) {
+  const name = String(skill.name ?? '(unnamed)');
+  const enabled = skill.enabled !== false;
+  const canToggle = typeof skill.enabled === 'boolean';
+  return (
+    <Card>
+      <View className="flex-row items-center gap-2">
+        <Pressable className="min-w-0 flex-1" onPress={() => void onOpen(name)}>
+          <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100" numberOfLines={1}>
+            {name}
+          </Text>
+          {!!skill.description && (
+            <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={2}>
+              {String(skill.description)}
+            </Text>
+          )}
+          <Text className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
+            {[skill.origin ? String(skill.origin) : '', typeof skill.usage === 'number' ? `${skill.usage} uses` : '']
+              .filter(Boolean)
+              .join(' · ') || 'Tap to view SKILL.md'}
+          </Text>
+        </Pressable>
+        {canToggle &&
+          (toggling ? (
+            <ActivityIndicator size="small" color={brandColor(dark)} />
+          ) : (
+            <Switch checked={enabled} onCheckedChange={(v) => void onToggle(name, v)} />
+          ))}
+      </View>
+    </Card>
+  );
+});
+
 export function SkillsScreen() {
-  const { authed, opsGet, opsMut, theme, getAuthScope } = useApp();
+  const { authed, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
+  // Two spinners on this screen (list load + SKILL.md viewer) — resolve once.
+  const brand = useMemo(() => brandColor(dark), [dark]);
   const insets = useSafeAreaInsets();
 
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
@@ -92,7 +147,7 @@ export function SkillsScreen() {
       } catch (e) {
         if (getAuthScope() !== scope) return;
         setSkills((prev) => (prev ?? []).map((s) => (s.name === name ? { ...s, enabled: !enabled } : s)));
-        Alert.alert('Toggle failed', errMsg(e));
+        toast({ title: 'Toggle failed', description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope) setToggling(null);
       }
@@ -121,32 +176,28 @@ export function SkillsScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
 
         {/* Header */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <View>
-              <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Skills</Text>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                {loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
-              </Text>
-            </View>
-          </View>
-          <Pressable
-            onPress={() => void load(true)}
-            hitSlop={8}
-            className="rounded-lg p-2 active:bg-neutral-100 dark:active:bg-neutral-800"
-          >
-            <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-          </Pressable>
-        </View>
+        <ScreenHeader
+          title="Skills"
+          insetTop={insets.top}
+          subtitle={loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
+          actions={
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="Refresh skills"
+              onPress={() => void load(true)}
+              hitSlop={8}
+              className="h-9 w-9 rounded-lg"
+            >
+              <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+            </Button>
+          }
+        />
 
         <ScrollView
           className="flex-1 px-4 py-4"
@@ -155,65 +206,32 @@ export function SkillsScreen() {
         >
           {loading && !refreshing ? (
             <View className="items-center py-16">
-              <ActivityIndicator size="large" color="#1a73e8" />
+              <ActivityIndicator size="large" color={brand} />
             </View>
           ) : unsupported ? (
-            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <Card>
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">
                 Skills aren&apos;t available on this backend — run skills from the chat with /name instead.
               </Text>
-            </View>
+            </Card>
           ) : error ? (
-            <View className="flex-row items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-950 dark:bg-red-950/30">
-              <Text className="flex-1 text-xs text-red-600 dark:text-red-400">{error}</Text>
-              <Pressable onPress={() => void load()}>
-                <Text className="text-xs font-semibold text-red-700 dark:text-red-300">Retry</Text>
-              </Pressable>
-            </View>
+            <ErrorRetry error={error} onRetry={() => void load()} />
           ) : !skills?.length ? (
-            <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <Card>
               <Text className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</Text>
-            </View>
+            </Card>
           ) : (
             <View className="gap-2">
-              {skills.map((s) => {
-                const name = String(s.name ?? '(unnamed)');
-                const enabled = s.enabled !== false;
-                const canToggle = typeof s.enabled === 'boolean';
-                return (
-                  <View
-                    key={name}
-                    className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60"
-                  >
-                    <View className="flex-row items-center gap-2">
-                      <Pressable className="min-w-0 flex-1" onPress={() => void openContent(name)}>
-                        <Text
-                          className="text-sm font-semibold text-neutral-900 dark:text-neutral-100"
-                          numberOfLines={1}
-                        >
-                          {name}
-                        </Text>
-                        {!!s.description && (
-                          <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={2}>
-                            {String(s.description)}
-                          </Text>
-                        )}
-                        <Text className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
-                          {[s.origin ? String(s.origin) : '', typeof s.usage === 'number' ? `${s.usage} uses` : '']
-                            .filter(Boolean)
-                            .join(' · ') || 'Tap to view SKILL.md'}
-                        </Text>
-                      </Pressable>
-                      {canToggle &&
-                        (toggling === name ? (
-                          <ActivityIndicator size="small" color="#1a73e8" />
-                        ) : (
-                          <Switch value={enabled} onValueChange={(v) => void toggle(name, v)} />
-                        ))}
-                    </View>
-                  </View>
-                );
-              })}
+              {skills.map((s) => (
+                <SkillRow
+                  key={String(s.name ?? '(unnamed)')}
+                  skill={s}
+                  dark={dark}
+                  toggling={toggling === String(s.name)}
+                  onToggle={toggle}
+                  onOpen={openContent}
+                />
+              ))}
             </View>
           )}
         </ScrollView>
@@ -230,16 +248,28 @@ export function SkillsScreen() {
               <Text className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white" numberOfLines={1}>
                 {viewing ?? ''}
               </Text>
-              <Pressable onPress={() => void Clipboard.setStringAsync(content).catch(() => {})} className="px-2 py-1.5">
-                <Text className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</Text>
-              </Pressable>
-              <Pressable onPress={() => setViewing(null)} hitSlop={8} className="p-1.5">
+              <Button
+                variant="ghost"
+                onPress={() => void Clipboard.setStringAsync(content).catch(() => {})}
+                accessibilityLabel="Copy skill file"
+                className="h-auto px-2 py-1.5"
+              >
+                <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</UIText>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => setViewing(null)}
+                accessibilityLabel="Close skill file"
+                hitSlop={8}
+                className="h-8 w-8 rounded-md"
+              >
                 <X size={20} color={dark ? '#eee' : '#333'} />
-              </Pressable>
+              </Button>
             </View>
             <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
               {contentLoading ? (
-                <ActivityIndicator size="small" color="#1a73e8" />
+                <ActivityIndicator size="small" color={brand} />
               ) : (
                 <Text selectable className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
                   {content}

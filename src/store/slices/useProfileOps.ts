@@ -1,93 +1,22 @@
 // Profile-ops slice — switchProfile (workspace move + reset) and branchSession.
 import { useCallback } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { router } from 'expo-router';
-import type { GatewayWs, HistoryMessage } from '../../services/gateway-ws';
-import type { ModelProviderOption } from '../../services/dashboard';
+import type { HistoryMessage } from '../../services/gateway-ws';
 import { connectionScope, getModel, saveActiveProfile, saveLastSession } from '../../services/connection';
+import { CHAT_HISTORY_PAGE, CHAT_WINDOW_TRIM_KEEP } from '../../services/constants';
 import { clearSessionMessagesCache } from '../../services/dashboard';
 import { clearMediaCaches } from '../../services/media-cache';
 import { nid, errMsg } from '../../utils/messages';
-import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../../utils/messages';
-import type { AskInboxEntry, AskOwner } from '../../services/ask-inbox';
 import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey } from '../helpers';
-import type { AgentProfile, ScopedSessionSummary } from '../types';
-import type { StoreRuntime } from '../runtime';
-
-type LatestRef = MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-
-export interface ProfileOpsSliceDeps {
-  runtime: StoreRuntime;
-  latest: LatestRef;
-  host: string;
-  username: string;
-  sessionId: string | null;
-  inputRaw: string;
-  profiles: AgentProfile[];
-  refreshProfiles: () => Promise<void>;
-  refreshSessions: (limit?: number) => Promise<ScopedSessionSummary[]>;
-  parkLiveTurn: () => void;
-  clearStreaming: () => void;
-  hydrateSessionContext: (g: GatewayWs, sid: string) => void;
-  bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
-  draftsRef: MutableRefObject<Map<string, string>>;
-  draftKeyRef: MutableRefObject<string>;
-  queuedRef: MutableRefObject<QueuedPrompt[]>;
-  queueParkedRef: MutableRefObject<boolean>;
-  liveAid: MutableRefObject<string | null>;
-  liveThinkAid: MutableRefObject<string | null>;
-  liveTools: MutableRefObject<Map<string, string>>;
-  liveToolAid: MutableRefObject<string | null>;
-  liveTurnTools: MutableRefObject<string[]>;
-  liveTurnDiffs: MutableRefObject<string[]>;
-  sessionsLoadingMoreRef: MutableRefObject<boolean>;
-  providersRef: MutableRefObject<ModelProviderOption[] | null>;
-  providersLoadingRef: MutableRefObject<boolean>;
-  providersAtRef: MutableRefObject<number>;
-  catalogAtRef: MutableRefObject<number>;
-  sessionsFetchRef: MutableRefObject<Promise<ScopedSessionSummary[]> | null>;
-  sessionsFetchProfileRef: MutableRefObject<string | null>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setBusy: Dispatch<SetStateAction<boolean>>;
-  setActiveProfile: Dispatch<SetStateAction<string>>;
-  setSessionId: Dispatch<SetStateAction<string | null>>;
-  setSessionKey: Dispatch<SetStateAction<string | null>>;
-  setSessionTitle: Dispatch<SetStateAction<string>>;
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-  setGenerating: Dispatch<SetStateAction<boolean>>;
-  setToolLine: Dispatch<SetStateAction<string | null>>;
-  setQueued: Dispatch<SetStateAction<QueuedPrompt[]>>;
-  setQueueParked: Dispatch<SetStateAction<boolean>>;
-  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  setTodos: Dispatch<SetStateAction<TodoItem[]>>;
-  setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
-  setAsk: Dispatch<SetStateAction<any>>;
-  setEditingRowId: Dispatch<SetStateAction<number | null>>;
-  setInfoOpen: Dispatch<SetStateAction<boolean>>;
-  setInputRaw: (value: string) => void;
-  setSessionInfo: Dispatch<SetStateAction<any>>;
-  setUsageInfo: Dispatch<SetStateAction<any>>;
-  setUsageLoading: Dispatch<SetStateAction<boolean>>;
-  setOpeningId: Dispatch<SetStateAction<string | null>>;
-  setSessions: Dispatch<SetStateAction<ScopedSessionSummary[]>>;
-  setSessionsLimit: Dispatch<SetStateAction<number>>;
-  setSessionsHasMore: Dispatch<SetStateAction<boolean>>;
-  setSessionsLoadingMore: Dispatch<SetStateAction<boolean>>;
-  setProviders: Dispatch<SetStateAction<ModelProviderOption[] | null>>;
-  setProvidersLoading: Dispatch<SetStateAction<boolean>>;
-  setProvidersError: Dispatch<SetStateAction<string | null>>;
-  setModel: Dispatch<SetStateAction<string>>;
-  setModelProvider: Dispatch<SetStateAction<string>>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface ProfileOpsSlice {
   switchProfile: (profileName: string) => Promise<void>;
   branchSession: () => Promise<void>;
 }
 
-export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
+export function useProfileOpsSlice(ctx: StoreCtx): ProfileOpsSlice {
   const {
-    runtime,
     latest,
     host,
     username,
@@ -148,8 +77,8 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
     setProvidersError,
     setModel,
     setModelProvider,
-  } = deps;
-  const {
+    noteHistoryWindow,
+    resetHistoryWindow,
     gw,
     activeProfileRef,
     activeProfilePreferenceRef,
@@ -162,7 +91,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
     contextPendingSidRef,
     editingRowRef: editRowRef,
     newSessionRef,
-  } = runtime;
+  } = ctx;
 
   const switchProfile = useCallback(
     async (profileName: string) => {
@@ -201,6 +130,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
       setSessionKey(null);
       setSessionTitle('');
       setMessages([]);
+      resetHistoryWindow();
       clearStreaming();
       liveAid.current = null;
       liveThinkAid.current = null;
@@ -264,7 +194,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
         }
       }
     },
-    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions, host, username],
+    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions, host, username, resetHistoryWindow],
   );
 
   // Fork the current chat into an independent copy (session.branch) and open it.
@@ -315,7 +245,13 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
       sessionIdRef.current = liveId;
       setSessionId(liveId);
       setSessionTitle(String(r?.title ?? ''));
-      setMessages(historyToItems(hist));
+      // Windowed like openSession: a branch of a 10k-message transcript opens
+      // on the tail page instead of loading everything into JS memory.
+      const fullBranch = historyToItems(hist);
+      const branchItems =
+        fullBranch.length > CHAT_WINDOW_TRIM_KEEP ? fullBranch.slice(-CHAT_WINDOW_TRIM_KEEP) : fullBranch;
+      setMessages(branchItems);
+      noteHistoryWindow(CHAT_HISTORY_PAGE, fullBranch.length <= branchItems.length);
       clearStreaming();
       queuedRef.current = [];
       setQueued([]);
@@ -331,7 +267,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
         .usage(liveId)
         .then((info) => {
           if (connectionEpochRef.current === connectionEpoch && sessionIdRef.current === liveId) {
-            setUsageInfo((prev: any) => mergeUsageState(prev, info));
+            setUsageInfo((prev) => mergeUsageState(prev, info));
           }
         })
         .catch(() => {});
@@ -348,7 +284,7 @@ export function useProfileOpsSlice(deps: ProfileOpsSliceDeps): ProfileOpsSlice {
         setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Branch failed: ${errMsg(e)}` }]);
       }
     }
-  }, [sessionId, hydrateSessionContext]);
+  }, [sessionId, hydrateSessionContext, noteHistoryWindow]);
 
   return { switchProfile, branchSession };
 }

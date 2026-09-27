@@ -15,9 +15,6 @@ export const REASONING_EFFORT_VALUES = ['none', ...REASONING_EFFORTS] as const;
 
 export type ReasoningEffortValue = (typeof REASONING_EFFORT_VALUES)[number];
 
-/** Backend fallback when neither the surface nor config sets a level. */
-export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'medium';
-
 /** True for a real level (case-insensitive, trimmed); `none` is not a level. */
 export const isReasoningEffort = (value: string): value is ReasoningEffort =>
   (REASONING_EFFORTS as readonly string[]).includes(value.trim().toLowerCase());

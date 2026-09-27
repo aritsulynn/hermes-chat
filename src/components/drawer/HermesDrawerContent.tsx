@@ -1,8 +1,8 @@
 // Custom drawer content, ChatGPT-style: New chat button, Recents list
 // (opens straight into chat), History/Ops links, user footer with
 // theme switch + logout. Extracted from app/_layout.tsx.
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { DrawerContentScrollView, useDrawerStatus } from 'expo-router/drawer';
 import type { DrawerContentComponentProps } from 'expo-router/drawer';
 import { usePathname } from 'expo-router';
@@ -12,29 +12,82 @@ import {
   ChevronRight,
   CircleUserRound,
   Ellipsis,
-  LogOut,
   Search,
   Settings,
   SquarePen,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
-import { Tap } from '../ui/bits';
+import { useApp, useThemeValue } from '../../hooks/app-store';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { ConfirmDialog } from '../ui/dialog';
+import { Text as UIText } from '../ui/text';
+import { Avatar, AvatarFallback } from '../ui/avatar';
+import { Badge } from '../ui/badge';
+import { Separator } from '../ui/separator';
 import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
+import { brandColor, placeholderColor, screenBg } from '../../theme';
+import type { ScopedSessionSummary } from '../../store/types';
+
+// Memoized recents row: the session list is already windowed to 50 rendered
+// rows (visibleCount) with server pagination, so a FlashList inside the
+// drawer's scroll view would fight the drawer gesture/scroll — memo + stable
+// callbacks keep re-renders to the row that actually changed instead.
+const SessionRow = memo(function SessionRow({
+  session,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  session: ScopedSessionSummary;
+  active: boolean;
+  onOpen: (s: ScopedSessionSummary) => void;
+  onDelete: (s: ScopedSessionSummary) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      accessibilityRole="button"
+      accessibilityLabel={`Open chat ${session.title || '(untitled)'}`}
+      onPress={() => onOpen(session)}
+      onLongPress={() => onDelete(session)}
+      delayLongPress={400}
+      className={`flex-row h-auto items-center justify-start px-3 py-3 ${
+        active ? 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]' : ''
+      }`}
+    >
+      <UIText
+        numberOfLines={1}
+        ellipsizeMode="tail"
+        className={`flex-1 min-w-0 text-[16px] ${
+          active ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'
+        }`}
+      >
+        {session.title || '(untitled)'}
+      </UIText>
+    </Button>
+  );
+});
 
 export function HermesDrawerContent(props: DrawerContentComponentProps) {
   const pathname = usePathname();
   const drawerOpen = useDrawerStatus() === 'open';
   const {
     authed, username, host, busy, activeProfile, profiles, refreshProfiles, switchProfile, sessionId, sessionKey, openingId, sessions, messages, pendingAskCount,
-    newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, logout, theme, deleteSessionById,
+    newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, deleteSessionById,
   } = useApp();
+  const { theme } = useThemeValue();
   // Hooks FIRST — no early return above this line (authed flips at
   // login; returning early before hooks breaks hook order).
   const insets = useSafeAreaInsets();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  // Themed replacement for the old Alert.alert delete confirm.
+  const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
+  // Bumped to force the user-menu Popover closed when the drawer closes (its
+  // root is uncontrolled, so remounting is the only way to dismiss it).
+  const [userMenuKey, setUserMenuKey] = useState(0);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [profilePickerOpen, setProfilePickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState('');
   // Infinite scroll: render in pages of 50, grow on scroll-bottom. Network
@@ -51,6 +104,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       }
     } else {
       setShowUserMenu(false);
+      setUserMenuKey((k) => k + 1);
     }
   }, [drawerOpen, pathname, refreshProfiles, refreshSessions]);
   // Inline filter replaces the removed /sessions page (drawer is the list now).
@@ -86,8 +140,32 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       });
     }
   };
-  if (!authed) return null;
+  const handleOpenRecent = useCallback(
+    (s: ScopedSessionSummary) => {
+      props.navigation.closeDrawer();
+      void openSession(s);
+    },
+    [openSession, props.navigation],
+  );
+  const handleDeleteRecent = useCallback(
+    (s: ScopedSessionSummary) => {
+      setConfirmDelete({
+        title: 'Delete chat',
+        body: `Delete "${s.title || '(untitled)'}"? This can't be undone.`,
+        run: () => {
+          void deleteSessionById(s.id).then(() => refreshSessions());
+        },
+      });
+    },
+    [deleteSessionById, refreshSessions],
+  );
+  // Theme tokens resolved once per scheme: this panel re-renders on every
+  // streamed token and each value feeds several icon/style props below.
   const dark = theme === 'dark';
+  const brand = useMemo(() => brandColor(dark), [dark]);
+  const screen = useMemo(() => screenBg(dark), [dark]);
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
+  if (!authed) return null;
   const dimColor = dark ? '#a3a3a3' : '#555';
   const activeItemClass = 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]';
   const close = () => props.navigation.closeDrawer();
@@ -102,7 +180,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   const isNewChat = onChat && !hasActiveRecent && messages.length === 0;
   const isMoreActive = MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`);
   return (
-    <View className="flex-1" style={{ backgroundColor: dark ? '#000' : '#fff' }}>
+    <View className="flex-1" style={{ backgroundColor: screen }}>
       <DrawerContentScrollView
         {...props}
         contentContainerStyle={{ paddingBottom: 16 }}
@@ -113,128 +191,233 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       >
         {searchOpen ? (
           <View className="flex-row items-center gap-1 px-4 pt-2">
-            <TextInput
+            <Input
               value={q}
               onChangeText={setQ}
               placeholder="Search chats…"
-              placeholderTextColor={dark ? '#888' : '#9ca3af'}
+              placeholderTextColor={placeholder}
               autoFocus
               className="flex-1 rounded-lg border border-neutral-300 px-3 py-2.5 text-[16px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
             />
-            <Tap
+            <Button
+              variant="ghost"
+              size="icon"
               onPress={() => {
                 setSearchOpen(false);
                 setQ('');
               }}
               hitSlop={10}
-              radius={18}
-              className="p-2"
             >
               <X size={20} color={dimColor} />
-            </Tap>
+            </Button>
           </View>
         ) : (
-          <View className="flex-row items-center px-4 pt-2">
-            <Tap
-              testID="profile-selector"
-              accessibilityRole="button"
-              accessibilityLabel={`Switch profile. Active profile: ${activeProfile}`}
-              onPress={() => setProfilePickerOpen(true)}
-              hitSlop={8}
-              radius={12}
-              className="min-w-0 flex-1 flex-row items-center gap-2 px-1 py-1"
-            >
-              <Text className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</Text>
-              <ChevronDown size={17} color={dimColor} />
-            </Tap>
-            <Tap onPress={() => setSearchOpen(true)} hitSlop={10} radius={18} className="p-2">
-              <Search size={20} color={dimColor} />
-            </Tap>
-            <Tap onPress={close} hitSlop={10} radius={18} className="p-2">
-              <X size={20} color={dimColor} />
-            </Tap>
-          </View>
+          /* The native Popover root keeps `open` in its own state (no controlled
+             `open` prop), so the root is unmounted with the drawer instead —
+             that is what tears the portal down when the drawer closes. */
+          drawerOpen && (
+            <Popover className="flex-row items-center px-4 pt-2">
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  testID="profile-selector"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Switch profile. Active profile: ${activeProfile}`}
+                  hitSlop={8}
+                  className="min-w-0 h-auto flex-1 shrink flex-row items-center justify-start gap-2 px-1 py-1"
+                >
+                  <UIText className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</UIText>
+                  <ChevronDown size={17} color={dimColor} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="start" className="w-72 p-2">
+                <View className="flex-row items-center justify-between px-3 py-2.5">
+                  <View>
+                    <Text className="text-base font-bold text-neutral-950 dark:text-neutral-100">Switch profile</Text>
+                    <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                      Chat and toolsets use this profile
+                    </Text>
+                  </View>
+                  <PopoverClose asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      accessibilityRole="button"
+                      accessibilityLabel="Close profile picker"
+                      hitSlop={8}
+                    >
+                      <X size={18} color={dimColor} />
+                    </Button>
+                  </PopoverClose>
+                </View>
+                <ScrollView
+                  className="max-h-[420px]"
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={false}
+                >
+                  {profiles.length === 0 ? (
+                    <View className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
+                      <Text className="text-sm text-neutral-600 dark:text-neutral-300">{activeProfile}</Text>
+                    </View>
+                  ) : (
+                    profiles.map((profile) => {
+                      const selected = profile.name === activeProfile;
+                      const row = (
+                        <Button
+                          variant="ghost"
+                          testID={`profile-option-${profile.name}`}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          disabled={busy || selected}
+                          onPress={() => {
+                            close();
+                            void switchProfile(profile.name);
+                          }}
+                          className={`h-auto w-full flex-row items-center justify-start gap-3 px-3 py-3 ${
+                            selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
+                          } ${busy && !selected ? 'opacity-50' : ''}`}
+                        >
+                          <View
+                            className={`h-9 w-9 items-center justify-center rounded-xl ${
+                              selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-neutral-100 dark:bg-neutral-900'
+                            }`}
+                          >
+                            <CircleUserRound
+                              size={17}
+                              color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor}
+                            />
+                          </View>
+                          <View className="min-w-0 flex-1">
+                            <UIText
+                              numberOfLines={1}
+                              className={`min-w-0 text-sm font-semibold ${
+                                selected
+                                  ? 'text-sky-700 dark:text-sky-300'
+                                  : 'text-neutral-900 dark:text-neutral-100'
+                              }`}
+                            >
+                              {profile.display_name || profile.name}
+                            </UIText>
+                            {!!profile.description && (
+                              <UIText
+                                numberOfLines={1}
+                                className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400"
+                              >
+                                {profile.description}
+                              </UIText>
+                            )}
+                          </View>
+                          {selected && (
+                            <UIText className="text-xs font-semibold text-sky-700 dark:text-sky-300">Active</UIText>
+                          )}
+                        </Button>
+                      );
+                      // A disabled row can't run PopoverClose's onPress, so the
+                      // active row stays a plain Button (tapping it does nothing,
+                      // same as before).
+                      return selected || busy ? (
+                        <View key={profile.name}>{row}</View>
+                      ) : (
+                        <PopoverClose asChild key={profile.name}>
+                          {row}
+                        </PopoverClose>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </PopoverContent>
+              <Button variant="ghost" size="icon" onPress={() => setSearchOpen(true)} hitSlop={10}>
+                <Search size={20} color={dimColor} />
+              </Button>
+              <Button variant="ghost" size="icon" onPress={close} hitSlop={10}>
+                <X size={20} color={dimColor} />
+              </Button>
+            </Popover>
+          )
         )}
         <View className="px-3 pt-2 gap-1">
-          <Tap
+          <Button
+            variant="ghost"
             disabled={busy}
             onPress={() => {
               if (busy) return;
               close();
               void newSession();
             }}
-            radius={12}
-            className={`flex-row items-center gap-3 px-3 py-3 ${
+            className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
               isNewChat ? activeItemClass : ''
             } ${busy ? 'opacity-50' : ''}`}
           >
-            <SquarePen size={20} color={isNewChat ? '#1a73e8' : dimColor} />
-            <Text
-              className={`text-[17px] ${
+            <SquarePen size={20} color={isNewChat ? brand : dimColor} />
+            <UIText
+              numberOfLines={1}
+              className={`flex-1 min-w-0 text-[17px] ${
                 isNewChat
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                  : 'text-neutral-950 dark:text-neutral-100'
+                  : 'font-normal text-neutral-950 dark:text-neutral-100'
               }`}
             >
               New chat
-            </Text>
-          </Tap>
+            </UIText>
+          </Button>
           {NAV_ITEMS.map((item) => {
             const active = pathname === `/${item.name}`;
             const Icon = item.icon;
             return (
-              <Tap
+              <Button
                 key={item.name}
+                variant="ghost"
                 onPress={() => {
                   close();
                   props.navigation.navigate(item.name);
                 }}
-                radius={12}
-                className={`flex-row items-center gap-3 px-3 py-3 ${
+                className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
                   active ? activeItemClass : ''
                 }`}
               >
-                <Icon size={20} color={active ? '#1a73e8' : dimColor} />
-                <Text
-                  className={`text-[17px] ${
+                <Icon size={20} color={active ? brand : dimColor} />
+                <UIText
+                  numberOfLines={1}
+                  className={`flex-1 min-w-0 text-[17px] ${
                     active
                       ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                      : 'text-neutral-950 dark:text-neutral-100'
+                      : 'font-normal text-neutral-950 dark:text-neutral-100'
                   }`}
                 >
                   {item.label}
-                </Text>
-              </Tap>
+                </UIText>
+              </Button>
             );
           })}
 
           {/* Meatball (More) Button under Files */}
-          <Tap
+          <Button
+            variant="ghost"
             onPress={() => setShowMoreMenu(!showMoreMenu)}
-            radius={12}
-            className={`flex-row items-center gap-3 px-3 py-3 ${
+            className={`flex-row h-auto items-center justify-start gap-3 px-3 py-3 ${
               showMoreMenu || isMoreActive ? activeItemClass : ''
             }`}
           >
             <Ellipsis
               size={20}
-              color={(showMoreMenu || isMoreActive) ? '#1a73e8' : dimColor}
+              color={(showMoreMenu || isMoreActive) ? brand : dimColor}
             />
-            <Text
-              className={`flex-1 text-[17px] ${
+            <UIText
+              numberOfLines={1}
+              className={`flex-1 min-w-0 text-[17px] ${
                 (showMoreMenu || isMoreActive)
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                  : 'text-neutral-950 dark:text-neutral-100'
+                  : 'font-normal text-neutral-950 dark:text-neutral-100'
               }`}
             >
               More
-            </Text>
+            </UIText>
             {pendingAskCount > 0 && (
-              <View className="min-w-5 items-center rounded-full bg-red-500 px-1.5 py-0.5">
-                <Text className="text-[11px] font-bold text-white">{pendingAskCount > 99 ? '99+' : pendingAskCount}</Text>
-              </View>
+              <Badge variant="destructive">
+                <UIText className="text-[11px] font-bold text-white">{pendingAskCount > 99 ? '99+' : pendingAskCount}</UIText>
+              </Badge>
             )}
-          </Tap>
+          </Button>
 
           {/* Submenu for More */}
           {showMoreMenu && (
@@ -243,28 +426,29 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
                 const active = pathname === `/${item.name}`;
                 const Icon = item.icon;
                 return (
-                  <Tap
+                  <Button
                     key={item.name}
+                    variant="ghost"
                     onPress={() => {
                       close();
                       props.navigation.navigate(item.name);
                     }}
-                    radius={12}
-                    className={`flex-row items-center gap-3 px-3 py-2.5 ${
+                    className={`flex-row h-auto items-center justify-start gap-3 px-3 py-2.5 ${
                       active ? activeItemClass : ''
                     }`}
                   >
-                    <Icon size={18} color={active ? '#1a73e8' : dimColor} />
-                    <Text
-                      className={`text-[15px] ${
+                    <Icon size={18} color={active ? brand : dimColor} />
+                    <UIText
+                      numberOfLines={1}
+                      className={`flex-1 min-w-0 text-[15px] ${
                         active
                           ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                          : 'text-neutral-800 dark:text-neutral-200'
+                          : 'font-normal text-neutral-800 dark:text-neutral-200'
                       }`}
                     >
                       {item.label}
-                    </Text>
-                  </Tap>
+                    </UIText>
+                  </Button>
                 );
               })}
             </View>
@@ -281,53 +465,15 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
           )}
           {visible.map((s) => {
             const active =
-              onChat &&
-              (s.profile ?? activeProfile) === activeProfile &&
-              (s.id === activeId || s.id === openingId);
+              onChat && (s.profile ?? activeProfile) === activeProfile && (s.id === activeId || s.id === openingId);
             return (
-              <Tap
+              <SessionRow
                 key={`${s.profile ?? activeProfile}:${s.id}`}
-                accessibilityRole="button"
-                accessibilityLabel={`Open chat ${s.title || '(untitled)'}`}
-                onPress={() => {
-                  close();
-                  void openSession(s);
-                }}
-                onLongPress={() => {
-                  Alert.alert(
-                    'Delete chat',
-                    `Delete "${s.title || '(untitled)'}"? This can't be undone.`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
-                          void deleteSessionById(s.id).then(() => refreshSessions());
-                        },
-                      },
-                    ],
-                    { cancelable: true },
-                  );
-                }}
-                delayLongPress={400}
-                radius={12}
-                className={`px-3 py-3 ${
-                  active ? activeItemClass : ''
-                }`}
-              >
-                <Text
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  className={`text-[16px] ${
-                    active
-                      ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                      : 'text-neutral-950 dark:text-neutral-100'
-                  }`}
-                >
-                  {s.title || '(untitled)'}
-                </Text>
-              </Tap>
+                session={s}
+                active={active}
+                onOpen={handleOpenRecent}
+                onDelete={handleDeleteRecent}
+              />
             );
           })}
           {/* Infinite-scroll footer: spinner while the next 100 loads. */}
@@ -340,221 +486,110 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
         </View>
       </DrawerContentScrollView>
 
-      <Modal
-        visible={profilePickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setProfilePickerOpen(false)}
-      >
-        <Pressable
-          style={{ flex: 1, backgroundColor: dark ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.28)' }}
-          onPress={() => setProfilePickerOpen(false)}
-        >
-          <Pressable
-            className="mx-4 mt-14 rounded-2xl border border-neutral-200 bg-white p-2 dark:border-neutral-700 dark:bg-[#1c1c1e]"
-            onPress={(event) => event.stopPropagation()}
-          >
-            <View className="flex-row items-center justify-between px-3 py-2.5">
-              <View>
-                <Text className="text-base font-bold text-neutral-950 dark:text-neutral-100">Switch profile</Text>
-                <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                  Chat and toolsets use this profile
-                </Text>
-              </View>
-              <Tap
-                accessibilityRole="button"
-                accessibilityLabel="Close profile picker"
-                onPress={() => setProfilePickerOpen(false)}
-                hitSlop={8}
-                radius={16}
-                className="p-2"
-              >
-                <X size={18} color={dimColor} />
-              </Tap>
-            </View>
-            <ScrollView className="max-h-[420px]" nestedScrollEnabled showsVerticalScrollIndicator={false}>
-              {profiles.length === 0 ? (
-                <View className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
-                  <Text className="text-sm text-neutral-600 dark:text-neutral-300">{activeProfile}</Text>
-                </View>
-              ) : (
-                profiles.map((profile) => {
-                  const selected = profile.name === activeProfile;
-                  return (
-                    <Tap
-                      key={profile.name}
-                      testID={`profile-option-${profile.name}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      disabled={busy || selected}
-                      onPress={() => {
-                        setProfilePickerOpen(false);
-                        close();
-                        void switchProfile(profile.name);
-                      }}
-                      radius={12}
-                      className={`flex-row items-center gap-3 px-3 py-3 ${
-                        selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
-                      } ${busy && !selected ? 'opacity-50' : ''}`}
-                    >
-                      <View
-                        className={`h-9 w-9 items-center justify-center rounded-xl ${
-                          selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-neutral-100 dark:bg-neutral-900'
-                        }`}
-                      >
-                        <CircleUserRound
-                          size={17}
-                          color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor}
-                        />
-                      </View>
-                      <View className="min-w-0 flex-1">
-                        <Text
-                          numberOfLines={1}
-                          className={`text-sm font-semibold ${
-                            selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
-                          }`}
-                        >
-                          {profile.display_name || profile.name}
-                        </Text>
-                        {!!profile.description && (
-                          <Text numberOfLines={1} className="text-xs text-neutral-500 dark:text-neutral-400">
-                            {profile.description}
-                          </Text>
-                        )}
-                      </View>
-                      {selected && <Text className="text-xs font-semibold text-sky-700 dark:text-sky-300">Active</Text>}
-                    </Tap>
-                  );
-                })
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
       {/* Sticky footer: Account bar */}
       <View
         className="border-t border-neutral-200 dark:border-neutral-800"
         style={{
-          backgroundColor: dark ? '#000' : '#fff',
+          backgroundColor: screen,
           paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
-        <Tap
-          onPress={() => setShowUserMenu(!showUserMenu)}
-          radius={0}
-          className="flex-row items-center gap-3 px-4 py-4"
-        >
-          <View className="h-11 w-11 items-center justify-center rounded-full bg-[#1a73e8]">
-            <Text className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</Text>
-          </View>
-          <View className="flex-1">
-            <Text
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              className="text-[16px] font-semibold text-neutral-950 dark:text-neutral-100"
-            >
-              {username || 'Hermes'}
-            </Text>
-            <Text className="text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</Text>
-          </View>
-          <ChevronRight
-            size={18}
-            color={dimColor}
-            style={{ transform: [{ rotate: showUserMenu ? '-90deg' : '0deg' }] }}
-          />
-        </Tap>
-      </View>
-
-      {/* Floating Popover Menu right above the profile bar */}
-      {showUserMenu && (
-        <>
-          {/* Backdrop to dismiss when clicking anywhere outside */}
-          <Pressable
-            onPress={() => setShowUserMenu(false)}
-            className="absolute inset-0 z-40 bg-black/20 dark:bg-black/40"
-          />
-
-          {/* Floating Menu Card */}
-          <View
-            className="absolute left-3 right-3 z-50 rounded-2xl border border-neutral-200 bg-white p-1.5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
-            style={{
-              bottom: Math.max(insets.bottom, 8) + 72,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: -4 },
-              shadowOpacity: dark ? 0.5 : 0.15,
-              shadowRadius: 12,
-              elevation: 12,
-            }}
-          >
+        {/* `key` force-closes the popover when the drawer closes: the native
+            root keeps `open` in its own state, so there is no controlled prop
+            to flip, and a portal survives the drawer being dismissed. */}
+        <Popover key={userMenuKey} onOpenChange={setShowUserMenu}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" className="flex-row h-auto w-full items-center justify-start gap-3 px-4 py-4">
+              <Avatar alt={username || 'Profile'} className="size-11 bg-[#1a73e8]">
+                <AvatarFallback className="bg-[#1a73e8]">
+                  <UIText className="text-lg font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</UIText>
+                </AvatarFallback>
+              </Avatar>
+              <View className="flex-1">
+                <UIText
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  className="min-w-0 text-[16px] font-semibold text-neutral-950 dark:text-neutral-100"
+                >
+                  {username || 'Hermes'}
+                </UIText>
+                <UIText className="min-w-0 text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</UIText>
+              </View>
+              <ChevronRight
+                size={18}
+                color={dimColor}
+                style={{ transform: [{ rotate: showUserMenu ? '-90deg' : '0deg' }] }}
+              />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="start" className="w-72 p-1.5">
             {/* Logs & Usage quick nav */}
             {PROFILE_NAV_ITEMS.map((item) => {
               const active = pathname === `/${item.name}`;
               const Icon = item.icon;
               return (
-                <Tap
-                  key={item.name}
-                  onPress={() => {
-                    setShowUserMenu(false);
-                    close();
-                    props.navigation.navigate(item.name);
-                  }}
-                  radius={12}
-                  className={`flex-row items-center gap-3 px-3.5 py-3 ${
-                    active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                  }`}
-                >
-                  <Icon size={19} color={active ? '#1a73e8' : dark ? '#ccc' : '#444'} />
-                  <Text
-                    className={`text-[15px] font-medium ${
-                      active
-                        ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
-                        : 'text-neutral-900 dark:text-neutral-100'
+                <PopoverClose asChild key={item.name}>
+                  <Button
+                    variant="ghost"
+                    onPress={() => {
+                      close();
+                      props.navigation.navigate(item.name);
+                    }}
+                    className={`h-auto w-full flex-row items-center justify-start gap-3 px-3.5 py-3 ${
+                      active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                     }`}
                   >
-                    {item.label}
-                  </Text>
-                </Tap>
+                    <Icon size={19} color={active ? brand : dark ? '#ccc' : '#444'} />
+                    <UIText
+                      numberOfLines={1}
+                      className={`flex-1 min-w-0 text-[15px] font-medium ${
+                        active
+                          ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                          : 'text-neutral-900 dark:text-neutral-100'
+                      }`}
+                    >
+                      {item.label}
+                    </UIText>
+                  </Button>
+                </PopoverClose>
               );
             })}
 
-            <View className="my-0.5 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+            <Separator className="my-0.5 bg-neutral-100 dark:bg-neutral-800" />
 
-            <Tap
-              onPress={() => {
-                setShowUserMenu(false);
-                close();
-                props.navigation.navigate('settings');
-              }}
-              radius={12}
-              className="flex-row items-center gap-3 px-3.5 py-3"
-            >
-              <Settings size={19} color={dark ? '#ccc' : '#444'} />
-              <Text className="text-[15px] font-medium text-neutral-900 dark:text-neutral-100">
-                Settings
-              </Text>
-            </Tap>
+            <PopoverClose asChild>
+              <Button
+                variant="ghost"
+                onPress={() => {
+                  close();
+                  props.navigation.navigate('settings');
+                }}
+                className="h-auto w-full flex-row items-center justify-start gap-3 px-3.5 py-3"
+              >
+                <Settings size={19} color={dark ? '#ccc' : '#444'} />
+                <UIText
+                  numberOfLines={1}
+                  className="flex-1 min-w-0 text-[15px] font-medium text-neutral-900 dark:text-neutral-100"
+                >
+                  Settings
+                </UIText>
+              </Button>
+            </PopoverClose>
+          </PopoverContent>
+        </Popover>
+      </View>
 
-            <View className="my-0.5 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
-
-            <Tap
-              onPress={() => {
-                setShowUserMenu(false);
-                close();
-                void logout();
-              }}
-              radius={12}
-              highlight="rgba(220,38,38,0.14)"
-              className="flex-row items-center gap-3 px-3.5 py-3"
-            >
-              <LogOut size={19} color="#dc2626" />
-              <Text className="text-[15px] font-medium text-red-600 dark:text-red-400">
-                Log Out
-              </Text>
-            </Tap>
-          </View>
-        </>
-      )}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.title ?? ''}
+        description={confirmDelete?.body}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => confirmDelete?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDelete(null);
+        }}
+      />
     </View>
   );
 }

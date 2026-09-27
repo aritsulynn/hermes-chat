@@ -5,12 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { errMsg } from '../../utils/messages';
 import type { ScopedSessionSummary } from '../types';
-import type { StoreRuntime } from '../runtime';
-
-export interface SessionsSliceDeps {
-  runtime: StoreRuntime;
-  setError: Dispatch<SetStateAction<string | null>>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface SessionsSlice {
   sessions: ScopedSessionSummary[];
@@ -30,8 +25,12 @@ export interface SessionsSlice {
   loadMoreSessions: () => Promise<ScopedSessionSummary[]>;
 }
 
-export function useSessionsSlice({ runtime, setError }: SessionsSliceDeps): SessionsSlice {
-  const { gw, activeProfileRef, profileEpochRef } = runtime;
+export function useSessionsSlice({
+  setError,
+  gw,
+  activeProfileRef,
+  profileEpochRef,
+}: StoreCtx): SessionsSlice {
   const [sessions, setSessions] = useState<ScopedSessionSummary[]>([]);
   const [sessionsLimit, setSessionsLimit] = useState(100);
   const [sessionsHasMore, setSessionsHasMore] = useState(true);

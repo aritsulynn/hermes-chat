@@ -9,26 +9,7 @@ import { getModelOptions } from '../../services/dashboard';
 import type { ModelProviderOption } from '../../services/dashboard';
 import { connectionScope, saveModel } from '../../services/connection';
 import { errMsg, nid } from '../../utils/messages';
-import type { UiMessage } from '../../utils/messages';
-import type { StoreRuntime } from '../runtime';
-
-export interface ModelsSliceDeps {
-  runtime: StoreRuntime;
-  host: string;
-  username: string;
-  activeProfile: string;
-  sessionId: string | null;
-  acceptRotatedCookie: (
-    nextCookie: string,
-    host: string,
-    username: string,
-    connectionEpoch: number,
-    profileEpoch: number,
-  ) => Promise<void>;
-  setMessages: Dispatch<SetStateAction<UiMessage[]>>;
-  setToolLine: Dispatch<SetStateAction<string | null>>;
-  latest: MutableRefObject<{ host: string; username: string; activeProfile: string; sessionKey: string | null }>;
-}
+import type { StoreCtx } from '../ctx';
 
 export interface ModelsSlice {
   model: string;
@@ -54,7 +35,6 @@ export interface ModelsSlice {
 }
 
 export function useModelsSlice({
-  runtime,
   host,
   username,
   activeProfile,
@@ -63,8 +43,12 @@ export function useModelsSlice({
   setMessages,
   setToolLine,
   latest,
-}: ModelsSliceDeps): ModelsSlice {
-  const { gw, cookie, activeProfileRef, profileEpochRef, connectionEpochRef } = runtime;
+  gw,
+  cookie,
+  activeProfileRef,
+  profileEpochRef,
+  connectionEpochRef,
+}: StoreCtx): ModelsSlice {
   const [model, setModel] = useState('Muse Spark 1.3 Free');
   const [modelProvider, setModelProvider] = useState('');
   const [effort, setEffort] = useState('Xhigh');

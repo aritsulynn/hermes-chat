@@ -38,6 +38,32 @@ export interface QueuedPrompt {
   text: string;
 }
 
+// ── Transcript windowing ───────────────────────────────────────────────────
+// The REST transcript has no cursor (only `order + limit`), so older pages are
+// fetched as a growing tail limit and merged by anchor: the oldest durable
+// (rowId-bearing) bubble in the current window is located in the fresh fetch
+// and only the rows before it are prepended. Fresh fetches mint new `nid()`
+// ids, so reusing the current tail's objects keeps memo()/expanded state for
+// every already-mounted bubble.
+
+/**
+ * Older bubbles to prepend when paging history: everything in `fetched`
+ * before the current window's oldest durable message. Returns [] when there
+ * is nothing older (anchor at index 0), the anchor is gone (history was
+ * rewritten — keep the current window), or neither side can anchor.
+ */
+export function sliceOlderThan(fetched: UiMessage[], current: UiMessage[]): UiMessage[] {
+  if (current.length === 0) return fetched;
+  if (fetched.length === 0) return [];
+  for (const a of current) {
+    if ((a.role === 'user' || a.role === 'assistant') && a.rowId != null) {
+      const k = fetched.findIndex((f) => f.role === a.role && f.rowId === a.rowId);
+      return k < 0 ? [] : fetched.slice(0, k);
+    }
+  }
+  return [];
+}
+
 /** One row of the agent's live todo list (`todo.updated` /
  *  `session.todo_state`). Field names are read defensively: the backend passes
  *  the TodoStore snapshot through unchanged. */
@@ -51,7 +77,7 @@ export interface TodoItem {
 
 /** Normalise a todo snapshot; returns [] for malformed/empty payloads. */
 export function normalizeTodos(payload: unknown): TodoItem[] {
-  const rows = (payload as any)?.todos;
+  const rows = asRecord(payload).todos;
   return Array.isArray(rows) ? rows.filter((r) => r && typeof r === 'object') : [];
 }
 
@@ -70,10 +96,17 @@ export interface SubagentRow {
 }
 
 export function normalizeSubagents(payload: unknown): SubagentRow[] {
-  const rows = (payload as any)?.subagents;
+  const rows = asRecord(payload).subagents;
   return Array.isArray(rows)
-    ? rows.filter((r) => r && typeof r === 'object' && typeof r.subagent_id === 'string')
+    ? rows.filter((r) => r && typeof r === 'object' && typeof (r as { subagent_id?: unknown }).subagent_id === 'string')
     : [];
+}
+
+/** Plain-object view of an unknown payload ({} for anything else). */
+function asRecord(payload: unknown): Record<string, unknown> {
+  return payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : {};
 }
 
 /** Terminal statuses — a finished child no longer needs the live roster. */
@@ -92,7 +125,9 @@ export function base64ToUtf8(base64: string): string {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       return new TextDecoder('utf-8').decode(bytes);
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[messages] base64ToUtf8 decode failed', e);
+  }
   return '';
 }
 
@@ -108,7 +143,9 @@ export function utf8ToBase64(text: string): string {
       }
       return btoa(binary);
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[messages] utf8ToBase64 encode failed', e);
+  }
   return '';
 }
 
@@ -189,22 +226,27 @@ export interface ClarifyQ {
   lockedAnswer?: string;
 }
 
-export function parseClarify(ask: { params: Record<string, any> }): { single: boolean; questions: ClarifyQ[] } {
+export function parseClarify(ask: { params: Record<string, unknown> }): {
+  single: boolean;
+  questions: ClarifyQ[];
+} {
   const p = ask.params;
-  const locked = p?.answers && typeof p.answers === 'object' && !Array.isArray(p.answers)
-    ? p.answers as Record<string, unknown>
-    : {};
+  const locked =
+    p.answers && typeof p.answers === 'object' && !Array.isArray(p.answers)
+      ? (p.answers as Record<string, unknown>)
+      : {};
   if (Array.isArray(p.questions) && p.questions.length > 0) {
     return {
       single: false,
-      questions: p.questions.map((q: any, i: number) => {
-        const qid = String(q?.qid ?? `q${i}`);
+      questions: (p.questions as unknown[]).map((q, i: number) => {
+        const row = q && typeof q === 'object' ? (q as Record<string, unknown>) : {};
+        const qid = String(row.qid ?? `q${i}`);
         return {
           qid,
-          question: String(q?.question ?? ''),
-          choices: Array.isArray(q?.choices) ? q.choices.map(String) : [],
-          multiSelect: q?.multi_select === true,
-          ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] } : {}),
+          question: String(row.question ?? ''),
+          choices: Array.isArray(row.choices) ? row.choices.map(String) : [],
+          multiSelect: row.multi_select === true,
+          ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] as string } : {}),
         };
       }),
     };
@@ -217,12 +259,12 @@ export function parseClarify(ask: { params: Record<string, any> }): { single: bo
         qid,
         question: String(p.question ?? p.text ?? ''),
         choices: Array.isArray(p.choices)
-          ? p.choices.map(String)
+          ? (p.choices as unknown[]).map(String)
           : Array.isArray(p.options)
-            ? p.options.map(String)
+            ? (p.options as unknown[]).map(String)
             : [],
         multiSelect: p.multi_select === true,
-        ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] } : {}),
+        ...(typeof locked[qid] === 'string' ? { lockedAnswer: locked[qid] as string } : {}),
       },
     ],
   };
@@ -369,7 +411,25 @@ export function renderMediaTags(text: string): string {
 export function cleanThinking(text: string): string {
   const lines = text.split('\n');
   while (lines.length > 1 && /^\([^)\n]{0,12}\)\s*\S.*\.\.\.\s*$/.test(lines[0])) lines.shift();
-  return lines.join('\n');
+  // Collapse runs of invisible-only lines: streaming deltas and some models
+  // pad with blank / zero-width-space lines, and an RN Text renders every
+  // one at full line height — a tall empty void under the real content.
+  // A line carrying only invisible chars shows nothing, so keep at most one
+  // blank separator (paragraph breaks survive) and strip the rest, including
+  // zero-width chars that `\s` doesn't match (U+200B/C/D, U+2060).
+  const out: string[] = [];
+  let blanks = 0;
+  for (const line of lines) {
+    if (/^[\s\u200B\u200C\u200D\u2060\uFEFF]*$/.test(line)) {
+      blanks += 1;
+      if (blanks > 1) continue;
+      out.push('');
+    } else {
+      blanks = 0;
+      out.push(line);
+    }
+  }
+  return out.join('\n').replace(/[\s\u200B\u200C\u200D\u2060\uFEFF]+$/, '');
 }
 
 // react-native-markdown-display renders lists as flex rows whose width Yoga

@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode, Ref } from 'react';
-import { Animated, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
-import type { PressableProps, StyleProp, ViewStyle } from 'react-native';
+import { Animated, Keyboard, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { Menu as MenuIcon } from 'lucide-react-native';
+import { AlertCircle, Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
+import { placeholderColor } from '../../theme';
+import { cn } from '../../utils/cn';
+import { Alert as UIAlert, AlertDescription } from './alert';
+import { Button } from './button';
+import { Input } from './input';
+import { Label } from './label';
+import { Text as UIText } from './text';
 
 // Circular context-window ring for the chat header — sits left of the kebab,
 // taps into Session info for the exact numbers.
@@ -38,12 +43,13 @@ export function CtxRing({
           ? '#5fd28a'
           : '#1a7f37';
   return (
-    <Tap
+    <Button
+      variant="ghost"
+      size="icon"
       testID="ctx-ring"
       accessibilityRole="button"
       accessibilityLabel={`Context ${clamped}% — open session info`}
       onPress={onPress}
-      radius={18}
       className="h-9 w-9 items-center justify-center"
       hitSlop={6}
     >
@@ -65,20 +71,24 @@ export function CtxRing({
           fill="none"
           strokeDasharray={`${(clamped / 100) * c} ${c}`}
           strokeLinecap="round"
-          rotation="-90"
-          origin={`${size / 2}, ${size / 2}`}
+          // `rotation` + `origin` props make react-native-svg emit a
+          // `transform-origin` DOM attribute on web (React warning) — the
+          // equivalent `transform` attribute is valid SVG on both platforms.
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-    </Tap>
+    </Button>
   );
 }
 
 // One shared drawer hamburger so every screen looks and behaves the same.
 export function HamburgerBtn() {
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const navigation = useNavigation();
   return (
-    <Tap
+    <Button
+      variant="ghost"
+      size="icon"
       testID="hamburger-btn"
       accessibilityRole="button"
       accessibilityLabel="Open navigation menu"
@@ -88,59 +98,110 @@ export function HamburgerBtn() {
         Keyboard.dismiss();
         (navigation as any).openDrawer?.();
       }}
-      radius={20}
       className="justify-center px-2 py-2"
       hitSlop={12}
     >
       <MenuIcon size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
-    </Tap>
+    </Button>
   );
 }
 
-// Pressable that paints a rounded highlight while held.
-//
-// NativeWind's `active:` variant only lights up once the compiled stylesheet is
-// in sync, and function `style` props are dropped by the css interop — so the
-// press is tracked locally and painted with a plain style (works light + dark,
-// native + web) while call sites stay declarative.
-export function Tap({
-  radius = 10,
-  highlight = 'rgba(120,120,128,0.24)',
-  className,
-  style,
-  onPressIn,
-  onPressOut,
-  children,
-  ref,
-  ...rest
-}: Omit<PressableProps, 'style' | 'children'> & {
-  className?: string;
-  style?: StyleProp<ViewStyle>;
-  /** Corner radius of the highlight. */
-  radius?: number;
-  /** Highlight colour while held. */
-  highlight?: string;
-  children?: ReactNode;
-  ref?: Ref<View>;
+// One shared screen header. Every non-chat screen had its own copy of the same
+// bar - hamburger, title, optional subtitle, optional right-hand actions - and
+// they drifted: two of them sized the title colour differently and only some
+// passed a subtitle. `subtitle` is a node because Files, Logs, Skills and
+// Toolsets all interpolate counts into it.
+export function ScreenHeader({
+  title,
+  subtitle,
+  insetTop,
+  actions,
+}: {
+  title: string;
+  subtitle?: React.ReactNode;
+  /** Pass insets.top; the +10 keeps the bar off the status bar. */
+  insetTop: number;
+  actions?: React.ReactNode;
 }) {
-  const [pressed, setPressed] = useState(false);
   return (
-    <Pressable
-      ref={ref}
-      {...rest}
-      className={className}
-      onPressIn={(e) => {
-        setPressed(true);
-        onPressIn?.(e);
-      }}
-      onPressOut={(e) => {
-        setPressed(false);
-        onPressOut?.(e);
-      }}
-      style={[style, pressed && { backgroundColor: highlight, borderRadius: radius }]}
+    <View
+      className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
+      style={{ paddingTop: insetTop + 10 }}
+    >
+      <View className="min-w-0 flex-1 flex-row items-center gap-3">
+        <HamburgerBtn />
+        <View className="min-w-0 flex-1">
+          <UIText
+            numberOfLines={1}
+            className="text-xl font-bold text-neutral-950 dark:text-neutral-100"
+          >
+            {title}
+          </UIText>
+          {!!subtitle && (
+            <UIText numberOfLines={1} className="text-xs text-neutral-500 dark:text-neutral-400">
+              {subtitle}
+            </UIText>
+          )}
+        </View>
+      </View>
+      {actions}
+    </View>
+  );
+}
+
+// The card surface every settings/usage/skills/toolsets section sits on. The
+// class string was pasted into 19 places and had already started drifting
+// (two padding sizes, one background variant), so it lives here now. `className`
+// still wins, which is how the compact `p-3.5` variant stays honest.
+export function Card({ className, children, ...props }: React.ComponentProps<typeof View>) {
+  return (
+    <View
+      className={cn(
+        'rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60',
+        className
+      )}
+      {...props}
     >
       {children}
-    </Pressable>
+    </View>
+  );
+}
+
+// The "something failed, here is the message, try again" block that every list
+// screen repeated verbatim. Rendered only when `error` is set, so callers can
+// drop their own conditional.
+export function ErrorRetry({
+  error,
+  onRetry,
+  className,
+  retryLabel = 'Retry',
+  compact,
+}: {
+  error: string | null;
+  onRetry: () => void;
+  className?: string;
+  retryLabel?: string;
+  /** Denser variant for banners that sit inside a card or a list header. */
+  compact?: boolean;
+}) {
+  if (!error) return null;
+  return (
+    <UIAlert
+      icon={AlertCircle}
+      variant="destructive"
+      className={cn(compact ? 'rounded-xl px-4 pt-3' : 'rounded-2xl', className)}
+    >
+      <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{error}</AlertDescription>
+      <Button
+        variant="destructive"
+        size="sm"
+        onPress={onRetry}
+        className="ml-6 mt-1 self-start"
+        accessibilityLabel={retryLabel}
+      >
+        <UIText className="text-xs font-semibold">{retryLabel}</UIText>
+      </Button>
+    </UIAlert>
   );
 }
 
@@ -161,18 +222,18 @@ export function Field({
   onSubmit?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   if (!secure) {
     return (
       <View className="mb-2.5">
-        <Text className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Text>
-        <TextInput
+        <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
+        <Input
           className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={value}
           onChangeText={onChange}
           placeholder={placeholder}
-          placeholderTextColor={dark ? '#888' : '#9ca3af'}
+          placeholderTextColor={placeholderColor(dark)}
           keyboardAppearance={dark ? 'dark' : 'light'}
           autoCapitalize="none"
           autoCorrect={false}
@@ -184,10 +245,13 @@ export function Field({
   }
   return (
     <View className="mb-2.5">
-      <Text className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Text>
+      <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
       <View className="flex-row items-center rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black pr-1">
-        <TextInput
-          className="flex-1 px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
+        <Input
+          // The row around this draws the field; the base border + background
+          // inside it would read as a frame within a frame. dark:bg-transparent
+          // is required — the base sets dark:bg-input/30.
+          className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
           value={value}
           onChangeText={onChange}
           secureTextEntry={!visible}
@@ -197,9 +261,9 @@ export function Field({
           returnKeyType={onSubmit ? 'go' : 'default'}
           onSubmitEditing={() => onSubmit?.()}
         />
-        <Tap onPress={() => setVisible((v) => !v)} radius={8} className="px-2.5 py-2" hitSlop={8}>
-          <Text className="text-sm font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">{visible ? 'Hide' : 'Show'}</Text>
-        </Tap>
+        <Button variant="link" onPress={() => setVisible((v) => !v)} className="px-2.5 py-2" hitSlop={8}>
+          <UIText className="text-sm font-semibold">{visible ? 'Hide' : 'Show'}</UIText>
+        </Button>
       </View>
     </View>
   );
@@ -209,7 +273,7 @@ export function TypingDots({ dim }: { dim?: boolean }) {
   const d1 = useRef(new Animated.Value(0)).current;
   const d2 = useRef(new Animated.Value(0)).current;
   const d3 = useRef(new Animated.Value(0)).current;
-  const { theme } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
   useEffect(() => {
     const pulse = (d: Animated.Value, delay: number) =>

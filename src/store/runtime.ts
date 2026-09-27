@@ -31,6 +31,15 @@ export interface StoreRuntime {
   sendRef: MutableRefObject<((text?: string) => Promise<void>) | null>;
   drainRef: MutableRefObject<() => void>;
   messagesRef: MutableRefObject<UiMessage[]>;
+  // ── Transcript windowing (10k+ sessions) ───────────────────────────────
+  // REST has no history cursor (only order+limit), so older pages grow the
+  // tail limit; the store prepends just the older slice (see sliceOlderThan).
+  /** REST rows covered by the current window (grows by CHAT_HISTORY_PAGE). */
+  historyLimitRef: MutableRefObject<number>;
+  /** True while a load-older fetch is in flight (re-entrancy guard). */
+  historyLoadingRef: MutableRefObject<boolean>;
+  /** True when the server has no rows older than the window. */
+  historyExhaustedRef: MutableRefObject<boolean>;
   // ── Orchestrator refs ──────────────────────────────────────────────────
   profilesRef: MutableRefObject<AgentProfile[]>;
   sessionIdRef: MutableRefObject<string | null>;
@@ -66,6 +75,9 @@ export function useStoreRuntime(): StoreRuntime {
     sendRef: useRef<((text?: string) => Promise<void>) | null>(null),
     drainRef: useRef<() => void>(() => {}),
     messagesRef: useRef<UiMessage[]>([]),
+    historyLimitRef: useRef(0),
+    historyLoadingRef: useRef(false),
+    historyExhaustedRef: useRef(true),
     profilesRef: useRef<AgentProfile[]>([]),
     sessionIdRef: useRef<string | null>(null),
     editingRowRef: useRef<number | null>(null),

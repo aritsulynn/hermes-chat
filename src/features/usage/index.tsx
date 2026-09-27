@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Redirect } from 'expo-router';
 import {
   Activity,
+  AlertCircle,
   Coins,
   Cpu,
   DollarSign,
@@ -15,9 +16,15 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { Card, ScreenHeader } from '../../components/ui/bits';
+import { Button } from '../../components/ui/button';
+import { Badge } from '../../components/ui/badge';
+import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Progress } from '../../components/ui/progress';
+import { Text as UIText } from '../../components/ui/text';
+import { brandColor, screenStyle } from '../../theme';
 import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
@@ -32,8 +39,11 @@ const PERIOD_OPTIONS = [
 
 
 export function UsageScreen() {
-  const { authed, opsGet, theme, getAuthScope } = useApp();
+  const { authed, opsGet, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
   const dark = theme === 'dark';
+  // Shared by the spinner and the KPI icon — resolve once per scheme.
+  const brand = useMemo(() => brandColor(dark), [dark]);
   const insets = useSafeAreaInsets();
 
   const [days, setDays] = useState<number>(30);
@@ -143,62 +153,75 @@ export function UsageScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: dark ? '#000' : '#fff' }}>
+    <View style={screenStyle(dark)}>
       {/* No 'bottom' edge: ScrollView content pads insets.bottom + 32. */}
       <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
         <StatusBar style="auto" />
 
         {/* Header */}
-        <View
-          className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-          style={{ paddingTop: insets.top + 10 }}
-        >
-          <View className="flex-row items-center gap-3">
-            <HamburgerBtn />
-            <Text className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Usage & Analytics</Text>
-          </View>
-          <Pressable
-            disabled={loading || refreshing}
-            onPress={() => void fetchUsage(true)}
-            hitSlop={10}
-            className="p-2 rounded-lg border border-neutral-300 dark:border-neutral-700"
-          >
-            <RefreshCw size={15} color={dark ? '#ccc' : '#444'} />
-          </Pressable>
-        </View>
+        <ScreenHeader
+          title="Usage & Analytics"
+          insetTop={insets.top}
+          actions={
+            <Button
+              variant="outline"
+              size="icon"
+              accessibilityLabel="Refresh usage"
+              disabled={loading || refreshing}
+              onPress={() => void fetchUsage(true)}
+              hitSlop={10}
+              className="h-8 w-8 rounded-lg border border-neutral-300 dark:border-neutral-700"
+            >
+              <RefreshCw size={15} color={dark ? '#ccc' : '#444'} />
+            </Button>
+          }
+        />
 
         {/* Period Selector Bar */}
         <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
           <Text className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</Text>
           <View className="flex-row gap-1">
             {PERIOD_OPTIONS.map((opt) => (
-              <Pressable
+              <Button
                 key={opt.days}
+                variant="ghost"
+                accessibilityRole="radio"
+                accessibilityState={{ selected: days === opt.days }}
+                accessibilityLabel={opt.label}
                 onPress={() => setDays(opt.days)}
-                className={`rounded-lg px-3 py-1.5 border ${
+                className={`h-auto rounded-lg border px-3 py-1.5 ${
                   days === opt.days
                     ? 'border-[#1a73e8] bg-[#1a73e8]'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
               >
-                <Text
+                <UIText
                   className={`text-xs font-semibold ${
                     days === opt.days ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
                   }`}
                 >
                   {opt.label}
-                </Text>
-              </Pressable>
+                </UIText>
+              </Button>
             ))}
           </View>
         </View>
 
         {error && (
-          <View className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/40">
-            <Text className="text-xs font-medium text-red-700 dark:text-red-300">{error}</Text>
-            <Pressable onPress={() => void fetchUsage(true)} className="mt-2 self-start rounded bg-red-600 px-2.5 py-1">
-              <Text className="text-xs font-medium text-white">Retry</Text>
-            </Pressable>
+          <View className="m-4">
+            <UIAlert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
+                {error}
+              </AlertDescription>
+              <Button
+                variant="destructive"
+                size="sm"
+                onPress={() => void fetchUsage(true)}
+                className="ml-6 mt-1 self-start"
+              >
+                <UIText className="text-xs font-medium text-white">Retry</UIText>
+              </Button>
+            </UIAlert>
           </View>
         )}
 
@@ -212,7 +235,7 @@ export function UsageScreen() {
         >
           {loading && !refreshing ? (
             <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#1a73e8" />
+              <ActivityIndicator size="large" color={brand} />
               <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading usage analytics…</Text>
             </View>
           ) : (
@@ -220,19 +243,19 @@ export function UsageScreen() {
               {/* KPI Cards Grid */}
               <View className="flex-row flex-wrap gap-2.5">
                 {/* Total Tokens */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
-                    <TrendingUp size={16} color="#1a73e8" />
+                    <TrendingUp size={16} color={brand} />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</Text>
                   </View>
                   <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
                     {compactNumber(totalTokens)}
                   </Text>
                   <Text className="mt-0.5 text-[11px] text-neutral-400">in {days} days</Text>
-                </View>
+                </Card>
 
                 {/* Estimated Cost */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
                     <DollarSign size={16} color="#16a34a" />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Est. Cost</Text>
@@ -243,10 +266,10 @@ export function UsageScreen() {
                   <Text className="mt-0.5 text-[11px] text-neutral-400">
                     Actual: {formatCost(totals?.total_actual_cost)}
                   </Text>
-                </View>
+                </Card>
 
                 {/* Sessions */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
                     <MessageSquare size={16} color="#8b5cf6" />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Sessions</Text>
@@ -255,10 +278,10 @@ export function UsageScreen() {
                     {totals?.total_sessions?.toLocaleString() || '0'}
                   </Text>
                   <Text className="mt-0.5 text-[11px] text-neutral-400">conversations</Text>
-                </View>
+                </Card>
 
                 {/* API Calls */}
-                <View className="flex-1 min-w-[140px] rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card className="flex-1 min-w-[140px]">
                   <View className="flex-row items-center gap-1.5">
                     <Zap size={16} color="#f59e0b" />
                     <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">API Calls</Text>
@@ -267,11 +290,11 @@ export function UsageScreen() {
                     {totals?.total_api_calls?.toLocaleString() || '0'}
                   </Text>
                   <Text className="mt-0.5 text-[11px] text-neutral-400">requests</Text>
-                </View>
+                </Card>
               </View>
 
               {/* Token Breakdown Card */}
-              <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Card>
                 <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Token Breakdown</Text>
                 <View className="mt-3 gap-2.5">
                   {/* Input Tokens */}
@@ -282,14 +305,11 @@ export function UsageScreen() {
                         {(totals?.total_input || 0).toLocaleString()}
                       </Text>
                     </View>
-                    <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                      <View
-                        className="h-full bg-[#1a73e8] rounded-full"
-                        style={{
-                          width: `${Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}%`,
-                        }}
-                      />
-                    </View>
+                    <Progress
+                      value={Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}
+                      indicatorClassName="bg-[#1a73e8]"
+                      className="bg-neutral-200 dark:bg-neutral-800"
+                    />
                   </View>
 
                   {/* Output Tokens */}
@@ -300,14 +320,11 @@ export function UsageScreen() {
                         {(totals?.total_output || 0).toLocaleString()}
                       </Text>
                     </View>
-                    <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                      <View
-                        className="h-full bg-[#8b5cf6] rounded-full"
-                        style={{
-                          width: `${Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}%`,
-                        }}
-                      />
-                    </View>
+                    <Progress
+                      value={Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}
+                      indicatorClassName="bg-[#8b5cf6]"
+                      className="bg-neutral-200 dark:bg-neutral-800"
+                    />
                   </View>
 
                   {/* Reasoning Tokens */}
@@ -319,14 +336,11 @@ export function UsageScreen() {
                           {(totals?.total_reasoning || 0).toLocaleString()}
                         </Text>
                       </View>
-                      <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                        <View
-                          className="h-full bg-[#f59e0b] rounded-full"
-                          style={{
-                            width: `${Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}%`,
-                          }}
-                        />
-                      </View>
+                      <Progress
+                        value={Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}
+                        indicatorClassName="bg-[#f59e0b]"
+                        className="bg-neutral-200 dark:bg-neutral-800"
+                      />
                     </View>
                   )}
 
@@ -339,21 +353,18 @@ export function UsageScreen() {
                           {(totals?.total_cache_read || 0).toLocaleString()}
                         </Text>
                       </View>
-                      <View className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                        <View
-                          className="h-full bg-[#10b981] rounded-full"
-                          style={{
-                            width: `${Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}%`,
-                          }}
-                        />
-                      </View>
+                      <Progress
+                        value={Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}
+                        indicatorClassName="bg-[#10b981]"
+                        className="bg-neutral-200 dark:bg-neutral-800"
+                      />
                     </View>
                   )}
                 </View>
-              </View>
+              </Card>
 
               {/* Daily Activity Chart */}
-              <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Card>
                 <View className="flex-row items-center justify-between">
                   <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Daily Activity</Text>
                   {selectedDay && (
@@ -385,10 +396,10 @@ export function UsageScreen() {
                     </View>
                   </ScrollView>
                 )}
-              </View>
+              </Card>
 
               {/* Usage by Model */}
-              <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <Card>
                 <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</Text>
                 <View className="mt-3 gap-2.5">
                   {modelEntries.length === 0 ? (
@@ -435,11 +446,11 @@ export function UsageScreen() {
                     })
                   )}
                 </View>
-              </View>
+              </Card>
 
               {/* Tools & Skills Breakdown */}
               {(toolsList.length > 0 || skillsList.length > 0) && (
-                <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+                <Card>
                   <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Tools & Skills</Text>
 
                   {/* Tools */}
@@ -453,20 +464,21 @@ export function UsageScreen() {
                       </View>
                       <View className="flex-row flex-wrap gap-1.5">
                         {toolsList.map((item) => (
-                          <View
+                          <Badge
                             key={item.name}
-                            className="flex-row items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 dark:border-neutral-800 dark:bg-neutral-950"
+                            variant="secondary"
+                            className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
                           >
-                            <Text className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
+                            <UIText className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
                               {item.name}
-                            </Text>
-                            <Text className="font-mono text-[11px] font-bold text-[#1a73e8] dark:text-[#7aa7ff]">
+                            </UIText>
+                            <UIText className="font-mono text-[11px] font-bold text-[#1a73e8] dark:text-[#7aa7ff]">
                               {item.count}
-                            </Text>
+                            </UIText>
                             {typeof item.percentage === 'number' && (
-                              <Text className="text-[10px] text-neutral-400">{item.percentage}%</Text>
+                              <UIText className="text-[10px] text-neutral-400">{item.percentage}%</UIText>
                             )}
-                          </View>
+                          </Badge>
                         ))}
                       </View>
                     </View>
@@ -483,23 +495,24 @@ export function UsageScreen() {
                       </View>
                       <View className="flex-row flex-wrap gap-1.5">
                         {skillsList.map((item) => (
-                          <View
+                          <Badge
                             key={item.name}
-                            className="flex-row items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 dark:border-neutral-800 dark:bg-neutral-950"
+                            variant="secondary"
+                            className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
                           >
-                            <Text className="text-xs text-neutral-800 dark:text-neutral-200">{item.name}</Text>
-                            <Text className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                            <UIText className="text-xs text-neutral-800 dark:text-neutral-200">{item.name}</UIText>
+                            <UIText className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                               {item.count}
-                            </Text>
+                            </UIText>
                             {typeof item.percentage === 'number' && (
-                              <Text className="text-[10px] text-neutral-400">{item.percentage}%</Text>
+                              <UIText className="text-[10px] text-neutral-400">{item.percentage}%</UIText>
                             )}
-                          </View>
+                          </Badge>
                         ))}
                       </View>
                     </View>
                   )}
-                </View>
+                </Card>
               )}
             </>
           )}

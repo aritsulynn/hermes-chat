@@ -15,6 +15,7 @@
 import { Platform } from 'react-native';
 import { normalizeConnectionBase } from './connection-scope';
 import { formatToolCommand } from '../utils/toolResult';
+import { asList, asRecord } from '../utils/ops';
 import {
   DEFAULT_PROFILE,
   HTTP_API_TIMEOUT_MS,
@@ -22,7 +23,6 @@ import {
   HTTP_LOGOUT_TIMEOUT_MS,
   HTTP_MODEL_OPTIONS_TIMEOUT_MS,
   HTTP_PROBE_TIMEOUT_MS,
-  HTTP_PROFILES_TIMEOUT_MS,
   HTTP_SESSION_CHECK_TIMEOUT_MS,
   HTTP_SESSION_MESSAGES_TIMEOUT_MS,
   HTTP_TICKET_TIMEOUT_MS,
@@ -72,8 +72,9 @@ async function fetchWithTimeout(
       ...init,
       signal: ctrl.signal,
     });
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw new Error(`Request timed out (${ms / 1000}s): ${url}`);
+  } catch (e: unknown) {
+    if (e && typeof e === 'object' && (e as { name?: unknown }).name === 'AbortError')
+      throw new Error(`Request timed out (${ms / 1000}s): ${url}`);
     throw e;
   } finally {
     clearTimeout(timer);
@@ -106,16 +107,24 @@ export function mergeCookies(prev: string, setCookieHeaders: string[]): string {
 export function getSetCookies(res: Response): string[] {
   const out: string[] = [];
   try {
-    const hdrs: any = (res as any).headers;
+    const hdrs = (res as unknown as { headers?: unknown }).headers as
+      | {
+          getSetCookie?: () => unknown;
+          raw?: () => Record<string, string[] | undefined>;
+          get?: (name: string) => string | null;
+        }
+      | undefined;
     if (typeof hdrs?.getSetCookie === 'function') {
-      for (const c of hdrs.getSetCookie()) out.push(String(c));
+      for (const c of asList(hdrs.getSetCookie())) out.push(String(c));
     } else if (typeof hdrs?.raw === 'function') {
-      for (const c of hdrs.raw()['set-cookie'] ?? []) out.push(String(c));
+      for (const c of (hdrs.raw()['set-cookie'] ?? [])) out.push(String(c));
     } else {
       const single = hdrs?.get?.('set-cookie');
       if (single) out.push(...String(single).split(/,(?=[^;,]+=[^;,]*)/));
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[dashboard] getSetCookies failed', e);
+  }
   return out;
 }
 
@@ -134,7 +143,7 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
           { mode: 'no-cors' } as RequestInit,
           HTTP_PROBE_TIMEOUT_MS,
         );
-        if ((probe as any)?.type === 'opaque') {
+        if (asRecord(probe).type === 'opaque') {
           throw new Error(
             'Dashboard reachable but the browser blocked the request (CORS) — allow this origin on the dashboard, or use the Expo Go native app instead',
           );
@@ -155,10 +164,10 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
     throw new Error(`Unreachable: ${raw}`);
   }
   if (!res.ok) throw new Error(`Dashboard probe failed: HTTP ${res.status}`);
-  const body = (await res.json()) as any;
+  const body = asRecord(await res.json());
   return {
-    authRequired: body?.auth_required === true,
-    providers: Array.isArray(body?.auth_providers) ? body.auth_providers.map(String) : [],
+    authRequired: body.auth_required === true,
+    providers: Array.isArray(body.auth_providers) ? body.auth_providers.map(String) : [],
   };
 }
 
@@ -223,13 +232,16 @@ export async function mintWsTicket(
   const rotated = mergeCookies(cookie, getSetCookies(res));
   if (rotated !== cookie) onCookie?.(rotated);
   if (!res.ok) {
-    const err: any = new Error(`WS ticket mint failed: HTTP ${res.status}`);
+    const err = new Error(`WS ticket mint failed: HTTP ${res.status}`) as Error & {
+      status?: number;
+      cookie?: string;
+    };
     err.status = res.status;
     err.cookie = rotated !== cookie ? rotated : undefined;
     throw err;
   }
-  const body = (await res.json()) as any;
-  const ticket = typeof body?.ticket === 'string' ? body.ticket : '';
+  const body = asRecord(await res.json());
+  const ticket = typeof body.ticket === 'string' ? body.ticket : '';
   if (!ticket) throw new Error('WS ticket response had no ticket');
   return ticket;
 }
@@ -316,68 +328,25 @@ export interface ModelProviderOption {
   > | null;
 }
 
-export interface ProfileSummary {
-  name: string;
-  display_name?: string;
-  description?: string;
-  model?: string | null;
-  provider?: string | null;
-  is_default?: boolean;
-  gateway_running?: boolean;
-  [key: string]: unknown;
-}
-
-function profileRows(payload: unknown): ProfileSummary[] {
-  const rows = Array.isArray(payload)
-    ? payload
-    : Array.isArray((payload as any)?.profiles)
-      ? (payload as any).profiles
-      : [];
-  return rows
-    .filter((row: any) => row && typeof row === 'object' && typeof row.name === 'string' && row.name.trim())
-    .map((row: any) => ({ ...row, name: String(row.name).trim() }));
-}
-
-export async function getProfiles(
-  baseUrl: string,
-  cookie: string,
-  onCookie?: CookieUpdater,
-): Promise<ProfileSummary[]> {
-  const base = normalizeBase(baseUrl);
-  const res = await fetchAuthed(
-    `${base}${api.profiles()}`,
-    cookie ? { headers: { Cookie: cookie } } : {},
-    cookie,
-    HTTP_PROFILES_TIMEOUT_MS,
-    onCookie,
-  );
-  if (!res.ok) throw new Error(`Profiles failed: HTTP ${res.status}`);
-  return profileRows(await res.json());
-}
-
-export async function getCurrentProfile(
-  baseUrl: string,
-  cookie: string,
-  onCookie?: CookieUpdater,
-): Promise<{ active: string; current: string }> {
-  const base = normalizeBase(baseUrl);
-  const res = await fetchAuthed(
-    `${base}${api.activeProfile()}`,
-    cookie ? { headers: { Cookie: cookie } } : {},
-    cookie,
-    HTTP_PROFILES_TIMEOUT_MS,
-    onCookie,
-  );
-  if (!res.ok) throw new Error(`Active profile failed: HTTP ${res.status}`);
-  const body: any = await res.json();
-  return {
-    active:
-      typeof body?.active === 'string' && body.active.trim() ? body.active.trim() : DEFAULT_PROFILE,
-    current:
-      typeof body?.current === 'string' && body.current.trim()
-        ? body.current.trim()
-        : DEFAULT_PROFILE,
-  };
+/** Narrow the opaque `capabilities` map down to the documented per-model shape
+ *  (`utils/reasoning.ts` reads exactly these three fields). Unknown keys and
+ *  wrong-typed values are dropped rather than cast through. */
+function capabilityRows(value: unknown): ModelProviderOption['capabilities'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: NonNullable<ModelProviderOption['capabilities']> = {};
+  for (const [model, raw] of Object.entries(value)) {
+    const cap = asRecord(raw);
+    const row: { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean | null } = {};
+    if (typeof cap.fast === 'boolean') row.fast = cap.fast;
+    if (typeof cap.reasoning === 'boolean') row.reasoning = cap.reasoning;
+    if (typeof cap.can_disable_reasoning === 'boolean') {
+      row.can_disable_reasoning = cap.can_disable_reasoning;
+    } else if (cap.can_disable_reasoning === null) {
+      row.can_disable_reasoning = null;
+    }
+    out[model] = row;
+  }
+  return out;
 }
 
 export async function getModelOptions(
@@ -399,17 +368,22 @@ export async function getModelOptions(
     onCookie,
   );
   if (!res.ok) throw new Error(`Model options failed: HTTP ${res.status}`);
-  const body = (await res.json()) as any;
-  const rows = Array.isArray(body?.providers) ? body.providers : [];
-  return rows.map((p: any) => ({
-    slug: String(p?.slug ?? ''),
-    name: String(p?.name ?? p?.slug ?? ''),
-    ...(typeof p?.is_current === 'boolean' ? { isCurrent: p.is_current } : {}),
-    models: Array.isArray(p?.models) ? p.models.map(String) : null,
-    totalModels: Number(p?.total_models ?? (Array.isArray(p?.models) ? p.models.length : 0)),
-    ...(typeof p?.authenticated === 'boolean' ? { authenticated: p.authenticated } : {}),
-    ...(p?.capabilities && typeof p.capabilities === 'object' ? { capabilities: p.capabilities } : {}),
-  }));
+  const body = asRecord(await res.json());
+  const rows = Array.isArray(body.providers) ? body.providers : [];
+  return rows.map((p) => {
+    const row = asRecord(p);
+    const models = Array.isArray(row.models) ? row.models.map(String) : null;
+    const capabilities = capabilityRows(row.capabilities);
+    return {
+      slug: String(row.slug ?? ''),
+      name: String(row.name ?? row.slug ?? ''),
+      ...(typeof row.is_current === 'boolean' ? { isCurrent: row.is_current } : {}),
+      models,
+      totalModels: Number(row.total_models ?? (models ? models.length : 0)),
+      ...(typeof row.authenticated === 'boolean' ? { authenticated: row.authenticated } : {}),
+      ...(capabilities ? { capabilities } : {}),
+    };
+  });
 }
 
 export async function setMainModel(
@@ -438,7 +412,12 @@ export async function setMainModel(
 // ── Generic authed REST helper (ops screens) ─────────────────────────────
 // Cookie auth, NO Authorization header (dashboard 401s it in gated mode).
 
-export async function apiGet(baseUrl: string, cookie: string, path: string, onCookie?: CookieUpdater): Promise<any> {
+export async function apiGet(
+  baseUrl: string,
+  cookie: string,
+  path: string,
+  onCookie?: CookieUpdater,
+): Promise<unknown> {
   const base = normalizeBase(baseUrl);
   const res = await fetchAuthed(
     `${base}${path}`,
@@ -449,8 +428,9 @@ export async function apiGet(baseUrl: string, cookie: string, path: string, onCo
   );
   if (!res.ok) throw new Error(`GET ${path} → HTTP ${res.status}`);
   try {
-    return await res.json();
-  } catch {
+    return (await res.json()) as unknown;
+  } catch (e) {
+    console.warn(`[dashboard] GET ${path} returned non-JSON`, e);
     return null;
   }
 }
@@ -462,7 +442,7 @@ export async function apiMut(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
   onCookie?: CookieUpdater,
-): Promise<any> {
+): Promise<unknown> {
   const base = normalizeBase(baseUrl);
   const res = await fetchAuthed(
     `${base}${path}`,
@@ -479,13 +459,16 @@ export async function apiMut(
     let detail = '';
     try {
       detail = JSON.stringify(await res.json()).slice(0, 200);
-    } catch {}
+    } catch (e) {
+      console.warn(`[dashboard] ${method} ${path} error body was non-JSON`, e);
+    }
     throw new Error(`${method} ${path} → HTTP ${res.status}${detail ? ` ${detail}` : ''}`);
   }
   try {
     const t = await res.text();
-    return t ? JSON.parse(t) : null;
-  } catch {
+    return t ? (JSON.parse(t) as unknown) : null;
+  } catch (e) {
+    console.warn(`[dashboard] ${method} ${path} returned non-JSON`, e);
     return null;
   }
 }
@@ -600,56 +583,59 @@ export async function getSessionMessages(
     onCookie,
   );
   if (!res.ok) throw new Error(`Session messages failed: HTTP ${res.status}`);
-  const body = (await res.json()) as any;
-  const rows = Array.isArray(body?.messages) ? body.messages : [];
+  const body = asRecord(await res.json());
+  const rows = Array.isArray(body.messages) ? body.messages : [];
   const items: RestHistoryItem[] = [];
   // Assistant tool_calls carry the args; join them to the tool row by id so the
   // bubble can show the command above its result (history has no other copy).
   const toolArgs = new Map<string, unknown>();
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
-    const role = String(row.role ?? '');
-    if (role === 'assistant' && Array.isArray((row as any).tool_calls)) {
-      for (const tc of (row as any).tool_calls) {
-        const id = typeof tc?.id === 'string' ? tc.id : '';
+    const rec = row as Record<string, unknown>;
+    const role = String(rec.role ?? '');
+    if (role === 'assistant' && Array.isArray(rec.tool_calls)) {
+      for (const tc of rec.tool_calls) {
+        const call = asRecord(tc);
+        const id = typeof call.id === 'string' ? call.id : '';
         if (!id) continue;
-        const fn = (tc?.function ?? {}) as any;
-        let a: unknown = fn?.arguments;
+        const fn = asRecord(call.function);
+        let a: unknown = fn.arguments;
         if (typeof a === 'string') {
           try {
-            a = JSON.parse(a);
-          } catch {
+            a = JSON.parse(a) as unknown;
+          } catch (e) {
+            console.warn('[dashboard] tool_call arguments were non-JSON', e);
             a = { command: a };
           }
         }
         toolArgs.set(id, a);
       }
     }
-    if (row.display_kind === 'hidden') continue;
-    const content = jsonText(row.content);
+    if (rec.display_kind === 'hidden') continue;
+    const content = jsonText(rec.content);
     // Model-switch / personality markers persist as role=user "[System: …]" rows.
     if (role === 'user' && content.replace(/^\s+/, '').startsWith('[System:')) continue;
     if (role === 'tool') {
       if (!content.trim()) continue;
       const command =
-        formatToolCommand(toolArgs.get(String((row as any).tool_call_id ?? ''))) ||
-        (typeof (row as any).context === 'string' ? (row as any).context : '');
+        formatToolCommand(toolArgs.get(String(rec.tool_call_id ?? ''))) ||
+        (typeof rec.context === 'string' ? rec.context : '');
       items.push({
         role: 'tool',
         content,
-        name: String((row as any).name ?? (row as any).tool_name ?? 'Tool'),
+        name: String(rec.name ?? rec.tool_name ?? 'Tool'),
         ...(command ? { command } : {}),
       });
       continue;
     }
-    const reasoning = restReasoning(row);
+    const reasoning = restReasoning(rec);
     if ((role === 'user' || role === 'assistant') && (content.trim() || reasoning)) {
       items.push({
         role,
         content,
         ...(reasoning ? { reasoning } : {}),
-        ...(typeof (row as any).id === 'number' ? { rowId: (row as any).id as number } : {}),
-        ...(typeof (row as any).timestamp === 'number' ? { ts: (row as any).timestamp as number } : {}),
+        ...(typeof rec.id === 'number' ? { rowId: rec.id } : {}),
+        ...(typeof rec.timestamp === 'number' ? { ts: rec.timestamp } : {}),
       });
     }
   }

@@ -6,7 +6,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   View,
@@ -15,14 +14,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AlertCircle, Fingerprint } from 'lucide-react-native';
 import * as LocalAuth from 'expo-local-authentication';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Field } from '../../components/ui/bits';
+import { Button } from '../../components/ui/button';
+import { Text as UIText } from '../../components/ui/text';
+import { Alert, AlertDescription } from '../../components/ui/alert';
 import { BUILD_ID } from '../../build';
 import { getPassword } from '../../services/connection';
 
 export function LoginScreen() {
-  const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login, theme } =
+  const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login } =
     useApp();
+  const { theme } = useThemeValue();
   const [bioAvailable, setBioAvailable] = useState(false);
   // Android edge-to-edge breaks adjustResize, so KeyboardAvoidingView alone
   // can't lift the form — track the keyboard height (like the chat dock does)
@@ -124,34 +127,36 @@ export function LoginScreen() {
           </View>
 
           {error && (
-            <View className="mt-3 flex-row items-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 dark:border-red-950 dark:bg-red-950/30">
-              <AlertCircle size={17} color="#dc2626" />
-              <Text className="flex-1 text-xs leading-5 text-red-600 dark:text-red-400">{error}</Text>
-            </View>
+            <Alert icon={AlertCircle} variant="destructive" className="mt-3">
+              <AlertDescription className="flex-1 text-xs leading-5 text-red-600 dark:text-red-400">{error}</AlertDescription>
+            </Alert>
           )}
 
-          <Pressable
+          <Button
             onPress={submit}
-            className={`mt-4 items-center rounded-2xl bg-[#1a73e8] px-[18px] py-3.5 active:opacity-80 ${busy ? 'opacity-40' : ''}`}
+            accessibilityLabel="Connect to the gateway"
+            className="mt-4 h-auto rounded-2xl bg-[#1a73e8] px-[18px] py-3.5 active:opacity-80"
             disabled={busy}
           >
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="text-[16px] font-bold text-white">Connect</Text>
+              <UIText className="text-[16px] font-bold text-white">Connect</UIText>
             )}
-          </Pressable>
+          </Button>
           {bioAvailable && (
-            <Pressable
+            <Button
+              variant="outline"
               onPress={() => void bioLogin()}
-              className="mt-2.5 flex-row items-center justify-center gap-2 rounded-2xl border border-neutral-300 px-2.5 py-3 active:bg-neutral-100 dark:border-neutral-700 dark:active:bg-neutral-800"
+              accessibilityLabel="Unlock with biometrics"
+              className="mt-2.5 h-auto rounded-2xl px-2.5 py-3"
               disabled={busy}
             >
               <Fingerprint size={16} color="#1a73e8" />
-              <Text className="text-[15px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
+              <UIText className="text-[15px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
                 Unlock with biometrics
-              </Text>
-            </Pressable>
+              </UIText>
+            </Button>
           )}
           <Text className="mt-5 text-center text-xs text-neutral-400">build {BUILD_ID}</Text>
         </ScrollView>

@@ -28,12 +28,12 @@ import {
   saveCookie,
 } from '../services/connection';
 import { DEFAULT_PROFILE } from '../services/constants';
-import { dismissNotification } from '../services/notifications';
-import { askKey, pendingAsks } from '../services/ask-inbox';
+import { CHAT_HISTORY_MAX_ROWS, CHAT_HISTORY_PAGE, CHAT_WINDOW_SOFT_CAP, CHAT_WINDOW_TRIM_KEEP } from '../services/constants';
+import { pendingAsks } from '../services/ask-inbox';
 import type { AskInboxEntry, AskOwner } from '../services/ask-inbox';
 import { GatewayWs } from '../services/gateway-ws';
 import type { ConnState, HistoryMessage } from '../services/gateway-ws';
-import { errMsg, nid } from '../utils/messages';
+import { errMsg, nid, sliceOlderThan } from '../utils/messages';
 import type { Attachment, UiMessage } from '../utils/messages';
 import type { Role } from '../utils/messages';
 import {
@@ -45,8 +45,10 @@ import {
   scheduleContextHydration,
   withTimeout,
 } from './helpers';
-import type { AgentProfile, AppStore } from './types';
+import type { AgentProfile, AppStore, TranscriptHit } from './types';
+import type { StoreCtx } from './ctx';
 import { useThemeSlice } from './slices/useTheme';
+import type { ThemeSlice } from './slices/useTheme';
 import { useNotificationsSlice } from './slices/useNotifications';
 import { useQueueSlice } from './slices/useQueue';
 import { useModelsSlice } from './slices/useModels';
@@ -69,6 +71,33 @@ import { useTurnSlice } from './slices/useTurn';
 import { useSessionMiscSlice } from './slices/useSessionMisc';
 
 const AppContext = createContext<AppStore | null>(null);
+
+// High-frequency streaming deltas, isolated from AppContext: every token
+// produces a new object identity, and a single shared context would re-render
+// every useApp() consumer app-wide ~30x/s during streaming (drawer, header,
+// composer, all screens). Only the chat transcript reads this, so it gets its
+// own context — everyone else stays put while tokens flow.
+const StreamingContext = createContext<Record<string, string> | null>(null);
+
+export function useStreaming(): Record<string, string> {
+  const v = useContext(StreamingContext);
+  if (!v) throw new Error('useStreaming must be used inside AppProvider');
+  return v;
+}
+
+// The theme triple, isolated from AppContext for the same reason as streaming.
+// A theme toggle changes `theme`, so leaving it in the shared value gave every
+// useApp() consumer a new context object and re-rendered all of them — the
+// three themed hosts in app/_layout.tsx, the drawer's already-mounted screens,
+// the file-preview host — for a colour change. Only 18 sites read the theme, so
+// it gets its own context and the rest of the app never hears about it.
+const ThemeContext = createContext<ThemeSlice | null>(null);
+
+export function useThemeValue(): ThemeSlice {
+  const v = useContext(ThemeContext);
+  if (!v) throw new Error('useThemeValue must be used inside AppProvider');
+  return v;
+}
 
 
 export function useApp(): AppStore {
@@ -100,6 +129,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setPasswordState('');
     }
   }, [host, username]);
+  const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,12 +142,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
   const [sessionTitle, setSessionTitle] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  // Transcript window (10k+ sessions): only a tail page lives in `messages`;
+  // older rows are paged in on demand and the head auto-trims past the cap.
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyExhausted, setHistoryExhausted] = useState(true);
+  const [trimmedOlder, setTrimmedOlder] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [toolLine, setToolLine] = useState<string | null>(null);
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
-  const { themeMode, theme, setTheme, hydrateTheme } = useThemeSlice();
   // Local notifications (turn complete / server asks while backgrounded).
-  const { notifyEnabled, notifyRef, setNotifications, loadNotifications } = useNotificationsSlice();
+  const notificationsSlice = useNotificationsSlice();
+  const { notifyEnabled, notifyRef, setNotifications, loadNotifications } = notificationsSlice;
 
   // Shared runtime refs (also consumed by store slices).
   const runtime = useStoreRuntime();
@@ -138,6 +173,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sendRef,
     drainRef,
     messagesRef,
+    historyLimitRef,
+    historyLoadingRef,
+    historyExhaustedRef,
     profilesRef,
     sessionIdRef,
     editingRowRef: editRowRef,
@@ -155,25 +193,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = runtime;
   activeProfileRef.current = activeProfile;
   profilesRef.current = profiles;
-  const { todos, setTodos, subagents, setSubagents } = useLiveRosterSlice({ runtime, generating, sessionId });
-  const { catalogAtRef, loadCommandsCatalog } = useCommandsSlice({ runtime, sessionId });
-  const {
-    sessions,
-    setSessions,
-    sessionsLimit,
-    setSessionsLimit,
-    sessionsHasMore,
-    setSessionsHasMore,
-    sessionsLoadingMore,
-    setSessionsLoadingMore,
-    sessionsLimitRef,
-    sessionsHasMoreRef,
-    sessionsLoadingMoreRef,
-    sessionsFetchRef,
-    sessionsFetchProfileRef,
-    refreshSessions,
-    loadMoreSessions,
-  } = useSessionsSlice({ runtime, setError });
+
+  // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
+  const latest = useRef({ host, username, activeProfile, sessionKey });
+  latest.current = { host, username, activeProfile, sessionKey };
+
   const acceptRotatedCookie = useCallback(
     async (
       nextCookie: string,
@@ -210,8 +234,115 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
         return;
       setProfiles(discovered.profiles);
-    } catch {}
+    } catch (e) {
+      console.warn('[store] profile refresh failed', e);
+    }
   }, [acceptRotatedCookie, host, username]);
+
+  // ── Transcript windowing ──────────────────────────────────────────────
+  // Steady state keeps ~1 page of bubbles in `messages`; older rows page in
+  // via a growing tail limit (REST has no cursor) and the head auto-trims
+  // past the soft cap. Trimmed/paged-out rows stay server-side and come back
+  // through loadOlderMessages — nothing durable is lost.
+  const noteHistoryWindow = useCallback((limit: number, exhausted: boolean) => {
+    historyLimitRef.current = limit;
+    historyExhaustedRef.current = exhausted;
+    setHistoryExhausted(exhausted);
+  }, []);
+  const resetHistoryWindow = useCallback(() => {
+    historyLimitRef.current = 0;
+    historyLoadingRef.current = false;
+    historyExhaustedRef.current = true;
+    setHistoryLoadingMore(false);
+    setHistoryExhausted(true);
+    setTrimmedOlder(0);
+  }, []);
+
+  // The accumulating slice context — see store/ctx.ts. One object, handed to
+  // every slice in dependency order and grown with each slice's return, so no
+  // slice declares a deps interface and no call site lists props. The values
+  // are the same objects the old props carried, so every useCallback dep array
+  // downstream is unaffected. `hydrateSessionContext` is added below, once
+  // useSessionInfoSlice has published setUsageInfo.
+  const themeSlice = useThemeSlice();
+  const ctx = {
+    ...runtime,
+    ...themeSlice,
+    ...notificationsSlice,
+    host,
+    setHost,
+    username,
+    setUsername,
+    password,
+    setPassword,
+    passwordScopeRef,
+    booting,
+    setBooting,
+    busy,
+    setBusy,
+    error,
+    setError,
+    conn,
+    setConn,
+    activeProfile,
+    setActiveProfile,
+    profiles,
+    setProfiles,
+    authed,
+    setAuthed,
+    openingId,
+    setOpeningId,
+    sessionId,
+    setSessionId,
+    sessionKey,
+    setSessionKey,
+    sessionTitle,
+    setSessionTitle,
+    messages,
+    setMessages,
+    historyLoadingMore,
+    setHistoryLoadingMore,
+    historyExhausted,
+    setHistoryExhausted,
+    trimmedOlder,
+    setTrimmedOlder,
+    generating,
+    setGenerating,
+    toolLine,
+    setToolLine,
+    editingRowId,
+    setEditingRowId,
+    rememberPw,
+    latest,
+    acceptRotatedCookie,
+    refreshProfiles,
+    noteHistoryWindow,
+    resetHistoryWindow,
+  } as unknown as StoreCtx;
+  // Hand a slice the shared context and publish whatever it returns back into
+  // it, so the next slice in dependency order can read it. One line per slice.
+  const add = <T extends object>(slice: T): T => Object.assign(ctx, slice);
+
+  const { themeMode, theme, setTheme, hydrateTheme } = themeSlice;
+  const { todos, setTodos, subagents, setSubagents } = add(useLiveRosterSlice(ctx));
+  const { catalogAtRef, loadCommandsCatalog } = add(useCommandsSlice(ctx));
+  const {
+    sessions,
+    setSessions,
+    sessionsLimit,
+    setSessionsLimit,
+    sessionsHasMore,
+    setSessionsHasMore,
+    sessionsLoadingMore,
+    setSessionsLoadingMore,
+    sessionsLimitRef,
+    sessionsHasMoreRef,
+    sessionsLoadingMoreRef,
+    sessionsFetchRef,
+    sessionsFetchProfileRef,
+    refreshSessions,
+    loadMoreSessions,
+  } = add(useSessionsSlice(ctx));
   // Live runtime session id for callbacks frozen in openWs (reconnect replay).
   sessionIdRef.current = sessionId;
   const {
@@ -227,7 +358,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUsageLoading,
     usageRefreshRef,
     openInfo,
-  } = useSessionInfoSlice({ runtime, activeProfile, sessionId, sessionIdRef });
+  } = add(useSessionInfoSlice(ctx));
   const {
     queued,
     queueParked,
@@ -241,12 +372,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearQueue,
     resumeQueue,
     sendQueuedNow,
-  } = useQueueSlice({ generatingRef, sendRef, drainRef });
+  } = add(useQueueSlice(ctx));
   generatingRef.current = generating;
   messagesRef.current = messages;
-  // Latest host/profile/sessionKey for callbacks frozen in openWs (created once).
-  const latest = useRef({ host, username, activeProfile, sessionKey });
-  latest.current = { host, username, activeProfile, sessionKey };
   const {
     streamingTexts,
     setStreamingTexts,
@@ -263,7 +391,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearStreaming,
     parkLiveTurn,
     reanchorLiveTurn,
-  } = useLiveTurnSlice({ runtime, latest, sessionIdRef });
+  } = add(useLiveTurnSlice(ctx));
 
   const {
     model,
@@ -286,17 +414,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     applyEffort,
     applyFast,
     applyApprovalMode,
-  } = useModelsSlice({
-    runtime,
-    host,
-    username,
-    activeProfile,
-    sessionId,
-    acceptRotatedCookie,
-    setMessages,
-    setToolLine,
-    latest,
-  });
+  } = add(useModelsSlice(ctx));
   const {
     ask,
     setAsk,
@@ -310,14 +428,144 @@ export function AppProvider({ children }: { children: ReactNode }) {
     markAskStatus,
     markAskByRpc,
     bindAskOwner,
-  } = useAskInboxSlice({ runtime, profilesRef, latest, sessionIdRef });
+  } = add(useAskInboxSlice(ctx));
 
-  const { toolRefreshRef, scheduleToolRefresh, refreshToolResults } = useToolRefreshSlice({
-    runtime,
-    latest,
-    acceptRotatedCookie,
-    setMessages,
-  });
+  const { toolRefreshRef, scheduleToolRefresh, refreshToolResults } = add(useToolRefreshSlice(ctx));
+
+  // Drop the head past the soft cap. Never the live tail, never while a turn
+  // runs, and the screen only calls this while pinned at the bottom — reading
+  // history up top is never yanked.
+  const trimHead = useCallback(() => {
+    const cur = messagesRef.current;
+    if (cur.length <= CHAT_WINDOW_SOFT_CAP || generatingRef.current) return;
+    const drop = cur.length - CHAT_WINDOW_TRIM_KEEP;
+    if (drop <= 0) return;
+    const next = cur.slice(drop);
+    messagesRef.current = next;
+    setMessages(next);
+    setTrimmedOlder((c) => c + drop);
+    // Trimmed rows are refetchable, so the window is no longer exhaustive.
+    historyExhaustedRef.current = false;
+    setHistoryExhausted(false);
+  }, []);
+  // Fetch the next older page and prepend just the older slice (anchor = the
+  // window's oldest durable row). Returns true when a fetch ran (even with an
+  // empty head) so the screen can hold the scroll position; false when skipped.
+  const loadOlderMessages = useCallback(async (): Promise<boolean> => {
+    const h = latest.current.host;
+    const profile = latest.current.activeProfile;
+    const epoch = profileEpochRef.current;
+    const sk = latest.current.sessionKey;
+    const connectionEpoch = connectionEpochRef.current;
+    const targetUser = latest.current.username;
+    const cur = messagesRef.current;
+    if (!h || !sk || cur.length === 0) return false;
+    if (historyLoadingRef.current || historyExhaustedRef.current || generatingRef.current) return false;
+    const nextLimit = Math.min(historyLimitRef.current + CHAT_HISTORY_PAGE, CHAT_HISTORY_MAX_ROWS);
+    if (nextLimit <= historyLimitRef.current) {
+      historyExhaustedRef.current = true;
+      setHistoryExhausted(true);
+      return false;
+    }
+    historyLoadingRef.current = true;
+    setHistoryLoadingMore(true);
+    try {
+      const items = await getSessionMessages(
+        h,
+        cookie.current,
+        sk,
+        profile,
+        nextLimit,
+        connectionScope(h, targetUser),
+        async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+      );
+      if (
+        activeProfileRef.current !== profile ||
+        profileEpochRef.current !== epoch ||
+        connectionEpochRef.current !== connectionEpoch ||
+        latest.current.sessionKey !== sk
+      )
+        return true;
+      historyLimitRef.current = nextLimit;
+      const head = sliceOlderThan(historyToItems(items), messagesRef.current);
+      if (head.length > 0) {
+        setMessages((prev) => [...head, ...prev]);
+        setTrimmedOlder((c) => Math.max(0, c - head.length));
+        // Older rows existed beyond the anchor — the window is not exhaustive.
+        historyExhaustedRef.current = false;
+        setHistoryExhausted(false);
+      } else if (items.length < nextLimit) {
+        historyExhaustedRef.current = true;
+        setHistoryExhausted(true);
+      }
+      return true;
+    } catch {
+      return true;
+    } finally {
+      historyLoadingRef.current = false;
+      setHistoryLoadingMore(false);
+    }
+  }, [acceptRotatedCookie]);
+  // ── Full-history search ─────────────────────────────────────────────
+  // In-conversation search must cover the server transcript, not just the
+  // loaded window (windowing would otherwise hide older matches). The backend
+  // has no search endpoint, so build a transient plain-data index (capped at
+  // CHAT_HISTORY_MAX_ROWS) once per transcript revision and filter per
+  // keystroke. Thinking bubbles stay excluded, mirroring messageMatchesSearch.
+  const searchIndexRef = useRef<{ key: string; rows: TranscriptHit[] } | null>(null);
+  const searchTranscript = useCallback(
+    async (query: string): Promise<TranscriptHit[]> => {
+      const q = query.trim().toLowerCase();
+      if (!q) return [];
+      const h = latest.current.host;
+      const profile = latest.current.activeProfile;
+      const epoch = profileEpochRef.current;
+      const sk = latest.current.sessionKey;
+      const connectionEpoch = connectionEpochRef.current;
+      const targetUser = latest.current.username;
+      if (!h || !sk) return [];
+      const key = JSON.stringify([h, targetUser, profile, sk, messagesRef.current.length]);
+      let rows = searchIndexRef.current?.key === key ? searchIndexRef.current.rows : null;
+      if (!rows) {
+        try {
+          const items = await getSessionMessages(
+            h,
+            cookie.current,
+            sk,
+            profile,
+            CHAT_HISTORY_MAX_ROWS,
+            connectionScope(h, targetUser),
+            async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+          );
+          if (
+            activeProfileRef.current !== profile ||
+            profileEpochRef.current !== epoch ||
+            connectionEpochRef.current !== connectionEpoch ||
+            latest.current.sessionKey !== sk
+          )
+            return [];
+          rows = historyToItems(items)
+            .filter((m) => m.role !== 'thinking')
+            .map((m) => ({ role: m.role, text: m.text, rowId: m.rowId ?? null }));
+          searchIndexRef.current = { key, rows };
+        } catch {
+          return [];
+        }
+      }
+      return rows.filter((r) => r.text.toLowerCase().includes(q));
+    },
+    [acceptRotatedCookie],
+  );
+  // Locate a global hit inside the loaded window: durable rows by rowId,
+  // transient ones (tool labels) by exact text. -1 means "page it in first".
+  const findHitIndex = useCallback((hit: TranscriptHit): number => {
+    const cur = messagesRef.current;
+    if (hit.rowId != null) {
+      const i = cur.findIndex((m) => m.role === hit.role && m.rowId === hit.rowId);
+      if (i >= 0) return i;
+    }
+    return cur.findIndex((m) => m.role === hit.role && m.text === hit.text);
+  }, []);
   // Stamp durable row ids onto live messages (edit/rewind targets) by aligning
   // the REST transcript tail with the local transcript from the end.
   stampRowIdsRef.current = () => {
@@ -335,7 +583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           cookie.current,
           sk,
           profile,
-          200,
+          CHAT_HISTORY_PAGE,
           connectionScope(h, targetUser),
           async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
         );
@@ -363,7 +611,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         if (!fill.size) return;
         setMessages((prev) => prev.map((m) => (fill.has(m.id) ? { ...m, rowId: fill.get(m.id) } : m)));
-      } catch {}
+      } catch (e) {
+        console.warn('[store] stampRowIds failed', e);
+      }
     })();
   };
   // Post-reconnect resync: the replay ring had already dropped the gap, so the
@@ -379,12 +629,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!h || !sk || !runtime) return;
     void (async () => {
       try {
+        // Rebuild the loaded window (not a fixed 200): paging/trim state stays
+        // intact across a reconnect instead of collapsing back to a full load.
         const hist = await getSessionMessages(
           h,
           cookie.current,
           sk,
           profile,
-          200,
+          historyLimitRef.current > 0 ? historyLimitRef.current : CHAT_HISTORY_PAGE,
           connectionScope(h, targetUser),
           async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
         );
@@ -408,7 +660,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           setToolLine(null);
         }
-      } catch {}
+      } catch (e) {
+        console.warn('[store] resync failed', e);
+      }
     })();
   };
 
@@ -421,10 +675,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       () => sessionIdRef.current === sid,
       (snapshot) => {
         if (contextPendingSidRef.current === sid) contextPendingSidRef.current = null;
-        setUsageInfo((prev: any) => mergeUsageState(prev, snapshot));
+        setUsageInfo((prev) => mergeUsageState(prev, snapshot));
       },
     );
   }, []);
+  // Closes the loop on the one helper that needed a slice's output to exist
+  // (setUsageInfo). Every slice that reads it is called below this line.
+  ctx.hydrateSessionContext = hydrateSessionContext;
 
 
   const {
@@ -438,8 +695,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAttachments,
     copiedId,
     copyText,
-  } = useComposerSlice({ activeProfile, sessionKey, sessionId });
-  const [booting, setBooting] = useState(true);
+  } = add(useComposerSlice(ctx));
   const {
     respondToInbox,
     answerInboxValue,
@@ -450,17 +706,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     answerApproval,
     dismissAsk,
     confirmSensitiveNotification,
-  } = useAskRepliesSlice({
-    runtime,
-    askRef,
-    askInboxRef,
-    setAsk,
-    markAskStatus,
-    latest,
-    sessionIdRef,
-    openSessionRef,
-    setError,
-  });
+  } = add(useAskRepliesSlice(ctx));
   const {
     pendingNotificationResponsesRef,
     notificationDrainRef,
@@ -471,16 +717,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearQueuedNotificationResponse,
     handleNotificationResponse,
     drainPendingNotificationResponse,
-  } = useNotificationResponsesSlice({
-    runtime,
-    askInboxRef,
-    answerInboxApproval,
-    answerInboxValue,
-    openAskEntry,
-    respondToInbox,
-    confirmSensitiveNotification,
-    latest,
-  });
+  } = add(useNotificationResponsesSlice(ctx));
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -594,242 +831,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+  // Second late helper: only useConnectionSlice reads it, and it is called
+  // below. Same one-line publish as hydrateSessionContext.
+  ctx.ensureCookie = ensureCookie;
 
 
-  const { openWs, probeWorkingSessions } = useGatewaySlice({
-    runtime,
-    latest,
-    hydrateSessionContext,
-    releaseLocalTurnRef,
-    askHydrationRef,
-    notificationDrainRef,
-    pendingNotificationResponsesRef,
-    handledNotificationResponsesRef,
-    askInboxRef,
-    askRef,
-    setAskInbox,
-    setAsk,
-    bindAskOwner,
-    resolveAskOwner,
-    applyAskInbox,
-    markAskByRpc,
-    dismissAskNotifications,
-    draftsRef,
-    setInputRaw,
-    setAttachments,
-    queuedRef,
-    setQueued,
-    queueParkedRef,
-    setQueueParked,
-    liveAid,
-    liveThinkAid,
-    liveTools,
-    liveToolAid,
-    liveTurnTools,
-    liveTurnDiffs,
-    streamingRef,
-    setStreamingTexts,
-    turnOwnerRef,
-    parkedLiveRef,
-    lastTurnEventAt,
-    notifyRef,
-    usageRefreshRef,
-    setUsageInfo,
-    setSessionInfo,
-    toolRefreshRef,
-    scheduleToolRefresh,
-    setTodos,
-    setModel,
-    setModelProvider,
-    setConn,
-    setAuthed,
-    setProfiles,
-    setActiveProfile,
-    setError,
-    setToolLine,
-    setSessionId,
-    setSessionKey,
-    setMessages,
-    setSessions,
-    setGenerating,
-    setPassword,
-    setProviders,
-  });
+  const { openWs, probeWorkingSessions } = add(useGatewaySlice(ctx));
 
-  const { connect, login, logout } = useConnectionSlice({
-    runtime,
-    latest,
-    providersRef,
-    acceptRotatedCookie,
-    ensureCookie,
-    openWs,
-    refreshSessions,
-    rememberPw,
-    passwordScopeRef,
-    host,
-    username,
-    password,
-    dismissAskNotifications,
-    setAskInbox,
-    setAsk,
-    askRef,
-    askInboxRef,
-    handledNotificationResponsesRef,
-    pendingNotificationResponsesRef,
-    askHydrationRef,
-    notificationActionInFlightRef,
-    turnOwnerRef,
-    parkedLiveRef,
-    draftsRef,
-    queuedRef,
-    queueParkedRef,
-    liveAid,
-    liveThinkAid,
-    clearStreaming,
-    sessionsFetchRef,
-    sessionsFetchProfileRef,
-    setInputRaw,
-    setPassword,
-    setQueued,
-    setQueueParked,
-    setProviders,
-    setProfiles,
-    setActiveProfile,
-    setBusy,
-    setError,
-    setModel,
-    setModelProvider,
-    setAuthed,
-    setConn,
-    setSessionId,
-    setSessionKey,
-    setMessages,
-    setSessions,
-    setSessionInfo,
-    setUsageInfo,
-    setGenerating,
-    setToolLine,
-    setTodos,
-    setSubagents,
-    setAttachments,
-    setEditingRowId,
-    setInfoOpen,
-  });
+  const { connect, login, logout } = add(useConnectionSlice(ctx));
   connectRef.current = connect;
 
   // ── Sessions ─────────────────────────────────────────────────────────────
 
-  const { openSession, newSession } = useSessionOpsSlice({
-    runtime,
-    latest,
-    acceptRotatedCookie,
-    bindAskOwner,
-    hydrateSessionContext,
-    parkLiveTurn,
-    clearStreaming,
-    reanchorLiveTurn,
-    setAsk,
-    askRef,
-    setOpeningId,
-    setGenerating,
-    setToolLine,
-    setTodos,
-    setSessionKey,
-    setSessionId,
-    setSessionTitle,
-    setInputRaw,
-    draftsRef,
-    draftKeyRef,
-    setAttachments,
-    setSessionInfo,
-    setUsageInfo,
-    setMessages,
-    setSessions,
-    setSubagents,
-    setEditingRowId,
-    setBusy,
-    setError,
-    setQueued,
-    setQueueParked,
-    askInboxRef,
-    queuedRef,
-    queueParkedRef,
-    liveAid,
-    liveThinkAid,
-    liveTools,
-    liveToolAid,
-    liveTurnTools,
-    parkedLiveRef,
-    lastTurnEventAt,
-    model,
-    modelProvider,
-    effort,
-  });
+  const { openSession, newSession } = add(useSessionOpsSlice(ctx));
 
 
-  const { switchProfile, branchSession } = useProfileOpsSlice({
-    runtime,
-    latest,
-    host,
-    username,
-    sessionId,
-    inputRaw,
-    profiles,
-    refreshProfiles,
-    refreshSessions,
-    parkLiveTurn,
-    clearStreaming,
-    hydrateSessionContext,
-    bindAskOwner,
-    draftsRef,
-    draftKeyRef,
-    queuedRef,
-    queueParkedRef,
-    liveAid,
-    liveThinkAid,
-    liveTools,
-    liveToolAid,
-    liveTurnTools,
-    liveTurnDiffs,
-    sessionsLoadingMoreRef,
-    providersRef,
-    providersLoadingRef,
-    providersAtRef,
-    catalogAtRef,
-    sessionsFetchRef,
-    sessionsFetchProfileRef,
-    setError,
-    setBusy,
-    setActiveProfile,
-    setSessionId,
-    setSessionKey,
-    setSessionTitle,
-    setMessages,
-    setGenerating,
-    setToolLine,
-    setQueued,
-    setQueueParked,
-    setAttachments,
-    setTodos,
-    setSubagents,
-    setAsk,
-    setEditingRowId,
-    setInfoOpen,
-    setInputRaw,
-    setSessionInfo,
-    setUsageInfo,
-    setUsageLoading,
-    setOpeningId,
-    setSessions,
-    setSessionsLimit,
-    setSessionsHasMore,
-    setSessionsLoadingMore,
-    setProviders,
-    setProvidersLoading,
-    setProvidersError,
-    setModel,
-    setModelProvider,
-  });
+  const { switchProfile, branchSession } = add(useProfileOpsSlice(ctx));
 
   // ── Chat ─────────────────────────────────────────────────────────────────
   // Scrolling lives in the chat screen (it owns the FlatList ref); send()
@@ -849,38 +866,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     send,
     releaseLocalTurn,
     stop,
-  } = useTurnSlice({
-    runtime,
-    latest,
-    queueParkedRef,
-    activeProfile,
-    sessionId,
-    sessionKey,
-    generating,
-    input,
-    attachments,
-    setMessages,
-    setSubagents,
-    setGenerating,
-    setToolLine,
-    setSessionId,
-    setEditingRowId,
-    setInput,
-    setQueueParked,
-    setAttachments,
-    enqueueQueued,
-    bindAskOwner,
-    clearStreaming,
-    liveAid,
-    liveThinkAid,
-    liveTools,
-    liveToolAid,
-    liveTurnTools,
-    liveTurnDiffs,
-    turnOwnerRef,
-    parkedLiveRef,
-    lastTurnEventAt,
-  });
+  } = add(useTurnSlice(ctx));
 
   // Watchdog: a missed turn-end (dropped complete, truncated replay, an error
   // notice instead of complete) must never strand the Stop button forever.
@@ -930,45 +916,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Session management / steering / model defaults ─────────────────────
 
-  const { renameSession, deleteSessionById, redirectLive, setGlobalModel } = useSessionMiscSlice({
-    runtime,
-    latest,
-    activeProfile,
-    sessionId,
-    sessionKey,
-    host,
-    username,
-    acceptRotatedCookie,
-    bindAskOwner,
-    clearStreaming,
-    askInboxRef,
-    setAskInbox,
-    turnOwnerRef,
-    parkedLiveRef,
-    liveAid,
-    liveThinkAid,
-    draftsRef,
-    setInputRaw,
-    queuedRef,
-    setQueued,
-    setQueueParked,
-    setModel,
-    setModelProvider,
-    setSessionKey,
-    setSessionId,
-    setSessionTitle,
-    setMessages,
-    setSessions,
-    setSessionInfo,
-    setUsageInfo,
-    setTodos,
-    setSubagents,
-    setAsk,
-    setToolLine,
-    setGenerating,
-    setEditingRowId,
-    setError,
-  });
+  const { renameSession, deleteSessionById, redirectLive, setGlobalModel } = add(useSessionMiscSlice(ctx));
 
   const getGw = useCallback(() => gw.current, []);
   const diagnostics = useCallback(
@@ -1051,7 +999,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionKey,
       sessionTitle,
       messages,
-      streamingTexts,
+      historyLoadingMore,
+      historyExhausted,
+      trimmedOlder,
+      loadOlderMessages,
+      trimHead,
+      searchTranscript,
+      findHitIndex,
       input,
       setInput,
       model,
@@ -1117,9 +1071,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       answerApproval,
       answerAsk,
       dismissAsk,
-      theme,
-      themeMode,
-      setTheme,
       renameSession,
       deleteSessionById,
       redirectLive,
@@ -1131,13 +1082,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getCookie,
       getAuthScope,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       booting,
       authed,
       busy,
       error,
       host,
+      setPassword,
       username,
       password,
       conn,
@@ -1151,7 +1102,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionKey,
       sessionTitle,
       messages,
-      streamingTexts,
+      historyLoadingMore,
+      historyExhausted,
+      trimmedOlder,
+      loadOlderMessages,
+      trimHead,
+      searchTranscript,
+      findHitIndex,
       input,
       setInput,
       model,
@@ -1214,9 +1171,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       answerApproval,
       answerAsk,
       dismissAsk,
-      theme,
-      themeMode,
-      setTheme,
       renameSession,
       deleteSessionById,
       redirectLive,
@@ -1230,5 +1184,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      <ThemeContext.Provider value={themeSlice}>
+        <StreamingContext.Provider value={streamingTexts}>{children}</StreamingContext.Provider>
+      </ThemeContext.Provider>
+    </AppContext.Provider>
+  );
 }

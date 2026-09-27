@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   ScrollView,
@@ -19,6 +18,8 @@ import {
 } from 'react-native';
 import {
   ArrowDown,
+  ChevronDown,
+  ChevronUp,
   Download,
   RefreshCw,
   RotateCw,
@@ -26,9 +27,14 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react-native';
-import { useApp } from '../../hooks/app-store';
+import { useApp, useThemeValue } from '../../hooks/app-store';
+import { asRecord } from '../../utils/ops';
 import { errMsg } from '../../utils/messages';
-import { Tap } from './bits';
+import { Button } from './button';
+import { Badge } from './badge';
+import { Alert as UIAlert, AlertDescription } from './alert';
+import { Text as UIText } from './text';
+import { ConfirmDialog } from './dialog';
 import * as api from '../../services/api';
 import {
   actionOutcomeLabel,
@@ -70,15 +76,33 @@ const CHIP_TEXT: Record<UpdateTone, string> = {
 };
 
 function Chip({ tone, label }: { tone: UpdateTone; label: string }) {
+  const variant = tone === 'danger' ? 'destructive' : tone === 'muted' ? 'secondary' : 'outline';
   return (
-    <View className={`rounded-full border px-2 py-0.5 ${CHIP[tone]}`}>
-      <Text className={`text-[11px] font-semibold ${CHIP_TEXT[tone]}`}>{label}</Text>
-    </View>
+    <Badge variant={variant} className={CHIP[tone]}>
+      <UIText className={`text-[11px] font-semibold ${CHIP_TEXT[tone]}`}>{label}</UIText>
+    </Badge>
   );
+}
+
+function formatCommitDate(at: number): string {
+  if (!at) return '';
+  try {
+    // `at` may be seconds or milliseconds — normalize to ms.
+    const ms = at > 1e12 ? at : at * 1000;
+    return new Date(ms).toLocaleDateString([], {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '';
+  }
 }
 
 export function UpdatePanel() {
   const { conn, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { theme } = useThemeValue();
+  const dark = theme === 'dark';
 
   const [info, setInfo] = useState<UpdateCheck | null>(null);
   const [checking, setChecking] = useState(false);
@@ -88,11 +112,21 @@ export function UpdatePanel() {
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [exitCode, setExitCode] = useState<number | null>(null);
+// Themed replacement for the old Alert.alert confirms.
+const [confirm, setConfirm] = useState<{
+  title: string;
+  body: string;
+  confirmLabel: string;
+  run: () => void;
+} | null>(null);
   const [receipt, setReceipt] = useState<UpdateReceiptSummary | null>(null);
   const [note, setNote] = useState('');
   // While true, new log lines keep the view pinned to the bottom. The user
   // scrolling up turns it off so reading earlier output isn't yanked away.
   const [atBottom, setAtBottom] = useState(true);
+  // Commit list expander — collapsed shows the first 5 one-liners, expanded
+  // shows every commit with full summary + author/date.
+  const [commitsOpen, setCommitsOpen] = useState(false);
 
   const aliveRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -157,7 +191,7 @@ export function UpdatePanel() {
         opsGet(api.updateReceipt())
           .then((r) => {
             if (!aliveRef.current || getAuthScope() !== scope) return;
-            const summary = normalizeReceiptSummary((r as any)?.summary);
+            const summary = normalizeReceiptSummary(asRecord(r).summary);
             if (summary) setReceipt(summary);
           })
           .catch(() => {});
@@ -252,15 +286,12 @@ export function UpdatePanel() {
     setStarting(true);
     setError('');
     try {
-      const res = await opsMut(api.updateApply(), 'POST', {});
+      const res = asRecord(await opsMut(api.updateApply(), 'POST', {}));
       if (res && res.ok === false) {
-        Alert.alert(
-          'Update not applied',
-          String(res.message || 'Updates are managed outside this dashboard.'),
-        );
+        setError(String(res.message || 'Updates are managed outside this dashboard.'));
         return;
       }
-      beginStream(typeof res?.name === 'string' && res.name ? res.name : UPDATE_ACTION);
+      beginStream(typeof res.name === 'string' && res.name ? res.name : UPDATE_ACTION);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -275,26 +306,30 @@ export function UpdatePanel() {
       behind && behind > 0
         ? `This runs \`${cmd}\` and pulls ${behind} new commit${behind === 1 ? '' : 's'}. The gateway restarts when the update finishes.`
         : `This runs \`${cmd}\` and restarts the gateway when it finishes.`;
-    Alert.alert('Update Hermes?', body, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Update now', style: 'destructive', onPress: () => void runUpdate() },
-    ]);
+    setConfirm({
+      title: 'Update Hermes?',
+      body,
+      confirmLabel: 'Update now',
+      run: () => void runUpdate(),
+    });
   }, [info, runUpdate]);
 
   const runRestart = useCallback(async () => {
     try {
-      const res = await opsMut(api.gatewayRestart(), 'POST', {});
-      beginStream(typeof res?.name === 'string' && res.name ? res.name : 'gateway-restart');
+      const res = asRecord(await opsMut(api.gatewayRestart(), 'POST', {}));
+      beginStream(typeof res.name === 'string' && res.name ? res.name : 'gateway-restart');
     } catch (e) {
       setError(errMsg(e));
     }
   }, [beginStream, opsMut]);
 
   const restartGateway = useCallback(() => {
-    Alert.alert('Restart gateway?', 'The gateway restarts and reconnects in a few seconds.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Restart', style: 'destructive', onPress: () => void runRestart() },
-    ]);
+    setConfirm({
+      title: 'Restart gateway?',
+      body: 'The gateway restarts and reconnects in a few seconds.',
+      confirmLabel: 'Restart',
+      run: () => void runRestart(),
+    });
   }, [runRestart]);
 
   const busy = checking || starting;
@@ -319,35 +354,66 @@ export function UpdatePanel() {
       </View>
 
       {!!error && (
-        <Text className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</Text>
+        <UIAlert icon={TriangleAlert} variant="destructive" className="mt-2">
+          <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
+        </UIAlert>
       )}
 
       {info && info.updateAvailable && info.commits.length > 0 && (
-        <View className="mt-3 gap-1.5">
-          {info.commits.slice(0, 5).map((c, i) => (
-            <View key={`${c.sha}-${i}`} className="flex-row items-center gap-2">
-              <Text className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
-                {c.sha || '·'}
-              </Text>
-              <Text
-                numberOfLines={1}
-                className="flex-1 text-[11px] text-neutral-600 dark:text-neutral-300"
-              >
-                {c.summary || '(no summary)'}
-              </Text>
-            </View>
-          ))}
+        <View className="mt-3">
+          <Button
+            accessibilityRole="button"
+            accessibilityLabel={commitsOpen ? 'Collapse commits' : 'Expand commits'}
+            onPress={() => setCommitsOpen((v) => !v)}
+            variant="ghost"
+            className="flex-row items-center gap-1.5 self-start px-0 py-1"
+          >
+            <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+              {info.commits.length} commit{info.commits.length === 1 ? '' : 's'} behind
+            </UIText>
+            {commitsOpen ? (
+              <ChevronUp size={14} color="#888" />
+            ) : (
+              <ChevronDown size={14} color="#888" />
+            )}
+          </Button>
+          <View className="gap-1.5">
+            {(commitsOpen ? info.commits : info.commits.slice(0, 5)).map((c, i) => (
+              <View key={`${c.sha}-${i}`} className="flex-row items-start gap-2">
+                <Text className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
+                  {(c.sha || '·').slice(0, 7)}
+                </Text>
+                <View className="min-w-0 flex-1">
+                  <Text
+                    numberOfLines={commitsOpen ? undefined : 1}
+                    className="text-[11px] text-neutral-600 dark:text-neutral-300"
+                  >
+                    {c.summary || '(no summary)'}
+                  </Text>
+                  {commitsOpen && (!!c.author || !!c.at) && (
+                    <Text className="mt-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+                      {[c.author, formatCommitDate(c.at)].filter(Boolean).join(' · ')}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
       )}
 
       {info && !info.canApply && info.message && (
-        <View className="mt-3 flex-row items-start gap-2 rounded-xl border border-amber-300/70 bg-amber-50/70 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <TriangleAlert size={14} color="#d97706" style={{ marginTop: 1 }} />
-          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300">
+        <UIAlert
+          icon={TriangleAlert}
+          variant="default"
+          iconClassName="text-amber-600"
+          className="mt-3 border-amber-300/70 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30"
+        >
+          <AlertDescription className="text-[11px] text-amber-800 dark:text-amber-300">
             {info.message}
             {info.updateCommand ? `\n${info.updateCommand}` : ''}
-          </Text>
-        </View>
+          </AlertDescription>
+        </UIAlert>
       )}
 
       {receiptLabel ? (
@@ -361,62 +427,58 @@ export function UpdatePanel() {
         </View>
       ) : null}
 
-      <View className="mt-3 flex-row flex-wrap items-center gap-2">
-        <Tap
-          accessibilityRole="button"
-          accessibilityLabel="Check for updates"
-          disabled={busy || !ready}
-          onPress={() => void refresh(true)}
-          radius={10}
-          className={`flex-row items-center gap-1.5 rounded-xl border border-neutral-300 px-3 py-2 dark:border-neutral-700 ${
-            busy || !ready ? 'opacity-50' : ''
-          }`}
-        >
-          {checking ? (
-            <ActivityIndicator size="small" />
-          ) : (
-            <RefreshCw size={14} color="#1a73e8" />
-          )}
-          <Text className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-100">
-            Check for updates
-          </Text>
-        </Tap>
-
-        {canApply && (
-          <Tap
+      <View className="mt-3 gap-2">
+        <View className="flex-row items-stretch gap-2">
+          <Button
             accessibilityRole="button"
-            accessibilityLabel="Update Hermes now"
-            disabled={starting || running}
-            onPress={applyUpdate}
-            radius={10}
-            className={`flex-row items-center gap-1.5 rounded-xl bg-[#1a73e8] px-3 py-2 ${
-              starting || running ? 'opacity-50' : ''
-            }`}
+            accessibilityLabel="Check for updates"
+            disabled={busy || !ready}
+            onPress={() => void refresh(true)}
+            variant="outline"
+            className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2"
           >
-            {starting ? (
-              <ActivityIndicator size="small" color="#fff" />
+            {checking ? (
+              <ActivityIndicator size="small" />
             ) : (
-              <Download size={14} color="#fff" />
+              <RefreshCw size={14} color="#1a73e8" />
             )}
-            <Text className="text-[13px] font-semibold text-white">Update now</Text>
-          </Tap>
-        )}
+            <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
+              Check for updates
+            </UIText>
+          </Button>
 
-        <Tap
+          {canApply && (
+            <Button
+              accessibilityRole="button"
+              accessibilityLabel="Update Hermes now"
+              disabled={starting || running}
+              onPress={applyUpdate}
+              variant="default"
+              className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2"
+            >
+              {starting ? (
+                <ActivityIndicator size="small" color={dark ? '#111' : '#fff'} />
+              ) : (
+                <Download size={14} color={dark ? '#111' : '#fff'} />
+              )}
+              <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">Update now</UIText>
+            </Button>
+          )}
+        </View>
+
+        <Button
           accessibilityRole="button"
           accessibilityLabel="Restart gateway"
           disabled={!ready || running}
           onPress={restartGateway}
-          radius={10}
-          className={`flex-row items-center gap-1.5 rounded-xl border border-neutral-300 px-3 py-2 dark:border-neutral-700 ${
-            !ready || running ? 'opacity-50' : ''
-          }`}
+          variant="outline"
+          className="gap-1.5 self-stretch rounded-xl px-3 py-2"
         >
           <RotateCw size={14} color="#666" />
-          <Text className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-100">
+          <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
             Restart gateway
-          </Text>
-        </Tap>
+          </UIText>
+        </Button>
       </View>
 
       {activeAction && (
@@ -432,7 +494,7 @@ export function UpdatePanel() {
               </Text>
               <Chip tone={actionOutcomeTone(running, exitCode)} label={actionOutcomeLabel(running, exitCode)} />
             </View>
-            <Tap
+            <Button
               accessibilityRole="button"
               accessibilityLabel="Close update log"
               onPress={() => {
@@ -440,11 +502,12 @@ export function UpdatePanel() {
                 setActiveAction(null);
               }}
               hitSlop={8}
-              radius={14}
-              className="p-1.5"
+              variant="ghost"
+              size="icon"
+              className="h-auto w-auto p-1.5"
             >
               <X size={14} color="#9aa0a6" />
-            </Tap>
+            </Button>
           </View>
           <ScrollView
             ref={logRef}
@@ -463,19 +526,32 @@ export function UpdatePanel() {
             </Text>
           </ScrollView>
           {!atBottom && (
-            <Tap
+            <Button
               accessibilityRole="button"
               accessibilityLabel="Jump to latest log line"
               onPress={jumpToLatest}
               hitSlop={8}
-              radius={16}
-              className="absolute bottom-2.5 right-2.5 h-8 w-8 items-center justify-center rounded-full bg-[#1a73e8]"
+              variant="default"
+              size="icon"
+              className="absolute bottom-2.5 right-2.5 h-8 w-8 rounded-full"
             >
               <ArrowDown size={15} color="#fff" />
-            </Tap>
+            </Button>
           )}
         </View>
       )}
+
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title ?? ''}
+        description={confirm?.body}
+        confirmLabel={confirm?.confirmLabel}
+        destructive
+        onConfirm={() => confirm?.run()}
+        onOpenChange={(o) => {
+          if (!o) setConfirm(null);
+        }}
+      />
     </View>
   );
 }
