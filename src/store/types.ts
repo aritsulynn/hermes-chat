@@ -87,6 +87,10 @@ export interface AppStore {
   applyEffort: (level: string) => Promise<void>;
   /** Toggle fast mode on the live session. */
   applyFast: (on: boolean) => Promise<void>;
+  /** Reasoning display (live tool + reasoning streaming) — null while unknown. */
+  showReasoning: boolean | null;
+  loadReasoningDisplay: () => Promise<void>;
+  applyShowReasoning: (on: boolean) => Promise<void>;
   providers: ModelProviderOption[] | null;
   providersLoading: boolean;
   providersError: string | null;

@@ -74,6 +74,9 @@ export function ChatScreen() {
     effort,
     applyEffort,
     applyFast,
+    showReasoning,
+    loadReasoningDisplay,
+    applyShowReasoning,
     attachments,
     setAttachments,
     generating,
@@ -197,9 +200,12 @@ export function ChatScreen() {
         setModelQuery('');
         void loadProviders();
       }
+      if (kind === 'effort') {
+        void loadReasoningDisplay();
+      }
       measure((a) => setPopover({ kind, ...a }));
     },
-    [loadProviders],
+    [loadProviders, loadReasoningDisplay],
   );
   // Re-anchor after the keyboard slides in/out and lifts the composer.
   const remeasurePopover = useCallback(() => {
@@ -225,7 +231,8 @@ export function ChatScreen() {
   // the wheel (terminal-only etc. drop out) with no code change.
   useEffect(() => {
     if (sessionId) void loadCommandsCatalog();
-  }, [sessionId, loadCommandsCatalog]);
+    if (sessionId) void loadReasoningDisplay();
+  }, [sessionId, loadCommandsCatalog, loadReasoningDisplay]);
   useEffect(() => {
     const gw = getGw();
     // `/token` (command stage) or `/cmd args…` (argument stage). The argument
@@ -1641,6 +1648,35 @@ export function ChatScreen() {
                   </UIText>
                   {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
                 </Button>
+                {/* Reasoning display — the switch behind live tool + reasoning
+                    streaming (`config.set reasoning show|hide`). `hide` persists
+                    tool calls to history without live events; `show` streams
+                    everything. Shared display setting (desktop included).
+                    Never disabled: with an unknown value a tap turns live
+                    streaming ON (the useful direction — this is the switch that
+                    fixes "bubbles only appear after the turn ends"). */}
+                <Button
+                  variant="ghost"
+                  testID="show-reasoning-toggle"
+                  onPress={() => void applyShowReasoning(showReasoning !== true)}
+                  className="flex-row items-center gap-2 px-2.5 py-2"
+                >
+                  <UIText
+                    className={`min-w-0 flex-1 text-[14px] ${
+                      showReasoning === true
+                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                        : 'text-neutral-900 dark:text-neutral-100'
+                    }`}
+                  >
+                    Show reasoning
+                  </UIText>
+                  {showReasoning === true && <Check size={15} color="#1a73e8" />}
+                </Button>
+                <Text className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
+                  {showReasoning === null
+                    ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
+                    : 'Streams tool calls + reasoning live (shared display setting).'}
+                </Text>
               </>
             )}
 

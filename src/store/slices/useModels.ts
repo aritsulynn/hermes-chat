@@ -32,6 +32,10 @@ export interface ModelsSlice {
   applyEffort: (level: string) => Promise<void>;
   applyFast: (on: boolean) => Promise<void>;
   applyApprovalMode: (mode: 'manual' | 'smart' | 'off') => Promise<void>;
+  /** Reasoning display (live tool + reasoning streaming) — null while unknown. */
+  showReasoning: boolean | null;
+  loadReasoningDisplay: () => Promise<void>;
+  applyShowReasoning: (on: boolean) => Promise<void>;
 }
 
 export function useModelsSlice({
@@ -55,6 +59,14 @@ export function useModelsSlice({
   const [providers, setProviders] = useState<ModelProviderOption[] | null>(null);
   const [providersLoading, setProvidersLoading] = useState(false);
   const [providersError, setProvidersError] = useState<string | null>(null);
+  const [showReasoning, setShowReasoningState] = useState<boolean | null>(null);
+  // Mirror for the optimistic rollback in applyShowReasoning — state read back
+  // from the closure would be stale by the time the RPC settles.
+  const showReasoningRef = useRef<boolean | null>(null);
+  const setShowReasoning = useCallback((v: boolean | null) => {
+    showReasoningRef.current = v;
+    setShowReasoningState(v);
+  }, []);
 
   // ── Model picker inventory ─────────────────────────────────────────────
   // WS model.options first (same payload as REST), cookie REST as fallback.
@@ -226,6 +238,63 @@ export function useModelsSlice({
     [activeProfile, sessionId],
   );
 
+  // Reasoning display (`/reasoning show|hide`): the switch behind live tool
+  // + reasoning streaming. `hide` (answer-only) makes the gateway persist
+  // tool calls to history without emitting live tool.* / reasoning.delta, so
+  // bubbles only materialise after a reload; `show` streams everything live.
+  // NOTE: unlike the effort pick, the server keeps this on the GLOBAL display
+  // config (`_write_display_sections`) and mirrors it onto the live session —
+  // it is a shared preference (desktop included), not a per-chat override.
+  //
+  // The value is room-independent (one global flag), so it does NOT reset per
+  // session; but a failed read must leave it `null` rather than guess — the
+  // toggle then renders as off-but-actionable, and the first tap turns live
+  // streaming ON. `loadReasoningDisplay` is idempotent and re-entrant: a second
+  // call while one is in flight is a no-op, and the next call after it settles
+  // re-reads (so opening the picker twice does not serve a stale value).
+  const reasoningDisplayInFlight = useRef(false);
+  const loadReasoningDisplay = useCallback(async () => {
+    const g = gw.current;
+    const profile = activeProfileRef.current;
+    const epoch = profileEpochRef.current;
+    if (!g || reasoningDisplayInFlight.current) return;
+    reasoningDisplayInFlight.current = true;
+    try {
+      const r = await g.configGet('reasoning', sessionId ?? undefined);
+      if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      if (r && typeof r.display === 'string') setShowReasoning(r.display === 'show');
+    } catch {
+      // Leave unknown (null) — never claim a value the gateway did not report.
+    } finally {
+      reasoningDisplayInFlight.current = false;
+    }
+  }, [sessionId]);
+
+  const applyShowReasoning = useCallback(
+    async (on: boolean) => {
+      const g = gw.current;
+      const sid = sessionId;
+      const profile = activeProfile;
+      const epoch = profileEpochRef.current;
+      if (!g) return;
+      // Optimistic flip: the server round-trip mirrors the flag onto the live
+      // session, and a slow tunnel would otherwise leave the switch looking
+      // unresponsive. Roll back to the previous known value on failure so the
+      // toggle never claims a state the gateway does not have.
+      const previous = showReasoningRef.current;
+      setShowReasoning(on);
+      try {
+        await g.configSet('reasoning', on ? 'show' : 'hide', sid ?? undefined);
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+      } catch (e: any) {
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        setShowReasoning(previous);
+        setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `reasoning display: ${errMsg(e)}` }]);
+      }
+    },
+    [activeProfile, sessionId],
+  );
+
   return {
     model,
     modelProvider,
@@ -233,6 +302,7 @@ export function useModelsSlice({
     providers,
     providersLoading,
     providersError,
+    showReasoning,
     setModel,
     setModelProvider,
     setEffort,
@@ -243,9 +313,11 @@ export function useModelsSlice({
     providersLoadingRef,
     providersAtRef,
     loadProviders,
+    loadReasoningDisplay,
     pickModel,
     applyEffort,
     applyFast,
     applyApprovalMode,
+    applyShowReasoning,
   };
 }
