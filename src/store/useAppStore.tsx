@@ -54,6 +54,7 @@ import { useQueueSlice } from './slices/useQueue';
 import { useModelsSlice } from './slices/useModels';
 import { useSessionInfoSlice } from './slices/useSessionInfo';
 import { useLiveRosterSlice } from './slices/useLiveRoster';
+import { useLiveSessionsSlice } from './slices/useLiveSessions';
 import { useComposerSlice } from './slices/useComposer';
 import { useSessionsSlice } from './slices/useSessions';
 import { useAskInboxSlice } from './slices/useAskInbox';
@@ -325,6 +326,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const { themeMode, theme, setTheme, hydrateTheme } = themeSlice;
   const { todos, setTodos, subagents, setSubagents } = add(useLiveRosterSlice(ctx));
+  const { liveSessions, liveSessionsKnown, refreshLiveSessions } = add(useLiveSessionsSlice(ctx));
   const { catalogAtRef, loadCommandsCatalog } = add(useCommandsSlice(ctx));
   const {
     sessions,
@@ -1064,6 +1066,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setNotifications,
       todos,
       subagents,
+      liveSessions,
+      liveSessionsKnown,
+      refreshLiveSessions,
       refreshToolResults,
       pickModel,
       copyText,
@@ -1164,6 +1169,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setNotifications,
       todos,
       subagents,
+      liveSessions,
+      liveSessionsKnown,
+      refreshLiveSessions,
       refreshToolResults,
       pickModel,
       copyText,

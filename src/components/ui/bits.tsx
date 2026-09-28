@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Keyboard, View } from 'react-native';
+import { Animated, Keyboard, Platform, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { AlertCircle, Menu as MenuIcon } from 'lucide-react-native';
+import { AlertCircle, LoaderCircle, Menu as MenuIcon } from 'lucide-react-native';
 import { useNavigation } from 'expo-router';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { placeholderColor } from '../../theme';
@@ -266,6 +266,42 @@ export function Field({
         </Button>
       </View>
     </View>
+  );
+}
+
+/**
+ * A small rotating ring for "this is running right now".
+ *
+ * Deliberately an icon rather than ActivityIndicator: a spinner next to a title
+ * has to sit on the text baseline without nudging the row's height, and the
+ * user reads it as a state of that chat, not as a screen-wide loading state.
+ * Stops on unmount so a row that scrolls out of the windowed list doesn't leave
+ * an animation running.
+ */
+export function Spinner({ size = 14, color }: { size?: number; color: string }) {
+  const spin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 900,
+        // Rotation is a transform, so the native driver can carry it off-thread.
+        // react-native-web has no native driver for transforms and warns on
+        // true, so it animates on the JS thread there instead.
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [spin]);
+  return (
+    <Animated.View
+      style={{
+        transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
+      }}
+    >
+      <LoaderCircle size={size} color={color} />
+    </Animated.View>
   );
 }
 

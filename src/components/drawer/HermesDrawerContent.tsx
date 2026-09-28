@@ -22,6 +22,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { ConfirmDialog } from '../ui/dialog';
+import { Spinner } from '../ui/bits';
 import { Text as UIText } from '../ui/text';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Badge } from '../ui/badge';
@@ -29,6 +30,8 @@ import { Separator } from '../ui/separator';
 import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
 import { brandColor, placeholderColor, screenBg } from '../../theme';
 import { formatRelative, formatSessionSource } from '../../utils/format';
+import { profileSessionKey } from '../../store/helpers';
+import type { LiveStatus } from '../../store/live-sessions';
 import type { ScopedSessionSummary } from '../../store/types';
 
 // Memoized recents row: the session list is already windowed to 50 rendered
@@ -40,14 +43,32 @@ import type { ScopedSessionSummary } from '../../store/types';
 // never rendered, which made every row look identical. The preview answers
 // "which one of these five same-titled chats was that?"; the stamp answers
 // "is the one I want recent?".
+// `session.active_list` reports one status per live session; these two decide how
+// a row says so. `waiting` is a turn blocked on the user, so it is the one that
+// gets the warmer colour — a spinner alone would read as "busy, fine".
+function liveHint(status: LiveStatus): string {
+  if (status === 'waiting') return 'Waiting for your answer';
+  if (status === 'starting') return 'Starting';
+  return 'Working';
+}
+
+function liveColor(status: LiveStatus, dark: boolean): string {
+  if (status === 'waiting') return dark ? '#f0b429' : '#b45309';
+  return dark ? '#7aa7ff' : '#1a73e8';
+}
+
 const SessionRow = memo(function SessionRow({
   session,
   active,
+  live,
+  dark,
   onOpen,
   onDelete,
 }: {
   session: ScopedSessionSummary;
   active: boolean;
+  live: LiveStatus | undefined;
+  dark: boolean;
   onOpen: (s: ScopedSessionSummary) => void;
   onDelete: (s: ScopedSessionSummary) => void;
 }) {
@@ -64,10 +85,18 @@ const SessionRow = memo(function SessionRow({
       onPress={() => onOpen(session)}
       onLongPress={() => onDelete(session)}
       delayLongPress={400}
-      className={`flex-row h-auto items-start justify-start px-3 py-2.5 ${
+      className={`flex-row h-auto items-start justify-start gap-2 px-3 py-2.5 ${
         active ? 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]' : ''
       }`}
+      // A turn running in this session is the one thing worth reading off the
+      // list at a glance, so it is announced rather than only drawn.
+      accessibilityHint={live ? liveHint(live) : undefined}
     >
+      {live ? (
+        <View className="pt-[3px]">
+          <Spinner size={13} color={liveColor(live, dark)} />
+        </View>
+      ) : null}
       <View className="flex-1 min-w-0">
         <UIText
           numberOfLines={1}
@@ -78,6 +107,16 @@ const SessionRow = memo(function SessionRow({
         >
           {session.title || '(untitled)'}
         </UIText>
+        {live === 'waiting' ? (
+          <UIText
+            numberOfLines={1}
+            className={`mt-0.5 text-[11px] font-medium ${
+              dark ? 'text-amber-300' : 'text-amber-700'
+            }`}
+          >
+            Waiting for your answer
+          </UIText>
+        ) : null}
         {(preview || when || tag) && (
           <View className="mt-0.5 flex-row items-center gap-2">
             {when ? (
@@ -119,6 +158,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
   const {
     authed, username, host, busy, activeProfile, profiles, refreshProfiles, switchProfile, sessionId, sessionKey, openingId, sessions, messages, pendingAskCount,
     newSession, openSession, refreshSessions, loadMoreSessions, sessionsHasMore, sessionsLoadingMore, deleteSessionById,
+    liveSessions, liveSessionsKnown, refreshLiveSessions,
   } = useApp();
   const { theme } = useThemeValue();
   // Hooks FIRST — no early return above this line (authed flips at
@@ -142,6 +182,9 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
     if (drawerOpen) {
       void refreshProfiles();
       void refreshSessions();
+      // Live statuses are polled by the store; opening the drawer is the moment
+      // they become visible, so re-read rather than show whatever was last known.
+      void refreshLiveSessions();
       if (MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`)) {
         setShowMoreMenu(true);
       }
@@ -149,7 +192,7 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
       setShowUserMenu(false);
       setUserMenuKey((k) => k + 1);
     }
-  }, [drawerOpen, pathname, refreshProfiles, refreshSessions]);
+  }, [drawerOpen, pathname, refreshProfiles, refreshSessions, refreshLiveSessions]);
   // Inline filter replaces the removed /sessions page (drawer is the list now).
   // Memoized so every streamed token doesn't refilter + rebuild rows.
   // MUST stay above the `!authed` early return — hooks can't run after one.
@@ -516,11 +559,21 @@ export function HermesDrawerContent(props: DrawerContentComponentProps) {
           {visible.map((s) => {
             const active =
               onChat && (s.profile ?? activeProfile) === activeProfile && (s.id === activeId || s.id === openingId);
+            // Keyed exactly like the row above, so a live status attaches to the
+            // same row the runtime→stored bridge wrote it for.
+            // The map is scoped by profile+stored id, matching profileSessionKey.
+            // An empty map means the gateway has no `session.active_list`, so
+            // every row stays bare rather than claiming to know a status.
+            const live = liveSessionsKnown
+              ? liveSessions[profileSessionKey(s.profile ?? activeProfile, s.id)]
+              : undefined;
             return (
               <SessionRow
                 key={`${s.profile ?? activeProfile}:${s.id}`}
                 session={s}
                 active={active}
+                live={live}
+                dark={dark}
                 onOpen={handleOpenRecent}
                 onDelete={handleDeleteRecent}
               />

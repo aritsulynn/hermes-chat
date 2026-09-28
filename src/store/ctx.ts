@@ -31,6 +31,7 @@ import type { ComposerSlice } from './slices/useComposer';
 import type { ConnectionSlice } from './slices/useConnection';
 import type { GatewaySlice } from './slices/useGateway';
 import type { LiveRosterSlice } from './slices/useLiveRoster';
+import type { LiveSessionsSlice } from './slices/useLiveSessions';
 import type { LiveTurnSlice } from './slices/useLiveTurn';
 import type { ModelsSlice } from './slices/useModels';
 import type { NotificationResponsesSlice } from './slices/useNotificationResponses';
@@ -65,6 +66,7 @@ export interface StoreCtx
     ConnectionSlice,
     GatewaySlice,
     LiveRosterSlice,
+    LiveSessionsSlice,
     LiveTurnSlice,
     ModelsSlice,
     NotificationResponsesSlice,

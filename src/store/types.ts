@@ -5,6 +5,7 @@ import type { AskInboxEntry } from '../services/ask-inbox';
 import type { ResolvedTheme, Theme } from '../services/connection';
 import type { ModelProviderOption } from '../services/dashboard';
 import type { ConnState, GatewayWs, ServerAsk, SessionSummary } from '../services/gateway-ws';
+import type { LiveSessionMap } from './live-sessions';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
 
 export interface AgentProfile {
@@ -154,6 +155,12 @@ export interface AppStore {
   todos: TodoItem[];
   /** Live child agents (polled from `subagent.list` while a turn runs). */
   subagents: SubagentRow[];
+  /** Stored sessions the gateway is working in right now, keyed by
+   *  profile+stored id (polled from `session.active_list` while foregrounded). */
+  liveSessions: LiveSessionMap;
+  /** False until the first `session.active_list` poll succeeds. */
+  liveSessionsKnown: boolean;
+  refreshLiveSessions: () => Promise<void>;
   /** Re-fetch tool results from the REST transcript (fills expanded tool bubbles). */
   refreshToolResults: () => void;
   pickModel: (providerSlug: string, modelId: string) => Promise<void>;
