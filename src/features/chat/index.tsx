@@ -1735,8 +1735,7 @@ export function ChatScreen() {
                                 className={`flex-row items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
                                   on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                                 }`}
-                              >
-                                <Button
+                              >                                <Button
                                   variant="ghost"
                                   accessibilityRole="radio"
                                   accessibilityState={{ selected: on }}
@@ -1745,15 +1744,21 @@ export function ChatScreen() {
                                     void pickModel(p.slug, mm);
                                     closePopover();
                                   }}
-                                  className="flex-1"
+                                  // The button base centres its content, which
+                                  // reads as a floating label in a full-width row.
+                                  // Left-align here and let the label take the
+                                  // slack so a long model id ellipsizes against
+                                  // the Global button instead of pushing it out.
+                                  className="h-auto min-w-0 flex-1 justify-start"
                                 >
                                   <UIText
-                                    className={`text-[14px] ${
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                    className={`min-w-0 flex-1 text-left text-[14px] ${
                                       on
                                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                                         : 'text-neutral-950 dark:text-neutral-100'
                                     }`}
-                                    numberOfLines={1}
                                   >
                                     {on ? '● ' : '○ '}
                                     {mm}
@@ -1761,11 +1766,12 @@ export function ChatScreen() {
                                 </Button>
                                 <Button
                                   variant="outline"
+                                  accessibilityLabel={`Set ${mm} as the global default`}
                                   onPress={() => {
                                     void setGlobalModel(p.slug, mm);
                                     closePopover();
                                   }}
-                                  className="px-2 py-1"
+                                  className="h-auto shrink-0 px-2 py-1"
                                   hitSlop={8}
                                 >
                                   <UIText className="text-[13px]">Global</UIText>
