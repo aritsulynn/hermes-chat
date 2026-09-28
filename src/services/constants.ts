@@ -72,6 +72,8 @@ export const WS_REPLAY_HOLD_MAX = 500;
 export const WS_SEQ_MAP_MAX = 200;
 /** Recent close frames kept for the connect-error diagnostics. */
 export const WS_CLOSE_LOG_MAX = 5;
+/** Distinct event types kept in the WS diagnostics snapshot. */
+export const WS_DEBUG_EVENT_MAX = 50;
 
 /** Close codes that mean "re-minting a ticket will not help". */
 export const WS_AUTH_CLOSE_CODES = [4401, 4403, 4408] as const;

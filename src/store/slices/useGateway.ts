@@ -3,7 +3,7 @@
 // Extracted from store/useAppStore.tsx.
 import { useCallback } from 'react';
 import { router } from 'expo-router';
-import { GatewayWs } from '../../services/gateway-ws';
+import { GatewayWs, isCurrentSessionEvent } from '../../services/gateway-ws';
 import { clearSessionMessagesCache, mintWsTicket, toWsUrl } from '../../services/dashboard';
 import { connectionScope, forgetAll, saveCookie, saveModel } from '../../services/connection';
 import { clearMediaCaches } from '../../services/media-cache';
@@ -274,11 +274,13 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
       };
       const ticket = await mintWsTicket(h, cookie.current, updateCookie);
       if (!isConnectionCurrent()) throw new Error('Connection superseded');
-      // Events carry the runtime session id. Only the active profile's foreground
-      // runtime may touch the transcript. During a profile switch there is
-      // intentionally no current runtime until session.create resolves, so every
-      // session-scoped event is ignored during that gap.
-      const isCurrentSession = (sid: string) => !sid || (!!sessionIdRef.current && sid === sessionIdRef.current);
+      // Events carry a session id from one of the gateway's two id spaces
+      // (live runtime or stored — see isCurrentSessionEvent). Only the active
+      // profile's foreground room may touch the transcript. During a profile
+      // switch there is intentionally no current runtime until session.create
+      // resolves, so every session-scoped event is ignored during that gap.
+      const isCurrentSession = (sid: string) =>
+        isCurrentSessionEvent(sid, sessionIdRef.current, latest.current.sessionKey);
       let ws: GatewayWs;
       ws = new GatewayWs({
         wsUrl: toWsUrl(h, ticket),
@@ -654,7 +656,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
           onReplayTruncated: (sid) => {
             if (connectionEpochRef.current !== connectionEpoch) return;
             // Only the session on screen shares our transcript state.
-            if (sid === sessionIdRef.current) resyncRef.current();
+            if (isCurrentSession(sid)) resyncRef.current();
           },
           onAsk: (a) => {
             if (connectionEpochRef.current !== connectionEpoch) return;

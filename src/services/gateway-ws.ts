@@ -23,6 +23,7 @@ import {
   WS_AUTH_CLOSE_CODES,
   WS_CLOSE_LOG_MAX,
   WS_CONNECT_TIMEOUT_MS,
+  WS_DEBUG_EVENT_MAX,
   WS_HEARTBEAT_MS,
   WS_INITIAL_BACKOFF_MS,
   WS_MAX_BACKOFF_MS,
@@ -227,6 +228,30 @@ export interface WsDebug {
   errors: number;
   closes: Array<{ code?: number; reason?: string }>;
   lastEvent: string | null;
+  /** Session id the last dispatched event was tagged with ("" = connection-scoped). */
+  lastSid: string | null;
+  /** Per-type event counts since connect (bounded — see WS_DEBUG_EVENT_MAX). */
+  eventCounts: Record<string, number>;
+}
+
+/**
+ * Session filter for live WS events. The gateway keeps two id spaces — the
+ * live runtime id (session.resume) and the stored id (session.list) — and
+ * either may tag an event for the open room, depending on the gateway
+ * version. Accept both, but only for the room on screen: any other id is a
+ * different session's traffic and must not touch this transcript.
+ * An empty sid is connection-scoped (gateway.ready style) — fail open.
+ * With no current runtime (profile-switch gap) fail closed on everything.
+ */
+export function isCurrentSessionEvent(
+  eventSid: string,
+  runtimeId: string | null,
+  storedKey: string | null,
+): boolean {
+  if (!eventSid) return true;
+  if (!runtimeId) return false;
+  if (eventSid === runtimeId) return true;
+  return !!storedKey && eventSid === storedKey;
 }
 
 let nextId = 1;
@@ -264,7 +289,7 @@ export class GatewayWs {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectScheduled = false;
   private readyResolve: ((v: boolean) => void) | null = null;
-  private dbg: WsDebug = { opens: 0, errors: 0, closes: [], lastEvent: null };
+  private dbg: WsDebug = { opens: 0, errors: 0, closes: [], lastEvent: null, lastSid: null, eventCounts: {} };
   // Reconnect replay: highest seq seen per session, the backend's process epoch,
   // and the live-frame hold used while a replay fetch is in flight.
   private lastSeq = new Map<string, number>();
@@ -290,6 +315,8 @@ export class GatewayWs {
       errors: this.dbg.errors,
       closes: [...this.dbg.closes],
       lastEvent: this.dbg.lastEvent,
+      lastSid: this.dbg.lastSid,
+      eventCounts: { ...this.dbg.eventCounts },
     };
   }
 
@@ -1211,6 +1238,14 @@ export class GatewayWs {
 
   private dispatch(type: string, sid: string, body: Record<string, unknown>) {
     this.dbg.lastEvent = type;
+    this.dbg.lastSid = sid || null;
+    // Bounded: the type vocabulary is small and fixed, but a hostile server
+    // could mint unbounded distinct types — don't let it grow the snapshot.
+    if (this.dbg.eventCounts[type] !== undefined) {
+      this.dbg.eventCounts[type] += 1;
+    } else if (Object.keys(this.dbg.eventCounts).length < WS_DEBUG_EVENT_MAX) {
+      this.dbg.eventCounts[type] = 1;
+    }
     const strOf = (v: unknown) => (typeof v === 'string' ? v : '');
     const strOrUndef = (v: unknown) => (typeof v === 'string' ? v : undefined);
     switch (type) {

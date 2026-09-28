@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { GatewayWs } from './gateway-ws.ts';
+import { GatewayWs, isCurrentSessionEvent } from './gateway-ws.ts';
 
 test('routes session.usage events to the focused session callback', () => {
   let received = null;
@@ -167,4 +167,30 @@ test('fails unsupported server asks instead of showing a generic secret form', (
     id: 'srq-unknown',
     error: { code: -32601, message: 'unsupported server request: vault.save_login' },
   }]);
+});
+
+test('isCurrentSessionEvent accepts the runtime id or the stored id of the open room', () => {
+  // Live runtime id (session.resume) — the normal case.
+  assert.equal(isCurrentSessionEvent('live-1', 'live-1', 'stored-9'), true);
+  // Stored id (session.list / sessionKey) — some gateways tag events with it.
+  assert.equal(isCurrentSessionEvent('stored-9', 'live-1', 'stored-9'), true);
+  // Another room's ids must never leak into the open chat.
+  assert.equal(isCurrentSessionEvent('live-2', 'live-1', 'stored-9'), false);
+  assert.equal(isCurrentSessionEvent('stored-8', 'live-1', 'stored-9'), false);
+  // Empty sid is connection-scoped (gateway.ready style) — fail open.
+  assert.equal(isCurrentSessionEvent('', 'live-1', 'stored-9'), true);
+  // No current runtime (profile switch gap) — fail closed, even for the stored key.
+  assert.equal(isCurrentSessionEvent('stored-9', null, 'stored-9'), false);
+  assert.equal(isCurrentSessionEvent('live-1', null, 'stored-9'), false);
+});
+
+test('dispatch records the last event sid for on-device diagnostics', () => {
+  const gateway = new GatewayWs({ wsUrl: 'ws://unused', events: {} });
+  gateway.dispatch('message.delta', 'stored-9', { text: 'hi' });
+  gateway.dispatch('message.delta', 'stored-9', { text: ' there' });
+
+  const debug = gateway.wsDebug();
+  assert.equal(debug.lastEvent, 'message.delta');
+  assert.equal(debug.lastSid, 'stored-9');
+  assert.equal(debug.eventCounts['message.delta'], 2);
 });
