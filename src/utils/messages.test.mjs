@@ -1,7 +1,39 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { applySlashCompletion, parseClarify, sliceOlderThan } from './messages.ts';
+import {
+  FAILED_TURN_NOTICE,
+  PARTIAL_FAILED_TURN_NOTICE,
+  applySlashCompletion,
+  parseClarify,
+  sliceOlderThan,
+  stripFailedTurnNotice,
+} from './messages.ts';
+
+test('strips the failed-turn boundary copy the gateway appends', () => {
+  // A Stop lands here: the gateway appends its own copy to message.complete,
+  // and "send it again" is wrong advice for a deliberate cancellation.
+  assert.equal(stripFailedTurnNotice(FAILED_TURN_NOTICE), '');
+  assert.equal(stripFailedTurnNotice(PARTIAL_FAILED_TURN_NOTICE), '');
+  // Trailing whitespace/newlines from the append must not defeat the match.
+  assert.equal(stripFailedTurnNotice(`${FAILED_TURN_NOTICE}\n\n`), '');
+  // Real reply text before the boundary survives — only the notice is removed.
+  assert.equal(
+    stripFailedTurnNotice(`Here is what I found.\n\n${FAILED_TURN_NOTICE}`),
+    'Here is what I found.',
+  );
+  // Both notices in one payload: the append only ever adds one, but stripping
+  // must not loop or leave the first behind.
+  assert.equal(stripFailedTurnNotice(`${PARTIAL_FAILED_TURN_NOTICE}\n\n${FAILED_TURN_NOTICE}`), '');
+});
+
+test('leaves a real reply that merely quotes the notice intact', () => {
+  const quoted = `You wrote "${FAILED_TURN_NOTICE}" — that is the copy I would emit.`;
+  assert.equal(stripFailedTurnNotice(quoted), quoted);
+  // Not a boundary row (no trailing copy) → untouched.
+  assert.equal(stripFailedTurnNotice('A normal answer.'), 'A normal answer.');
+  assert.equal(stripFailedTurnNotice(''), '');
+});
 
 test('keeps the slash when the gateway returns a bare command name', () => {
   assert.equal(applySlashCompletion('/g', 'goal', 0), '/goal ');

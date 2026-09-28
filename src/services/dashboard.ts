@@ -496,6 +496,13 @@ export interface RestHistoryItem {
   rowId?: number;
   /** Authoring time (Unix seconds). */
   ts?: number;
+  /**
+   * Gateway render hint. `failed_turn` marks a Hermes-authored boundary row
+   * that closes a turn which ended without an answer — NOT the model speaking
+   * (see `agent/turn_failure_copy.py`). The desktop projects it to a system
+   * row; without the flag the notice renders as if the bot had said it.
+   */
+  displayKind?: string;
 }
 
 function jsonText(v: unknown): string {
@@ -612,6 +619,7 @@ export async function getSessionMessages(
       }
     }
     if (rec.display_kind === 'hidden') continue;
+    const displayKind = typeof rec.display_kind === 'string' ? rec.display_kind : undefined;
     const content = jsonText(rec.content);
     // Model-switch / personality markers persist as role=user "[System: …]" rows.
     if (role === 'user' && content.replace(/^\s+/, '').startsWith('[System:')) continue;
@@ -636,6 +644,7 @@ export async function getSessionMessages(
         ...(reasoning ? { reasoning } : {}),
         ...(typeof rec.id === 'number' ? { rowId: rec.id } : {}),
         ...(typeof rec.timestamp === 'number' ? { ts: rec.timestamp } : {}),
+        ...(displayKind ? { displayKind } : {}),
       });
     }
   }

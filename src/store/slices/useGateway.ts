@@ -13,9 +13,10 @@ import { upsertAsk } from '../../services/ask-inbox';
 import type { AskOwner } from '../../services/ask-inbox';
 import { changedFilesFromDiff } from '../../utils/diff';
 import { formatToolCommand, formatToolResult } from '../../utils/toolResult';
-import { nid, normalizeTodos } from '../../utils/messages';
+import { nid, normalizeTodos, stripFailedTurnNotice } from '../../utils/messages';
 import type { Role, UiMessage } from '../../utils/messages';
 import { mergeUsageState, normalizeProfileName, profileSessionKey } from '../helpers';
+import { asRecord } from '../../utils/ops';
 import type { StoreCtx } from '../ctx';
 
 export interface GatewaySlice {
@@ -495,7 +496,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
               return [...prev.slice(0, aiIdx), item, ...prev.slice(aiIdx)];
             });
           },
-          onComplete: (sid, text) => {
+          onComplete: (sid, text, raw) => {
             if (connectionEpochRef.current !== connectionEpoch) return;
             // Background turn finished — drop its parked latch (the visible room is untouched).
             const owner = turnOwnerRef.current.get(sid);
@@ -515,6 +516,20 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             const thinkId = liveThinkAid.current;
             liveAid.current = null;
             liveThinkAid.current = null;
+            // The gateway appends Hermes' own "your request was not processed"
+            // boundary copy to message.complete when a turn ends without an
+            // answer, and uses the same copy for a Stop and for a real failure.
+            // `status` is what separates them (prompt_turn._result_status):
+            //   'interrupted' — the user pressed Stop, so the turn was cancelled
+            //     on purpose and "send it again" is wrong advice → drop it.
+            //   'error' — the turn genuinely failed → the guidance is useful, so
+            //     it stays, rendered as a system notice rather than as the model
+            //     speaking (the desktop makes the same distinction).
+            //   'complete' — the copy cannot legitimately be there; drop it
+            //     rather than paint a retry prompt onto a successful answer.
+            const status = String(asRecord(raw).status ?? '');
+            const keepNotice = status === 'error';
+            const settled = keepNotice ? text : stripFailedTurnNotice(text);
             liveTurnTools.current = [];
             setGenerating(false);
             // onComplete runs before React re-renders, so flip the ref too or the
@@ -524,7 +539,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             // Single merge: fold buffered deltas into the durable transcript once.
             const deltas = streamingRef.current;
             const hasDeltas = (aid && deltas[aid] !== undefined) || (thinkId && deltas[thinkId] !== undefined);
-            if (aid || thinkId || text) {
+            if (aid || thinkId || settled) {
               const base = messagesRef.current;
               let next: UiMessage[];
               if (hasDeltas) {
@@ -532,16 +547,22 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
                   const d = deltas[m.id];
                   if (d === undefined) return m;
                   // Server text wins when present, else keep streamed buffer.
-                  const finalText = m.id === aid && text ? text : m.text + d;
+                  const finalText = m.id === aid && settled ? settled : m.text + d;
                   return { ...m, text: finalText, pending: false };
                 });
               } else if (aid) {
-                next = base.map((m) => (m.id === aid ? { ...m, text: text || m.text, pending: false } : m));
+                next = base.map((m) => (m.id === aid ? { ...m, text: settled || m.text, pending: false } : m));
               } else {
                 next = base;
               }
-              if (!aid && text) {
-                next = [...next, { id: nid(), role: 'assistant', text }];
+              if (!aid && settled) {
+                // A surviving notice is Hermes speaking about the turn, not the
+                // model answering, so it lands as a system notice — the same
+                // role the desktop assigns to a failed-turn boundary row.
+                next = [
+                  ...next,
+                  { id: nid(), role: keepNotice ? 'notice' : 'assistant', text: settled },
+                ];
               }
               messagesRef.current = next;
               setMessages(next);

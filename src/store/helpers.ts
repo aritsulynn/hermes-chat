@@ -249,6 +249,14 @@ export function cutsWholeTranscript(list: UiMessage[], targetId: string): boolea
 export function historyToItems(hist: HistoryMessage[]): UiMessage[] {
   const items: UiMessage[] = [];
   for (const m of hist) {
+    // A `failed_turn` row is Hermes' own boundary copy, never the model
+    // speaking — the desktop maps it to a system role (chat-messages/hydration.ts).
+    // Unlike the live path there is no `status` on a durable row to tell a Stop
+    // from a real failure, and the row's whole purpose is "this turn produced
+    // no answer". Rendering it as an assistant reply would make the app look
+    // like it answered, so it is dropped; the live turn still surfaces a genuine
+    // failure as a notice (see useGateway's onComplete).
+    if (m.displayKind === 'failed_turn') continue;
     if (m.role === 'assistant' && m.reasoning?.trim()) {
       items.push({
         id: nid(),

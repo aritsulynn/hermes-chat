@@ -196,6 +196,35 @@ export function parseSlashCommand(command: string): { name: string; arg: string 
 export const slashName = (text: string): string =>
   (text.replace(/^\/+/, '').split(/\s/, 1)[0] || '').toLowerCase();
 
+/**
+ * Hermes-authored boundary copy for a turn that ended without an answer.
+ * Kept in sync with `FAILED_TURN_NOTICE` / `PARTIAL_FAILED_TURN_NOTICE` in the
+ * gateway's `agent/turn_failure_copy.py`.
+ *
+ * The gateway sends this two ways, and the client has to drop both:
+ *  - appended to `message.complete`'s `text` (gateway/run_turn.py's
+ *    `_hmwa_add_failed_turn_notice`), so it arrives as if the model had said it;
+ *  - as a durable assistant row tagged `display_kind: "failed_turn"`.
+ *
+ * Pressing Stop is a deliberate cancellation, and "send it again" is wrong
+ * advice for it, so neither copy is rendered. Matching on the exact trailing
+ * copy (not the whole string) is deliberate: a real reply that merely quotes it
+ * is still a reply.
+ */
+export const FAILED_TURN_NOTICE =
+  'Your request was not processed. Send it again if you still want me to carry it out.';
+export const PARTIAL_FAILED_TURN_NOTICE =
+  'This turn did not complete. Some actions may already have run; verify their effects before resending.';
+
+/** Strip a trailing failed-turn boundary notice from a completed turn's text. */
+export function stripFailedTurnNotice(text: string): string {
+  let out = text.trimEnd();
+  for (const notice of [FAILED_TURN_NOTICE, PARTIAL_FAILED_TURN_NOTICE]) {
+    if (out.endsWith(notice)) out = out.slice(0, out.length - notice.length).trimEnd();
+  }
+  return out;
+}
+
 // Error values from fetch/WS can be non-Error objects — never render raw.
 export function errMsg(e: unknown): string {
   if (e instanceof Error && e.message) return e.message;

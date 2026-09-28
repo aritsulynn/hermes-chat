@@ -80,6 +80,12 @@ export interface HistoryMessage {
   command?: string;
   /** Authoring time (Unix seconds). */
   ts?: number;
+  /**
+   * Gateway render hint. `failed_turn` marks a Hermes-authored boundary row
+   * closing a turn that ended without an answer — NOT the model speaking (see
+   * `agent/turn_failure_copy.py`). The desktop projects it to a system row.
+   */
+  displayKind?: string;
 }
 
 /** One `/`-wheel row from `complete.slash` (tui_gateway/contracts/tools_commands.py). */
@@ -781,6 +787,9 @@ export class GatewayWs {
         content: text,
         ...(typeof row.row_id === 'number' ? { rowId: row.row_id } : {}),
         ...(typeof row.timestamp === 'number' ? { ts: row.timestamp } : {}),
+        ...(typeof row.display_kind === 'string' && row.display_kind
+          ? { displayKind: row.display_kind }
+          : {}),
         ...(reasoning ? { reasoning } : {}),
       };
     });
