@@ -194,3 +194,41 @@ test('dispatch records the last event sid for on-device diagnostics', () => {
   assert.equal(debug.lastSid, 'stored-9');
   assert.equal(debug.eventCounts['message.delta'], 2);
 });
+
+test('a ping failure on an open socket triggers a reconnect instead of stranding the chat', async () => {
+  const RealWS = globalThis.WebSocket;
+  const states = [];
+  class FakeWS {
+    constructor(url) {
+      this.url = url;
+      this.readyState = 0;
+      setTimeout(() => {
+        this.readyState = 1;
+        this.onopen?.();
+      }, 0);
+    }
+    send() {
+      // Half-dead socket: still OPEN, but nothing goes through.
+      throw new Error('socket dead');
+    }
+    close() {
+      try {
+        this.onclose?.({ code: 1000 });
+      } catch {}
+    }
+  }
+  globalThis.WebSocket = FakeWS;
+  const gateway = new GatewayWs({
+    wsUrl: 'ws://unused',
+    events: { onState: (s) => states.push(s) },
+    heartbeatMs: 10,
+  });
+  try {
+    void gateway.connect(500);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.ok(states.includes('reconnecting'), `expected a reconnect, got ${JSON.stringify(states)}`);
+  } finally {
+    gateway.close();
+    globalThis.WebSocket = RealWS;
+  }
+});

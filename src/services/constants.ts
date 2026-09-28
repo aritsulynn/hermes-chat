@@ -56,6 +56,9 @@ export const CHAT_WINDOW_TRIM_KEEP = 600;
 
 /** gateway.ping heartbeat. */
 export const WS_HEARTBEAT_MS = 15000;
+/** A ping must answer well within one heartbeat window — slower means the
+ *  socket is half-dead (silent stall) and should be reconnected. */
+export const WS_PING_TIMEOUT_MS = 10000;
 export const WS_INITIAL_BACKOFF_MS = 1000;
 export const WS_MAX_BACKOFF_MS = 15000;
 /** Wait for gateway.ready before giving up on a dial. */

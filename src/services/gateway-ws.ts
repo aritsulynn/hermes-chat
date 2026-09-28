@@ -27,6 +27,7 @@ import {
   WS_HEARTBEAT_MS,
   WS_INITIAL_BACKOFF_MS,
   WS_MAX_BACKOFF_MS,
+  WS_PING_TIMEOUT_MS,
   WS_REPLAY_HOLD_MAX,
   WS_REPLAY_TIMEOUT_MS,
   WS_RPC_TIMEOUT_MS,
@@ -500,8 +501,17 @@ export class GatewayWs {
     const beat = () => {
       if (pingInFlight) return;
       pingInFlight = true;
-      this.call('gateway.ping', {})
-        .catch(() => {})
+      this.call('gateway.ping', {}, WS_PING_TIMEOUT_MS)
+        .catch(() => {
+          // An OPEN socket that won't answer pings is half-dead: the server
+          // keeps running the turn but no event will ever arrive on it, which
+          // strands the chat on typing dots forever. Reconnect instead — the
+          // replay path then catches the turn up. Only an OPEN socket owns
+          // this recovery; a connecting/closing socket is already covered by
+          // the open/close handlers, and a second reconnect must not pile on.
+          const sock = asWsLike(this.ws);
+          if (!this.closed && sock && sock.readyState === 1) this.scheduleReconnect();
+        })
         .finally(() => {
           pingInFlight = false;
         });
