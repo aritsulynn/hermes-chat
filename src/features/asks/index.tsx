@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import {
   SafeAreaView,
@@ -10,7 +10,6 @@ import {
   AlertCircle,
   BellRing,
   Check,
-  ChevronRight,
   Clock3,
   MessageCircleQuestion,
   ShieldAlert,
@@ -20,13 +19,13 @@ import {
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Input } from '../../components/ui/input';
 import { toast } from '../../components/ui/toast';
 import { Text as UIText } from '../../components/ui/text';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
-import { errMsg } from '../../utils/messages';
-import { screenStyle } from '../../theme';
+import { errMsg, parseClarify } from '../../utils/messages';
+import { placeholderColor, screenStyle } from '../../theme';
 
 function methodLabel(method: string): string {
   if (method === 'approval') return 'Command approval';
@@ -62,11 +61,11 @@ function requestSummary(entry: AskInboxEntry): string {
 
 const AskCard = memo(function AskCard({
   entry,
-  onApproval,
+  onAnswer,
   onOpen,
 }: {
   entry: AskInboxEntry;
-  onApproval: (key: string, choice: string) => void;
+  onAnswer: (entry: AskInboxEntry, result: Record<string, unknown>) => void;
   onOpen: (entry: AskInboxEntry) => void;
 }) {
   const pending = entry.status === 'pending' || entry.status === 'answering';
@@ -88,6 +87,58 @@ const AskCard = memo(function AskCard({
     approvalChoices.length === 0 || approvalChoices.includes('once');
   const canDeny =
     approvalChoices.length === 0 || approvalChoices.includes('deny');
+  const dark = useThemeValue().theme === 'dark';
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
+
+  // Answering a queued request needs no chat: the reply rides the JSON-RPC
+  // response channel keyed by the ask's rpc id, exactly as the notification
+  // actions and the in-chat sheet do. Opening the owning session was the only
+  // way before, and it dead-ends for a request whose profile this client has
+  // not resolved — the case the inbox exists for.
+  const [text, setText] = useState('');
+  const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const isSecret = entry.method === 'sudo' || entry.method === 'secret' || entry.method.startsWith('vault.');
+  const clarify = entry.method === 'clarify' ? parseClarify(entry) : null;
+
+  // A locked answer arrives on a reconnect replay; show it instead of an empty
+  // box so a half-answered question does not look unanswered.
+  useEffect(() => {
+    const restored: Record<string, string[]> = {};
+    for (const q of clarify?.questions ?? []) {
+      if (q.lockedAnswer) restored[q.qid] = [q.lockedAnswer];
+    }
+    setPicked(restored);
+    setText(clarify?.single ? clarify.questions[0]?.lockedAnswer ?? '' : '');
+  }, [entry.key, clarify?.single]);
+
+  const submit = useCallback(() => {
+    if (clarify) {
+      if (clarify.single) {
+        const q = clarify.questions[0];
+        const answer = picked[q?.qid ?? '']?.join(', ') ?? text.trim();
+        if (!answer) return;
+        onAnswer(entry, { answer });
+        return;
+      }
+      // Multi-question: every question needs an answer, and the wire shape is a
+      // qid→answer map (see the ask sheet's submitAll).
+      const answers: Record<string, string> = {};
+      for (const q of clarify.questions) {
+        const value = picked[q.qid]?.join(', ') ?? '';
+        if (!value) return;
+        answers[q.qid] = value;
+      }
+      onAnswer(entry, { answers });
+      return;
+    }
+    onAnswer(entry, { value: text });
+  }, [clarify, entry, onAnswer, picked, text]);
+
+  const canSubmit = clarify
+    ? clarify.single
+      ? Boolean(picked[clarify.questions[0]?.qid ?? '']?.length || text.trim())
+      : clarify.questions.every((q) => Boolean(picked[q.qid]?.length))
+    : true;
 
   return (
     <View className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
@@ -138,12 +189,12 @@ const AskCard = memo(function AskCard({
       )}
 
       {pending && (
-        <View className="mt-3 flex-row flex-wrap gap-2">
-          {entry.method === 'approval' && (canAllow || canDeny) ? (
-            <>
+        <View className="mt-3 gap-3">
+          {entry.method === 'approval' ? (
+            <View className="flex-row flex-wrap gap-2">
               {canAllow && (
                 <Button
-                  onPress={() => onApproval(entry.key, 'once')}
+                  onPress={() => onAnswer(entry, { choice: 'once' })}
                   accessibilityLabel="Allow once"
                   className="h-auto flex-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
                 >
@@ -155,7 +206,7 @@ const AskCard = memo(function AskCard({
               {canDeny && (
                 <Button
                   variant="outline"
-                  onPress={() => onApproval(entry.key, 'deny')}
+                  onPress={() => onAnswer(entry, { choice: 'deny' })}
                   accessibilityLabel="Reject request"
                   className="h-auto flex-1 rounded-xl border-red-200 px-3 py-2.5 dark:border-red-950"
                 >
@@ -164,18 +215,122 @@ const AskCard = memo(function AskCard({
                   </UIText>
                 </Button>
               )}
-            </>
+            </View>
+          ) : clarify ? (
+            /* Clarify: choices become pills, a free-form question an input. */
+            <View className="gap-2.5">
+              {clarify.questions.map((q) => {
+                const sel = picked[q.qid] ?? [];
+                return (
+                  <View key={q.qid} className="gap-1.5">
+                    {!!q.question && (
+                      <UIText className="text-sm text-neutral-700 dark:text-neutral-200">
+                        {q.question}
+                      </UIText>
+                    )}
+                    {q.choices.length > 0 ? (
+                      <View className="flex-row flex-wrap gap-1.5">
+                        {q.choices.map((c) => {
+                          const on = sel.includes(c);
+                          return (
+                            <Button
+                              key={c}
+                              variant={on ? 'default' : 'outline'}
+                              size="sm"
+                              accessibilityRole={q.multiSelect ? 'checkbox' : 'radio'}
+                              accessibilityState={{ checked: on, selected: on }}
+                              accessibilityLabel={c}
+                              onPress={() =>
+                                setPicked((prev) => {
+                                  const cur = prev[q.qid] ?? [];
+                                  const next = q.multiSelect
+                                    ? cur.includes(c)
+                                      ? cur.filter((x) => x !== c)
+                                      : [...cur, c]
+                                    : [c];
+                                  return { ...prev, [q.qid]: next };
+                                })
+                              }
+                              className="h-auto rounded-full px-3 py-1.5"
+                            >
+                              <UIText className="text-[13px]">{c}</UIText>
+                            </Button>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <Input
+                        value={text}
+                        onChangeText={setText}
+                        placeholder="Type your answer…"
+                        placeholderTextColor={placeholder}
+                        keyboardAppearance={dark ? 'dark' : 'light'}
+                        multiline
+                        accessibilityLabel="Your answer"
+                        className="min-h-[60px] rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                      />
+                    )}
+                  </View>
+                );
+              })}
+              <View className="flex-row justify-end gap-2">
+                <Button
+                  onPress={() => onOpen(entry)}
+                  accessibilityLabel="Open in chat"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto rounded-lg px-2.5 py-1.5"
+                >
+                  <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                    Open in chat
+                  </UIText>
+                </Button>
+                <Button
+                  onPress={submit}
+                  disabled={!canSubmit}
+                  accessibilityLabel="Send answer"
+                  className="h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
+                >
+                  <UIText className="text-sm font-semibold text-white">Send</UIText>
+                </Button>
+              </View>
+            </View>
           ) : (
-            <Button
-              onPress={() => onOpen(entry)}
-              accessibilityLabel="Open request"
-              className="h-auto rounded-xl bg-[#1a73e8] px-3 py-2.5"
-            >
-              <UIText className="text-sm font-semibold text-white">
-                Open request
-              </UIText>
-              <ChevronRight size={15} color="#fff" />
-            </Button>
+            /* Sudo / secret / vault: one masked string, matching the ask sheet. */
+            <View className="gap-2">
+              <Input
+                value={text}
+                onChangeText={setText}
+                placeholder={isSecret ? 'Enter value' : 'Type your answer…'}
+                placeholderTextColor={placeholder}
+                keyboardAppearance={dark ? 'dark' : 'light'}
+                secureTextEntry={isSecret}
+                autoCapitalize="none"
+                autoCorrect={false}
+                accessibilityLabel="Your answer"
+                className="rounded-xl border border-neutral-300 px-3 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              />
+              <View className="flex-row items-center justify-end gap-2">
+                <Button
+                  onPress={() => onOpen(entry)}
+                  accessibilityLabel="Open in chat"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto rounded-lg px-2.5 py-1.5"
+                >
+                  <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                    Open in chat
+                  </UIText>
+                </Button>
+                <Button
+                  onPress={submit}
+                  accessibilityLabel="Send answer"
+                  className="h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
+                >
+                  <UIText className="text-sm font-semibold text-white">Send</UIText>
+                </Button>
+              </View>
+            </View>
           )}
         </View>
       )}
@@ -188,14 +343,19 @@ export function AskInboxScreen() {
     authed,
     askInbox,
     pendingAskCount,
-    error,
-    answerInboxApproval,
+    activeProfile,
+    respondToInbox,
     openAskEntry,
   } = useApp();
   const { theme } = useThemeValue();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const dark = theme === 'dark';
+  // The store's `error` is the connect/login banner, not this screen's — a
+  // stale connection failure used to render as an alert above the inbox, where
+  // it read as if the inbox itself were broken. Failures are reported per
+  // action instead.
+  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
 
   useEffect(() => {
     (navigation as any).setOptions?.({
@@ -223,17 +383,23 @@ export function AskInboxScreen() {
   // Stable callbacks so a new approval arriving doesn't rebuild every card's
   // handlers (AskCard is memoized; settled is capped at 10 rows below, so no
   // virtualized list is needed here).
-  const handleApproval = useCallback(
-    (key: string, choice: string) => {
+  const handleAnswer = useCallback(
+    (entry: AskInboxEntry, result: Record<string, unknown>) => {
       try {
-        if (!answerInboxApproval(key, choice)) {
-          toast({ title: 'Could not answer', description: 'The gateway is not ready or the request is no longer pending.', variant: 'destructive' });
-        }
+        if (respondToInbox(entry.key, result)) return;
+        // respondToInbox returns false for every reason it cannot deliver —
+        // settled, another profile's, no socket — and the interesting one is
+        // the profile, since a background request can name a profile this
+        // client has not selected. Name it instead of a generic failure.
+        const why = entry.owner.profile && entry.owner.profile !== activeProfile
+          ? `This request belongs to profile “${entry.owner.profile}”. Switch to it, or open the request in its chat.`
+          : 'The gateway is not ready, or this request is no longer pending.';
+        toast({ title: 'Could not answer', description: why, variant: 'destructive' });
       } catch (e) {
         toast({ title: 'Could not answer', description: errMsg(e), variant: 'destructive' });
       }
     },
-    [answerInboxApproval],
+    [activeProfile, respondToInbox],
   );
   const handleOpenAsk = useCallback(
     (entry: AskInboxEntry) => {
@@ -273,11 +439,6 @@ export function AskInboxScreen() {
           }}
           keyboardShouldPersistTaps="handled"
         >
-          {!!error && (
-            <UIAlert icon={AlertCircle} variant="destructive">
-              <AlertDescription className="text-red-700 dark:text-red-300">{error}</AlertDescription>
-            </UIAlert>
-          )}
           <View className="mb-1 flex-row items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
             <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
             <View className="flex-1">
@@ -287,14 +448,14 @@ export function AskInboxScreen() {
                   : 'No pending requests'}
               </Text>
               <Text className="mt-0.5 text-xs leading-4 text-neutral-600 dark:text-neutral-300">
-                Approval actions are sent only to the gateway request that owns
-                this item.
+                Answer here and it goes straight to the waiting session — no need
+                to open its chat.
               </Text>
             </View>
           </View>
 
           {pending.map((entry) => (
-            <AskCard key={entry.key} entry={entry} onApproval={handleApproval} onOpen={handleOpenAsk} />
+            <AskCard key={entry.key} entry={entry} onAnswer={handleAnswer} onOpen={handleOpenAsk} />
           ))}
 
           {pending.length === 0 && (

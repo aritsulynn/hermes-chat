@@ -107,6 +107,14 @@ export interface AppStore {
   pendingAskCount: number;
   /** Open an inbox item in its owning chat when its profile is resolved. */
   openAskEntry: (entry: AskInboxEntry) => Promise<void>;
+  /**
+   * Answer a queued request straight from the inbox, over the JSON-RPC
+   * response channel — no need to open its chat. Takes the same payload the
+   * in-chat ask sheet builds: `{ value }` for sudo/secret/vault, `{ choice }`
+   * for approval, `{ answer }` / `{ answers }` for clarify. False when the
+   * request is no longer answerable (settled, another profile's, no socket).
+   */
+  respondToInbox: (key: string, result: Record<string, unknown>) => boolean;
   answerInboxApproval: (key: string, choice: string) => boolean;
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
