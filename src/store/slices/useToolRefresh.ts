@@ -4,10 +4,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { inlineDiffFromDetail } from '../../utils/diff';
+import { missingHistoryTools, pairThinkingText } from '../../utils/messages';
 import { connectionScope } from '../../services/connection';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { getSessionMessages } from '../../services/dashboard';
 import { formatToolResult } from '../../utils/toolResult';
+import { historyToItems } from '../helpers';
 import type { StoreCtx } from '../ctx';
 
 export interface ToolRefreshSlice {
@@ -25,6 +27,9 @@ export function useToolRefreshSlice({
   activeProfileRef,
   profileEpochRef,
   connectionEpochRef,
+  trimmedOlder,
+  historyExhausted,
+  generatingRef,
 }: StoreCtx): ToolRefreshSlice {
   const toolRefreshRef = useRef<() => void>(() => {});
   const toolRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -46,6 +51,15 @@ export function useToolRefreshSlice({
     // Web: the jar is empty (Set-Cookie is unreadable) but the browser cookie
     // still rides along via credentials:'include', so only host+key are required.
     if (!h || !sk) return;
+    // Placement anchor for bubbles this fetch inserts (see below): the last
+    // assistant row right now — the pending bubble mid-turn, the completed
+    // answer after it. Captured synchronously: a queued drain may start the
+    // next turn before the fetch returns. Same for the intact-window flag:
+    // with zero live tool bubbles, history tools are only safely "missing"
+    // when nothing was ever trimmed or paged out.
+    const anchorId =
+      [...messagesRef.current].reverse().find((m) => m.role === 'assistant')?.id ?? null;
+    const intactWindow = trimmedOlder === 0 && historyExhausted;
     void (async () => {
       try {
         const items = await getSessionMessages(
@@ -66,42 +80,67 @@ export function useToolRefreshSlice({
           return;
         const restTools = items.filter((m) => m.role === 'tool' && m.content.trim());
         const liveTools = messagesRef.current.filter((m) => m.role === 'tool');
-        if (restTools.length === 0 || liveTools.length === 0) return;
         const fill = new Map<string, { output?: string; diff?: string; command?: string }>();
-        const used = new Set<number>();
-        let r = Math.max(0, restTools.length - liveTools.length);
-        for (const live of liveTools) {
-          if (live.output && live.diff && live.command) continue; // already complete
-          const want = live.text;
-          let j = -1;
-          for (let k = r; k < restTools.length && k < r + 4; k++) {
-            if (!used.has(k) && want && restTools[k].name === want) {
-              j = k;
-              break;
+        if (restTools.length > 0 && liveTools.length > 0) {
+          const used = new Set<number>();
+          let r = Math.max(0, restTools.length - liveTools.length);
+          for (const live of liveTools) {
+            if (live.output && live.diff && live.command) continue; // already complete
+            const want = live.text;
+            let j = -1;
+            for (let k = r; k < restTools.length && k < r + 4; k++) {
+              if (!used.has(k) && want && restTools[k].name === want) {
+                j = k;
+                break;
+              }
+            }
+            if (j === -1 && r < restTools.length && !used.has(r)) j = r;
+            if (j === -1) continue;
+            used.add(j);
+            r = Math.max(r, j + 1);
+            const output = formatToolResult(restTools[j].content) || undefined;
+            const diff = inlineDiffFromDetail(restTools[j].content) || undefined;
+            const command = restTools[j].command || undefined;
+            if (output || diff || command) {
+              fill.set(live.id, {
+                ...(output ? { output } : {}),
+                ...(diff ? { diff } : {}),
+                ...(command && !live.command ? { command } : {}),
+              });
             }
           }
-          if (j === -1 && r < restTools.length && !used.has(r)) j = r;
-          if (j === -1) continue;
-          used.add(j);
-          r = Math.max(r, j + 1);
-          const output = formatToolResult(restTools[j].content) || undefined;
-          const diff = inlineDiffFromDetail(restTools[j].content) || undefined;
-          const command = restTools[j].command || undefined;
-          if (output || diff || command) {
-            fill.set(live.id, {
-              ...(output ? { output } : {}),
-              ...(diff ? { diff } : {}),
-              ...(command && !live.command ? { command } : {}),
-            });
-          }
         }
-        if (fill.size === 0) return;
-        setMessages((prev) =>
-          prev.map((m) => {
+        // Insert the calls a turn made that never arrived as live `tool.*`
+        // events (some gateways only persist them to history): trailing
+        // history tool rows with no live bubble, placed before the anchor so
+        // they land inside their own turn even if the next one already started.
+        // Without an anchor the placement is unknowable — fill only.
+        const missing =
+          anchorId != null
+            ? missingHistoryTools(historyToItems(items), messagesRef.current, intactWindow)
+            : [];
+        // Settle thinking bubbles to the persisted reasoning sidecar (the live
+        // delta stream carries status quips; the durable reasoning only lands
+        // in history). Only while no turn is running — mid-turn the current
+        // bubble is still filling and history has nothing newer for it.
+        const histItems = anchorId != null ? historyToItems(items) : [];
+        const thinkSync =
+          !generatingRef.current && histItems.length > 0
+            ? pairThinkingText(histItems, messagesRef.current)
+            : [];
+        if (fill.size === 0 && missing.length === 0 && thinkSync.length === 0) return;
+        const thinkById = new Map(thinkSync.map((t) => [t.id, t.text] as const));
+        setMessages((prev) => {
+          const next = prev.map((m) => {
             const f = fill.get(m.id);
-            return f ? { ...m, ...f } : m;
-          }),
-        );
+            const t = thinkById.get(m.id);
+            return f || t !== undefined ? { ...m, ...(f ?? {}), ...(t !== undefined ? { text: t } : {}) } : m;
+          });
+          if (missing.length === 0) return next;
+          const idx = next.findIndex((m) => m.id === anchorId);
+          if (idx < 0) return next;
+          return [...next.slice(0, idx), ...missing, ...next.slice(idx)];
+        });
       } catch {}
     })();
   };

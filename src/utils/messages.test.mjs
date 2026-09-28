@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  pairThinkingText,
+  missingHistoryTools,
   FAILED_TURN_NOTICE,
   PARTIAL_FAILED_TURN_NOTICE,
   applySlashCompletion,
@@ -105,4 +107,58 @@ test('sliceOlderThan skips non-durable bubbles to find the anchor', () => {
   const head = sliceOlderThan(fetched, current);
   assert.equal(head.length, 2);
   assert.equal(head[1].role, 'thinking');
+});
+
+test('missingHistoryTools returns only trailing history tool rows without a live bubble', () => {
+  const tool = (id, text) => ({ id, role: 'tool', text });
+  const user = (id) => ({ id, role: 'user', text: 'hi' });
+  const ai = (id) => ({ id, role: 'assistant', text: 'done' });
+  // Steady state: every history tool has a live bubble → nothing to insert.
+  assert.deepEqual(missingHistoryTools([user('u'), tool('h1', 'terminal'), ai('a')], [user('u'), tool('l1', 'terminal'), ai('a')]), []);
+  // A new turn appended a second terminal call server-side; live lacks it.
+  const missing = missingHistoryTools(
+    [user('u'), tool('h1', 'terminal'), ai('a'), user('u2'), tool('h2', 'terminal'), ai('a2')],
+    [user('u'), tool('l1', 'terminal'), ai('a'), user('u2'), ai('a2')],
+  );
+  assert.deepEqual(missing.map((m) => m.id), ['h2']);
+  // Leading unpaired history rows (trimmed window) are old — never re-inserted.
+  assert.deepEqual(missingHistoryTools([tool('h0', 'old'), tool('h1', 'terminal')], [tool('l1', 'terminal')]), []);
+  // No pairs at all (nothing live to anchor against) → insert nothing…
+  assert.deepEqual(missingHistoryTools([tool('h1', 'terminal')], []), []);
+  // …unless the window is intact (fresh room, nothing trimmed/paged):
+  // then every history tool is genuinely missing.
+  assert.deepEqual(
+    missingHistoryTools([tool('h1', 'terminal')], [], true).map((m) => m.id),
+    ['h1'],
+  );
+  assert.deepEqual(missingHistoryTools(Array.from({ length: 25 }, (_, i) => tool(`h${i}`, 't')), [], true), []);
+  // A surplus beyond the cap is structural mismatch, not a turn → skip.
+  const many = Array.from({ length: 25 }, (_, i) => tool(`h${i}`, 'terminal'));
+  assert.deepEqual(missingHistoryTools([...many, tool('base', 'other')], [tool('l0', 'other')]), []);
+});
+
+test('missingHistoryTools tolerates label differences via positional fallback', () => {
+  const tool = (id, text) => ({ id, role: 'tool', text });
+  // Event bubble labelled `tool`, history row `Tool` — same slot, no insert.
+  assert.deepEqual(missingHistoryTools([tool('h1', 'Tool')], [tool('l1', 'tool')]), []);
+  // Extra live bubble (history lag) consumes positionally — no phantom insert.
+  assert.deepEqual(missingHistoryTools([tool('h1', 'terminal')], [tool('l1', 'terminal'), tool('l2', 'patch')]), []);
+});
+
+test('pairThinkingText settles live fragments to the persisted reasoning', () => {
+  const think = (id, text) => ({ id, role: 'thinking', text });
+  // Same single pair, different text → overwrite with the history version.
+  assert.deepEqual(
+    pairThinkingText([think('h', 'The user asks to run echo.')], [think('l', '(▲) tracking ember fall…')]),
+    [{ id: 'l', text: 'The user asks to run echo.' }],
+  );
+  // Already settled → no-op.
+  assert.deepEqual(pairThinkingText([think('h', 'Same')], [think('l', 'Same')]), []);
+  // A turn without a reasoning sidecar keeps its fragments (pairs from the end).
+  assert.deepEqual(
+    pairThinkingText([think('h1', 'First reasoning')], [think('l1', 'fragments…'), think('l2', 'First reasoning')]),
+    [],
+  );
+  // Empty history text never clobbers.
+  assert.deepEqual(pairThinkingText([think('h', '   ')], [think('l', 'fragments…')]), []);
 });

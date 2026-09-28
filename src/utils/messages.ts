@@ -64,6 +64,90 @@ export function sliceOlderThan(fetched: UiMessage[], current: UiMessage[]): UiMe
   return [];
 }
 
+/** Cap on tool bubbles auto-inserted per refresh (see missingHistoryTools). */
+export const TOOL_INSERT_CAP = 20;
+/**
+ * History tool rows with no live bubble. Some gateways never emit live
+ * `tool.*` events — tool calls only exist in the transcript — so the turn
+ * ends with no tool bubble until a reload rebuilds from REST. Pair live
+ * bubbles to history rows by tool name in order and return the trailing
+ * surplus: calls the just-finished turn appended. Leading unpaired rows are
+ * older than the live window (trimmed head), and with no pairs at all there
+ * is nothing to anchor against — both return [] rather than guessing. A
+ * surplus past TOOL_INSERT_CAP is structural mismatch, not a turn: skip.
+ */
+export function missingHistoryTools(
+  history: UiMessage[],
+  live: UiMessage[],
+  allowUnanchored = false,
+): UiMessage[] {
+  const histTools = history.filter((m) => m.role === 'tool');
+  const liveTools = live.filter((m) => m.role === 'tool');
+  if (histTools.length === 0) return [];
+  if (liveTools.length === 0) {
+    // No live tool bubble at all: only safe when the caller guarantees the
+    // window is intact (no trimmed head, exhaustive history) — otherwise old
+    // rows are indistinguishable from new ones.
+    return allowUnanchored && histTools.length <= TOOL_INSERT_CAP ? histTools : [];
+  }
+  const norm = (t: string) => t.trim().toLowerCase();
+  const used = new Set<number>();
+  const pair = (k: number) => {
+    used.add(k);
+    lastPaired = Math.max(lastPaired, k);
+  };
+  let lastPaired = -1;
+  // Pass 1: exact (case-insensitive) name match, in order.
+  let unmatchedLive = 0;
+  for (const lt of liveTools) {
+    const want = norm(lt.text);
+    let found = false;
+    for (let k = 0; k < histTools.length; k++) {
+      if (!used.has(k) && norm(histTools[k].text) === want) {
+        pair(k);
+        found = true;
+        break;
+      }
+    }
+    if (!found) unmatchedLive++;
+  }
+  // Pass 2: positional fallback — both sides list calls in transcript order,
+  // so a live bubble whose label differs (event `tool` vs history `Tool`)
+  // still consumes its slot instead of looking perpetually missing.
+  for (let n = 0; n < unmatchedLive; n++) {
+    for (let k = 0; k < histTools.length; k++) {
+      if (!used.has(k)) {
+        pair(k);
+        break;
+      }
+    }
+  }
+  if (lastPaired < 0) return [];
+  const missing = histTools.filter((_, k) => k > lastPaired);
+  return missing.length > TOOL_INSERT_CAP ? [] : missing;
+}
+
+/**
+ * Thinking bubbles whose live text should settle to the persisted reasoning.
+ * The live delta stream carries status quips ("tracking ember fall…") while
+ * the durable reasoning sidecar lands in history — the F5 view. Pair both
+ * sides from the end (a turn without a reasoning sidecar leaves its live
+ * fragments in place and must not shift older pairs) and return id/text
+ * overwrites for pairs whose text differs.
+ */
+export function pairThinkingText(history: UiMessage[], live: UiMessage[]): Array<{ id: string; text: string }> {
+  const hist = history.filter((m) => m.role === 'thinking' && m.text.trim());
+  const cur = live.filter((m) => m.role === 'thinking');
+  const n = Math.min(hist.length, cur.length);
+  const out: Array<{ id: string; text: string }> = [];
+  for (let i = 0; i < n; i++) {
+    const h = hist[hist.length - n + i];
+    const l = cur[cur.length - n + i];
+    if (l.text !== h.text) out.push({ id: l.id, text: h.text });
+  }
+  return out;
+}
+
 /** One row of the agent's live todo list (`todo.updated` /
  *  `session.todo_state`). Field names are read defensively: the backend passes
  *  the TodoStore snapshot through unchanged. */
