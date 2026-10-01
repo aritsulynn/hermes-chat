@@ -69,12 +69,15 @@
 - **Node.js** `^20.19.4 || ^22.13.0 || ^24.3.0 || >=25`
 - **npm**
 - **A Hermes gateway** you can reach over HTTP — e.g. `http://your-server:9119`
+- Android shell only: **JDK 21** (a full JDK — a JRE is not enough, and Gradle
+  8.x cannot run on Java 25) plus the **Android SDK** (`ANDROID_HOME` set,
+  build-tools and one platform installed)
 
 ## Getting started
 
 ```bash
 git clone <this-repo>
-cd hermes-mobile-react-migration
+cd hermes-mobile
 npm install
 npm run dev
 ```
@@ -97,16 +100,24 @@ is read from git at config time (`vite.config.ts`), not hand-bumped.
 ```
 src/
   main.tsx      entry — mounts <App/>
-  App.tsx       router: BrowserRouter + AppProvider + routes
+  App.tsx       router: BrowserRouter on web, HashRouter in a native shell + AppProvider + routes
   AppShell.tsx  chrome around every screen: drawer/sidebar, toasts, connection banner
   routes.tsx    URL -> screen table
+  platform.ts   native-shell detection + status-bar setup (Capacitor only)
   features/     screens: index.tsx + helpers.ts + types.ts + components/
   store/        AppStore: orchestrator + slices/ + shared runtime refs
-  services/     transport only — dashboard REST, gateway WebSocket, storage
+  services/     transport only — dashboard REST, gateway WebSocket, storage,
+                native-http (Capacitor pipe that bypasses WebView cookie/CORS rules)
   components/   ui/ (reusables), chat/, drawer/
   hooks/        app-store.tsx (React context over the store), generic hooks
   utils/        pure helpers and types
 ```
+
+`capacitor.config.ts` is the native-shell manifest (`appId`, `webDir: 'dist'`).
+`android/` is the Capacitor shell — tracked because it carries hand-written
+source (`MainActivity`, `NativeHttpPlugin`, manifest flags), not just
+generated output. Its build outputs (`.gradle/`, `*/build/`, `*.apk`) are
+ignored; a fresh clone rebuilds them with the commands below.
 
 ## Architecture
 
@@ -163,6 +174,28 @@ npm test            # node --experimental-strip-types --test
 npm run build       # vite build
 ```
 
+### Android (Capacitor, debug)
+
+```bash
+npm run build
+npx cap sync android
+export JAVA_HOME=<path-to-jdk-21> ANDROID_HOME=$HOME/Android/Sdk
+cd android && ./gradlew assembleDebug
+```
+
+The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`.
+`JAVA_HOME` must point at a full JDK 21: the Gradle toolchain compiles with
+release 21, and Gradle 8.x cannot run on newer JVMs. Changing `appId` makes
+Android treat it as a different app — it installs alongside the old one and
+starts with a fresh login.
+
+Why the shell needs its own HTTP path: the app runs on `http://localhost`
+while the gateway is a LAN host, and the gateway cookie is `SameSite=lax` —
+a WebView never attaches that cookie cross-origin. So on native, dashboard
+REST goes through the `NativeHttp` plugin with the session kept in the JS
+cookie jar (`mergeCookies`), while web keeps using `fetch`. The WebSocket
+needs no such treatment: it authenticates with a ticket in the URL.
+
 Typecheck and tests must be green before a change is considered done. There is no
 linter or formatter configured.
 
@@ -193,8 +226,10 @@ node --experimental-strip-types --test src/utils/usage.test.mjs
 ## Deployment
 
 `npm run build` emits a static bundle in `dist/`. Because the router uses history
-mode, the host must rewrite unknown paths to `index.html` (a deep link like
-`/chat` has to survive a reload):
+mode on web, the host must rewrite unknown paths to `index.html` (a deep link like
+`/chat` has to survive a reload). Inside the Capacitor shell the router is
+already hash-based, so no rewrite is needed — see "Android (Capacitor, debug)"
+above for the APK flow.
 
 ```
 /*  ->  /index.html  200
