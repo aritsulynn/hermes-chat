@@ -843,7 +843,13 @@ export function ChatScreen() {
             onStartReached={handleStartReached}>
             {ListHeader()}
             {messages.map((item) => (
-              <MessageScrollerItem key={listKeyExtractor(item)} messageId={item.id}>
+              // `scrollAnchor` on your own messages is what makes a new turn
+              // settle near the top of the viewport with a peek of the previous
+              // one above it, instead of starting at the bottom edge — the reply
+              // then grows into the room below. Once it fills the viewport the
+              // scroller is back at the live edge and following takes over, so
+              // this composes with `autoScroll` rather than fighting it.
+              <MessageScrollerItem key={listKeyExtractor(item)} messageId={item.id} scrollAnchor={item.role === 'user'}>
                 {renderMessage({ item })}
               </MessageScrollerItem>
             ))}
