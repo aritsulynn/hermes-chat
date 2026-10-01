@@ -14,7 +14,14 @@ import { TypingDots } from '../ui/bits';
 import { Button } from '../ui/button';
 import { Bubble, BubbleContent } from '../ui/bubble';
 import { Message, MessageContent } from '../ui/message';
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { useLongPress } from '../../hooks/use-long-press';
 import type { AnchorMeasure } from './composer';
 import { useStreamingText } from '../../hooks/app-store';
@@ -454,7 +461,10 @@ export const MessageBubble = memo(function MessageBubble({
                 </>
               )
             ) : (
-              <div className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">{mergedText}</div>
+              // 24px, matching the markdown body: a notice or interim line sits
+              // between replies, and a different leading there reads as a
+              // different document.
+              <div className="text-[15px] leading-[24px] text-neutral-950 dark:text-neutral-100">{mergedText}</div>
             )}
             {/* Footer: bot time lives in its ⋯ menu, ours in the long-press menu —
                 copy icon stays on bot bubbles only. Still inside the surface, not
@@ -494,35 +504,41 @@ export const MessageBubble = memo(function MessageBubble({
                 )}
                 {canBranch && (
                   // No long-press tooltip here (unlike copy/regenerate): the trigger
-                  // toggles the popover on click, so a tooltip peek would also pop the
-                  // menu open. The a11y label carries the meaning.
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="icon" aria-label="More actions" className="h-6 w-6">
-                        <Ellipsis size={12} color={dark ? '#aaa' : '#999'} />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent side="top" align="end" className="p-1.5">
+                  // toggles the menu on click, so a tooltip peek would also open it.
+                  // The a11y label carries the meaning.
+                  //
+                  // A real menu rather than the Radix popover this was: arrow-key
+                  // roving, typeahead, and Escape / outside-press come from the
+                  // primitive, and selecting a row closes it without a PopoverClose
+                  // wrapper. Also `w-48`: the content defaults to
+                  // `w-(--anchor-width)` — the width of its trigger — which for a
+                  // 24px icon button clamps the menu to `min-w-32`.
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={<Button variant="ghost" size="icon" aria-label="More actions" className="h-6 w-6" />}>
+                      <Ellipsis size={12} color={dark ? '#aaa' : '#999'} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="top" align="end" className="w-48">
                       {!!item.ts && (
-                        <div className="flex items-center gap-2.5 px-3 py-2">
-                          <Clock size={17} color={dark ? '#888' : '#999'} />
-                          <div className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                        // A label, not a row: this is not an action. It has to sit
+                        // inside a group — Base UI's GroupLabel reads its context and
+                        // throws without one ("MenuGroupContext is missing").
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-normal text-neutral-500 dark:text-neutral-400">
+                            <Clock size={17} color={dark ? '#888' : '#999'} />
                             {formatBubbleTime(item.ts)}
-                          </div>
-                        </div>
+                          </DropdownMenuLabel>
+                        </DropdownMenuGroup>
                       )}
-                      <PopoverClose asChild>
-                        <Button
-                          variant="ghost"
-                          data-testid="menu-branch"
-                          onClick={onBranchChat}
-                          className="w-full items-center justify-start gap-2.5 px-3 py-2.5">
-                          <GitFork size={17} color={dark ? '#aaa' : '#999'} />
-                          <span className="text-[15px]">Branch chat</span>
-                        </Button>
-                      </PopoverClose>
-                    </PopoverContent>
-                  </Popover>
+                      <DropdownMenuItem
+                        data-testid="menu-branch"
+                        onClick={onBranchChat}
+                        className="w-full items-center justify-start gap-2.5 px-3 py-2.5">
+                        <GitFork size={17} color={dark ? '#aaa' : '#999'} />
+                        <span className="text-[15px]">Branch chat</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             )}
