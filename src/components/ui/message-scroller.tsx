@@ -89,18 +89,22 @@ function MessageScrollerItem({ className, ...props }: React.ComponentProps<typeo
   return (
     <MessageScrollerPrimitive.Item
       data-slot="message-scroller-item"
-      // The registry also puts `content-visibility: auto` and
-      // `contain-intrinsic-size: auto 10rem` here to skip off-screen rows. They
-      // are deliberately not copied: a skipped row reports its *estimated*
-      // height, so the content height the scroller measures is a guess until
-      // every row has been on screen once. It converges badly — the initial
-      // scroll-to-end lands on the estimate, the real heights shrink the
-      // content, and the shrink reads to the follow heuristic as the user
-      // having scrolled up, which drops the transcript out of follow mode
-      // part-way up. The transcript is bounded by the store instead
-      // (CHAT_WINDOW_TRIM_KEEP, ~600 rows) and mounts all of them, which is the
-      // intended cost — this is how it was built before the scroller moved in.
-      className={cn('min-w-0 shrink-0', className)}
+      // The registry's `content-visibility: auto` + `contain-intrinsic-size`:
+      // rows far outside the viewport are skipped, which is a real win on a
+      // transcript of up to ~600 rows.
+      //
+      // This was removed once, because it looked like it broke the opening
+      // scroll-to-end — the transcript settled part-way up the thread. That
+      // turned out to be the composer clearance (a `padding-bottom` the
+      // scroller's ResizeObserver cannot see), and with that fixed a fresh
+      // transcript lands exactly on the bottom with this back on.
+      //
+      // The caveat that remains is inherent: a row that has never been rendered
+      // reports its `contain-intrinsic-size` estimate rather than its real
+      // height, so the scroll extent of a transcript nobody has scrolled
+      // through yet is approximate and the scrollbar thumb is slightly off. The
+      // browser's own scroll anchoring is what keeps that from reading as a jump.
+      className={cn('min-w-0 shrink-0 [contain-intrinsic-size:auto_10rem] [content-visibility:auto]', className)}
       {...props}
     />
   );
