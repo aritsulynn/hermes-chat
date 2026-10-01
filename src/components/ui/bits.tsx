@@ -38,35 +38,50 @@ export function CtxRing({
         : dark
           ? '#5fd28a'
           : '#1a7f37';
+  const label = `${parseFloat(pct.toFixed(1))}%`;
   return (
     <Button
       variant="ghost"
       size="icon"
       data-testid="ctx-ring"
-      aria-label={`Context ${clamped}% — open session info`}
+      aria-label={`Context ${label} — open session info`}
       onClick={onPress}
-      className="h-9 w-9 items-center justify-center">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          stroke={dark ? '#3a3a3a' : '#e2e2e6'}
-          strokeWidth={stroke}
-          fill="none"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          stroke={color}
-          strokeWidth={stroke}
-          fill="none"
-          strokeDasharray={`${(clamped / 100) * c} ${c}`}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </svg>
+      // Pill, not square: the readout lives inside the tap target. Width is
+      // inline so no size utility fights it; the inner flex row carries its
+      // own gap for the same reason.
+      className="h-9 rounded-full px-2"
+      style={{ width: 'auto', height: 36 }}>
+      <span className="flex items-center gap-1.5">
+        <svg
+          width={size}
+          height={size}
+          // Inline style on purpose: Button's `[&_svg]:size-4` rule clamps every
+          // class-less svg to 16px and beats width/height attributes, so without
+          // this the ring renders 16px no matter what `size` says.
+          style={{ width: size, height: size }}
+          viewBox={`0 0 ${size} ${size}`}>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            stroke={dark ? '#3a3a3a' : '#e2e2e6'}
+            strokeWidth={stroke}
+            fill="none"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            stroke={color}
+            strokeWidth={stroke}
+            fill="none"
+            strokeDasharray={`${(clamped / 100) * c} ${c}`}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        </svg>
+        <span className="text-xs font-medium tabular-nums text-neutral-600 dark:text-neutral-300">{label}</span>
+      </span>
     </Button>
   );
 }
@@ -97,7 +112,7 @@ export function HamburgerBtn() {
         openNavDrawer();
       }}
       className="justify-center px-2 py-2">
-      <PanelLeft size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
+      <PanelLeft size={20} className="size-5" color={theme === 'dark' ? '#f5f5f5' : '#111'} />
     </Button>
   );
 }
