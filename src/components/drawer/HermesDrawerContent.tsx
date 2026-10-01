@@ -101,7 +101,7 @@ const SessionRow = memo(function SessionRow({
       <span className="flex min-w-0 flex-1 flex-col">
         <UIText
           numberOfLines={1}
-          className={`text-left text-[16px] ${
+          className={`text-left text-[14px] ${
             active ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'
           }`}>
           {session.title || '(untitled)'}
@@ -109,7 +109,7 @@ const SessionRow = memo(function SessionRow({
         {live === 'waiting' ? (
           <UIText
             numberOfLines={1}
-            className={`mt-0.5 text-[11px] font-medium ${dark ? 'text-amber-300' : 'text-amber-700'}`}>
+            className={`mt-0.5 text-[10px] font-medium ${dark ? 'text-amber-300' : 'text-amber-700'}`}>
             Waiting for your answer
           </UIText>
         ) : null}
@@ -118,7 +118,7 @@ const SessionRow = memo(function SessionRow({
             {when ? (
               <UIText
                 numberOfLines={1}
-                className={`shrink-0 text-[11px] ${
+                className={`shrink-0 text-[10px] ${
                   active ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-400 dark:text-neutral-500'
                 }`}>
                 {when}
@@ -132,7 +132,7 @@ const SessionRow = memo(function SessionRow({
             {preview ? (
               <UIText
                 numberOfLines={1}
-                className="min-w-0 flex-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                className="min-w-0 flex-1 text-[10px] text-neutral-500 dark:text-neutral-400">
                 {preview}
               </UIText>
             ) : null}
@@ -319,7 +319,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                     data-testid="profile-selector"
                     aria-label={`Switch profile. Active profile: ${activeProfile}`}
                     className="h-auto sm:h-auto min-w-0 flex-1 shrink items-center justify-start gap-2 px-1 py-1">
-                    <UIText className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">
+                    <UIText className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">
                       Hermes
                     </UIText>
                     <ChevronDown size={17} color={dimColor} />
@@ -328,10 +328,10 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                 <PopoverContent side="bottom" align="start" className="w-72 p-2">
                   <div className="flex items-center justify-between px-3 py-2.5">
                     <div>
-                      <UIText className="text-base font-bold text-neutral-950 dark:text-neutral-100">
+                      <UIText className="text-[14px] font-bold text-neutral-950 dark:text-neutral-100">
                         Switch profile
                       </UIText>
-                      <UIText className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                      <UIText className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
                         Chat and toolsets use this profile
                       </UIText>
                     </div>
@@ -344,7 +344,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                   <div className="max-h-[420px] overflow-y-auto">
                     {profiles.length === 0 ? (
                       <div className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
-                        <UIText className="text-sm text-neutral-600 dark:text-neutral-300">{activeProfile}</UIText>
+                        <UIText className="text-[13px] text-neutral-600 dark:text-neutral-300">{activeProfile}</UIText>
                       </div>
                     ) : (
                       profiles.map((profile) => {
@@ -374,7 +374,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                             <span className="min-w-0 flex-1 text-left">
                               <UIText
                                 numberOfLines={1}
-                                className={`min-w-0 text-left text-sm font-semibold ${
+                                className={`min-w-0 text-left text-[13px] font-semibold ${
                                   selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
                                 }`}>
                                 {profile.display_name || profile.name}
@@ -382,13 +382,13 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                               {!!profile.description && (
                                 <UIText
                                   numberOfLines={1}
-                                  className="min-w-0 text-xs text-neutral-500 dark:text-neutral-400">
+                                  className="min-w-0 text-[11px] text-neutral-500 dark:text-neutral-400">
                                   {profile.description}
                                 </UIText>
                               )}
                             </span>
                             {selected && (
-                              <UIText className="text-xs font-semibold text-sky-700 dark:text-sky-300">
+                              <UIText className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">
                                 Active
                               </UIText>
                             )}
@@ -433,7 +433,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
             <SquarePen size={20} color={isNewChat ? brand : dimColor} />
             <UIText
               numberOfLines={1}
-              className={`min-w-0 flex-1 text-left text-[17px] ${
+              className={`min-w-0 flex-1 text-left text-[15px] ${
                 isNewChat
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                   : 'font-normal text-neutral-950 dark:text-neutral-100'
@@ -454,7 +454,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                 <Icon size={20} color={active ? brand : dimColor} />
                 <UIText
                   numberOfLines={1}
-                  className={`min-w-0 flex-1 text-left text-[17px] ${
+                  className={`min-w-0 flex-1 text-left text-[15px] ${
                     active
                       ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                       : 'font-normal text-neutral-950 dark:text-neutral-100'
@@ -475,7 +475,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
             <Ellipsis size={20} color={showMoreMenu || isMoreActive ? brand : dimColor} />
             <UIText
               numberOfLines={1}
-              className={`min-w-0 flex-1 text-left text-[17px] ${
+              className={`min-w-0 flex-1 text-left text-[15px] ${
                 showMoreMenu || isMoreActive
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                   : 'font-normal text-neutral-950 dark:text-neutral-100'
@@ -484,7 +484,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
             </UIText>
             {pendingAskCount > 0 && (
               <Badge variant="destructive">
-                <UIText className="text-[11px] font-bold text-white">
+                <UIText className="text-[10px] font-bold text-white">
                   {pendingAskCount > 99 ? '99+' : pendingAskCount}
                 </UIText>
               </Badge>
@@ -506,7 +506,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                     <Icon size={18} color={active ? brand : dimColor} />
                     <UIText
                       numberOfLines={1}
-                      className={`min-w-0 flex-1 text-left text-[15px] ${
+                      className={`min-w-0 flex-1 text-left text-[13px] ${
                         active
                           ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                           : 'font-normal text-neutral-800 dark:text-neutral-200'
@@ -531,11 +531,11 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
             read as one another. Measured before this change: 50 rows, every gap
             between them exactly 0. */}
         <div className="flex flex-col gap-1 px-3 pt-3">
-          <UIText className="px-3 pb-1 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
+          <UIText className="px-3 pb-1 text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
             {ql ? `Results (${visible.length})` : 'Recents'}
           </UIText>
           {visible.length === 0 && (
-            <UIText className="px-3 py-2 text-[15px] text-neutral-500 dark:text-neutral-400">
+            <UIText className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">
               {ql ? 'No matches' : 'No sessions yet'}
             </UIText>
           )}
@@ -566,7 +566,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
           {!ql && sessionsLoadingMore && (
             <div className="flex items-center justify-center gap-2 py-3">
               <Spinner size={14} color={dimColor} />
-              <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">Loading more…</UIText>
+              <UIText className="text-[12px] text-neutral-500 dark:text-neutral-400">Loading more…</UIText>
             </div>
           )}
         </div>
@@ -584,7 +584,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
             <Button variant="ghost" className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-4 py-4">
               <Avatar className="size-11">
                 <AvatarFallback className="bg-[#1a73e8]">
-                  <UIText className="text-lg font-bold text-white">
+                  <UIText className="text-base font-bold text-white">
                     {(username || 'H').slice(0, 1).toUpperCase()}
                   </UIText>
                 </AvatarFallback>
@@ -597,10 +597,10 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
               <span className="flex flex-1 flex-col text-left">
                 <UIText
                   numberOfLines={1}
-                  className="min-w-0 text-left text-[16px] font-semibold text-neutral-950 dark:text-neutral-100">
+                  className="min-w-0 text-left text-[14px] font-semibold text-neutral-950 dark:text-neutral-100">
                   {username || 'Hermes'}
                 </UIText>
-                <UIText className="min-w-0 text-sm text-neutral-500 dark:text-neutral-400">{host || ''}</UIText>
+                <UIText className="min-w-0 text-[13px] text-neutral-500 dark:text-neutral-400">{host || ''}</UIText>
               </span>
               <ChevronRight
                 size={18}
@@ -625,7 +625,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                     <Icon size={19} color={active ? brand : dark ? '#ccc' : '#444'} />
                     <UIText
                       numberOfLines={1}
-                      className={`min-w-0 flex-1 text-left text-[15px] font-medium ${
+                      className={`min-w-0 flex-1 text-left text-[13px] font-medium ${
                         active ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-900 dark:text-neutral-100'
                       }`}>
                       {item.label}
@@ -645,7 +645,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                 <Settings size={19} color={dark ? '#ccc' : '#444'} />
                 <UIText
                   numberOfLines={1}
-                  className="min-w-0 flex-1 text-left text-[15px] font-medium text-neutral-900 dark:text-neutral-100">
+                  className="min-w-0 flex-1 text-left text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
                   Settings
                 </UIText>
               </Button>
