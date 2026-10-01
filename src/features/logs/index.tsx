@@ -250,7 +250,7 @@ export function LogsScreen() {
           {/* Top line: Log File Tabs & Filter Toggle */}
           <div className="flex items-center justify-between" style={{ gap: 10 }}>
             <div className="overflow-x-auto flex-1">
-              <div className="gap-2 pr-1 items-center">
+              <div className="flex items-center gap-2 pr-1">
                 {LOG_FILES.map((f) => {
                   const isSelected = file === f;
                   return (
@@ -339,7 +339,7 @@ export function LogsScreen() {
                     Severity Level
                   </div>
                   <div className="overflow-x-auto">
-                    <div className="gap-2 pr-1">
+                    <div className="flex gap-2 pr-1">
                       {LOG_LEVELS.map((lvl) => {
                         const isSelected = level === lvl;
                         const color = LEVEL_COLORS[lvl];

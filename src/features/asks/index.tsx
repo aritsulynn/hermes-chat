@@ -277,13 +277,12 @@ export function AskInboxScreen() {
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
 
-  useEffect(() => {
-    (navigation as any).setOptions?.({
-      headerLeft: () => <HamburgerBtn />,
-      headerTintColor: dark ? '#f5f5f5' : '#111',
-      title: 'Ask Inbox',
-    });
-  }, [navigation, dark]);
+  // A `navigation.setOptions({ headerLeft, title })` effect used to sit here.
+  // It is what React Navigation needed to draw this screen's title bar, and
+  // `navigation` does not exist in the web build — so it did nothing. This
+  // screen renders its own header below, which is why nothing was visibly
+  // broken here; the same effect in kanban was the reason *that* screen had no
+  // header at all. Removed rather than left to mislead.
 
   const pending = useMemo(
     () =>
@@ -341,7 +340,7 @@ export function AskInboxScreen() {
           <div className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Ask Inbox</div>
         </div>
         <div className="overflow-y-auto">
-          <div className="mx-auto w-full max-w-4xl p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] gap-3">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
             <div className="mb-1 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
               <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
               <div className="flex-1">

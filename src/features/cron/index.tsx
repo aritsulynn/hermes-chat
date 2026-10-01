@@ -985,7 +985,7 @@ export function CronScreen() {
 
           {/* Body form */}
           <div className="overflow-y-auto bg-white dark:bg-black">
-            <div className="p-4 gap-3.5 pb-8">
+            <div className="flex flex-col gap-3.5 p-4 pb-8">
               {formError && (
                 <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
                   <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">

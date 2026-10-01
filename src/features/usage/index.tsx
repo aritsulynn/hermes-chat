@@ -202,7 +202,7 @@ export function UsageScreen() {
         )}
 
         <div className="overflow-y-auto">
-          <div className="mx-auto w-full max-w-4xl p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)] gap-4">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)]">
             {loading && !refreshing ? (
               <div className="flex flex-col items-center justify-center py-20">
                 <Spinner size={24} color={brand} />
