@@ -126,6 +126,16 @@ const T = {
   td: 'px-3 py-2 align-middle leading-[20px]',
 };
 
+/**
+ * GFM's column alignment reaches a `<th>`/`<td>` as the deprecated `align`
+ * attribute, whose React type also carries HTML-only values (`char`, `justify`)
+ * that are not CSS `text-align` keywords. Only the three GFM can emit are passed
+ * through; anything else falls back to the cell's own `text-left`.
+ */
+function textAlignOf(align: string | undefined): 'left' | 'center' | 'right' | undefined {
+  return align === 'left' || align === 'center' || align === 'right' ? align : undefined;
+}
+
 function CodeBlock({ theme, code, lang }: { theme: MdTheme; code: string; lang: string }) {
   const c = C[theme];
   const copy = async () => {
@@ -187,8 +197,22 @@ export function mdComponents(theme: MdTheme, dark: boolean): Components {
     thead: ({ children }) => <thead className={T.head}>{children}</thead>,
     tbody: ({ children }) => <tbody className={T.body}>{children}</tbody>,
     tr: ({ children }) => <tr className={T.row}>{children}</tr>,
-    th: ({ children }) => <th className={T.th}>{children}</th>,
-    td: ({ children }) => <td className={T.td}>{children}</td>,
+    // GFM column alignment (`|:---:|`) arrives as the deprecated `align`
+    // attribute, whose React type also carries HTML-only values (`char`,
+    // `justify`) that are not CSS `text-align` keywords — so only the three GFM
+    // can actually emit are passed through. These overrides drop extra props, so
+    // it is carried to `style` rather than spread (the alternative is leaking
+    // react-markdown's own `node` prop onto a DOM element).
+    th: ({ children, align }) => (
+      <th className={T.th} style={{ textAlign: textAlignOf(align) }}>
+        {children}
+      </th>
+    ),
+    td: ({ children, align }) => (
+      <td className={T.td} style={{ textAlign: textAlignOf(align) }}>
+        {children}
+      </td>
+    ),
 
     // Inline code. Block code never reaches here — it is intercepted in `pre`.
     code: ({ children, className: codeClass }) => (codeClass ? null : <code className={c.code}>{children}</code>),
