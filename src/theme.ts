@@ -77,9 +77,29 @@ export const brandColor = (dark: boolean): string => (dark ? BRAND_BLUE_DARK : B
 
 /** Full-screen surface behind every tab (`flex: 1` + scheme background). */
 export const screenBg = (dark: boolean): string => (dark ? '#000' : '#fff');
-/** Style object for a full-screen surface (`style={screenStyle(dark)}`). */
-export const screenStyle = (dark: boolean): { flex: 1; backgroundColor: string } => ({
+/**
+ * Style object for a full-screen surface (`style={screenStyle(dark)}`).
+ *
+ * `display: flex; flex-direction: column` is not decoration — it is what a
+ * React Native `<View>` / `<SafeAreaView>` *is*, and every screen in this app is
+ * built on that assumption: its root holds a header, a scrolling body and
+ * (for chat) an overlaid composer, and every level below says `flex-1`. The port
+ * turned the root into a plain `<div>`, which is `display: block`, so `flex-1`
+ * on all of them became inert and the body grew to its full content height
+ * instead of scrolling. Chat was the visible symptom — the transcript's scroller
+ * measured clientHeight === scrollHeight, so there was nothing to scroll.
+ *
+ * `minHeight: 0` is the other half. A flex item defaults to `min-height: auto`,
+ * which means it refuses to shrink below its content; without this the root
+ * still outgrew the shell no matter which display it had. Yoga has no such rule.
+ */
+export const screenStyle = (
+  dark: boolean,
+): { flex: 1; display: 'flex'; flexDirection: 'column'; minHeight: 0; backgroundColor: string } => ({
   flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  minHeight: 0,
   backgroundColor: screenBg(dark),
 });
 

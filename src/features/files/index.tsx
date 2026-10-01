@@ -469,7 +469,7 @@ export function FilesScreen() {
   return (
     <div style={screen}>
       {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
-      <div className="flex-1 bg-white dark:bg-black">
+      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
         
 
         {/* Header Bar */}

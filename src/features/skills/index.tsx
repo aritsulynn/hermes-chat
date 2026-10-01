@@ -168,7 +168,7 @@ export function SkillsScreen() {
 
   return (
     <div style={screenStyle(dark)}>
-      <div className="flex-1 bg-white dark:bg-black">
+      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
         
 
         {/* Header */}

@@ -153,7 +153,7 @@ export function UsageScreen() {
   return (
     <div style={screenStyle(dark)}>
       {/* No 'bottom' edge: ScrollView content pads insets.bottom + 32. */}
-      <div className="flex-1 bg-white dark:bg-black">
+      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
         
 
         {/* Header */}

@@ -57,7 +57,7 @@ export function SettingsScreen() {
     {/* No 'bottom' edge: the only bottom padding lives in the ScrollView
         content (insets.bottom + 24). Keeping 'bottom' doubles the gap
         above the gesture bar on edge-to-edge Android. */}
-    <div className="flex-1 bg-white dark:bg-black">
+    <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
       
 
       {/* Header */}

@@ -979,7 +979,7 @@ export function ChatScreen() {
             </div>
           </div>
         </div>
-        <div className="flex-1 bg-white dark:bg-black">
+        <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
           
           <div className="flex flex-col flex-1 items-center justify-center p-6">
             <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</UIText>
@@ -1068,7 +1068,7 @@ export function ChatScreen() {
           itself when the keyboard is closed, and KeyboardAvoidingView lifts
           it when open. Keeping 'bottom' would double the gap above the
           gesture bar (and float the composer above the keyboard). */}
-      <div className="flex-1 bg-white dark:bg-black">
+      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
         
 
       {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
@@ -1142,7 +1142,11 @@ export function ChatScreen() {
           background, so scrolled messages show through around the card — an
           absolute child ignores the view's padding, and the keyboard is
           handled explicitly via kbH (footer padding lifts the card). */}
-      <div className="flex-1">
+      {/* `min-h-0` and `flex flex-col` for the same reason as every other level
+          of this chain: it is a column flex item, and `min-height: auto` would
+          let it grow to the transcript's full height instead of letting the
+          scroller inside it scroll. */}
+      <div className="flex min-h-0 flex-1 flex-col">
         {/* A plain scroll container, not a virtualizer — see
             components/chat/transcript.tsx for why this list is the exception.
             `onScroll` is the only scroll signal: a DOM scroller fires it

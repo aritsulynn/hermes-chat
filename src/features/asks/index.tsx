@@ -408,7 +408,7 @@ export function AskInboxScreen() {
     <div style={screenStyle(dark)}>
       
       <div
-        className="flex-1 bg-white dark:bg-black"
+        className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black"
 >
         <div className="flex items-center gap-3 border-b border-neutral-200 px-4 py-4 dark:border-neutral-800">
           <HamburgerBtn />

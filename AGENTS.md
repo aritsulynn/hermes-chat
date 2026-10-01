@@ -157,6 +157,20 @@ What the port changed, so the reasoning is not re-derived:
   bare `flex`, because a row would be wrong for any View with more than one
   child. The visible symptom when it is missing is a spinner in the corner of
   its box, or a strip with no gaps.
+- **A flex chain needs `min-h-0` at every level, and the screen root needs
+  `display: flex`.** React Native's `<View>`/`<SafeAreaView>` *is* a flex column,
+  so `flex: 1` there really did bound its children. A `<div>` is `display: block`,
+  and a flex item defaults to `min-height: auto`, which means it refuses to
+  shrink below its content. Both defaults were lost together, and the result is
+  the worst kind of bug: the body grows to its full content height instead of
+  scrolling, so `clientHeight === scrollHeight` and there is nothing to scroll.
+  Chat was the visible symptom — a 10,517px transcript in an 880px box that could
+  not move. `screenStyle()` now carries `display/flex-direction/min-height` so
+  the root is right everywhere at once, and the body wrappers carry
+  `flex min-h-0 flex-1 flex-col`. **When a list will not scroll, check
+  `clientHeight` vs `scrollHeight` on the scroller first** — if they are equal
+  the chain is unconstrained, and `document.scrollHeight - innerHeight > 0` is
+  the tell that the page is scrolling instead of the screen's own list.
 - **One difference is known and deliberately not fixed.** RN's default
   `flex-shrink` is `0`; CSS's is `1`. A converted `<View>` in a flex row can
   therefore shrink where on native it could not — long text truncating, a fixed

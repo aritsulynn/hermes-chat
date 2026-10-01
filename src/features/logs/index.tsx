@@ -216,7 +216,7 @@ export function LogsScreen() {
   return (
     <div style={screen}>
       {/* No 'bottom' edge: the list content already pads insets.bottom + 48. */}
-      <div className="flex-1 bg-white dark:bg-black">
+      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
         
 
         {/* Header */}
@@ -540,7 +540,7 @@ export function LogsScreen() {
             </UIText>
           </div>
         ) : (
-          <div className="flex-1 bg-[#101014]">
+          <div className="flex min-h-0 flex-1 flex-col bg-[#101014]">
             {/* FlashList v2 sizes rows itself; drawDistance replaces the old
                 windowSize/maxToRenderPerBatch overscan tuning. */}
             <WindowedList

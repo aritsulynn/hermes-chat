@@ -326,7 +326,7 @@ export function KanbanScreen() {
 
   return (
     <div style={screenStyle(dark)}>
-      <div className="flex-1 bg-white dark:bg-black">
+      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
         
         {/* Board switcher + new-task button */}
         <div className="flex items-center gap-2 px-3 pt-2">
