@@ -1,11 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -16,10 +9,9 @@ import { ConfirmDialog } from '../../components/ui/dialog';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Sheet, useSheet } from '../../components/ui/sheets';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { Textarea } from '../../components/ui/textarea';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect, useRouter } from 'expo-router';
+import { Navigate as Redirect } from 'react-router-dom';
 import {
   AlertCircle,
   AlertTriangle,
@@ -41,7 +33,7 @@ import {
   User,
   Wrench,
   X,
-} from 'lucide-react-native';
+} from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
@@ -62,11 +54,12 @@ import {
 } from './helpers';
 import type { DeliveryTarget } from './helpers';
 import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
+import { ScrollArea } from '../../components/ui/scroll';
 
 // Vertical gap between virtualized cards (FlashList v2 ignores `gap` in
 // contentContainerStyle, so the separator carries the spacing).
 function ListGap12() {
-  return <View style={{ height: 12 }} />;
+  return <div style={{ height: 12 }} />;
 }
 
 const jobKeyExtractor = (job: CronJobItem) => job.id;
@@ -105,17 +98,17 @@ const JobCard = memo(function JobCard({
   const isError = job.last_status === 'error' || Boolean(job.last_error);
 
   return (
-    <View className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+    <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
       {/* Header: Title + Status Badge */}
-      <View className="flex-row items-start justify-between gap-2">
-        <View className="flex-1">
-          <Text className="text-base font-bold text-neutral-950 dark:text-neutral-100" numberOfLines={1}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1">
+          <UIText className="text-base font-bold text-neutral-950 dark:text-neutral-100" numberOfLines={1}>
             {job.name || job.id}
-          </Text>
-          <Text className="text-[11px] font-mono text-neutral-400 dark:text-neutral-500">ID: {job.id}</Text>
-        </View>
+          </UIText>
+          <UIText className="text-[11px] font-mono text-neutral-400 dark:text-neutral-500">ID: {job.id}</UIText>
+        </div>
 
-        <View
+        <div
           className={`rounded-full px-2.5 py-0.5 border ${
             isError
               ? 'border-red-300 bg-red-100 dark:border-red-800 dark:bg-red-950/60'
@@ -123,8 +116,8 @@ const JobCard = memo(function JobCard({
                 ? 'border-amber-300 bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60'
                 : 'border-emerald-300 bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60'
           }`}
-        >
-          <Text
+>
+          <UIText
             className={`text-[11px] font-semibold capitalize ${
               isError
                 ? 'text-red-700 dark:text-red-300'
@@ -132,31 +125,31 @@ const JobCard = memo(function JobCard({
                   ? 'text-amber-700 dark:text-amber-300'
                   : 'text-emerald-700 dark:text-emerald-300'
             }`}
-          >
+>
             {isError ? 'Error' : isPaused ? 'Paused' : 'Active'}
-          </Text>
-        </View>
-      </View>
+          </UIText>
+        </div>
+      </div>
 
       {/* Schedule badge & next run */}
-      <View className="mt-2.5 flex-row flex-wrap items-center gap-2">
-        <View className="flex-row items-center gap-1 rounded-md bg-neutral-200/80 px-2 py-1 dark:bg-neutral-800">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 rounded-md bg-neutral-200/80 px-2 py-1 dark:bg-neutral-800">
           <Clock size={12} color={dark ? '#ccc' : '#444'} />
-          <Text className="font-mono text-xs font-medium text-neutral-800 dark:text-neutral-200">
+          <UIText className="font-mono text-xs font-medium text-neutral-800 dark:text-neutral-200">
             {scheduleExpr || '(no schedule)'}
-          </Text>
-        </View>
+          </UIText>
+        </div>
         {job.next_run_at && (
-          <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">
+          <UIText className="text-[11px] text-neutral-500 dark:text-neutral-400">
             Next: {formatDateTime(job.next_run_at)}
-          </Text>
+          </UIText>
         )}
         {job.last_run_at && (
-          <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">
+          <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">
             Last: {formatDateTime(job.last_run_at)}
-          </Text>
+          </UIText>
         )}
-      </View>
+      </div>
 
       {/* Prompt Preview */}
       {Boolean(job.prompt) && (
@@ -170,7 +163,7 @@ const JobCard = memo(function JobCard({
           variant="destructive"
           className="mt-2.5 rounded-lg px-3 pt-2.5 pb-2"
           iconClassName="size-3.5"
-        >
+>
           <AlertDescription className="pl-5 text-[11px] font-medium text-red-700 dark:text-red-300">
             {job.last_error}
           </AlertDescription>
@@ -178,30 +171,30 @@ const JobCard = memo(function JobCard({
       )}
 
       {/* Action Buttons Toolbar */}
-      <View className="mt-3.5 flex-row items-center justify-between pt-2.5 border-t border-neutral-200/70 dark:border-neutral-800/70">
+      <div className="mt-3.5 flex items-center justify-between pt-2.5 border-t border-neutral-200/70 dark:border-neutral-800/70">
         {/* Left: Runs History */}
         <Button
           variant="ghost"
-          onPress={() => void onOpenRuns(job)}
-          accessibilityLabel={`Run history for ${job.name || job.id}`}
+          onClick={() => void onOpenRuns(job)}
+          aria-label={`Run history for ${job.name || job.id}`}
           className="h-auto rounded-lg border border-[#1a73e8]/30 bg-[#1a73e8]/10 px-2.5 py-1.5 active:bg-[#1a73e8]/20"
-        >
+>
           <History size={13} color="#1a73e8" />
           <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">History</UIText>
         </Button>
 
         {/* Right: Actions */}
-        <View className="flex-row items-center gap-1.5">
+        <div className="flex items-center gap-1.5">
           {/* Trigger / Run Now */}
           <Button
             variant="ghost"
             disabled={busy}
-            onPress={() => void onTrigger(job)}
-            accessibilityLabel={`Run ${job.name || job.id} now`}
+            onClick={() => void onTrigger(job)}
+            aria-label={`Run ${job.name || job.id} now`}
             className="h-auto rounded-lg border border-neutral-300 px-2.5 py-1.5 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
-          >
+>
             {busy ? (
-              <ActivityIndicator size="small" color="#1a73e8" />
+              <Spinner size={14} color="#1a73e8" />
             ) : (
               <>
                 <Play size={12} color={dark ? '#f5f5f5' : '#111'} fill={dark ? '#f5f5f5' : '#111'} />
@@ -216,11 +209,10 @@ const JobCard = memo(function JobCard({
               variant="ghost"
               size="icon"
               disabled={busy}
-              onPress={() => void onResume(job)}
-              accessibilityLabel={`Resume ${job.name || job.id}`}
+              onClick={() => void onResume(job)}
+              aria-label={`Resume ${job.name || job.id}`}
               className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
-              hitSlop={4}
-            >
+>
               <RotateCw size={13} color={dark ? '#f5f5f5' : '#111'} />
             </Button>
           ) : (
@@ -228,11 +220,10 @@ const JobCard = memo(function JobCard({
               variant="ghost"
               size="icon"
               disabled={busy}
-              onPress={() => void onPause(job)}
-              accessibilityLabel={`Pause ${job.name || job.id}`}
+              onClick={() => void onPause(job)}
+              aria-label={`Pause ${job.name || job.id}`}
               className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
-              hitSlop={4}
-            >
+>
               <Pause size={13} color={dark ? '#f5f5f5' : '#111'} />
             </Button>
           )}
@@ -242,11 +233,10 @@ const JobCard = memo(function JobCard({
             variant="ghost"
             size="icon"
             disabled={busy}
-            onPress={() => onEdit(job)}
-            accessibilityLabel={`Edit ${job.name || job.id}`}
+            onClick={() => onEdit(job)}
+            aria-label={`Edit ${job.name || job.id}`}
             className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
-            hitSlop={4}
-          >
+>
             <Pencil size={13} color={dark ? '#ccc' : '#555'} />
           </Button>
 
@@ -255,16 +245,15 @@ const JobCard = memo(function JobCard({
             variant="ghost"
             size="icon"
             disabled={busy}
-            onPress={() => onDelete(job)}
-            accessibilityLabel={`Delete ${job.name || job.id}`}
+            onClick={() => onDelete(job)}
+            aria-label={`Delete ${job.name || job.id}`}
             className="h-8 w-8 rounded-lg border border-red-200 active:bg-red-50 dark:border-red-900/60 dark:active:bg-red-950/30"
-            hitSlop={4}
-          >
+>
             <Trash size={13} color="#dc2626" />
           </Button>
-        </View>
-      </View>
-    </View>
+        </div>
+      </div>
+    </div>
   );
 });
 
@@ -295,11 +284,11 @@ const RunCard = memo(function RunCard({
   const totalTokens = (run.input_tokens || 0) + (run.output_tokens || 0);
 
   return (
-    <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-950/50">
+    <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-950/50">
       {/* Header: Status + Time + Duration */}
-      <View className="flex-row items-center justify-between gap-2">
-        <View className="flex-row items-center gap-2">
-          <View
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div
             className={`rounded-full px-2 py-0.5 border ${
               isRunActive
                 ? 'border-blue-300 bg-blue-100 dark:border-blue-800 dark:bg-blue-950/60'
@@ -309,8 +298,8 @@ const RunCard = memo(function RunCard({
                     ? 'border-emerald-300 bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60'
                     : 'border-neutral-300 bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800'
             }`}
-          >
-            <Text
+>
+            <UIText
               className={`text-[10px] font-bold uppercase tracking-wider ${
                 isRunActive
                   ? 'text-blue-700 dark:text-blue-300'
@@ -321,68 +310,67 @@ const RunCard = memo(function RunCard({
                       : run.end_reason || 'Finished'
               }
             `}
-            >
+>
               {isRunActive ? 'Running' : isRunFailed ? 'Failed' : isRunCompleted ? 'Success' : run.end_reason || 'Finished'}
-            </Text>
-          </View>
+            </UIText>
+          </div>
 
           {duration && (
-            <Text className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400">⏱ {duration}</Text>
+            <UIText className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400">⏱ {duration}</UIText>
           )}
-        </View>
+        </div>
 
-        <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">{formatRunTime(run.started_at)}</Text>
-      </View>
+        <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">{formatRunTime(run.started_at)}</UIText>
+      </div>
 
       {/* Title / Preview */}
-      <View className="mt-2">
-        <Text className="text-xs font-medium text-neutral-800 dark:text-neutral-200" numberOfLines={expanded ? undefined : 2}>
+      <div className="mt-2">
+        <UIText className="text-xs font-medium text-neutral-800 dark:text-neutral-200" numberOfLines={expanded ? undefined : 2}>
           {run.title || run.preview || '(No preview available)'}
-        </Text>
-        <Text className="mt-0.5 text-[10px] font-mono text-neutral-400 dark:text-neutral-500">{run.id}</Text>
-      </View>
+        </UIText>
+        <UIText className="mt-0.5 text-[10px] font-mono text-neutral-400 dark:text-neutral-500">{run.id}</UIText>
+      </div>
 
       {/* Metrics row */}
-      <View className="mt-2.5 flex-row flex-wrap items-center gap-2">
-        <View className="flex-row items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
           <MessageSquare size={11} color={dark ? '#aaa' : '#666'} />
-          <Text className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.message_count ?? 0} msgs</Text>
-        </View>
+          <UIText className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.message_count ?? 0} msgs</UIText>
+        </div>
 
         {Boolean(run.tool_call_count) && (
-          <View className="flex-row items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
+          <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
             <Wrench size={11} color={dark ? '#aaa' : '#666'} />
-            <Text className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.tool_call_count} tools</Text>
-          </View>
+            <UIText className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.tool_call_count} tools</UIText>
+          </div>
         )}
 
-        {totalTokens > 0 && (
-          <View className="flex-row items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
-            <Text className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300">
+        {totalTokens> 0 && (
+          <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
+            <UIText className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300">
               {compactNumber(totalTokens)} tok
-            </Text>
-          </View>
+            </UIText>
+          </div>
         )}
 
-        {Number(run.estimated_cost_usd) > 0 && (
-          <View className="rounded bg-emerald-100/80 px-2 py-0.5 dark:bg-emerald-950/50">
-            <Text className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300">
+        {Number(run.estimated_cost_usd)> 0 && (
+          <div className="rounded bg-emerald-100/80 px-2 py-0.5 dark:bg-emerald-950/50">
+            <UIText className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300">
               ${Number(run.estimated_cost_usd).toFixed(4)}
-            </Text>
-          </View>
+            </UIText>
+          </div>
         )}
-      </View>
+      </div>
 
       {/* Action buttons: View Messages / Open in Chat */}
-      <View className="mt-3 flex-row items-center justify-between pt-2 border-t border-neutral-200/60 dark:border-neutral-800/60">
+      <div className="mt-3 flex items-center justify-between pt-2 border-t border-neutral-200/60 dark:border-neutral-800/60">
         <Button
           variant="ghost"
-          onPress={() => void onToggleRun(run.id)}
-          accessibilityState={{ expanded }}
-          accessibilityLabel={expanded ? 'Hide messages' : 'View messages'}
-          hitSlop={5}
+          onClick={() => void onToggleRun(run.id)}
+          
+          aria-label={expanded ? 'Hide messages' : 'View messages'}
           className="h-auto px-0 py-1"
-        >
+>
           <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
             {expanded ? 'Hide Messages' : 'View Messages'}
           </UIText>
@@ -391,32 +379,31 @@ const RunCard = memo(function RunCard({
 
         <Button
           variant="ghost"
-          onPress={() => void onOpenInChat(run)}
-          accessibilityLabel="Open this run in chat"
-          hitSlop={5}
+          onClick={() => void onOpenInChat(run)}
+          aria-label="Open this run in chat"
           className="h-auto rounded-lg bg-neutral-200/70 px-2.5 py-1 active:bg-neutral-300 dark:bg-neutral-800 dark:active:bg-neutral-700"
-        >
+>
           <ExternalLink size={12} color={dark ? '#ddd' : '#333'} />
           <UIText className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Open in Chat</UIText>
         </Button>
-      </View>
+      </div>
 
       {/* Expanded Transcript Preview */}
       {expanded && (
-        <View className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-black/60">
+        <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-black/60">
           {messagesLoading && !messages && (
-            <View className="items-center justify-center py-6">
-              <ActivityIndicator size="small" color="#1a73e8" />
-              <Text className="mt-2 text-xs text-neutral-400">Loading transcript…</Text>
-            </View>
+            <div className="items-center justify-center py-6">
+              <Spinner size={14} color="#1a73e8" />
+              <UIText className="mt-2 text-xs text-neutral-400">Loading transcript…</UIText>
+            </div>
           )}
 
           {messages && messages.length === 0 && (
-            <Text className="text-center text-xs text-neutral-400 py-4">No messages found for this run session.</Text>
+            <UIText className="text-center text-xs text-neutral-400 py-4">No messages found for this run session.</UIText>
           )}
 
-          {messages && messages.length > 0 && (
-            <View className="gap-2.5">
+          {messages && messages.length> 0 && (
+            <div className="gap-2.5">
               {messages.map((m, idx) => {
                 const isUser = m.role === 'user';
                 const isTool = m.role === 'tool';
@@ -424,7 +411,7 @@ const RunCard = memo(function RunCard({
                 const reasoningText = m.reasoning_content || m.reasoning;
 
                 return (
-                  <View
+                  <div
                     key={m.id ? String(m.id) : `msg-${idx}`}
                     className={`rounded-lg p-2.5 ${
                       isUser
@@ -433,9 +420,9 @@ const RunCard = memo(function RunCard({
                           ? 'bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800'
                           : 'bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200/70 dark:border-neutral-800'
                     }`}
-                  >
-                    <View className="flex-row items-center justify-between mb-1">
-                      <View className="flex-row items-center gap-1.5">
+>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
                         {isUser ? (
                           <User size={12} color="#1a73e8" />
                         ) : isTool ? (
@@ -443,7 +430,7 @@ const RunCard = memo(function RunCard({
                         ) : (
                           <Bot size={12} color="#10b981" />
                         )}
-                        <Text
+                        <UIText
                           className={`text-[10px] font-bold uppercase tracking-wider ${
                             isUser
                               ? 'text-blue-700 dark:text-blue-400'
@@ -451,41 +438,40 @@ const RunCard = memo(function RunCard({
                                 ? 'text-purple-700 dark:text-purple-400'
                                 : 'text-emerald-700 dark:text-emerald-400'
                           }`}
-                        >
+>
                           {isUser ? 'User / Trigger' : isTool ? `Tool: ${m.tool_name || m.name || 'call'}` : 'Hermes'}
-                        </Text>
-                      </View>
-                    </View>
+                        </UIText>
+                      </div>
+                    </div>
 
                     {Boolean(reasoningText) && (
-                      <View className="mb-1.5 rounded bg-neutral-200/60 p-1.5 dark:bg-neutral-800">
-                        <Text className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 mb-0.5">
+                      <div className="mb-1.5 rounded bg-neutral-200/60 p-1.5 dark:bg-neutral-800">
+                        <UIText className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 mb-0.5">
                           Thinking / Reasoning:
-                        </Text>
-                        <Text numberOfLines={4} className="text-[11px] italic text-neutral-600 dark:text-neutral-300 font-mono">
+                        </UIText>
+                        <UIText numberOfLines={4} className="text-[11px] italic text-neutral-600 dark:text-neutral-300 font-mono">
                           {reasoningText}
-                        </Text>
-                      </View>
+                        </UIText>
+                      </div>
                     )}
 
                     {Boolean(contentText) && (
-                      <Text
-                        selectable
+                      <UIText
                         className={`text-xs leading-relaxed text-neutral-800 dark:text-neutral-200 ${
                           isTool ? 'font-mono text-[11px]' : ''
                         }`}
-                      >
+>
                         {contentText}
-                      </Text>
+                      </UIText>
                     )}
-                  </View>
+                  </div>
                 );
               })}
-            </View>
+            </div>
           )}
-        </View>
+        </div>
       )}
-    </View>
+    </div>
   );
 });
 
@@ -494,7 +480,6 @@ export function CronScreen() {
   const { authed, activeProfile, opsGet, opsMut, openSession, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
-  const insets = useSafeAreaInsets();
   // Resolved once per scheme: the job list re-renders on every poll and each
   // value feeds the screen surface plus all four form fields.
   const screen = useMemo(() => screenStyle(dark), [dark]);
@@ -950,29 +935,29 @@ export function CronScreen() {
   const jobsEmpty = useMemo(() => {
     if (loading && !refreshing) {
       return (
-        <View className="items-center justify-center py-16">
-          <ActivityIndicator size="large" color="#1a73e8" />
-          <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading cron jobs…</Text>
-        </View>
+        <div className="items-center justify-center py-16">
+          <Spinner size={24} color="#1a73e8" />
+          <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading cron jobs…</UIText>
+        </div>
       );
     }
     if (!error) {
       return (
-        <View className="items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
+        <div className="items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
           <Clock size={36} color={dark ? '#666' : '#999'} />
-          <Text className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Cron Jobs Yet</Text>
-          <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+          <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Cron Jobs Yet</UIText>
+          <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
             Schedule recurring prompts or automation tasks for Hermes.
-          </Text>
+          </UIText>
           <Button
-            onPress={openCreateModal}
-            accessibilityLabel="Create first cron job"
+            onClick={openCreateModal}
+            aria-label="Create first cron job"
             className="mt-4 h-auto rounded-xl bg-[#1a73e8] px-4 py-2.5"
-          >
+>
             <Plus size={16} color="#fff" />
             <UIText className="text-sm font-semibold text-white">Create First Job</UIText>
           </Button>
-        </View>
+        </div>
       );
     }
     return null;
@@ -1017,21 +1002,21 @@ export function CronScreen() {
   const runsEmpty = useMemo(() => {
     if (runsLoading && runsList.length === 0) {
       return (
-        <View className="items-center justify-center py-16">
-          <ActivityIndicator size="large" color="#1a73e8" />
-          <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading run history…</Text>
-        </View>
+        <div className="items-center justify-center py-16">
+          <Spinner size={24} color="#1a73e8" />
+          <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading run history…</UIText>
+        </div>
       );
     }
     if (runsList.length === 0 && !runsError) {
       return (
-        <View className="items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
+        <div className="items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
           <Clock size={36} color={dark ? '#666' : '#999'} />
-          <Text className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Runs Recorded</Text>
-          <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+          <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Runs Recorded</UIText>
+          <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
             This cron job hasn&apos;t executed yet. You can tap &quot;Run&quot; on the job card to trigger a run now.
-          </Text>
-        </View>
+          </UIText>
+        </div>
       );
     }
     return null;
@@ -1048,24 +1033,23 @@ export function CronScreen() {
     void loadJobs(true);
   }, [loadJobs]);
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screen}>
+    <div style={screen}>
       {/* No 'bottom' edge: main list content already pads insets.bottom + 32. */}
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
+      <div className="flex-1 bg-white dark:bg-black">
+        
 
         {/* Header */}
         <ScreenHeader
           title="Cron Jobs"
-          insetTop={insets.top}
+
           actions={
             <Button
-              onPress={openCreateModal}
-              hitSlop={10}
+              onClick={openCreateModal}
               className="h-8 rounded-lg bg-[#1a73e8] px-3"
-            >
+>
               <Plus size={16} color="#fff" />
               <UIText className="text-xs font-semibold text-white">New</UIText>
             </Button>
@@ -1074,9 +1058,9 @@ export function CronScreen() {
 
         {/* Status feedback toast */}
         {statusNotice && (
-          <View className="mx-4 mt-2 rounded-lg bg-emerald-600 px-3 py-2">
-            <Text className="text-center text-xs font-semibold text-white">{statusNotice}</Text>
-          </View>
+          <div className="mx-4 mt-2 rounded-lg bg-emerald-600 px-3 py-2">
+            <UIText className="text-center text-xs font-semibold text-white">{statusNotice}</UIText>
+          </div>
         )}
 
         <ErrorRetry error={error} onRetry={() => void loadJobs()} className="m-4" compact />
@@ -1089,8 +1073,8 @@ export function CronScreen() {
           extraData={jobsExtra}
           ListEmptyComponent={jobsEmpty}
           ItemSeparatorComponent={ListGap12}
-          contentContainerStyle={jobsContentStyle}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleJobsRefresh} />}
+          contentClassName={jobsContentStyle}
+
         />
 
         {/* Create / Edit sheet */}
@@ -1099,31 +1083,29 @@ export function CronScreen() {
           onDismiss={formSheet.onDismiss}
           snapPoints={['90%']}
           onClose={() => setModalOpen(false)}
-        >
+>
           {/* Header */}
-          <View className="flex-row items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
-            <Text className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
+          <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
+            <UIText className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
               {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
-            </Text>
+            </UIText>
             <Button
               variant="ghost"
               size="icon"
-              accessibilityLabel="Close"
+              aria-label="Close"
               disabled={formSaving}
-              onPress={() => setModalOpen(false)}
-              hitSlop={10}
+              onClick={() => setModalOpen(false)}
               className="h-8 w-8 rounded-lg"
-            >
+>
               <X size={20} color={dark ? '#ccc' : '#444'} />
             </Button>
-          </View>
+          </div>
 
           {/* Body form */}
           <BottomSheetScrollView
             className="bg-white dark:bg-black"
-            contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }}
-            keyboardShouldPersistTaps="handled"
-          >
+            contentClassName="p-[object Object] gap-[object Object] pb-[object Object]"
+>
             {formError && (
               <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
                 <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
@@ -1133,111 +1115,103 @@ export function CronScreen() {
             )}
 
             {/* Name */}
-            <View>
+            <div>
               <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Job Name *</Label>
               <Input
                 value={formName}
-                onChangeText={setFormName}
+                onChange={(e) => setFormName(e.target.value)}
                 placeholder="e.g. morning-brief"
-                placeholderTextColor={placeholder}
                 autoCapitalize="none"
-                autoCorrect={false}
                 className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
-            </View>
+            </div>
 
             {/* Schedule Expression */}
-            <View>
+            <div>
               <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                 Schedule (Cron Expression) *
               </Label>
               <Input
                 value={formSchedule}
-                onChangeText={setFormSchedule}
+                onChange={(e) => setFormSchedule(e.target.value)}
                 placeholder="e.g. 0 9 * * *"
-                placeholderTextColor={placeholder}
                 autoCapitalize="none"
-                autoCorrect={false}
                 className="font-mono rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
               {/* Presets Chips */}
-              <Text className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-1.5">
+              <UIText className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</UIText>
+              <ScrollArea horizontal className="flex gap-1.5">
                 {SCHEDULE_PRESETS.map((preset) => (
                   <Button
                     key={preset.label}
                     variant="ghost"
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: formSchedule === preset.expr }}
-                    accessibilityLabel={`${preset.label} schedule, ${preset.expr}`}
-                    onPress={() => setFormSchedule(preset.expr)}
+
+                    aria-pressed={formSchedule === preset.expr}
+                    aria-label={`${preset.label} schedule, ${preset.expr}`}
+                    onClick={() => setFormSchedule(preset.expr)}
                     className={`h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
                       formSchedule === preset.expr
                         ? 'border-[#1a73e8] bg-[#1a73e8]/10'
                         : 'border-neutral-300 dark:border-neutral-700'
                     }`}
-                  >
+>
                     <UIText
                       className={`text-[11px] font-medium ${
                         formSchedule === preset.expr
                           ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
                           : 'text-neutral-600 dark:text-neutral-300'
                       }`}
-                    >
+>
                       {preset.label}
                     </UIText>
                   </Button>
                 ))}
-              </ScrollView>
-            </View>
+              </ScrollArea>
+            </div>
 
             {/* Prompt / Instructions */}
-            <View>
+            <div>
               <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                 Prompt (Task for Hermes) *
               </Label>
               <Textarea
                 value={formPrompt}
-                onChangeText={setFormPrompt}
+                onChange={(e) => setFormPrompt(e.target.value)}
                 placeholder="Describe what the agent should execute when this cron job triggers..."
-                placeholderTextColor={placeholder}
-                multiline
+
                 numberOfLines={4}
-                textAlignVertical="top"
                 className="min-h-[100px] rounded-xl border border-neutral-300 p-3 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
-            </View>
+            </div>
 
             {/* Optional: Model override */}
-            <View>
+            <div>
               <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                 Model Override (optional)
               </Label>
               <Input
                 value={formModel}
-                onChangeText={setFormModel}
+                onChange={(e) => setFormModel(e.target.value)}
                 placeholder="e.g. nous/hermes-3-llama-3.1-8b (leave blank for default)"
-                placeholderTextColor={placeholder}
                 autoCapitalize="none"
-                autoCorrect={false}
                 className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
-            </View>
+            </div>
 
             {/* Delivery target — options come from the server, never guessed. */}
-            <View>
+            <div>
               <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                 Notify
               </Label>
               {deliverChoices.length === 1 ? (
-                <View className="rounded-xl border border-dashed border-neutral-300 px-3.5 py-2.5 dark:border-neutral-700">
-                  <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                <div className="rounded-xl border border-dashed border-neutral-300 px-3.5 py-2.5 dark:border-neutral-700">
+                  <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
                     This gateway reports no notification targets, so runs are saved without sending
                     anywhere. Connect a platform on the server to enable delivery.
-                  </Text>
-                </View>
+                  </UIText>
+                </div>
               ) : (
-                <View className="gap-1.5">
+                <div className="gap-1.5">
                   {deliverChoices.map((option) => {
                     const selected = formDeliver === option.id;
                     const disabled = !option.home_target_set;
@@ -1245,25 +1219,25 @@ export function CronScreen() {
                       <Button
                         key={option.id}
                         variant="ghost"
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected, disabled }}
-                        accessibilityLabel={`Deliver to ${option.name}`}
+
+                        
+                        aria-label={`Deliver to ${option.name}`}
                         disabled={disabled}
-                        onPress={() => setFormDeliver(option.id)}
+                        onClick={() => setFormDeliver(option.id)}
                         className={`h-auto w-full items-start justify-start rounded-xl border px-3 py-2.5 ${
                           selected
                             ? 'border-[#1a73e8] bg-[#1a73e8]/10'
                             : 'border-neutral-300 dark:border-neutral-700'
                         } ${disabled ? 'opacity-50' : ''}`}
-                      >
-                        <View className="flex-1">
+>
+                        <div className="flex-1">
                           <UIText
                             className={`text-sm font-medium ${
                               selected
                                 ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
                                 : 'text-neutral-800 dark:text-neutral-200'
                             }`}
-                          >
+>
                             {option.name}
                           </UIText>
                           {disabled ? (
@@ -1272,41 +1246,41 @@ export function CronScreen() {
                               {option.home_env_var ? ` (${option.home_env_var})` : ''}
                             </UIText>
                           ) : null}
-                        </View>
+                        </div>
                       </Button>
                     );
                   })}
-                </View>
+                </div>
               )}
-            </View>
+            </div>
 
             {/* Action Buttons */}
-            <View className="mt-2 flex-row gap-3">
+            <div className="mt-2 flex gap-3">
               <Button
                 variant="outline"
                 disabled={formSaving}
-                onPress={() => setModalOpen(false)}
-                accessibilityLabel="Cancel"
+                onClick={() => setModalOpen(false)}
+                aria-label="Cancel"
                 className="h-auto flex-1 rounded-xl py-3"
-              >
+>
                 <UIText className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
               </Button>
 
               <Button
                 disabled={formSaving}
-                onPress={handleSave}
-                accessibilityLabel={editingJob ? 'Save changes' : 'Create job'}
+                onClick={handleSave}
+                aria-label={editingJob ? 'Save changes' : 'Create job'}
                 className="h-auto flex-1 rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600"
-              >
+>
                 {formSaving ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <Spinner size={14} color="#fff" />
                 ) : (
                   <UIText className="text-sm font-semibold text-white">
                     {editingJob ? 'Save Changes' : 'Create Job'}
                   </UIText>
                 )}
               </Button>
-            </View>
+            </div>
           </BottomSheetScrollView>
         </Sheet>
 
@@ -1316,31 +1290,30 @@ export function CronScreen() {
           onDismiss={runsSheet.onDismiss}
           snapPoints={['85%']}
           onClose={() => setRunsModalOpen(false)}
-        >
+>
           {/* Header */}
-          <View className="flex-row items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
-                <View className="flex-1 pr-2">
-                  <View className="flex-row items-center gap-2">
+          <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
+                <div className="flex-1 pr-2">
+                  <div className="flex items-center gap-2">
                     <History size={18} color="#1a73e8" />
-                    <Text className="text-base font-bold text-neutral-950 dark:text-neutral-100">Run History</Text>
-                  </View>
-                  <Text numberOfLines={1} className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                    <UIText className="text-base font-bold text-neutral-950 dark:text-neutral-100">Run History</UIText>
+                  </div>
+                  <UIText numberOfLines={1} className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
                     {selectedJobForRuns?.name || selectedJobForRuns?.id}
-                  </Text>
-                </View>
+                  </UIText>
+                </div>
 
-                <View className="flex-row items-center gap-1">
+                <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
-                    accessibilityLabel="Refresh runs"
+                    aria-label="Refresh runs"
                     disabled={runsLoading}
-                    onPress={() => void handleRefreshRuns()}
-                    hitSlop={10}
+                    onClick={() => void handleRefreshRuns()}
                     className="h-9 w-9 rounded-lg"
-                  >
+>
                     {runsLoading ? (
-                      <ActivityIndicator size="small" color="#1a73e8" />
+                      <Spinner size={14} color="#1a73e8" />
                     ) : (
                       <RefreshCw size={18} color={dark ? '#ccc' : '#444'} />
                     )}
@@ -1348,15 +1321,14 @@ export function CronScreen() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    accessibilityLabel="Close run history"
-                    onPress={() => setRunsModalOpen(false)}
-                    hitSlop={10}
+                    aria-label="Close run history"
+                    onClick={() => setRunsModalOpen(false)}
                     className="h-9 w-9 rounded-lg"
-                  >
+>
                     <X size={20} color={dark ? '#ccc' : '#444'} />
                   </Button>
-                </View>
-              </View>
+                </div>
+              </div>
 
               {/* Body */}
               <FlashList
@@ -1368,10 +1340,10 @@ export function CronScreen() {
                 ListHeaderComponent={runsHeader}
                 ListEmptyComponent={runsEmpty}
                 ItemSeparatorComponent={ListGap12}
-                contentContainerStyle={runsContentStyle}
+                contentClassName={runsContentStyle}
               />
         </Sheet>
-      </SafeAreaView>
+      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}
@@ -1384,6 +1356,6 @@ export function CronScreen() {
           if (!o) setConfirmDelete(null);
         }}
       />
-    </View>
+    </div>
   );
 }

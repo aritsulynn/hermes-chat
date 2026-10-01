@@ -1,6 +1,6 @@
 // Pure helpers for the Files screen (icon/category mapping, path joining,
 // text-readability checks). No React/JSX.
-import { File, FileArchive, FileCode, FileImage, FileText, Music, Video } from 'lucide-react-native';
+import { File, FileArchive, FileCode, FileImage, FileText, Music, Video } from 'lucide-react';
 
 export function getFileCategory(
   name: string,

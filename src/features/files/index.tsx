@@ -1,19 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect } from 'expo-router';
+import { Navigate as Redirect } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowUp,
@@ -31,8 +18,7 @@ import {
   Trash2,
   Upload,
   X,
-} from 'lucide-react-native';
-import * as Clipboard from 'expo-clipboard';
+} from 'lucide-react';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
@@ -54,17 +40,19 @@ import {
 } from '../../components/ui/dialog';
 import { toast } from '../../components/ui/toast';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { formatBytes } from '../../utils/format';
 import { FileRow } from './components/FileRow';
 import { isTextReadable, joinPath } from './helpers';
 import type { ManagedFileEntry, ManagedFilesResponse, ManagedFileReadResponse } from './types';
+import { ScrollArea } from '../../components/ui/scroll';
+import { writeClipboard } from '../../services/clipboard';
 
 export function FilesScreen() {
   const { authed, opsGet, opsMut, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
-  const insets = useSafeAreaInsets();
   // Resolved once per scheme: the list re-renders on every search keystroke
   // and each value below feeds several rows of the (virtualized) tree.
   const screen = useMemo(() => screenStyle(dark), [dark]);
@@ -382,7 +370,7 @@ export function FilesScreen() {
 
   const handleCopyText = async () => {
     if (!fileTextContent) return;
-    await Clipboard.setStringAsync(fileTextContent);
+    await writeClipboard(fileTextContent);
     setCopied(true);
     if (copyTimer.current) clearTimeout(copyTimer.current);
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
@@ -450,17 +438,17 @@ export function FilesScreen() {
       listing?.parent ? (
         <Button
           variant="ghost"
-          onPress={handleGoUp}
-          accessibilityLabel="Parent directory"
+          onClick={handleGoUp}
+          aria-label="Parent directory"
           className="h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
-        >
-          <View className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
+>
+          <div className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
             <ArrowUp size={18} color="#f59e0b" />
-          </View>
-          <View className="flex-1 items-start">
+          </div>
+          <div className="flex-1 items-start">
             <UIText className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</UIText>
             <UIText className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</UIText>
-          </View>
+          </div>
         </Button>
       ) : null,
     [handleGoUp, listing?.parent],
@@ -468,76 +456,73 @@ export function FilesScreen() {
   const fileListEmpty = useMemo(
     () =>
       loading && !refreshing ? (
-        <View className="items-center justify-center py-16">
-          <ActivityIndicator size="large" color="#1a73e8" />
-          <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</Text>
-        </View>
+        <div className="items-center justify-center py-16">
+          <Spinner size={24} color="#1a73e8" />
+          <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</UIText>
+        </div>
       ) : !loading ? (
-        <View className="items-center justify-center py-20 px-6">
-          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
+        <div className="items-center justify-center py-20 px-6">
+          <div className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
             <Folder size={28} color={dark ? '#666' : '#999'} />
-          </View>
-          <Text className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+          </div>
+          <UIText className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
             {searchInput ? 'No matching files' : 'Folder is empty'}
-          </Text>
-          <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+          </UIText>
+          <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
             {searchInput
               ? `No files or folders matching "${searchInput}"`
               : 'Upload files or create folders using the top buttons.'}
-          </Text>
-        </View>
+          </UIText>
+        </div>
       ) : null,
     [loading, refreshing, searchInput, dark],
   );
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screen}>
+    <div style={screen}>
       {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
+      <div className="flex-1 bg-white dark:bg-black">
+        
 
         {/* Header Bar */}
         <ScreenHeader
           title="Files"
-          insetTop={insets.top}
+
           subtitle={loading ? 'Loading...' : `${folderCount} folders · ${fileCount} files`}
           actions={
-            <View className="flex-row items-center gap-0.5">
+            <div className="flex items-center gap-0.5">
               <Button
                 variant="ghost"
                 size="icon"
-                accessibilityLabel="New folder"
-                onPress={() => setNewFolderModalOpen(true)}
-                hitSlop={8}
+                aria-label="New folder"
+                onClick={() => setNewFolderModalOpen(true)}
                 className="h-9 w-9 rounded-lg"
-              >
+>
                 <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
               </Button>
 
               <Button
                 variant="ghost"
                 size="icon"
-                accessibilityLabel="New file"
-                onPress={() => setNewFileModalOpen(true)}
-                hitSlop={8}
+                aria-label="New file"
+                onClick={() => setNewFileModalOpen(true)}
                 className="h-9 w-9 rounded-lg"
-              >
+>
                 <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
               </Button>
 
               <Button
                 variant="ghost"
                 size="icon"
-                accessibilityLabel="Upload image"
-                onPress={handlePickAndUploadImage}
+                aria-label="Upload image"
+                onClick={handlePickAndUploadImage}
                 disabled={uploading}
-                hitSlop={8}
                 className="h-9 w-9 rounded-lg"
-              >
+>
                 {uploading ? (
-                  <ActivityIndicator size="small" color="#1a73e8" />
+                  <Spinner size={14} color="#1a73e8" />
                 ) : (
                   <Upload size={19} color={dark ? '#e5e5e5' : '#333'} />
                 )}
@@ -546,40 +531,38 @@ export function FilesScreen() {
               <Button
                 variant="ghost"
                 size="icon"
-                accessibilityLabel="Refresh"
-                onPress={() => void load(activeDirectory, true)}
-                hitSlop={8}
+                aria-label="Refresh"
+                onClick={() => void load(activeDirectory, true)}
                 className="h-9 w-9 rounded-lg"
-              >
+>
                 <RefreshCw
                   size={18}
                   color={dark ? '#e5e5e5' : '#333'}
                   className={refreshing ? 'animate-spin' : ''}
                 />
               </Button>
-            </View>
+            </div>
           }
         />
 
         {/* Path Bar & Breadcrumbs */}
-        <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
-          <ScrollView
+        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <ScrollArea
             horizontal
-            showsHorizontalScrollIndicator={false}
             className="flex-1 mr-2"
-            contentContainerStyle={{ alignItems: 'center' }}
-          >
-            <View className="flex-row items-center gap-1">
+            contentClassName="items-center"
+>
+            <div className="flex items-center gap-1">
               <HardDrive size={14} color="#1a73e8" />
               {breadcrumbs.map((crumb, idx) => {
                 const isLast = idx === breadcrumbs.length - 1;
                 return (
-                  <View key={crumb.path} className="flex-row items-center">
+                  <div key={crumb.path} className="flex items-center">
                     <Button
                       variant="ghost"
                       disabled={isLast}
-                      accessibilityLabel={isLast ? crumb.label : `Go to ${crumb.label}`}
-                      onPress={() => {
+                      aria-label={isLast ? crumb.label : `Go to ${crumb.label}`}
+                      onClick={() => {
                         setSearchQuery('');
                         void load(crumb.path);
                       }}
@@ -588,7 +571,7 @@ export function FilesScreen() {
                           ? 'bg-neutral-200/60 dark:bg-neutral-800'
                           : 'active:bg-neutral-200 dark:active:bg-neutral-800'
                       }`}
-                    >
+>
                       <UIText
                         numberOfLines={1}
                         className={`font-mono text-xs ${
@@ -596,77 +579,74 @@ export function FilesScreen() {
                             ? 'font-bold text-neutral-900 dark:text-neutral-100'
                             : 'text-[#1a73e8] dark:text-blue-400'
                         }`}
-                      >
+>
                         {crumb.label}
                       </UIText>
                     </Button>
-                    {!isLast && <Text className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</Text>}
-                  </View>
+                    {!isLast && <UIText className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</UIText>}
+                  </div>
                 );
               })}
-            </View>
-          </ScrollView>
+            </div>
+          </ScrollArea>
 
           <Button
             variant="ghost"
-            onPress={() => {
+            onClick={() => {
               setPathInput(activeDirectory);
               setPathModalOpen(true);
             }}
-            accessibilityLabel="Change directory"
+            aria-label="Change directory"
             className="h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
-          >
+>
             <UIText className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</UIText>
           </Button>
-        </View>
+        </div>
 
         {/* Search / Filter Bar */}
-        <View className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-          <View className="flex-row items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
+        <div className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+          <div className="flex items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
             <Search size={15} color={dark ? '#888' : '#9ca3af'} />
             <Input
               value={searchQuery}
-              onChangeText={setSearchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search in this folder..."
-              placeholderTextColor={placeholder}
               // The pill around this draws the field; a second border and the
               // base background inside it read as a frame within a frame.
               // dark:bg-transparent is required — the base sets
               // dark:bg-input/30, which a plain bg-transparent does not cancel.
               className="flex-1 border-0 bg-transparent text-sm text-neutral-900 dark:bg-transparent dark:text-neutral-100"
               autoCapitalize="none"
-              autoCorrect={false}
             />
             {searchQuery ? (
               <Button
                 variant="ghost"
                 size="icon"
-                onPress={() => setSearchQuery('')}
-                accessibilityLabel="Clear search"
-                hitSlop={8}
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
                 className="h-6 w-6 rounded-md"
-              >
+>
                 <X size={14} color={dark ? '#888' : '#9ca3af'} />
               </Button>
             ) : null}
-          </View>
-        </View>
+          </div>
+        </div>
 
         {/* Error Alert */}
         {error && (
-          <View className="m-3">
+          <div className="m-3">
             <UIAlert icon={AlertCircle} variant="destructive">
               <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
               <Button
                 variant="destructive"
                 size="sm"
-                onPress={() => void load(activeDirectory)}
+                onClick={() => void load(activeDirectory)}
                 className="ml-6 mt-1 self-start"
-              >
+>
                 <UIText className="text-xs font-semibold">Retry</UIText>
               </Button>
             </UIAlert>
-          </View>
+          </div>
         )}
 
         {/* File List — virtualized so large folders don't mount every row. */}
@@ -677,7 +657,7 @@ export function FilesScreen() {
           data={filteredEntries}
           keyExtractor={fileKeyExtractor}
           renderItem={renderFileRow}
-          contentContainerStyle={fileListContentStyle}
+          contentClassName={fileListContentStyle}
           refreshControl={fileListRefreshControl}
           drawDistance={800}
           ListHeaderComponent={fileListHeader}
@@ -686,40 +666,40 @@ export function FilesScreen() {
 
         {/* Reading File Overlay */}
         {readingFile && (
-          <View className="absolute inset-0 z-50 items-center justify-center bg-black/40">
-            <View className="items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
-              <ActivityIndicator size="large" color="#1a73e8" />
-              <Text className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</Text>
-            </View>
-          </View>
+          <div className="absolute inset-0 z-50 items-center justify-center bg-black/40">
+            <div className="items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+              <Spinner size={24} color="#1a73e8" />
+              <UIText className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</UIText>
+            </div>
+          </div>
         )}
 
         {/* File Preview Modal */}
         <Modal
           visible={previewModalOpen}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={closePreview}
-        >
-          <SafeAreaView className="flex-1 bg-white dark:bg-neutral-950">
-            <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <View className="flex-1 pr-3">
-                <Text numberOfLines={1} className="font-mono text-base font-bold text-neutral-900 dark:text-white">
-                  {selectedFile?.name}
-                </Text>
-                <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {formatBytes(selectedFile?.size)} · {selectedFile?.mime_type || 'Unknown type'}
-                </Text>
-              </View>
 
-              <View className="flex-row items-center gap-2">
+
+
+>
+          <div className="flex-1 bg-white dark:bg-neutral-950">
+            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <div className="flex-1 pr-3">
+                <UIText numberOfLines={1} className="font-mono text-base font-bold text-neutral-900 dark:text-white">
+                  {selectedFile?.name}
+                </UIText>
+                <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {formatBytes(selectedFile?.size)} · {selectedFile?.mime_type || 'Unknown type'}
+                </UIText>
+              </div>
+
+              <div className="flex items-center gap-2">
                 {fileTextContent && !isEditingFile ? (
                   <Button
                     variant="ghost"
-                    onPress={handleCopyText}
-                    accessibilityLabel="Copy file contents"
+                    onClick={handleCopyText}
+                    aria-label="Copy file contents"
                     className="h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
-                  >
+>
                     {copied ? (
                       <>
                         <Check size={14} color="#10b981" />
@@ -739,13 +719,13 @@ export function FilesScreen() {
                   isEditingFile ? (
                     <Button
                       variant="ghost"
-                      onPress={handleSaveEditedFile}
+                      onClick={handleSaveEditedFile}
                       disabled={savingFile}
-                      accessibilityLabel="Save file"
+                      aria-label="Save file"
                       className="h-auto rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
-                    >
+>
                       {savingFile ? (
-                        <ActivityIndicator size="small" color="#fff" />
+                        <Spinner size={14} color="#fff" />
                       ) : (
                         <UIText className="text-xs font-bold text-white">Save</UIText>
                       )}
@@ -753,10 +733,10 @@ export function FilesScreen() {
                   ) : (
                     <Button
                       variant="ghost"
-                      onPress={() => setIsEditingFile(true)}
-                      accessibilityLabel="Edit file"
+                      onClick={() => setIsEditingFile(true)}
+                      aria-label="Edit file"
                       className="h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
-                    >
+>
                       <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</UIText>
                     </Button>
                   )
@@ -766,11 +746,10 @@ export function FilesScreen() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onPress={() => handleDeleteEntry(selectedFile.path, false, selectedFile.name)}
-                    accessibilityLabel="Delete file"
-                    hitSlop={8}
+                    onClick={() => handleDeleteEntry(selectedFile.path, false, selectedFile.name)}
+                    aria-label="Delete file"
                     className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800"
-                  >
+>
                     <Trash2 size={18} color="#ef4444" />
                   </Button>
                 ) : null}
@@ -778,65 +757,62 @@ export function FilesScreen() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onPress={closePreview}
-                  accessibilityLabel="Close preview"
-                  hitSlop={8}
+                  onClick={closePreview}
+                  aria-label="Close preview"
                   className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800"
-                >
+>
                   <X size={20} color={dark ? '#eee' : '#333'} />
                 </Button>
-              </View>
-            </View>
+              </div>
+            </div>
 
             {/* Preview Content */}
-            <View className="flex-1 bg-neutral-50 dark:bg-black">
+            <div className="flex-1 bg-neutral-50 dark:bg-black">
               {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
-                <View className="flex-1 items-center justify-center p-4">
+                <div className="flex-1 items-center justify-center p-4">
                   <Image source={{ uri: selectedFile.data_url }} resizeMode="contain" className="h-full w-full" />
-                </View>
+                </div>
               ) : isEditingFile ? (
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
+                <div className="flex-1">
                   <Textarea
                     value={fileTextContent}
-                    onChangeText={setFileTextContent}
-                    multiline
-                    scrollEnabled
+                    onChange={(e) => setFileTextContent(e.target.value)}
+
+
                     autoCapitalize="none"
-                    autoCorrect={false}
-                    textAlignVertical="top"
                     className="flex-1 p-4 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
                   />
-                </KeyboardAvoidingView>
+                </div>
               ) : fileTextContent ? (
-                <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }} horizontal={false}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator>
-                    <Text selectable className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
+                <ScrollArea className="flex-1" contentClassName="p-[object Object]" horizontal={false}>
+                  <ScrollArea horizontal>
+                    <UIText className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
                       {fileTextContent}
-                    </Text>
-                  </ScrollView>
-                </ScrollView>
+                    </UIText>
+                  </ScrollArea>
+                </ScrollArea>
               ) : (
-                <View className="flex-1 items-center justify-center p-8">
+                <div className="flex-1 items-center justify-center p-8">
                   <File size={48} color={dark ? '#555' : '#aaa'} />
-                  <Text className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                  <UIText className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
                     Binary or Unsupported File Preview
-                  </Text>
-                  <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                  </UIText>
+                  <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
                     This file cannot be rendered as text or an image.
-                  </Text>
-                </View>
+                  </UIText>
+                </div>
               )}
-            </View>
-          </SafeAreaView>
+            </div>
+          </div>
         </Modal>
 
         {/* Change / Jump to Path Modal */}
         <Dialog open={pathModalOpen} onOpenChange={setPathModalOpen}>
           <DialogPortal>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            <div
+
               className="w-full"
-            >
+>
               <DialogContent className="max-w-sm p-5">
                 <DialogTitle className="text-base font-bold text-neutral-900 dark:text-white">
                   Navigate to Directory
@@ -847,12 +823,10 @@ export function FilesScreen() {
 
                 <Input
                   value={pathInput}
-                  onChangeText={setPathInput}
+                  onChange={(e) => setPathInput(e.target.value)}
                   autoCapitalize="none"
-                  autoCorrect={false}
-                  accessibilityLabel="Directory path"
+                  aria-label="Directory path"
                   placeholder={activeDirectory || '~'}
-                  placeholderTextColor={placeholder}
                   className="mt-1 rounded-xl border border-neutral-300 p-3 font-mono text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
                 />
 
@@ -861,30 +835,30 @@ export function FilesScreen() {
                     variant="outline"
                     size="sm"
                     className="h-10 rounded-xl px-4"
-                    onPress={() => setPathModalOpen(false)}
-                  >
+                    onClick={() => setPathModalOpen(false)}
+>
                     <UIText className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</UIText>
                   </Button>
                   <Button
                     size="sm"
                     className="h-10 rounded-xl bg-[#1a73e8] px-5"
-                    onPress={handleJumpToPath}
-                  >
+                    onClick={handleJumpToPath}
+>
                     <UIText className="text-sm font-bold text-white">Go</UIText>
                   </Button>
                 </DialogFooter>
               </DialogContent>
-            </KeyboardAvoidingView>
+            </div>
           </DialogPortal>
         </Dialog>
 
         {/* Create Folder Modal */}
         <Dialog open={newFolderModalOpen} onOpenChange={setNewFolderModalOpen}>
           <DialogPortal>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            <div
+
               className="w-full"
-            >
+>
               <DialogContent className="max-w-sm p-5">
                 <DialogTitle className="text-base font-bold text-neutral-900 dark:text-white">New Folder</DialogTitle>
                 <DialogDescription className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -893,13 +867,11 @@ export function FilesScreen() {
 
                 <Input
                   value={newFolderName}
-                  onChangeText={setNewFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
                   autoCapitalize="none"
-                  autoCorrect={false}
                   autoFocus
-                  accessibilityLabel="Folder name"
+                  aria-label="Folder name"
                   placeholder="folder_name"
-                  placeholderTextColor={placeholder}
                   className="mt-1 rounded-xl border border-neutral-300 p-3 text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
                 />
 
@@ -908,106 +880,101 @@ export function FilesScreen() {
                     variant="outline"
                     size="sm"
                     className="h-10 rounded-xl px-4"
-                    onPress={() => {
+                    onClick={() => {
                       setNewFolderName('');
                       setNewFolderModalOpen(false);
                     }}
-                  >
+>
                     <UIText className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</UIText>
                   </Button>
                   <Button
                     size="sm"
                     className="h-10 rounded-xl bg-[#1a73e8] px-5"
                     disabled={creatingFolder || !newFolderName.trim()}
-                    onPress={handleCreateFolder}
-                  >
+                    onClick={handleCreateFolder}
+>
                     {creatingFolder ? (
-                      <ActivityIndicator size="small" color="#fff" />
+                      <Spinner size={14} color="#fff" />
                     ) : (
                       <UIText className="text-sm font-bold text-white">Create</UIText>
                     )}
                   </Button>
                 </DialogFooter>
               </DialogContent>
-            </KeyboardAvoidingView>
+            </div>
           </DialogPortal>
         </Dialog>
 
         {/* Create New File Modal */}
         <Modal
           visible={newFileModalOpen}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => setNewFileModalOpen(false)}
-        >
-          <SafeAreaView className="flex-1 bg-white dark:bg-neutral-950">
-            <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <View>
-                <Text className="text-base font-bold text-neutral-900 dark:text-white">Create New File</Text>
-                <Text className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</Text>
-              </View>
 
-              <View className="flex-row items-center gap-2">
+
+
+>
+          <div className="flex-1 bg-white dark:bg-neutral-950">
+            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <div>
+                <UIText className="text-base font-bold text-neutral-900 dark:text-white">Create New File</UIText>
+                <UIText className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</UIText>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
-                  onPress={() => setNewFileModalOpen(false)}
-                  accessibilityLabel="Cancel"
+                  onClick={() => setNewFileModalOpen(false)}
+                  aria-label="Cancel"
                   className="h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
-                >
+>
                   <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
                 </Button>
 
                 <Button
                   variant="ghost"
-                  onPress={handleCreateFile}
+                  onClick={handleCreateFile}
                   disabled={creatingFile || !newFileName.trim()}
-                  accessibilityLabel="Create file"
+                  aria-label="Create file"
                   className="h-auto rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80"
-                >
+>
                   {creatingFile ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <Spinner size={14} color="#fff" />
                   ) : (
                     <UIText className="text-xs font-bold text-white">Save File</UIText>
                   )}
                 </Button>
-              </View>
-            </View>
+              </div>
+            </div>
 
-            <View className="p-3 border-b border-neutral-200 dark:border-neutral-800">
+            <div className="p-3 border-b border-neutral-200 dark:border-neutral-800">
               <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
                 File Name (e.g. notes.txt, script.py, config.json)
               </Label>
               <Input
                 value={newFileName}
-                onChangeText={setNewFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
                 autoCapitalize="none"
-                autoCorrect={false}
                 autoFocus
                 placeholder="filename.txt"
-                placeholderTextColor={placeholder}
-                accessibilityLabel="File name"
+                aria-label="File name"
                 className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
               />
-            </View>
+            </div>
 
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 p-3">
+            <div className="flex-1 p-3">
               <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">File Content</Label>
               <Textarea
                 value={newFileContent}
-                onChangeText={setNewFileContent}
-                accessibilityLabel="File content"
-                multiline
+                onChange={(e) => setNewFileContent(e.target.value)}
+                aria-label="File content"
+
                 autoCapitalize="none"
-                autoCorrect={false}
-                textAlignVertical="top"
                 placeholder="Enter text or code here..."
-                placeholderTextColor={placeholder}
                 className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
               />
-            </KeyboardAvoidingView>
-          </SafeAreaView>
+            </div>
+          </div>
         </Modal>
-      </SafeAreaView>
+      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}
@@ -1020,6 +987,6 @@ export function FilesScreen() {
           if (!o) setConfirmDelete(null);
         }}
       />
-    </View>
+    </div>
   );
 }

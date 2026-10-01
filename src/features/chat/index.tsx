@@ -1,26 +1,13 @@
 // Chat route — transcript + composer (was the 'chat' screen in App.tsx).
 // Header back opens the drawer; the native Drawer replaces NavDrawer/EdgeSwipe.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Keyboard,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import type { FlashListRef } from '@shopify/flash-list';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { Redirect, useNavigation } from 'expo-router';
+import { Navigate as Redirect } from 'react-router-dom';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil, Search } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil, Search } from 'lucide-react';
 import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
 import {
   FALLBACK_PROVIDERS,
@@ -49,10 +36,12 @@ import { CtxRing, HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
 import { FALLBACK_SLASH, messageMatchesSearch } from './helpers';
 import { CHAT_WINDOW_SOFT_CAP } from '../../services/constants';
 import type { TranscriptHit } from '../../store/types';
+import { ScrollArea } from '../../components/ui/scroll';
 
 // FlashList v2 sizes rows itself (no estimatedItemSize / getItemLayout).
 // Heterogeneous bubbles recycle per role via getItemType below.
@@ -163,7 +152,6 @@ export function ChatScreen() {
   // row-nested markdown (lists) — a pixel value constrains measurement itself.
   const { width: winW, height: winH } = useWindowDimensions();
   const bubbleMax = Math.round(winW * 0.85);
-  const insets = useSafeAreaInsets();
 
   // Theme tokens resolved once per scheme: this screen re-renders on every
   // streamed token, and a fresh style object per render would re-push the
@@ -186,11 +174,11 @@ export function ChatScreen() {
   // the composer wouldn't work.
   const [popover, setPopover] = useState<
     { kind: 'effort' | 'attach' | 'model'; x: number; y: number; w: number; h: number } | null
-  >(null);
+>(null);
   const popoverMeasure = useRef<AnchorMeasure | null>(null);
   const [modelQuery, setModelQuery] = useState('');
   const [modelExpanded, setModelExpanded] = useState<Record<string, boolean>>({});
-  const rootRef = useRef<View>(null);
+  const rootRef = useRef<div>(null);
   const rootWin = useRef({ y: 0, h: 0 });
 
   const openPopover = useCallback(
@@ -291,7 +279,7 @@ export function ChatScreen() {
       i,
       usage: it.kind === 'skill' ? (skillUsage(it.text) ?? -1) : -1,
     }));
-    if (!withUsage.some((r) => r.usage >= 0)) return filtered;
+    if (!withUsage.some((r) => r.usage>= 0)) return filtered;
     return withUsage
       .sort((a, b) => b.usage - a.usage || a.i - b.i)
       .map((r) => r.it);
@@ -352,7 +340,7 @@ export function ChatScreen() {
   const [kbH, setKbH] = useState(0);
   // Gap between the lifted dock and the keyboard so the composer doesn't sit
   // flush on it. Only while the keyboard is open.
-  const kbGap = kbH > 0 ? 8 : 0;
+  const kbGap = kbH> 0 ? 8 : 0;
   const contentH = useRef(0);
   const layoutH = useRef(0);
   const endPad = useRef(0);
@@ -526,7 +514,7 @@ export function ChatScreen() {
       pinWanted.current = false;
       if (y < dragStartY.current - 4) return;
       const rest = contentH.current - (y + layoutH.current);
-      if (rest <= 2 || rest > endPad.current + 8) return;
+      if (rest <= 2 || rest> endPad.current + 8) return;
       stickEnd.current = true;
       setAtBottom(true);
       scrollEnd();
@@ -662,7 +650,7 @@ export function ChatScreen() {
   const infoRef = useRef<BottomSheetModal>(null);
   const infoPresented = useRef(false);
   useEffect(() => {
-    if (infoSeq > 0) {
+    if (infoSeq> 0) {
       infoRef.current?.present();
       infoPresented.current = true;
     }
@@ -791,7 +779,7 @@ export function ChatScreen() {
           .map((x) => x.mm);
         return { ...p, models };
       })
-      .filter((p) => (q ? (p.models?.length ?? 0) > 0 : true));
+      .filter((p) => (q ? (p.models?.length ?? 0)> 0 : true));
   }, [modelProviders, mq]);
   // Search highlight: precompute matched ids once instead of toLowerCase per bubble per render.
   // Includes buffered streaming text for searchable conversation messages.
@@ -809,7 +797,7 @@ export function ChatScreen() {
   );
   // FlashList วาง cell แบบ absolute — `gap` ใน contentContainerStyle โดนเมิน
   // ข้อความเลยติดกัน ใช้ separator คั่น 8px แทน (เท่า gap เดิม)
-  const listSeparator = useCallback(() => <View style={{ height: 8 }} />, []);
+  const listSeparator = useCallback(() => <div style={{ height: 8 }} />, []);
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
   // Recycle per bubble role (user/assistant/tool/thinking/…) — a tall tool
   // Armed while an older page loads: offset + content height captured after
@@ -825,14 +813,14 @@ export function ChatScreen() {
     (_w: number, h: number) => {
       const prevH = contentH.current;
       contentH.current = h;
-      setCanScroll(h > layoutH.current + 40);
+      setCanScroll(h> layoutH.current + 40);
       // Prepended an older page above the viewport: shift the offset down by
       // the growth so the row under the finger stays put (no yank to top).
       if (prependAdj.current) {
         const { prevY, prevContentH } = prependAdj.current;
         prependAdj.current = null;
         const dh = h - (prevContentH ?? prevH);
-        if (dh > 8) {
+        if (dh> 8) {
           flying.current = true;
           if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
           scrollEndTimer.current = setTimeout(() => {
@@ -867,7 +855,7 @@ export function ChatScreen() {
   const handleListLayout = useCallback(
     (e: any) => {
       layoutH.current = e.nativeEvent.layout.height;
-      setCanScroll(contentH.current > e.nativeEvent.layout.height + 40);
+      setCanScroll(contentH.current> e.nativeEvent.layout.height + 40);
       if (stickEnd.current) scrollEnd(false);
     },
     [scrollEnd],
@@ -904,7 +892,7 @@ export function ChatScreen() {
       // viewport mid-list with no further follow queued) — require it to
       // persist across frames. pinWanted deliberately survives this branch.
       missEnd.current += 1;
-      if (missEnd.current >= 3) {
+      if (missEnd.current>= 3) {
         stickEnd.current = false;
       }
     }
@@ -975,28 +963,28 @@ export function ChatScreen() {
   // not paging — reading history up top is never yanked. Trimmed rows stay
   // server-side and come back through onLoadOlder.
   useEffect(() => {
-    if (messages.length > CHAT_WINDOW_SOFT_CAP && !generating && atBottom && !historyLoadingMore) {
+    if (messages.length> CHAT_WINDOW_SOFT_CAP && !generating && atBottom && !historyLoadingMore) {
       trimHead();
     }
   }, [messages.length, generating, atBottom, historyLoadingMore, trimHead]);
   const ListHeader = useCallback(() => {
     if (historyLoadingMore) {
       return (
-        <View className="items-center py-3">
-          <ActivityIndicator size="small" />
-          <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</Text>
-        </View>
+        <div className="items-center py-3">
+          <Spinner size={14} color="currentColor" />
+          <UIText className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</UIText>
+        </div>
       );
     }
-    if (trimmedOlder > 0 || !historyExhausted) {
+    if (trimmedOlder> 0 || !historyExhausted) {
       return (
-        <View className="items-center py-1.5">
-          <Button variant="ghost" onPress={onLoadOlder} hitSlop={8} className="px-3 py-1.5">
+        <div className="items-center py-1.5">
+          <Button variant="ghost" onClick={onLoadOlder} hitSlop={8} className="px-3 py-1.5">
             <UIText className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
               ↑ Load older messages
             </UIText>
           </Button>
-        </View>
+        </div>
       );
     }
     return null;
@@ -1014,37 +1002,37 @@ export function ChatScreen() {
 
   if (booting) {
     return (
-      <View style={screen}>
-        <SafeAreaView className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black" edges={['top', 'left', 'right', 'bottom']}>
-          <StatusBar style="auto" />
-          <ActivityIndicator size="large" />
-          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
-        </SafeAreaView>
-      </View>
+      <div style={screen}>
+        <div className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black">
+          
+          <Spinner size={24} color="currentColor" />
+          <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</UIText>
+        </div>
+      </div>
     );
   }
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   if (!sessionId) {
     return (
-      <View style={screen}>
-        <View style={noSessionHeader}>
-          <View className="h-[52px] flex-row items-center px-2">
-            <View className="w-11 items-start">
+      <div style={screen}>
+        <div style={noSessionHeader}>
+          <div className="h-[52px] flex items-center px-2">
+            <div className="w-11 items-start">
               <HamburgerBtn />
-            </View>
-          </View>
-        </View>
-        <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
-          <StatusBar style="auto" />
-          <View className="flex-1 items-center justify-center p-6">
-            <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</Text>
-            <Button variant="default" onPress={() => void newSession()} className="mt-2 items-center px-[18px] py-[11px]">
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 bg-white dark:bg-black">
+          
+          <div className="flex-1 items-center justify-center p-6">
+            <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</UIText>
+            <Button variant="default" onClick={() => void newSession()} className="mt-2 items-center px-[18px] py-[11px]">
               <UIText className="text-[15px] font-semibold">+ New chat</UIText>
             </Button>
-          </View>
-        </SafeAreaView>
-      </View>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -1079,7 +1067,7 @@ export function ChatScreen() {
       : undefined;
 
   return (
-    <View
+    <div
       ref={rootRef}
       onLayout={() =>
         rootRef.current?.measureInWindow((_x, y, _w, h) => {
@@ -1089,10 +1077,10 @@ export function ChatScreen() {
         })
       }
       style={screen}
-    >
+>
       {searchVisible ? (
         <ChatSearchHeader
-          insetTop={insets.top}
+
           dark={dark}
           iconColor={headerIcon}
           query={searchQuery}
@@ -1105,7 +1093,7 @@ export function ChatScreen() {
         />
       ) : (
         <ChatNormalHeader
-          insetTop={insets.top}
+
           dark={dark}
           iconColor={headerIcon}
           title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
@@ -1123,21 +1111,21 @@ export function ChatScreen() {
           itself when the keyboard is closed, and KeyboardAvoidingView lifts
           it when open. Keeping 'bottom' would double the gap above the
           gesture bar (and float the composer above the keyboard). */}
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
+      <div className="flex-1 bg-white dark:bg-black">
+        
 
       {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
       <Modal
         visible={!!userMenu}
         transparent
-        animationType="none"
+
         statusBarTranslucent
-        onRequestClose={closeUserMenu}
-      >
-        <View style={{ flex: 1 }}>
-          <Pressable
+
+>
+        <div style={{ flex: 1 }}>
+          <button type="button"
             style={{ position: 'absolute', inset: 0 }}
-            onPress={closeUserMenu}
+            onClick={closeUserMenu}
           />
           {!!userMenu &&
             (() => {
@@ -1149,33 +1137,33 @@ export function ChatScreen() {
               if (!target || (!showCopy && !showEdit)) return null;
               const menuW = 192;
               const left = Math.max(8, Math.min(userMenu.anchor.x + userMenu.anchor.w - menuW, winW - menuW - 8));
-              const above = userMenu.anchor.y > 128;
+              const above = userMenu.anchor.y> 128;
               return (
-                <View
+                <div
                   className="absolute w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
                   style={
                     above
                       ? { bottom: winH - userMenu.anchor.y + 8, left }
                       : { top: userMenu.anchor.y + userMenu.anchor.h + 8 + insets.top, left }
                   }
-                >
+>
                   {!!target.ts && (
-                    <View className="flex-row items-center gap-2.5 px-3 py-2">
+                    <div className="flex items-center gap-2.5 px-3 py-2">
                       <Clock size={17} color={dark ? '#888' : '#999'} />
-                      <Text className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                      <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
                         {formatBubbleTime(target.ts)}
-                      </Text>
-                    </View>
+                      </UIText>
+                    </div>
                   )}
                   {showCopy && (
                     <Button
                       variant="ghost"
-                      onPress={() => {
+                      onClick={() => {
                         closeUserMenu();
                         void copyText(target.id, fullText);
                       }}
-                      className="flex-row items-center gap-2.5 px-3 py-2.5"
-                    >
+                      className="flex items-center gap-2.5 px-3 py-2.5"
+>
                       <Copy size={17} color={headerIcon} />
                       <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</UIText>
                     </Button>
@@ -1183,20 +1171,20 @@ export function ChatScreen() {
                   {showEdit && (
                     <Button
                       variant="ghost"
-                      onPress={() => {
+                      onClick={() => {
                         closeUserMenu();
                         editMessage(target.id);
                       }}
-                      className="flex-row items-center gap-2.5 px-3 py-2.5"
-                    >
+                      className="flex items-center gap-2.5 px-3 py-2.5"
+>
                       <Pencil size={17} color={headerIcon} />
                       <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</UIText>
                     </Button>
                   )}
-                </View>
+                </div>
               );
             })()}
-        </View>
+        </div>
       </Modal>
 
       {/* Plain View, not KeyboardAvoidingView: the composer is an absolute
@@ -1204,7 +1192,7 @@ export function ChatScreen() {
           background, so scrolled messages show through around the card — an
           absolute child ignores the view's padding, and the keyboard is
           handled explicitly via kbH (footer padding lifts the card). */}
-      <View className="flex-1">
+      <div className="flex-1">
         <FlashList
           ref={listRef}
           data={messages}
@@ -1213,13 +1201,13 @@ export function ChatScreen() {
           getItemType={listGetItemType}
           extraData={listExtraData}
           drawDistance={800}
-          contentContainerStyle={listContentStyle}
+          contentClassName={listContentStyle}
           ItemSeparatorComponent={listSeparator}
           ListHeaderComponent={ListHeader}
           onStartReached={handleStartReached}
           onStartReachedThreshold={0.4}
           onContentSizeChange={handleContentSizeChange}
-          onLayout={handleListLayout}
+
           onMomentumScrollBegin={() => {
             momentum.current = true;
           }}
@@ -1233,7 +1221,6 @@ export function ChatScreen() {
           scrollEventThrottle={32}
           maintainVisibleContentPosition={listMaintainVisible}
           automaticallyAdjustKeyboardInsets={false}
-          keyboardShouldPersistTaps="handled"
           keyboardDismissMode="none"
           renderItem={renderMessage}
         />
@@ -1244,36 +1231,36 @@ export function ChatScreen() {
             never remounts. box-none: taps on the transparent margins fall
             through to the list (which dismisses the keyboard); the card and
             panels stay fully tappable. */}
-        <View
-          pointerEvents="box-none"
+        <div
+
           style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: kbH + kbGap, backgroundColor: 'transparent' }}
-          onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
-        >
+
+>
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
         {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling
             that appears/disappears next to a focused input is one more chance
             for the browser to drop the caret out of the composer. */}
-        <Text
+        <UIText
           className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400"
           numberOfLines={1}
           style={toolLine ? undefined : { display: 'none' }}
-        >
+>
           {toolLine ?? ''}
-        </Text>
+        </UIText>
         {/* Agent todo checklist (`todo.updated`) — one collapsed summary line,
             tap to expand the full list. */}
-        {todos.length > 0 &&
+        {todos.length> 0 &&
           (() => {
             const done = todos.filter(todoDone).length;
             const active = todos.find(todoActive);
             return (
-              <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+              <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
                 <Button
                   variant="ghost"
-                  onPress={() => setTodosOpen((v) => !v)}
-                  className="flex-row items-center gap-2 px-3 py-2"
-                >
+                  onClick={() => setTodosOpen((v) => !v)}
+                  className="flex items-center gap-2 px-3 py-2"
+>
                   <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     Tasks
                   </UIText>
@@ -1284,11 +1271,11 @@ export function ChatScreen() {
                     <UIText
                       className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
                       numberOfLines={1}
-                    >
+>
                       · {todoLabel(active)}
                     </UIText>
                   )}
-                  {todosOpen && <View className="flex-1" />}
+                  {todosOpen && <div className="flex-1" />}
                   {todosOpen ? (
                     <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
                   ) : (
@@ -1296,13 +1283,13 @@ export function ChatScreen() {
                   )}
                 </Button>
                 {todosOpen && (
-                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                  <ScrollArea style={{ maxHeight: 200 }}>
                     {todos.map((t, i) => {
                       const d = todoDone(t);
                       const a = todoActive(t);
                       return (
-                        <View key={`${i}-${todoLabel(t)}`} className="flex-row items-start gap-2 px-3 py-1">
-                          <Text
+                        <div key={`${i}-${todoLabel(t)}`} className="flex items-start gap-2 px-3 py-1">
+                          <UIText
                             className={`shrink-0 text-[13px] leading-[18px] ${
                               d
                                 ? 'text-emerald-600 dark:text-emerald-400'
@@ -1310,38 +1297,38 @@ export function ChatScreen() {
                                   ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
                                   : 'text-neutral-400 dark:text-neutral-500'
                             }`}
-                          >
+>
                             {d ? '✓' : a ? '◐' : '○'}
-                          </Text>
-                          <Text
+                          </UIText>
+                          <UIText
                             className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
                               d
                                 ? 'text-neutral-400 line-through dark:text-neutral-500'
                                 : 'text-neutral-800 dark:text-neutral-200'
                             }`}
-                          >
+>
                             {todoLabel(t)}
-                          </Text>
-                        </View>
+                          </UIText>
+                        </div>
                       );
                     })}
-                  </ScrollView>
+                  </ScrollArea>
                 )}
-              </View>
+              </div>
             );
           })()}
         {/* Live subagents (polled from subagent.list while a turn runs). */}
-        {subagents.length > 0 &&
+        {subagents.length> 0 &&
           (() => {
             const running = subagents.filter((s) => !subagentDone(s)).length;
             const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
             return (
-              <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+              <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
                 <Button
                   variant="ghost"
-                  onPress={() => setSubagentsOpen((v) => !v)}
-                  className="flex-row items-center gap-2 px-3 py-2"
-                >
+                  onClick={() => setSubagentsOpen((v) => !v)}
+                  className="flex items-center gap-2 px-3 py-2"
+>
                   <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     Subagents
                   </UIText>
@@ -1352,11 +1339,11 @@ export function ChatScreen() {
                     <UIText
                       className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
                       numberOfLines={1}
-                    >
+>
                       · {first.goal || first.last_tool || first.subagent_id}
                     </UIText>
                   )}
-                  {subagentsOpen && <View className="flex-1" />}
+                  {subagentsOpen && <div className="flex-1" />}
                   {subagentsOpen ? (
                     <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
                   ) : (
@@ -1364,121 +1351,120 @@ export function ChatScreen() {
                   )}
                 </Button>
                 {subagentsOpen && (
-                  <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled>
+                  <ScrollArea style={{ maxHeight: 160 }}>
                     {subagents.map((s) => {
                       const done = subagentDone(s);
                       return (
-                        <View key={s.subagent_id} className="flex-row items-center gap-2 px-3 py-1">
-                          <Text
+                        <div key={s.subagent_id} className="flex items-center gap-2 px-3 py-1">
+                          <UIText
                             className={`shrink-0 text-[13px] leading-[18px] ${
                               done ? 'text-neutral-400 dark:text-neutral-500' : 'text-[#1a73e8] dark:text-[#7aa7ff]'
                             }`}
-                          >
+>
                             {done ? '✓' : '◐'}
-                          </Text>
-                          <Text
+                          </UIText>
+                          <UIText
                             className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
                               done ? 'text-neutral-400 dark:text-neutral-500' : 'text-neutral-800 dark:text-neutral-200'
                             }`}
                             numberOfLines={1}
-                          >
+>
                             {s.goal || s.last_tool || s.subagent_id}
-                          </Text>
+                          </UIText>
                           {s.tool_count != null && (
-                            <Text className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
+                            <UIText className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
                               {s.tool_count} calls
-                            </Text>
+                            </UIText>
                           )}
-                        </View>
+                        </div>
                       );
                     })}
-                  </ScrollView>
+                  </ScrollArea>
                 )}
-              </View>
+              </div>
             );
           })()}
         {/* Prompt queue — drafts held while a turn runs, drained one per turn
             end. Sits above the completion panel so completions stay nearest the
             input. */}
-        {queued.length > 0 && (
-          <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-            <View className="flex-row items-center justify-between px-3 pb-0.5 pt-2">
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        {queued.length> 0 && (
+          <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+            <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
+              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
-              </Text>
+              </UIText>
               {queueParked ? (
-                <Button variant="link" onPress={resumeQueue} hitSlop={8} className="px-1.5 py-0.5">
+                <Button variant="link" onClick={resumeQueue} hitSlop={8} className="px-1.5 py-0.5">
                   <UIText className="text-[11px] font-semibold">Resume</UIText>
                 </Button>
               ) : (
-                <Button variant="link" onPress={clearQueue} hitSlop={8} className="px-1.5 py-0.5">
+                <Button variant="link" onClick={clearQueue} hitSlop={8} className="px-1.5 py-0.5">
                   <UIText className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</UIText>
                 </Button>
               )}
-            </View>
-            <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            </div>
+            <ScrollArea style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled">
               {queued.map((q) => (
-                <View key={q.id} className="flex-row items-center gap-2 px-3 py-1.5">
-                  <Text
+                <div key={q.id} className="flex items-center gap-2 px-3 py-1.5">
+                  <UIText
                     className="min-w-0 flex-1 text-[13px] text-neutral-800 dark:text-neutral-200"
                     numberOfLines={1}
-                  >
+>
                     {q.text}
-                  </Text>
+                  </UIText>
                   <Button
                     variant="outline"
-                    onPress={() => sendQueuedNow(q.id)}
-                    hitSlop={8}
+                    onClick={() => sendQueuedNow(q.id)}
                     className="shrink-0 px-1.5 py-0.5"
-                  >
+>
                     <UIText className="text-[11px] font-semibold">Send</UIText>
                   </Button>
-                  <Button variant="link" onPress={() => removeQueued(q.id)} hitSlop={10} className="shrink-0 px-1.5 py-0.5">
+                  <Button variant="link" onClick={() => removeQueued(q.id)} hitSlop={10} className="shrink-0 px-1.5 py-0.5">
                     <UIText className="text-[15px] leading-[15px] text-neutral-400">×</UIText>
                   </Button>
-                </View>
+                </div>
               ))}
-            </ScrollView>
-          </View>
+            </ScrollArea>
+          </div>
         )}
         {/* Composer completion panel (slash commands / @ references) — floats
             above the composer as a normal flex child (not an absolute overlay),
             so its rows stay tappable on Android and the input keeps focus while
             the user keeps typing. */}
-        {visibleCompletions.length > 0 && (
-          <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-            <View className="flex-row items-center justify-between px-3 pb-0.5 pt-2">
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        {visibleCompletions.length> 0 && (
+          <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+            <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
+              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 {completionKind === 'slash' ? 'Commands' : 'References'}
-              </Text>
-              <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">{visibleCompletions.length}</Text>
-            </View>
-            <ScrollView style={{ maxHeight: 248 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+              </UIText>
+              <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">{visibleCompletions.length}</UIText>
+            </div>
+            <ScrollArea style={{ maxHeight: 248 }} keyboardShouldPersistTaps="handled">
               {visibleCompletions.slice(0, 40).map((item, i) => {
                 const label = item.display || item.text;
                 return (
                   <Button
                     variant="ghost"
                     key={`${item.text}-${i}`}
-                    testID={`completion-option-${i}`}
-                    onPress={() => applyCompletion(item)}
-                    className="flex-row items-center gap-2 px-3 py-2"
-                  >
+                    data-testid={`completion-option-${i}`}
+                    onClick={() => applyCompletion(item)}
+                    className="flex items-center gap-2 px-3 py-2"
+>
                     <UIText
                       className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]"
                       numberOfLines={1}
-                    >
+>
                       {label}
                     </UIText>
                     {item.meta ? (
                       <UIText
                         className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
                         numberOfLines={1}
-                      >
+>
                         {item.meta}
                       </UIText>
                     ) : (
-                      <View className="flex-1" />
+                      <div className="flex-1" />
                     )}
                     {item.kind === 'skill' && (
                       <UIText className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
@@ -1488,18 +1474,18 @@ export function ChatScreen() {
                   </Button>
                 );
               })}
-            </ScrollView>
-          </View>
+            </ScrollArea>
+          </div>
         )}
         {editingRowId != null && (
-          <View className="mx-2.5 mb-1 flex-row items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
-            <Text className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
+          <div className="mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
+            <UIText className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
               Editing — resend to rewind and rerun from here
-            </Text>
-            <Button variant="link" onPress={cancelEdit} hitSlop={8} className="shrink-0 px-1.5 py-0.5">
+            </UIText>
+            <Button variant="link" onClick={cancelEdit} hitSlop={8} className="shrink-0 px-1.5 py-0.5">
               <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</UIText>
             </Button>
-          </View>
+          </div>
         )}
         <Composer
           input={input}
@@ -1522,16 +1508,16 @@ export function ChatScreen() {
           setAttachments={setAttachments}
           dark={dark}
         />
-        </View>
-      </View>
+        </div>
+      </div>
       {/* Jump to the newest message — shown only when the transcript
           overflows and the user has scrolled up. */}
       {canScroll && !atBottom && (
         <Button
           variant="ghost"
           size="icon"
-          testID="scroll-to-bottom"
-          onPress={() => {
+          data-testid="scroll-to-bottom"
+          onClick={() => {
             stickEnd.current = true;
             // Far away: jump instantly (smooth-scrolling ~10k px is the sludge);
             // nearby: keep the short smooth glide.
@@ -1542,7 +1528,7 @@ export function ChatScreen() {
           // Floats just above the footer, whose measured height already
           // includes the keyboard lift.
           style={{ bottom: dockH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
-        >
+>
           <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
         </Button>
       )}
@@ -1578,13 +1564,13 @@ export function ChatScreen() {
           parent's bounds. */}
       {popover && (
         <>
-          <Pressable
-            testID="popover-backdrop"
+          <button type="button"
+            data-testid="popover-backdrop"
             style={{ position: 'absolute', inset: 0, zIndex: 60 }}
-            onPress={closePopover}
+            onClick={closePopover}
           />
-          <View
-            testID="anchor-popover"
+          <div
+            data-testid="anchor-popover"
             className="absolute z-[70] rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
             style={{
               width: popW,
@@ -1592,34 +1578,34 @@ export function ChatScreen() {
               bottom: popBottom,
               maxHeight: popMaxH,
             }}
-          >
+>
             {popover.kind === 'effort' && showEffort && (
               <>
-                <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                <UIText className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Thinking effort
-                </Text>
+                </UIText>
                 {effortOptions.map((e) => {
                   const on = e === effort.trim().toLowerCase();
                   return (
                     <Button
                       variant="ghost"
                       key={e}
-                      testID={`effort-option-${e}`}
-                      onPress={() => {
+                      data-testid={`effort-option-${e}`}
+                      onClick={() => {
                         void applyEffort(e);
                         closePopover();
                       }}
-                      className={`flex-row items-center gap-2 px-2.5 py-2 ${
+                      className={`flex items-center gap-2 px-2.5 py-2 ${
                         on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                       }`}
-                    >
+>
                       <UIText
                         className={`min-w-0 flex-1 text-[14px] ${
                           on
                             ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                             : 'text-neutral-900 dark:text-neutral-100'
                         }`}
-                      >
+>
                         {reasoningLabel(e)}
                       </UIText>
                       {on && <Check size={15} color="#1a73e8" />}
@@ -1627,23 +1613,23 @@ export function ChatScreen() {
                   );
                 })}
                 {/* Fast mode — separate from reasoning (`config.set fast`). */}
-                <View className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+                <div className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
                 <Button
                   variant="ghost"
-                  testID="fast-toggle"
-                  onPress={() => {
+                  data-testid="fast-toggle"
+                  onClick={() => {
                     void applyFast(!(sessionInfo?.fast === true));
                     closePopover();
                   }}
-                  className="flex-row items-center gap-2 px-2.5 py-2"
-                >
+                  className="flex items-center gap-2 px-2.5 py-2"
+>
                   <UIText
                     className={`min-w-0 flex-1 text-[14px] ${
                       sessionInfo?.fast === true
                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                         : 'text-neutral-900 dark:text-neutral-100'
                     }`}
-                  >
+>
                     Fast mode
                   </UIText>
                   {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
@@ -1657,49 +1643,49 @@ export function ChatScreen() {
                     fixes "bubbles only appear after the turn ends"). */}
                 <Button
                   variant="ghost"
-                  testID="show-reasoning-toggle"
-                  onPress={() => void applyShowReasoning(showReasoning !== true)}
-                  className="flex-row items-center gap-2 px-2.5 py-2"
-                >
+                  data-testid="show-reasoning-toggle"
+                  onClick={() => void applyShowReasoning(showReasoning !== true)}
+                  className="flex items-center gap-2 px-2.5 py-2"
+>
                   <UIText
                     className={`min-w-0 flex-1 text-[14px] ${
                       showReasoning === true
                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                         : 'text-neutral-900 dark:text-neutral-100'
                     }`}
-                  >
+>
                     Show reasoning
                   </UIText>
                   {showReasoning === true && <Check size={15} color="#1a73e8" />}
                 </Button>
-                <Text className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
+                <UIText className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
                   {showReasoning === null
                     ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
                     : 'Streams tool calls + reasoning live (shared display setting).'}
-                </Text>
+                </UIText>
               </>
             )}
 
             {popover.kind === 'attach' && (
               <>
-                <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                <UIText className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Attach
-                </Text>
+                </UIText>
                 <Button
                   variant="ghost"
-                  testID="attach-photo"
-                  onPress={() => void pickImage()}
-                  className="flex-row items-center gap-2.5 px-2.5 py-2"
-                >
+                  data-testid="attach-photo"
+                  onClick={() => void pickImage()}
+                  className="flex items-center gap-2.5 px-2.5 py-2"
+>
                   <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
                   <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</UIText>
                 </Button>
                 <Button
                   variant="ghost"
-                  testID="attach-file"
-                  onPress={() => void pickFile()}
-                  className="flex-row items-center gap-2.5 px-2.5 py-2"
-                >
+                  data-testid="attach-file"
+                  onClick={() => void pickFile()}
+                  className="flex items-center gap-2.5 px-2.5 py-2"
+>
                   <FileText size={17} color={dark ? '#ccc' : '#444'} />
                   <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">File</UIText>
                 </Button>
@@ -1708,49 +1694,46 @@ export function ChatScreen() {
 
             {popover.kind === 'model' && (
               <>
-                <Text className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                <UIText className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Switch model (this chat)
-                </Text>
-                <View className="px-1.5 pb-1.5">
+                </UIText>
+                <div className="px-1.5 pb-1.5">
                   <Input
                     className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
                     value={modelQuery}
-                    onChangeText={setModelQuery}
+                    onChange={(e) => setModelQuery(e.target.value)}
                     placeholder="Search models…"
-                    placeholderTextColor={placeholder}
-                    keyboardAppearance={dark ? 'dark' : 'light'}
                     autoCapitalize="none"
-                    autoCorrect={false}
                   />
-                </View>
+                </div>
                 {providersLoading && (
-                  <Text className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</Text>
+                  <UIText className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</UIText>
                 )}
                 {!!providersError && (
-                  <Text
-                    accessibilityRole="alert"
+                  <UIText
+                    role="alert"
                     className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]"
-                  >
+>
                     {providersError}
-                  </Text>
+                  </UIText>
                 )}
-                <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+                <ScrollArea style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
                   {modelVisibleProviders.map((p) => {
                     const count = p.models?.length ?? p.totalModels;
                     const open = mq ? true : (modelExpanded[p.slug] ?? false);
                     return (
-                      <View key={p.slug || p.name}>
+                      <div key={p.slug || p.name}>
                         <Button
                           variant="ghost"
-                          onPress={() =>
+                          onClick={() =>
                             setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))
                           }
-                          className="flex-row items-center gap-2 px-2.5 py-2"
-                        >
+                          className="flex items-center gap-2 px-2.5 py-2"
+>
                           <UIText
                             className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100"
                             numberOfLines={1}
-                          >
+>
                             {p.name}
                           </UIText>
                           <UIText className="text-[12px] text-neutral-500 dark:text-neutral-400">
@@ -1766,17 +1749,17 @@ export function ChatScreen() {
                           (p.models ?? []).map((mm) => {
                             const on = mm === model && p.slug === modelProvider;
                             return (
-                              <View
+                              <div
                                 key={mm}
-                                className={`flex-row items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
+                                className={`flex items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
                                   on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                                 }`}
-                              >                                <Button
+>                                <Button
                                   variant="ghost"
-                                  accessibilityRole="radio"
-                                  accessibilityState={{ selected: on }}
-                                  accessibilityLabel={mm}
-                                  onPress={() => {
+
+                                  aria-pressed={on}
+                                  aria-label={mm}
+                                  onClick={() => {
                                     void pickModel(p.slug, mm);
                                     closePopover();
                                   }}
@@ -1786,7 +1769,7 @@ export function ChatScreen() {
                                   // slack so a long model id ellipsizes against
                                   // the Global button instead of pushing it out.
                                   className="h-auto min-w-0 flex-1 justify-start"
-                                >
+>
                                   <UIText
                                     numberOfLines={1}
                                     ellipsizeMode="tail"
@@ -1795,60 +1778,59 @@ export function ChatScreen() {
                                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                                         : 'text-neutral-950 dark:text-neutral-100'
                                     }`}
-                                  >
+>
                                     {on ? '● ' : '○ '}
                                     {mm}
                                   </UIText>
                                 </Button>
                                 <Button
                                   variant="outline"
-                                  accessibilityLabel={`Set ${mm} as the global default`}
-                                  onPress={() => {
+                                  aria-label={`Set ${mm} as the global default`}
+                                  onClick={() => {
                                     void setGlobalModel(p.slug, mm);
                                     closePopover();
                                   }}
                                   className="h-auto shrink-0 px-2 py-1"
-                                  hitSlop={8}
-                                >
+>
                                   <UIText className="text-[13px]">Global</UIText>
                                 </Button>
-                              </View>
+                              </div>
                             );
                           })}
                         {open && !p.models && (
-                          <Text className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                          <UIText className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
                             list unavailable — pull to refresh on server
-                          </Text>
+                          </UIText>
                         )}
-                      </View>
+                      </div>
                     );
                   })}
                   {modelVisibleProviders.length === 0 && !providersLoading && (
-                    <Text className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</Text>
+                    <UIText className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</UIText>
                   )}
-                </ScrollView>
+                </ScrollArea>
               </>
             )}
-          </View>
+          </div>
         </>
       )}
-    </SafeAreaView>
-      {/* Icon tooltip — pointerEvents="none" so it never steals taps. */}
+    </div>
+      {/* Icon tooltip — so it never steals taps. */}
       {!!tip &&
         (() => {
           const relY = tip.anchor.y - rootWin.current.y;
           const rootH = rootWin.current.h || winH;
           const left = Math.max(8, Math.min(tip.anchor.x + tip.anchor.w / 2 - 48, winW - 104));
           return (
-            <View
-              pointerEvents="none"
+            <div
+
               className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-white/90"
               style={{ bottom: Math.max(8, rootH - relY + 8), left }}
-            >
-              <Text className="text-[12px] text-white dark:text-black">{tip.label}</Text>
-            </View>
+>
+              <UIText className="text-[12px] text-white dark:text-black">{tip.label}</UIText>
+            </div>
           );
         })()}
-    </View>
+    </div>
   );
 }

@@ -1,21 +1,10 @@
 // Skills route — agent skill inventory ported from Hermes Desktop's
 // Capabilities pane (`apps/desktop/src/api/skills.ts` + `store/agent-plugins.ts`).
 // Same backend REST contract over the mobile app's authed ops helpers.
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect } from 'expo-router';
-import { AlertCircle, RefreshCw, X } from 'lucide-react-native';
-import * as Clipboard from 'expo-clipboard';
+import { Navigate as Redirect } from 'react-router-dom';
+import { AlertCircle, RefreshCw, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
@@ -24,9 +13,12 @@ import { Button } from '../../components/ui/button';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { brandColor, screenStyle } from '../../theme';
 import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
+import { ScrollArea } from '../../components/ui/scroll';
+import { writeClipboard } from '../../services/clipboard';
 
 // Memoized row: the installed-skills list is small and bounded, so no
 // virtualized list is needed — but toggling one switch must not re-render
@@ -49,29 +41,29 @@ const SkillRow = memo(function SkillRow({
   const canToggle = typeof skill.enabled === 'boolean';
   return (
     <Card>
-      <View className="flex-row items-center gap-2">
-        <Pressable className="min-w-0 flex-1" onPress={() => void onOpen(name)}>
-          <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100" numberOfLines={1}>
+      <div className="flex items-center gap-2">
+        <button type="button" className="min-w-0 flex-1" onClick={() => void onOpen(name)}>
+          <UIText className="text-sm font-semibold text-neutral-900 dark:text-neutral-100" numberOfLines={1}>
             {name}
-          </Text>
+          </UIText>
           {!!skill.description && (
-            <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={2}>
+            <UIText className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={2}>
               {String(skill.description)}
-            </Text>
+            </UIText>
           )}
-          <Text className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
+          <UIText className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
             {[skill.origin ? String(skill.origin) : '', typeof skill.usage === 'number' ? `${skill.usage} uses` : '']
               .filter(Boolean)
               .join(' · ') || 'Tap to view SKILL.md'}
-          </Text>
-        </Pressable>
+          </UIText>
+        </button>
         {canToggle &&
           (toggling ? (
-            <ActivityIndicator size="small" color={brandColor(dark)} />
+            <Spinner size={14} color={brandColor(dark)} />
           ) : (
             <Switch checked={enabled} onCheckedChange={(v) => void onToggle(name, v)} />
           ))}
-      </View>
+      </div>
     </Card>
   );
 });
@@ -82,7 +74,6 @@ export function SkillsScreen() {
   const dark = theme === 'dark';
   // Two spinners on this screen (list load + SKILL.md viewer) — resolve once.
   const brand = useMemo(() => brandColor(dark), [dark]);
-  const insets = useSafeAreaInsets();
 
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,55 +164,54 @@ export function SkillsScreen() {
     [getAuthScope, opsGet],
   );
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screenStyle(dark)}>
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
+    <div style={screenStyle(dark)}>
+      <div className="flex-1 bg-white dark:bg-black">
+        
 
         {/* Header */}
         <ScreenHeader
           title="Skills"
-          insetTop={insets.top}
+
           subtitle={loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
           actions={
             <Button
               variant="ghost"
               size="icon"
-              accessibilityLabel="Refresh skills"
-              onPress={() => void load(true)}
-              hitSlop={8}
+              aria-label="Refresh skills"
+              onClick={() => void load(true)}
               className="h-9 w-9 rounded-lg"
-            >
+>
               <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
             </Button>
           }
         />
 
-        <ScrollView
+        <ScrollArea
           className="flex-1 px-4 py-4"
-          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
-        >
+          contentClassName="pb-[object Object]"
+
+>
           {loading && !refreshing ? (
-            <View className="items-center py-16">
-              <ActivityIndicator size="large" color={brand} />
-            </View>
+            <div className="items-center py-16">
+              <Spinner size={24} color={brand} />
+            </div>
           ) : unsupported ? (
             <Card>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+              <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
                 Skills aren&apos;t available on this backend — run skills from the chat with /name instead.
-              </Text>
+              </UIText>
             </Card>
           ) : error ? (
             <ErrorRetry error={error} onRetry={() => void load()} />
           ) : !skills?.length ? (
             <Card>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</Text>
+              <UIText className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</UIText>
             </Card>
           ) : (
-            <View className="gap-2">
+            <div className="gap-2">
               {skills.map((s) => (
                 <SkillRow
                   key={String(s.name ?? '(unnamed)')}
@@ -232,53 +222,53 @@ export function SkillsScreen() {
                   onOpen={openContent}
                 />
               ))}
-            </View>
+            </div>
           )}
-        </ScrollView>
+        </ScrollArea>
 
         {/* SKILL.md viewer */}
-        <Modal
-          visible={viewing !== null}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => setViewing(null)}
-        >
-          <View className="flex-1 bg-white dark:bg-neutral-950" style={{ paddingTop: 48 }}>
-            <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <Text className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white" numberOfLines={1}>
+        <DialogPrimitive.Root open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
+              <DialogPrimitive.Title className="sr-only">Skill file</DialogPrimitive.Title>
+              <div className="flex-1" style={{ paddingTop: 48 }}>
+            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <UIText className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white" numberOfLines={1}>
                 {viewing ?? ''}
-              </Text>
+              </UIText>
               <Button
                 variant="ghost"
-                onPress={() => void Clipboard.setStringAsync(content).catch(() => {})}
-                accessibilityLabel="Copy skill file"
+                onClick={() => void writeClipboard(content).catch(() => {})}
+                aria-label="Copy skill file"
                 className="h-auto px-2 py-1.5"
-              >
+>
                 <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</UIText>
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                onPress={() => setViewing(null)}
-                accessibilityLabel="Close skill file"
-                hitSlop={8}
+                onClick={() => setViewing(null)}
+                aria-label="Close skill file"
                 className="h-8 w-8 rounded-md"
-              >
+>
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
-            </View>
-            <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
+            </div>
+            <ScrollArea className="flex-1" contentClassName="p-[object Object]">
               {contentLoading ? (
-                <ActivityIndicator size="small" color={brand} />
+                <Spinner size={14} color={brand} />
               ) : (
-                <Text selectable className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
+                <UIText className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
                   {content}
-                </Text>
+                </UIText>
               )}
-            </ScrollView>
-          </View>
-        </Modal>
-      </SafeAreaView>
-    </View>
+            </ScrollArea>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      </div>
+    </div>
   );
 }

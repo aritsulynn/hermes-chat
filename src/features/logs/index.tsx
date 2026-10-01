@@ -1,22 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  AppState,
-  Platform,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import type { FlashListRef } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
+import { Navigate as Redirect } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowDown,
@@ -29,7 +19,7 @@ import {
   SlidersHorizontal,
   Terminal,
   X,
-} from 'lucide-react-native';
+} from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
@@ -38,6 +28,8 @@ import { ScreenHeader } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
 import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
+import { ScrollArea } from '../../components/ui/scroll';
+import { writeClipboard } from '../../services/clipboard';
 
 type LogRow = { line: string; sev: LineSeverity };
 
@@ -45,7 +37,6 @@ export function LogsScreen() {
   const { authed, opsGet, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
-  const insets = useSafeAreaInsets();
   // Resolved once per scheme: auto-refresh re-renders this screen every 3.5s
   // and each value feeds the header/filter chrome plus the list surface.
   const screen = useMemo(() => screenStyle(dark), [dark]);
@@ -143,7 +134,7 @@ export function LogsScreen() {
   );
   const handleCopy = async () => {
     try {
-      await Clipboard.setStringAsync(lines.join('\n'));
+      await writeClipboard(lines.join('\n'));
       setCopied(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 2000);
@@ -166,7 +157,7 @@ export function LogsScreen() {
   }, [rows]);
 
   const scrollToBottom = useCallback(() => {
-    if (rows.length > 0) {
+    if (rows.length> 0) {
       try {
         listRef.current?.scrollToEnd({ animated: true });
       } catch (e) {
@@ -176,7 +167,7 @@ export function LogsScreen() {
   }, [rows.length]);
 
   const scrollToTop = useCallback(() => {
-    if (rows.length > 0) {
+    if (rows.length> 0) {
       try {
         void listRef.current?.scrollToIndex({ index: 0, animated: true });
       } catch (e) {
@@ -192,14 +183,13 @@ export function LogsScreen() {
     const isWarn = item.sev === 'warning';
     const isDbg = item.sev === 'debug';
     return (
-      <View
-        className={`flex-row items-start py-0.5 px-1 rounded ${
+      <div
+        className={`flex items-start py-0.5 px-1 rounded ${
           isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
         }`}
-      >
-        <Text className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</Text>
-        <Text
-          selectable
+>
+        <UIText className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</UIText>
+        <UIText
           className={`flex-1 font-mono text-[11px] leading-4 ${
             isErr
               ? 'text-red-400 font-medium'
@@ -209,10 +199,10 @@ export function LogsScreen() {
                   ? 'text-neutral-500'
                   : 'text-neutral-200'
           }`}
-        >
+>
           {item.line}
-        </Text>
-      </View>
+        </UIText>
+      </div>
     );
   }, []);
 
@@ -226,35 +216,34 @@ export function LogsScreen() {
     [insets.bottom],
   );
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screen}>
+    <div style={screen}>
       {/* No 'bottom' edge: the list content already pads insets.bottom + 48. */}
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
+      <div className="flex-1 bg-white dark:bg-black">
+        
 
         {/* Header */}
         <ScreenHeader
           title="Logs"
-          insetTop={insets.top}
+
           subtitle={`${file}.log · ${stats.total} lines`}
           actions={
-            <View className="flex-row items-center" style={{ gap: 8 }}>
+            <div className="flex items-center" style={{ gap: 8 }}>
               {/* Live / Auto refresh toggle button */}
               <Button
-                onPress={() => setAutoRefresh((prev) => !prev)}
-                hitSlop={6}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: autoRefresh }}
-                accessibilityLabel="Live refresh"
+                onClick={() => setAutoRefresh((prev) => !prev)}
+
+                aria-checked={autoRefresh}
+                aria-label="Live refresh"
                 className={`h-9 rounded-xl border px-3 ${
                   autoRefresh
                     ? 'border-emerald-500/40 bg-emerald-500/10'
                     : 'border-neutral-200 bg-neutral-100/70 dark:border-neutral-800 dark:bg-neutral-900'
                 }`}
-              >
-                <View
+>
+                <div
                   className={`h-2 w-2 rounded-full ${
                     autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
                   }`}
@@ -263,22 +252,21 @@ export function LogsScreen() {
                   className={`text-xs font-semibold ${
                     autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
                   }`}
-                >
+>
                   {autoRefresh ? 'Live' : 'Paused'}
                 </UIText>
               </Button>
 
               {/* Copy button */}
               <Button
-                onPress={handleCopy}
-                hitSlop={6}
-                accessibilityLabel="Copy log"
+                onClick={handleCopy}
+                aria-label="Copy log"
                 className={`h-9 rounded-xl border px-3 ${
                   copied
                     ? 'border-emerald-500/40 bg-emerald-500/10'
                     : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
                 }`}
-              >
+>
                 {copied ? (
                   <Check size={14} color="#10b981" />
                 ) : (
@@ -290,7 +278,7 @@ export function LogsScreen() {
                       ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
                       : 'text-neutral-700 dark:text-neutral-300'
                   }`}
-                >
+>
                   {copied ? 'Copied' : 'Copy'}
                 </UIText>
               </Button>
@@ -300,130 +288,119 @@ export function LogsScreen() {
                 variant="outline"
                 size="icon"
                 disabled={loading || refreshing}
-                onPress={() => void fetchLogs()}
-                hitSlop={6}
-                accessibilityLabel="Refresh logs"
+                onClick={() => void fetchLogs()}
+                aria-label="Refresh logs"
                 className="h-9 w-9 rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
-              >
+>
                 <RefreshCw
                   size={15}
                   color={dark ? '#9ca3af' : '#6b7280'}
                   className={refreshing ? 'animate-spin' : ''}
                 />
               </Button>
-            </View>
+            </div>
           }
         />
 
         {/* Filter Toolbar Card */}
-        <View className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
+        <div className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
           {/* Top line: Log File Tabs & Filter Toggle */}
-          <View className="flex-row items-center justify-between" style={{ gap: 10 }}>
-            <ScrollView
+          <div className="flex items-center justify-between" style={{ gap: 10 }}>
+            <ScrollArea
               horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{
-                gap: 8,
-                paddingRight: 4,
-                alignItems: 'center',
-              }}
+              contentClassName="gap-[object Object] pr-[object Object] items-center"
               className="flex-1"
-            >
+>
               {LOG_FILES.map((f) => {
                 const isSelected = file === f;
                 return (
                   <Button
                     key={f}
                     variant="ghost"
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: isSelected }}
-                    accessibilityLabel={`${f} log`}
-                    onPress={() => setFile(f)}
+
+                    aria-pressed={isSelected}
+                    aria-label={`${f} log`}
+                    onClick={() => setFile(f)}
                     className={`h-auto rounded-xl border px-3.5 py-2 ${
                       isSelected
                         ? 'border-[#1a73e8] bg-[#1a73e8]'
                         : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                     }`}
-                  >
+>
                     <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
                     <UIText
                       className={`text-xs font-semibold ${
                         isSelected ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
                       }`}
-                    >
+>
                       {f}
                     </UIText>
                   </Button>
                 );
               })}
-            </ScrollView>
+            </ScrollArea>
 
             <Button
               variant="ghost"
-              onPress={() => setShowFilters((v) => !v)}
-              hitSlop={6}
-              accessibilityState={{ expanded: showFilters }}
-              accessibilityLabel="Toggle filters"
+              onClick={() => setShowFilters((v) => !v)}
+              aria-expanded={showFilters}
+              aria-label="Toggle filters"
               className={`h-9 rounded-xl border px-3 ${
                 showFilters
                   ? 'border-[#1a73e8]/40 bg-[#1a73e8]/10'
                   : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
               }`}
-            >
+>
               <SlidersHorizontal size={13} color={showFilters ? '#1a73e8' : dark ? '#9ca3af' : '#6b7280'} />
-              <Text
+              <UIText
                 className={`text-xs font-medium ${
                   showFilters ? 'font-semibold text-[#1a73e8]' : 'text-neutral-600 dark:text-neutral-400'
                 }`}
-              >
+>
                 Filter
-              </Text>
+              </UIText>
             </Button>
-          </View>
+          </div>
 
           {showFilters && (
-            <View className="mt-3 pt-3 border-t border-neutral-200/70 dark:border-neutral-800/70" style={{ gap: 12 }}>
+            <div className="mt-3 pt-3 border-t border-neutral-200/70 dark:border-neutral-800/70" style={{ gap: 12 }}>
               {/* Search Input — border lives on the Input itself */}
-              <View className="flex-row items-center gap-2">
+              <div className="flex items-center gap-2">
                 <Search size={15} color={dark ? '#737373' : '#9ca3af'} />
                 <Input
                   value={search}
-                  onChangeText={setSearch}
+                  onChange={(e) => setSearch(e.target.value)}
                   placeholder="Filter logs (substring)..."
-                  placeholderTextColor={placeholder}
                   autoCapitalize="none"
-                  autoCorrect={false}
                   className="flex-1 text-xs text-neutral-950 dark:text-neutral-100 py-0.5"
-                  onSubmitEditing={() => void fetchLogs()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void fetchLogs() } }}
                 />
                 {Boolean(search) && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    onPress={() => {
+                    onClick={() => {
                       setSearch('');
                     }}
-                    hitSlop={8}
-                    accessibilityLabel="Clear filter"
+                    aria-label="Clear filter"
                     className="h-6 w-6 rounded-md"
-                  >
+>
                     <X size={15} color={dark ? '#888' : '#999'} />
                   </Button>
                 )}
-              </View>
+              </div>
 
               {/* Level selector & Line count in dedicated rows for breathing space */}
-              <View style={{ gap: 10 }}>
+              <div style={{ gap: 10 }}>
                 {/* Severity Level Chips */}
-                <View>
-                  <Text className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
+                <div>
+                  <UIText className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
                     Severity Level
-                  </Text>
-                  <ScrollView
+                  </UIText>
+                  <ScrollArea
                     horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 8, paddingRight: 4 }}
-                  >
+                    contentClassName="gap-[object Object] pr-[object Object]"
+>
                     {LOG_LEVELS.map((lvl) => {
                       const isSelected = level === lvl;
                       const color = LEVEL_COLORS[lvl];
@@ -432,113 +409,113 @@ export function LogsScreen() {
                         <Button
                           key={lvl}
                           variant="ghost"
-                          accessibilityRole="radio"
-                          accessibilityState={{ selected: isSelected }}
-                          accessibilityLabel={`${lvl} level`}
-                          onPress={() => setLevel(lvl)}
+
+                          aria-pressed={isSelected}
+                          aria-label={`${lvl} level`}
+                          onClick={() => setLevel(lvl)}
                           className={`h-auto rounded-lg border px-3 py-1.5 ${
                             isSelected
                               ? `${color.activeBg} ${color.activeBorder}`
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                           }`}
-                        >
+>
                           <UIText
                             className={`text-xs font-semibold ${
                               isSelected ? color.activeText : 'text-neutral-600 dark:text-neutral-400'
                             }`}
-                          >
+>
                             {lvl}
                           </UIText>
                         </Button>
                       );
                     })}
-                  </ScrollView>
-                </View>
+                  </ScrollArea>
+                </div>
 
                 {/* Line Count Chips */}
-                <View>
-                  <Text className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
+                <div>
+                  <UIText className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
                     Line Count
-                  </Text>
-                  <View className="flex-row items-center" style={{ gap: 8 }}>
+                  </UIText>
+                  <div className="flex items-center" style={{ gap: 8 }}>
                     {LINE_COUNTS.map((cnt) => {
                       const isSelected = lineCount === cnt;
                       return (
                         <Button
                           key={cnt}
                           variant="ghost"
-                          accessibilityRole="radio"
-                          accessibilityState={{ selected: isSelected }}
-                          accessibilityLabel={`${cnt} lines`}
-                          onPress={() => setLineCount(cnt)}
+
+                          aria-pressed={isSelected}
+                          aria-label={`${cnt} lines`}
+                          onClick={() => setLineCount(cnt)}
                           className={`h-auto flex-1 rounded-lg border py-1.5 ${
                             isSelected
                               ? 'border-neutral-900 bg-neutral-900 dark:border-neutral-100 dark:bg-neutral-100'
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                           }`}
-                        >
+>
                           <UIText
                             className={`text-xs font-semibold ${
                               isSelected ? 'text-white dark:text-neutral-950' : 'text-neutral-600 dark:text-neutral-400'
                             }`}
-                          >
+>
                             {cnt}
                           </UIText>
                         </Button>
                       );
                     })}
-                  </View>
-                </View>
-              </View>
-            </View>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Status Bar info & quick severity toggles */}
-          <View className="mt-3 flex-row items-center justify-between">
-            <Text className="text-xs text-neutral-500 dark:text-neutral-400">
-              Showing <Text className="font-semibold text-neutral-700 dark:text-neutral-200">{stats.total}</Text> lines
-            </Text>
-            <View className="flex-row items-center" style={{ gap: 8 }}>
-              {stats.errorCount > 0 && (
+          <div className="mt-3 flex items-center justify-between">
+            <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
+              Showing <UIText className="font-semibold text-neutral-700 dark:text-neutral-200">{stats.total}</UIText> lines
+            </UIText>
+            <div className="flex items-center" style={{ gap: 8 }}>
+              {stats.errorCount> 0 && (
                 <Button
                   variant="ghost"
-                  onPress={() => setLevel((prev) => (prev === 'ERROR' ? 'ALL' : 'ERROR'))}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: level === 'ERROR' }}
-                  accessibilityLabel={`Show only errors, ${stats.errorCount} found`}
+                  onClick={() => setLevel((prev) => (prev === 'ERROR' ? 'ALL' : 'ERROR'))}
+
+                  aria-checked={level === 'ERROR'}
+                  aria-label={`Show only errors, ${stats.errorCount} found`}
                   className={`h-auto rounded-lg border px-2.5 py-1 ${
                     level === 'ERROR'
                       ? 'border-rose-500 bg-rose-500/20'
                       : 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40'
                   }`}
-                >
+>
                   <AlertTriangle size={12} color="#e11d48" />
-                  <Text className="text-xs font-semibold text-rose-700 dark:text-rose-300">
-                    {stats.errorCount} Error{stats.errorCount > 1 ? 's' : ''}
-                  </Text>
+                  <UIText className="text-xs font-semibold text-rose-700 dark:text-rose-300">
+                    {stats.errorCount} Error{stats.errorCount> 1 ? 's' : ''}
+                  </UIText>
                 </Button>
               )}
-              {stats.warnCount > 0 && (
+              {stats.warnCount> 0 && (
                 <Button
                   variant="ghost"
-                  onPress={() => setLevel((prev) => (prev === 'WARNING' ? 'ALL' : 'WARNING'))}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: level === 'WARNING' }}
-                  accessibilityLabel={`Show only warnings, ${stats.warnCount} found`}
+                  onClick={() => setLevel((prev) => (prev === 'WARNING' ? 'ALL' : 'WARNING'))}
+
+                  aria-checked={level === 'WARNING'}
+                  aria-label={`Show only warnings, ${stats.warnCount} found`}
                   className={`h-auto rounded-lg border px-2.5 py-1 ${
                     level === 'WARNING'
                       ? 'border-amber-500 bg-amber-500/20'
                       : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40'
                   }`}
-                >
-                  <Text className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                    {stats.warnCount} Warn{stats.warnCount > 1 ? 's' : ''}
-                  </Text>
+>
+                  <UIText className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    {stats.warnCount} Warn{stats.warnCount> 1 ? 's' : ''}
+                  </UIText>
                 </Button>
               )}
-            </View>
-          </View>
-        </View>
+            </div>
+          </div>
+        </div>
 
         {/* Error message banner */}
         {error && (
@@ -549,59 +526,59 @@ export function LogsScreen() {
 
         {/* Log Output Area */}
         {loading && lines.length === 0 ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color="#1a73e8" />
-            <Text className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</Text>
-          </View>
+          <div className="flex-1 items-center justify-center">
+            <Spinner size={24} color="#1a73e8" />
+            <UIText className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</UIText>
+          </div>
         ) : lines.length === 0 ? (
-          <View className="flex-1 items-center justify-center p-6">
+          <div className="flex-1 items-center justify-center p-6">
             <Terminal size={36} color={dark ? '#555' : '#aaa'} />
-            <Text className="mt-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+            <UIText className="mt-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
               No log entries found
-            </Text>
-            <Text className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+            </UIText>
+            <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
               {search ? 'Try clearing the search query or changing log level.' : `${file}.log is empty.`}
-            </Text>
-          </View>
+            </UIText>
+          </div>
         ) : (
-          <View className="flex-1 bg-[#101014]">
+          <div className="flex-1 bg-[#101014]">
             {/* FlashList v2 sizes rows itself; drawDistance replaces the old
                 windowSize/maxToRenderPerBatch overscan tuning. */}
             <FlashList
               ref={listRef}
               data={rows}
               keyExtractor={logKeyExtractor}
-              contentContainerStyle={logListContentStyle}
+              contentClassName={logListContentStyle}
               renderItem={renderLogRow}
               drawDistance={800}
             />
 
             {/* Quick Jump Buttons (Floating) */}
-            <View className="absolute bottom-6 right-5 flex-col" style={{ gap: 12 }}>
+            <div className="absolute bottom-6 right-5 flex-col" style={{ gap: 12 }}>
               <Button
                 variant="ghost"
                 size="icon"
-                onPress={scrollToTop}
-                accessibilityLabel="Scroll to top"
+                onClick={scrollToTop}
+                aria-label="Scroll to top"
                 className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800"
                 style={{ elevation: 4 }}
-              >
+>
                 <ArrowUp size={18} color="#fff" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                onPress={scrollToBottom}
-                accessibilityLabel="Scroll to bottom"
+                onClick={scrollToBottom}
+                aria-label="Scroll to bottom"
                 className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600"
                 style={{ elevation: 4 }}
-              >
+>
                 <ArrowDown size={18} color="#fff" />
               </Button>
-            </View>
-          </View>
+            </div>
+          </div>
         )}
-      </SafeAreaView>
-    </View>
+      </div>
+    </div>
   );
 }

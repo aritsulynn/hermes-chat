@@ -31,7 +31,7 @@ const buttonVariants = cva(
 );
 
 // On native this was a second cva handed to `TextClassContext`, because a
-// `<Pressable>` cannot colour a nested `<Text>`. Here it merges straight into
+// `<button type="button">` cannot colour a nested `<Text>`. Here it merges straight into
 // the button's own className and reaches the label and any icon by inheritance.
 // `active:` becomes `active:` in CSS too, but a mouse-down on a real button
 // does not reliably fire it, so the pressed state is carried by

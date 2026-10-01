@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect } from 'expo-router';
+import { Navigate as Redirect } from 'react-router-dom';
 import {
   Activity,
   AlertCircle,
@@ -15,7 +12,7 @@ import {
   TrendingUp,
   Wrench,
   Zap,
-} from 'lucide-react-native';
+} from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { Card, ScreenHeader } from '../../components/ui/bits';
@@ -24,12 +21,14 @@ import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { Progress } from '../../components/ui/progress';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { brandColor, screenStyle } from '../../theme';
 import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
 import { normalizeToolSkillList } from './helpers';
 import type { ToolSkillItem } from './helpers';
+import { ScrollArea } from '../../components/ui/scroll';
 
 const PERIOD_OPTIONS = [
   { label: '7 Days', days: 7 },
@@ -44,7 +43,6 @@ export function UsageScreen() {
   const dark = theme === 'dark';
   // Shared by the spinner and the KPI icon — resolve once per scheme.
   const brand = useMemo(() => brandColor(dark), [dark]);
-  const insets = useSafeAreaInsets();
 
   const [days, setDays] = useState<number>(30);
   const [data, setData] = useState<any>(null);
@@ -106,7 +104,7 @@ export function UsageScreen() {
     const result: any[] = [];
     const now = new Date();
 
-    for (let i = days - 1; i >= 0; i--) {
+    for (let i = days - 1; i>= 0; i--) {
       const date = new Date(now.getTime() - i * 86400000);
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -139,7 +137,7 @@ export function UsageScreen() {
     let max = 1;
     for (const d of fullDailyEntries) {
       const dayTokens = (d?.input_tokens || 0) + (d?.output_tokens || 0) + (d?.reasoning_tokens || 0);
-      if (dayTokens > max) max = dayTokens;
+      if (dayTokens> max) max = dayTokens;
     }
     return max;
   }, [fullDailyEntries]);
@@ -150,65 +148,64 @@ export function UsageScreen() {
     [fullDailyEntries],
   );
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screenStyle(dark)}>
+    <div style={screenStyle(dark)}>
       {/* No 'bottom' edge: ScrollView content pads insets.bottom + 32. */}
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
+      <div className="flex-1 bg-white dark:bg-black">
+        
 
         {/* Header */}
         <ScreenHeader
           title="Usage & Analytics"
-          insetTop={insets.top}
+
           actions={
             <Button
               variant="outline"
               size="icon"
-              accessibilityLabel="Refresh usage"
+              aria-label="Refresh usage"
               disabled={loading || refreshing}
-              onPress={() => void fetchUsage(true)}
-              hitSlop={10}
+              onClick={() => void fetchUsage(true)}
               className="h-8 w-8 rounded-lg border border-neutral-300 dark:border-neutral-700"
-            >
+>
               <RefreshCw size={15} color={dark ? '#ccc' : '#444'} />
             </Button>
           }
         />
 
         {/* Period Selector Bar */}
-        <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
-          <Text className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</Text>
-          <View className="flex-row gap-1">
+        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <UIText className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</UIText>
+          <div className="flex gap-1">
             {PERIOD_OPTIONS.map((opt) => (
               <Button
                 key={opt.days}
                 variant="ghost"
-                accessibilityRole="radio"
-                accessibilityState={{ selected: days === opt.days }}
-                accessibilityLabel={opt.label}
-                onPress={() => setDays(opt.days)}
+
+                aria-pressed={days === opt.days}
+                aria-label={opt.label}
+                onClick={() => setDays(opt.days)}
                 className={`h-auto rounded-lg border px-3 py-1.5 ${
                   days === opt.days
                     ? 'border-[#1a73e8] bg-[#1a73e8]'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
-              >
+>
                 <UIText
                   className={`text-xs font-semibold ${
                     days === opt.days ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
                   }`}
-                >
+>
                   {opt.label}
                 </UIText>
               </Button>
             ))}
-          </View>
-        </View>
+          </div>
+        </div>
 
         {error && (
-          <View className="m-4">
+          <div className="m-4">
             <UIAlert icon={AlertCircle} variant="destructive">
               <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
                 {error}
@@ -216,173 +213,169 @@ export function UsageScreen() {
               <Button
                 variant="destructive"
                 size="sm"
-                onPress={() => void fetchUsage(true)}
+                onClick={() => void fetchUsage(true)}
                 className="ml-6 mt-1 self-start"
-              >
+>
                 <UIText className="text-xs font-medium text-white">Retry</UIText>
               </Button>
             </UIAlert>
-          </View>
+          </div>
         )}
 
-        <ScrollView
-          contentContainerStyle={{
-            padding: 14,
-            paddingBottom: insets.bottom + 32,
-            gap: 16,
-          }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void fetchUsage(true)} />}
-        >
+        <ScrollArea
+          contentClassName="p-[object Object] pb-[object Object] gap-[object Object]"
+
+>
           {loading && !refreshing ? (
-            <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color={brand} />
-              <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading usage analytics…</Text>
-            </View>
+            <div className="items-center justify-center py-20">
+              <Spinner size={24} color={brand} />
+              <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading usage analytics…</UIText>
+            </div>
           ) : (
             <>
               {/* KPI Cards Grid */}
-              <View className="flex-row flex-wrap gap-2.5">
+              <div className="flex flex-wrap gap-2.5">
                 {/* Total Tokens */}
                 <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     <TrendingUp size={16} color={brand} />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                    <UIText className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</UIText>
+                  </div>
+                  <UIText className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
                     {compactNumber(totalTokens)}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">in {days} days</Text>
+                  </UIText>
+                  <UIText className="mt-0.5 text-[11px] text-neutral-400">in {days} days</UIText>
                 </Card>
 
                 {/* Estimated Cost */}
                 <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     <DollarSign size={16} color="#16a34a" />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Est. Cost</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                    <UIText className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Est. Cost</UIText>
+                  </div>
+                  <UIText className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
                     {formatCost(totals?.total_estimated_cost)}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">
+                  </UIText>
+                  <UIText className="mt-0.5 text-[11px] text-neutral-400">
                     Actual: {formatCost(totals?.total_actual_cost)}
-                  </Text>
+                  </UIText>
                 </Card>
 
                 {/* Sessions */}
                 <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     <MessageSquare size={16} color="#8b5cf6" />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Sessions</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                    <UIText className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Sessions</UIText>
+                  </div>
+                  <UIText className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
                     {totals?.total_sessions?.toLocaleString() || '0'}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">conversations</Text>
+                  </UIText>
+                  <UIText className="mt-0.5 text-[11px] text-neutral-400">conversations</UIText>
                 </Card>
 
                 {/* API Calls */}
                 <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     <Zap size={16} color="#f59e0b" />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">API Calls</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                    <UIText className="text-xs font-medium text-neutral-500 dark:text-neutral-400">API Calls</UIText>
+                  </div>
+                  <UIText className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
                     {totals?.total_api_calls?.toLocaleString() || '0'}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">requests</Text>
+                  </UIText>
+                  <UIText className="mt-0.5 text-[11px] text-neutral-400">requests</UIText>
                 </Card>
-              </View>
+              </div>
 
               {/* Token Breakdown Card */}
               <Card>
-                <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Token Breakdown</Text>
-                <View className="mt-3 gap-2.5">
+                <UIText className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Token Breakdown</UIText>
+                <div className="mt-3 gap-2.5">
                   {/* Input Tokens */}
-                  <View>
-                    <View className="flex-row justify-between text-xs mb-1">
-                      <Text className="text-xs text-neutral-600 dark:text-neutral-300">Input Tokens</Text>
-                      <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Input Tokens</UIText>
+                      <UIText className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
                         {(totals?.total_input || 0).toLocaleString()}
-                      </Text>
-                    </View>
+                      </UIText>
+                    </div>
                     <Progress
                       value={Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}
                       indicatorClassName="bg-[#1a73e8]"
                       className="bg-neutral-200 dark:bg-neutral-800"
                     />
-                  </View>
+                  </div>
 
                   {/* Output Tokens */}
-                  <View>
-                    <View className="flex-row justify-between text-xs mb-1">
-                      <Text className="text-xs text-neutral-600 dark:text-neutral-300">Output Tokens</Text>
-                      <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Output Tokens</UIText>
+                      <UIText className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
                         {(totals?.total_output || 0).toLocaleString()}
-                      </Text>
-                    </View>
+                      </UIText>
+                    </div>
                     <Progress
                       value={Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}
                       indicatorClassName="bg-[#8b5cf6]"
                       className="bg-neutral-200 dark:bg-neutral-800"
                     />
-                  </View>
+                  </div>
 
                   {/* Reasoning Tokens */}
-                  {(totals?.total_reasoning || 0) > 0 && (
-                    <View>
-                      <View className="flex-row justify-between text-xs mb-1">
-                        <Text className="text-xs text-neutral-600 dark:text-neutral-300">Reasoning / Thinking</Text>
-                        <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                  {(totals?.total_reasoning || 0)> 0 && (
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Reasoning / Thinking</UIText>
+                        <UIText className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
                           {(totals?.total_reasoning || 0).toLocaleString()}
-                        </Text>
-                      </View>
+                        </UIText>
+                      </div>
                       <Progress
                         value={Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}
                         indicatorClassName="bg-[#f59e0b]"
                         className="bg-neutral-200 dark:bg-neutral-800"
                       />
-                    </View>
+                    </div>
                   )}
 
                   {/* Cache Read Tokens */}
-                  {(totals?.total_cache_read || 0) > 0 && (
-                    <View>
-                      <View className="flex-row justify-between text-xs mb-1">
-                        <Text className="text-xs text-neutral-600 dark:text-neutral-300">Cache Read Tokens</Text>
-                        <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                  {(totals?.total_cache_read || 0)> 0 && (
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Cache Read Tokens</UIText>
+                        <UIText className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
                           {(totals?.total_cache_read || 0).toLocaleString()}
-                        </Text>
-                      </View>
+                        </UIText>
+                      </div>
                       <Progress
                         value={Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}
                         indicatorClassName="bg-[#10b981]"
                         className="bg-neutral-200 dark:bg-neutral-800"
                       />
-                    </View>
+                    </div>
                   )}
-                </View>
+                </div>
               </Card>
 
               {/* Daily Activity Chart */}
               <Card>
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Daily Activity</Text>
+                <div className="flex items-center justify-between">
+                  <UIText className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Daily Activity</UIText>
                   {selectedDay && (
-                    <Text className="text-xs font-mono text-[#1a73e8] dark:text-[#7aa7ff]">
+                    <UIText className="text-xs font-mono text-[#1a73e8] dark:text-[#7aa7ff]">
                       {selectedDay.day}:{' '}
                       {compactNumber((selectedDay.input_tokens || 0) + (selectedDay.output_tokens || 0))} tokens (
                       {selectedDay.sessions || 0} sess)
-                    </Text>
+                    </UIText>
                   )}
-                </View>
+                </div>
 
                 {fullDailyEntries.length === 0 ? (
-                  <Text className="mt-4 text-center text-xs text-neutral-400">
+                  <UIText className="mt-4 text-center text-xs text-neutral-400">
                     No activity recorded for this period.
-                  </Text>
+                  </UIText>
                 ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-4">
-                    <View className="flex-row items-end gap-2 h-36 pt-4 pb-2 px-1">
+                  <ScrollArea horizontal className="mt-4">
+                    <div className="flex items-end gap-2 h-36 pt-4 pb-2 px-1">
                       {fullDailyEntries.map((d) => (
                         <DayBar
                           key={d.day}
@@ -393,82 +386,82 @@ export function UsageScreen() {
                           onSelect={handleSelectDay}
                         />
                       ))}
-                    </View>
-                  </ScrollView>
+                    </div>
+                  </ScrollArea>
                 )}
               </Card>
 
               {/* Usage by Model */}
               <Card>
-                <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</Text>
-                <View className="mt-3 gap-2.5">
+                <UIText className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</UIText>
+                <div className="mt-3 gap-2.5">
                   {modelEntries.length === 0 ? (
-                    <Text className="text-xs text-neutral-400">No model usage data available.</Text>
+                    <UIText className="text-xs text-neutral-400">No model usage data available.</UIText>
                   ) : (
                     modelEntries.map((m, idx) => {
                       const mTokens = (m?.input_tokens || 0) + (m?.output_tokens || 0);
                       const modelName = String(m?.model ?? `Model ${idx + 1}`);
                       return (
-                        <View
+                        <div
                           key={`${modelName}-${idx}`}
                           className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950"
-                        >
-                          <View className="flex-row items-start justify-between gap-2">
-                            <View className="flex-1">
-                              <Text
+>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <UIText
                                 className="text-sm font-semibold text-neutral-950 dark:text-neutral-100"
                                 numberOfLines={1}
-                              >
+>
                                 {modelName}
-                              </Text>
-                              <Text className="text-[11px] text-neutral-400 mt-0.5">
+                              </UIText>
+                              <UIText className="text-[11px] text-neutral-400 mt-0.5">
                                 {m?.sessions || 0} sessions · {m?.api_calls || 0} calls
-                              </Text>
-                            </View>
-                            <View className="items-end">
-                              <Text className="text-sm font-bold font-mono text-neutral-950 dark:text-neutral-100">
+                              </UIText>
+                            </div>
+                            <div className="items-end">
+                              <UIText className="text-sm font-bold font-mono text-neutral-950 dark:text-neutral-100">
                                 {compactNumber(mTokens)}
-                              </Text>
+                              </UIText>
                               {Boolean(m.estimated_cost) && (
-                                <Text className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
+                                <UIText className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
                                   {formatCost(m.estimated_cost)}
-                                </Text>
+                                </UIText>
                               )}
-                            </View>
-                          </View>
+                            </div>
+                          </div>
 
-                          <View className="mt-2.5 flex-row items-center justify-between border-t border-neutral-100 pt-2 dark:border-neutral-900">
-                            <Text className="text-[11px] text-neutral-500">In: {compactNumber(m.input_tokens)}</Text>
-                            <Text className="text-[11px] text-neutral-500">Out: {compactNumber(m.output_tokens)}</Text>
-                          </View>
-                        </View>
+                          <div className="mt-2.5 flex items-center justify-between border-t border-neutral-100 pt-2 dark:border-neutral-900">
+                            <UIText className="text-[11px] text-neutral-500">In: {compactNumber(m.input_tokens)}</UIText>
+                            <UIText className="text-[11px] text-neutral-500">Out: {compactNumber(m.output_tokens)}</UIText>
+                          </div>
+                        </div>
                       );
                     })
                   )}
-                </View>
+                </div>
               </Card>
 
               {/* Tools & Skills Breakdown */}
-              {(toolsList.length > 0 || skillsList.length > 0) && (
+              {(toolsList.length> 0 || skillsList.length> 0) && (
                 <Card>
-                  <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Tools & Skills</Text>
+                  <UIText className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Tools & Skills</UIText>
 
                   {/* Tools */}
-                  {toolsList.length > 0 && (
-                    <View className="mt-3">
-                      <View className="flex-row items-center gap-1.5 mb-2">
+                  {toolsList.length> 0 && (
+                    <div className="mt-3">
+                      <div className="flex items-center gap-1.5 mb-2">
                         <Wrench size={13} color={dark ? '#aaa' : '#666'} />
-                        <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+                        <UIText className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
                           Tools Executed
-                        </Text>
-                      </View>
-                      <View className="flex-row flex-wrap gap-1.5">
+                        </UIText>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
                         {toolsList.map((item) => (
                           <Badge
                             key={item.name}
                             variant="secondary"
                             className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
-                          >
+>
                             <UIText className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
                               {item.name}
                             </UIText>
@@ -480,26 +473,26 @@ export function UsageScreen() {
                             )}
                           </Badge>
                         ))}
-                      </View>
-                    </View>
+                      </div>
+                    </div>
                   )}
 
                   {/* Skills */}
-                  {skillsList.length > 0 && (
-                    <View className="mt-4">
-                      <View className="flex-row items-center gap-1.5 mb-2">
+                  {skillsList.length> 0 && (
+                    <div className="mt-4">
+                      <div className="flex items-center gap-1.5 mb-2">
                         <Cpu size={13} color={dark ? '#aaa' : '#666'} />
-                        <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+                        <UIText className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
                           Skills Triggered
-                        </Text>
-                      </View>
-                      <View className="flex-row flex-wrap gap-1.5">
+                        </UIText>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
                         {skillsList.map((item) => (
                           <Badge
                             key={item.name}
                             variant="secondary"
                             className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
-                          >
+>
                             <UIText className="text-xs text-neutral-800 dark:text-neutral-200">{item.name}</UIText>
                             <UIText className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                               {item.count}
@@ -509,15 +502,15 @@ export function UsageScreen() {
                             )}
                           </Badge>
                         ))}
-                      </View>
-                    </View>
+                      </div>
+                    </div>
                   )}
                 </Card>
               )}
             </>
           )}
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+        </ScrollArea>
+      </div>
+    </div>
   );
 }

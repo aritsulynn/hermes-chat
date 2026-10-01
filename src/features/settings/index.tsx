@@ -1,13 +1,5 @@
 import { useCallback, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect } from 'expo-router';
+import { Navigate as Redirect } from 'react-router-dom';
 import {
   Check,
   CircleUserRound,
@@ -22,7 +14,7 @@ import {
   Shield,
   Sun,
   User,
-} from 'lucide-react-native';
+} from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Card, ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
@@ -35,12 +27,12 @@ import { UpdatePanel } from '../../components/ui/update-panel';
 import { notificationsSupported } from '../../services/notifications';
 import { brandColor, screenStyle } from '../../theme';
 import { BUILD_ID } from '../../build';
-import * as Clipboard from 'expo-clipboard';
+import { ScrollArea } from '../../components/ui/scroll';
+import { writeClipboard } from '../../services/clipboard';
 export function SettingsScreen() {
   const { authed, username, host, conn, activeProfile, logout, sessionInfo, applyApprovalMode, diagnostics, notificationsEnabled, setNotifications } = useApp();
   const { theme, themeMode, setTheme } = useThemeValue();
   const dark = theme === 'dark';
-  const insets = useSafeAreaInsets();
   const isReady = conn === 'ready';
   const isConnecting = conn === 'connecting' || conn === 'reconnecting';
   const diag = diagnostics() as any;
@@ -58,184 +50,183 @@ export function SettingsScreen() {
     setConfirmLogout(true);
   }, []);
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screenStyle(dark)}>
+    <div style={screenStyle(dark)}>
     {/* No 'bottom' edge: the only bottom padding lives in the ScrollView
         content (insets.bottom + 24). Keeping 'bottom' doubles the gap
         above the gesture bar on edge-to-edge Android. */}
-    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-      <StatusBar style="auto" />
+    <div className="flex-1 bg-white dark:bg-black">
+      
 
       {/* Header */}
-      <ScreenHeader title="Settings" insetTop={insets.top} />
+      <ScreenHeader title="Settings" />
 
-      <ScrollView
+      <ScrollArea
         className="flex-1 px-4 py-4"
-        nestedScrollEnabled
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-      >
+        contentClassName="pb-[object Object]"
+>
         {/* Appearance Section */}
-        <View className="mb-6">
-          <View className="flex-row items-center gap-2 mb-2">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
             <Palette size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
-            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            <UIText className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Appearance
-            </Text>
-          </View>
+            </UIText>
+          </div>
           <Card>
-            <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+            <UIText className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
               Theme Mode
-            </Text>
-            <Text className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
+            </UIText>
+            <UIText className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
               Follow your device or choose a fixed theme
-            </Text>
+            </UIText>
 
-            <View className="flex-row gap-2">
+            <div className="flex gap-2">
               {/* Light Theme Card */}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Light theme"
-                accessibilityState={{ selected: themeMode === 'light' }}
-                onPress={() => setTheme('light')}
+              <button type="button"
+                role="button"
+                aria-label="Light theme"
+                aria-pressed={themeMode === 'light'}
+                onClick={() => setTheme('light')}
                 className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                   themeMode === 'light'
                     ? 'border-amber-500 bg-amber-50 dark:bg-neutral-950'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
-              >
-                <View className="flex-row items-center justify-center h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-950/60 mb-2">
+>
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-950/60 mb-2">
                   <Sun size={18} color="#d97706" />
-                </View>
-                <Text
+                </div>
+                <UIText
                   className={`text-sm font-semibold ${
                     themeMode === 'light' ? 'text-amber-700 font-bold dark:text-amber-300' : 'text-neutral-700 dark:text-neutral-300'
                   }`}
-                >
+>
                   Light
-                </Text>
+                </UIText>
                 {themeMode === 'light' && (
-                  <View className="mt-1.5 flex-row items-center gap-1">
+                  <div className="mt-1.5 flex items-center gap-1">
                     <Check size={12} color="#b45309" />
-                    <Text className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">Active</Text>
-                  </View>
+                    <UIText className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">Active</UIText>
+                  </div>
                 )}
-              </Pressable>
+              </button>
 
               {/* Dark Theme Card */}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Dark theme"
-                accessibilityState={{ selected: themeMode === 'dark' }}
-                onPress={() => setTheme('dark')}
+              <button type="button"
+                role="button"
+                aria-label="Dark theme"
+                aria-pressed={themeMode === 'dark'}
+                onClick={() => setTheme('dark')}
                 className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                   themeMode === 'dark'
                     ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
-              >
-                <View className="flex-row items-center justify-center h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-950/60 mb-2">
+>
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-950/60 mb-2">
                   <Moon size={18} color="#6366f1" />
-                </View>
-                <Text
+                </div>
+                <UIText
                   className={`text-sm font-semibold ${
                     themeMode === 'dark' ? 'text-indigo-700 font-bold dark:text-indigo-300' : 'text-neutral-700 dark:text-neutral-300'
                   }`}
-                >
+>
                   Dark
-                </Text>
+                </UIText>
                 {themeMode === 'dark' && (
-                  <View className="mt-1.5 flex-row items-center gap-1">
+                  <div className="mt-1.5 flex items-center gap-1">
                     <Check size={12} color="#a5b4fc" />
-                    <Text className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">Active</Text>
-                  </View>
+                    <UIText className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">Active</UIText>
+                  </div>
                 )}
-              </Pressable>
+              </button>
 
               {/* Follow the device appearance. */}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="System theme"
-                accessibilityState={{ selected: themeMode === 'system' }}
-                onPress={() => setTheme('system')}
+              <button type="button"
+                role="button"
+                aria-label="System theme"
+                aria-pressed={themeMode === 'system'}
+                onClick={() => setTheme('system')}
                 className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                   themeMode === 'system'
                     ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/50'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
-              >
-                <View className="mb-2 h-8 w-8 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/60">
+>
+                <div className="mb-2 h-8 w-8 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/60">
                   <Monitor size={18} color={dark ? '#38bdf8' : '#0284c7'} />
-                </View>
-                <Text
+                </div>
+                <UIText
                   className={`text-sm font-semibold ${
                     themeMode === 'system'
                       ? 'font-bold text-sky-700 dark:text-sky-300'
                       : 'text-neutral-700 dark:text-neutral-300'
                   }`}
-                >
+>
                   System
-                </Text>
+                </UIText>
                 {themeMode === 'system' && (
-                  <View className="mt-1.5 flex-row items-center gap-1">
+                  <div className="mt-1.5 flex items-center gap-1">
                     <Check size={12} color={dark ? '#7dd3fc' : '#0369a1'} />
-                    <Text className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</Text>
-                  </View>
+                    <UIText className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</UIText>
+                  </div>
                 )}
-              </Pressable>
-            </View>
+              </button>
+            </div>
           </Card>
-        </View>
+        </div>
 
         {/* Agent / runtime Section */}
-        <View className="mb-6">
-          <View className="flex-row items-center gap-2 mb-2">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
             <Shield size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
-            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            <UIText className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Agent
-            </Text>
-          </View>
+            </UIText>
+          </div>
           <Card>
-            <Text className="mb-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            <UIText className="mb-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               Dangerous-command approvals
-            </Text>
-            <Text className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+            </UIText>
+            <UIText className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
               How the agent handles shell commands flagged as risky
-            </Text>
-            <View className="gap-2">
+            </UIText>
+            <div className="gap-2">
               {APPROVALS.map((a) => {
                 const on = approvalMode === a.value;
                 return (
-                  <Pressable
+                  <button type="button"
                     key={a.value}
-                    testID={`approval-${a.value}`}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: on }}
-                    accessibilityLabel={a.label}
-                    accessibilityHint={a.hint}
-                    onPress={() => void applyApprovalMode(a.value)}
-                    className={`flex-row items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
+                    data-testid={`approval-${a.value}`}
+
+                    aria-pressed={on}
+                    aria-label={a.label}
+                    title={a.hint}
+                    onClick={() => void applyApprovalMode(a.value)}
+                    className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
                       on
                         ? 'border-[#1a73e8] bg-blue-50/70 dark:bg-blue-950/40'
                         : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                     }`}
-                  >
-                    <View className="min-w-0 flex-1">
-                      <Text
+>
+                    <div className="min-w-0 flex-1">
+                      <UIText
                         className={`text-sm font-semibold ${
                           on ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-800 dark:text-neutral-200'
                         }`}
-                      >
+>
                         {a.label}
-                      </Text>
-                      <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">{a.hint}</Text>
-                    </View>
+                      </UIText>
+                      <UIText className="text-[11px] text-neutral-500 dark:text-neutral-400">{a.hint}</UIText>
+                    </div>
                     {on && <Check size={15} color={brandColor(dark)} />}
-                  </Pressable>
+                  </button>
                 );
               })}
-            </View>
+            </div>
 
             <Separator className="my-3 bg-neutral-200 dark:bg-neutral-800" />
             {[
@@ -245,143 +236,143 @@ export function SettingsScreen() {
               ['Working dir', typeof sessionInfo?.cwd === 'string' ? sessionInfo.cwd : ''],
             ].map(([label, value]) =>
               value ? (
-                <View key={label} className="flex-row items-center justify-between gap-3 py-1">
-                  <Text className="text-xs text-neutral-600 dark:text-neutral-300">{label}</Text>
-                  <Text
+                <div key={label} className="flex items-center justify-between gap-3 py-1">
+                  <UIText className="text-xs text-neutral-600 dark:text-neutral-300">{label}</UIText>
+                  <UIText
                     className="shrink text-xs font-mono font-medium text-neutral-900 dark:text-neutral-100"
                     numberOfLines={1}
-                  >
+>
                     {value}
-                  </Text>
-                </View>
+                  </UIText>
+                </div>
               ) : null,
             )}
 
-            {mcpServers.length > 0 && (
+            {mcpServers.length> 0 && (
               <>
                 <Separator className="my-2 bg-neutral-200 dark:bg-neutral-800" />
-                <Text className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                <UIText className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                   MCP servers
-                </Text>
+                </UIText>
                 {mcpServers.map((s, i) => (
-                  <View key={`${s?.name ?? i}`} className="flex-row items-center justify-between py-1">
-                    <Text className="text-xs text-neutral-600 dark:text-neutral-300" numberOfLines={1}>
+                  <div key={`${s?.name ?? i}`} className="flex items-center justify-between py-1">
+                    <UIText className="text-xs text-neutral-600 dark:text-neutral-300" numberOfLines={1}>
                       {String(s?.name ?? 'server')}
-                    </Text>
-                    <Text className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                    </UIText>
+                    <UIText className="text-[11px] text-neutral-500 dark:text-neutral-400">
                       {String(s?.status ?? '')}
                       {typeof s?.tool_count === 'number' ? ` · ${s.tool_count} tools` : ''}
-                    </Text>
-                  </View>
+                    </UIText>
+                  </div>
                 ))}
               </>
             )}
           </Card>
-        </View>
+        </div>
 
         {/* Hermes Update Section */}
-        <View className="mb-6">
-          <View className="flex-row items-center gap-2 mb-2">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
             <Download size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
-            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            <UIText className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Hermes Update
-            </Text>
-          </View>
+            </UIText>
+          </div>
           <UpdatePanel />
-        </View>
+        </div>
 
         {/* Notifications Section */}
-        <View className="mb-6">
-          <View className="flex-row items-center gap-2 mb-2">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
             <Info size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
-            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            <UIText className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Notifications
-            </Text>
-          </View>
+            </UIText>
+          </div>
           <Card>
-            <View className="flex-row items-center gap-3">
-              <View className="min-w-0 flex-1">
-                <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <UIText className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                   Background alerts
-                </Text>
-                <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                </UIText>
+                <UIText className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
                   Notify when a turn finishes or the agent needs input (approval, clarify), while the
                   app is in the background.
                   {!notificationsSupported() && ' Requires a development build — not available in Expo Go.'}
-                </Text>
-              </View>
+                </UIText>
+              </div>
               <Switch
-                accessibilityLabel="Background notifications"
+                aria-label="Background notifications"
                 checked={notificationsEnabled}
                 onCheckedChange={(v) => void setNotifications(v)}
               />
-            </View>
+            </div>
           </Card>
-        </View>
+        </div>
 
         {/* Account & Server Section */}
-        <View className="mb-6">
-          <View className="flex-row items-center gap-2 mb-2">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
             <User size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
-            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            <UIText className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Account & Server
-            </Text>
-          </View>
+            </UIText>
+          </div>
           <Card>
             {/* User row */}
-            <View className="flex-row items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-800">
-              <View className="flex-row items-center gap-2.5">
-                <Avatar alt={username || 'Profile'} className="bg-[#1a73e8]">
+            <div className="flex items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-800">
+              <div className="flex items-center gap-2.5">
+                <Avatar className="bg-[#1a73e8]">
                   <AvatarFallback className="bg-[#1a73e8]">
                     <UIText className="text-sm font-bold text-white">
                       {(username || 'H').slice(0, 1).toUpperCase()}
                     </UIText>
                   </AvatarFallback>
                 </Avatar>
-                <View>
-                  <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                <div>
+                  <UIText className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                     {username || 'Hermes User'}
-                  </Text>
-                  <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+                  </UIText>
+                  <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
                     Account
-                  </Text>
-                </View>
-              </View>
-            </View>
+                  </UIText>
+                </div>
+              </div>
+            </div>
 
             {/* Active agent profile — switch from the Drawer. */}
-            <View className="flex-row items-center justify-between border-b border-neutral-200 py-2.5 dark:border-neutral-800">
-              <View className="flex-row items-center gap-2">
+            <div className="flex items-center justify-between border-b border-neutral-200 py-2.5 dark:border-neutral-800">
+              <div className="flex items-center gap-2">
                 <CircleUserRound size={15} color={dark ? '#aaa' : '#666'} />
-                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Agent Profile</Text>
-              </View>
-              <Text className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">{activeProfile}</Text>
-            </View>
+                <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Agent Profile</UIText>
+              </div>
+              <UIText className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">{activeProfile}</UIText>
+            </div>
 
             {/* Host row */}
-            <View className="flex-row items-center justify-between py-2.5 border-b border-neutral-200 dark:border-neutral-800">
-              <View className="flex-row items-center gap-2">
+            <div className="flex items-center justify-between py-2.5 border-b border-neutral-200 dark:border-neutral-800">
+              <div className="flex items-center gap-2">
                 <Server size={15} color={dark ? '#aaa' : '#666'} />
-                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Server Host</Text>
-              </View>
-              <Text className="text-xs font-mono font-medium text-neutral-900 dark:text-neutral-100">
+                <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Server Host</UIText>
+              </div>
+              <UIText className="text-xs font-mono font-medium text-neutral-900 dark:text-neutral-100">
                 {host || 'Not connected'}
-              </Text>
-            </View>
+              </UIText>
+            </div>
 
             {/* Gateway status row */}
-            <View className="flex-row items-center justify-between py-2.5">
-              <View className="flex-row items-center gap-2">
+            <div className="flex items-center justify-between py-2.5">
+              <div className="flex items-center gap-2">
                 <Globe size={15} color={dark ? '#aaa' : '#666'} />
-                <Text className="text-xs text-neutral-600 dark:text-neutral-300">Gateway Status</Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View
+                <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Gateway Status</UIText>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div
                   className={`h-2 w-2 rounded-full ${
                     isReady ? 'bg-emerald-500' : isConnecting ? 'bg-amber-500' : 'bg-red-500'
                   }`}
                 />
-                <Text
+                <UIText
                   className={`text-xs font-medium ${
                     isReady
                       ? 'text-emerald-600 dark:text-emerald-400'
@@ -389,71 +380,71 @@ export function SettingsScreen() {
                       ? 'text-amber-600 dark:text-amber-400'
                       : 'text-red-500'
                   }`}
-                >
+>
                   {isReady ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
-                </Text>
-              </View>
-            </View>
+                </UIText>
+              </div>
+            </div>
           </Card>
-        </View>
+        </div>
 
         {/* About / System Info */}
-        <View className="mb-6">
-          <View className="flex-row items-center gap-2 mb-2">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
             <Info size={16} color={dark ? '#9aa0a6' : '#5f6368'} />
-            <Text className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            <UIText className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               About
-            </Text>
-          </View>
+            </UIText>
+          </div>
           <Card>
-            <View className="flex-row items-center justify-between py-1 border-b border-neutral-200 dark:border-neutral-800">
-              <Text className="text-xs text-neutral-600 dark:text-neutral-300">Client</Text>
-              <Text className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
+            <div className="flex items-center justify-between py-1 border-b border-neutral-200 dark:border-neutral-800">
+              <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Client</UIText>
+              <UIText className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
                 Hermes Mobile
-              </Text>
-            </View>
-            <View className="flex-row items-center justify-between py-2">
-              <Text className="text-xs text-neutral-600 dark:text-neutral-300">Build ID</Text>
-              <Text className="text-xs font-mono text-neutral-500 dark:text-neutral-400">
+              </UIText>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Build ID</UIText>
+              <UIText className="text-xs font-mono text-neutral-500 dark:text-neutral-400">
                 {BUILD_ID}
-              </Text>
-            </View>
-            <View className="flex-row items-center justify-between py-1 border-t border-neutral-200 dark:border-neutral-800">
-              <Text className="text-xs text-neutral-600 dark:text-neutral-300">Last event</Text>
-              <Text className="text-xs font-mono text-neutral-500 dark:text-neutral-400">
+              </UIText>
+            </div>
+            <div className="flex items-center justify-between py-1 border-t border-neutral-200 dark:border-neutral-800">
+              <UIText className="text-xs text-neutral-600 dark:text-neutral-300">Last event</UIText>
+              <UIText className="text-xs font-mono text-neutral-500 dark:text-neutral-400">
                 {String(diag?.ws?.lastEvent ?? '—')}
-              </Text>
-            </View>
+              </UIText>
+            </div>
             <Button
               variant="outline"
-              accessibilityLabel="Copy diagnostics"
-              onPress={() =>
-                void Clipboard.setStringAsync(JSON.stringify(diag, null, 2)).catch(() => {})
+              aria-label="Copy diagnostics"
+              onClick={() =>
+                void writeClipboard(JSON.stringify(diag, null, 2)).catch(() => {})
               }
               className="mt-2 h-auto w-full rounded-xl py-2.5"
-            >
+>
               <UIText className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-200">
                 Copy diagnostics
               </UIText>
             </Button>
           </Card>
 
-        </View>
+        </div>
 
         {/* Log Out Action Button */}
         <Button
           variant="outline"
-          onPress={handleLogout}
-          accessibilityLabel="Log out"
+          onClick={handleLogout}
+          aria-label="Log out"
           className="h-auto w-full rounded-2xl border-red-200 bg-red-50/60 py-3.5 active:bg-red-100/80 dark:border-red-950 dark:bg-red-950/30 dark:active:bg-red-950/50"
-        >
+>
           <LogOut size={16} color="#dc2626" />
           <UIText className="text-sm font-semibold text-red-600 dark:text-red-400">
             Log Out
           </UIText>
         </Button>
-      </ScrollView>
-    </SafeAreaView>
+      </ScrollArea>
+    </div>
 
       <ConfirmDialog
         open={confirmLogout}
@@ -464,6 +455,6 @@ export function SettingsScreen() {
         onConfirm={() => void logout()}
         onOpenChange={setConfirmLogout}
       />
-    </View>
+    </div>
   );
 }

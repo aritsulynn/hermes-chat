@@ -13,7 +13,6 @@
 // was never there on native either.
 import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
-import { ScrollArea } from '../../components/ui/scroll';
 
 type ScrollAreaProps = {
   /** The scroller. */
@@ -43,5 +42,3 @@ export const ScrollArea = forwardRef<
     </div>
   );
 });
-
-export { ScrollArea as default };

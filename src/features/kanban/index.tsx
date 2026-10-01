@@ -3,17 +3,8 @@
 // Talks to the plugin's own REST router (see hermes-agent
 // plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Redirect, useNavigation } from 'expo-router';
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { TriangleAlert } from 'lucide-react-native';
+import { Navigate as Redirect } from 'react-router-dom';
+import { TriangleAlert } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
@@ -24,12 +15,14 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { ConfirmDialog } from '../../components/ui/dialog';
-import { FormSheet, useSheet } from '../../components/ui/sheets';
+import { FormSheet } from '../../components/ui/sheets';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { CardChips } from './components/CardChips';
 import { placeholderColor, screenStyle } from '../../theme';
 import { asTask, dotOf } from './helpers';
 import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';
+import { ScrollArea } from '../../components/ui/scroll';
 
 // Memoized task row: opening/editing one card must not re-render every card
 // on the board. The press binding closes over the row's own task, so the
@@ -45,21 +38,21 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
 }) {
   return (
     <Button
-      onPress={() => onOpen(task)}
+      onClick={() => onOpen(task)}
       variant="outline"
       className="h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
-    >
+>
       <UIText
         className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
         numberOfLines={2}
-      >
+>
         {task.title}
       </UIText>
       {!!task.body && (
         <UIText
           className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
           numberOfLines={2}
-        >
+>
           {task.body}
         </UIText>
       )}
@@ -75,7 +68,6 @@ export function KanbanScreen() {
   // One placeholder colour per scheme — the create/edit sheets pass it to
   // four inputs, so it must not be recomputed on every render.
   const placeholder = useMemo(() => placeholderColor(dark), [dark]);
-  const navigation = useNavigation();
 
   const [boards, setBoards] = useState<BoardMeta[]>([]);
   const [slug, setSlug] = useState('');
@@ -97,12 +89,10 @@ export function KanbanScreen() {
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newStatus, setNewStatus] = useState('');
-  // Bottom sheets: FormSheet drives present/dismiss from these two booleans.
-  const detailSheet = useSheet(!!detail);
-  const createSheet = useSheet(showCreate);
-  // Last opened task, kept for the duration of the dismiss animation.
-  const detailRef = useRef<KanbanTask | null>(null);
-  if (detail) detailRef.current = detail;
+  // Bottom sheets. Plain controlled booleans now: the sheets are Radix
+  // dialogs, so there is no imperative present/dismiss to marshal, and none of
+  // the gorhom state machine `useSheet` existed to paper over has a web
+  // equivalent to break.
   useEffect(() => {
     if (authed) return;
     setBoards([]);
@@ -322,38 +312,38 @@ export function KanbanScreen() {
 
   if (booting) {
     return (
-      <SafeAreaView className="flex-1 bg-white dark:bg-black items-center justify-center gap-3">
-        <StatusBar style="auto" />
-        <ActivityIndicator size="large" />
-      </SafeAreaView>
+      <div className="flex-1 bg-white dark:bg-black items-center justify-center gap-3">
+        
+        <Spinner size={24} color="currentColor" />
+      </div>
     );
   }
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   const statusOptions = board?.columns.map((c) => c.name) ?? [];
   const createStatus =
     newStatus || statusOptions.find((c) => c === 'todo') || statusOptions.find((c) => c !== 'archived') || '';
 
   return (
-    <View style={screenStyle(dark)}>
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
-        <StatusBar style="auto" />
+    <div style={screenStyle(dark)}>
+      <div className="flex-1 bg-white dark:bg-black">
+        
         {/* Board switcher + new-task button */}
-        <View className="flex-row items-center gap-2 px-3 pt-2">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, flexGrow: 1 }}>
+        <div className="flex items-center gap-2 px-3 pt-2">
+          <ScrollArea horizontal contentClassName="gap-[object Object] grow">
             {boards.map((b) => {
               const active = b.slug === slug || (!slug && b.is_current);
               return (
                 <Button
                   key={b.slug}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={b.name || b.slug}
-                  onPress={() => pickSlug(b.slug)}
+
+                  aria-pressed={active}
+                  aria-label={b.name || b.slug}
+                  onClick={() => pickSlug(b.slug)}
                   variant={active ? 'default' : 'outline'}
                   size="sm"
                   className="rounded-full px-3 py-1.5"
-                >
+>
                   <UIText className="text-[13px] font-semibold">
                     {b.name || b.slug}
                     {typeof b.total === 'number' ? ` · ${b.total}` : ''}
@@ -362,55 +352,55 @@ export function KanbanScreen() {
               );
             })}
             {boards.length === 0 && !loading && (
-              <Text className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+              <UIText className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
                 {activeBoard?.name || 'default board'}
-              </Text>
+              </UIText>
             )}
-          </ScrollView>
+          </ScrollArea>
           <Button
-            onPress={() => setShowCreate(true)}
-            accessibilityRole="button"
-            accessibilityLabel="New task"
+            onClick={() => setShowCreate(true)}
+            role="button"
+            aria-label="New task"
             variant="default"
             size="icon"
             className="h-9 w-9 rounded-full"
-          >
+>
             <UIText className="text-[20px] leading-[20px]">+</UIText>
           </Button>
-        </View>
+        </div>
         {!!error && (
-          <View className="px-3.5 pt-2">
+          <div className="px-3.5 pt-2">
             <UIAlert icon={TriangleAlert} variant="destructive">
               <AlertDescription className="text-[#c5221f] dark:text-[#ff7b72]">{error}</AlertDescription>
             </UIAlert>
-          </View>
+          </div>
         )}
-        <ScrollView
-          contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void reload(true)} />}
-        >
-          {loading && <ActivityIndicator />}
+        <ScrollArea
+          contentClassName="p-[object Object] gap-[object Object] pb-[object Object]"
+
+>
+          {loading && <Spinner size={14} color="currentColor" />}
           {!loading && !board && !error && (
-            <Text className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</Text>
+            <UIText className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</UIText>
           )}
           {!loading && board && totalTasks === 0 && (
-            <Text className="text-sm text-neutral-500 dark:text-neutral-400">
+            <UIText className="text-sm text-neutral-500 dark:text-neutral-400">
               No tasks yet — tap + to create one.
-            </Text>
+            </UIText>
           )}
           {(board?.columns ?? []).map((col) => {
             const shut = isCollapsed(col.name, col.tasks.length);
             return (
-              <View
+              <div
                 key={col.name}
                 className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800"
-              >
+>
                 <Button
-                  onPress={() => toggleColumn(col.name, !shut)}
+                  onClick={() => toggleColumn(col.name, !shut)}
                   variant="ghost"
                   className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
-                >
-                  <View className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
+>
+                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
                   <UIText className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
                     {col.name}
                   </UIText>
@@ -420,165 +410,150 @@ export function KanbanScreen() {
                   <UIText className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</UIText>
                 </Button>
                 {!shut && (
-                  <View className="gap-2 p-2.5">
+                  <div className="gap-2 p-2.5">
                     {col.tasks.length === 0 && (
-                      <Text className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</Text>
+                      <UIText className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</UIText>
                     )}
                     {col.tasks.map((t) => (
                       <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
                     ))}
-                  </View>
+                  </div>
                 )}
-              </View>
+              </div>
             );
           })}
-        </ScrollView>
+        </ScrollArea>
 
-        {/* Task detail sheet. `detailRef` keeps the last task rendered through
-            the dismiss animation - clearing `detail` first would flash an
-            empty sheet on the way out. */}
+        {/* Task detail sheet. */}
         <FormSheet
-          ref={detailSheet.ref}
-          onDismiss={detailSheet.onDismiss}
-          onClose={() => setDetail(null)}
+          open={!!detail}
+          onOpenChange={(o) => !o && setDetail(null)}
           snapPoints={['70%']}
-        >
-          {detailRef.current && (
+>
+          {detail && (
             <>
               <Input
-                accessibilityLabel="Title"
+                aria-label="Title"
                 // Input is a fixed 40px single-line field; a title long enough
                 // to wrap has to grow the box and hang from the top, or the
                 // second line spills over the label below.
                 className="h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
                 value={editTitle}
-                onChangeText={setEditTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
                 placeholder="Title"
-                placeholderTextColor={placeholder}
-                keyboardAppearance={dark ? 'dark' : 'light'}
-                multiline
+
               />
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Move to
-              </Text>
-              <View className="flex-row flex-wrap gap-1.5">
+              </UIText>
+              <div className="flex flex-wrap gap-1.5">
                 {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                  const on = detailRef.current?.status === s;
+                  const on = detail?.status === s;
                   return (
                     <Button
                       key={s}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: on }}
-                      accessibilityLabel={`Move to ${s}`}
-                      onPress={() => detailRef.current && moveTask(detailRef.current, s)}
+
+                      aria-pressed={on}
+                      aria-label={`Move to ${s}`}
+                      onClick={() => detail && moveTask(detail, s)}
                       variant={on ? 'default' : 'outline'}
                       size="sm"
                       className="rounded-full px-3 py-1.5"
-                    >
+>
                       <UIText className="text-[13px] font-medium capitalize">
                         {s}
                       </UIText>
                     </Button>
                   );
                 })}
-              </View>
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              </div>
+              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Notes
-              </Text>
+              </UIText>
               <Textarea
-                accessibilityLabel="Notes"
+                aria-label="Notes"
                 className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
                 value={editBody}
-                onChangeText={setEditBody}
+                onChange={(e) => setEditBody(e.target.value)}
                 placeholder="Details…"
-                placeholderTextColor={placeholder}
-                keyboardAppearance={dark ? 'dark' : 'light'}
-                multiline
-                textAlignVertical="top"
+
               />
-              <CardChips t={detailRef.current} dark={dark} />
-              <View className="flex-row gap-2 pt-1">
+              <CardChips t={detail} dark={dark} />
+              <div className="flex gap-2 pt-1">
                 <Button
-                  onPress={saveDetail}
+                  onClick={saveDetail}
                   variant="default"
                   className="flex-1 rounded-xl px-4 py-3"
                   disabled={saving}
-                >
+>
                   <UIText className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</UIText>
                 </Button>
                 <Button
-                  onPress={deleteDetail}
+                  onClick={deleteDetail}
                   variant="destructive"
                   className="rounded-xl px-4 py-3"
                   disabled={saving}
-                >
+>
                   <UIText className="text-[15px] font-semibold">Delete</UIText>
                 </Button>
-              </View>
+              </div>
             </>
           )}
         </FormSheet>
 
         {/* New task sheet */}
         <FormSheet
-          ref={createSheet.ref}
-          onDismiss={createSheet.onDismiss}
-          onClose={() => setShowCreate(false)}
+          open={showCreate}
+          onOpenChange={setShowCreate}
           snapPoints={['70%']}
-        >
-          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
+>
+          <UIText className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</UIText>
           <Input
-            accessibilityLabel="Title"
+            aria-label="Title"
             className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
             value={newTitle}
-            onChangeText={setNewTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
             placeholder="Title"
-            placeholderTextColor={placeholder}
-            keyboardAppearance={dark ? 'dark' : 'light'}
-            returnKeyType="next"
           />
           <Textarea
             className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-            accessibilityLabel="Notes"
+            aria-label="Notes"
             value={newBody}
-            onChangeText={setNewBody}
+            onChange={(e) => setNewBody(e.target.value)}
             placeholder="Details (optional)"
-            placeholderTextColor={placeholder}
-            keyboardAppearance={dark ? 'dark' : 'light'}
-            multiline
-            textAlignVertical="top"
+
           />
-          <View className="flex-row flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {statusOptions.filter((s) => s !== 'archived').map((s) => {
               const on = createStatus === s;
               return (
                 <Button
                   key={s}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`Create in ${s}`}
-                  onPress={() => setNewStatus(s)}
+
+                  aria-pressed={on}
+                  aria-label={`Create in ${s}`}
+                  onClick={() => setNewStatus(s)}
                   variant={on ? 'default' : 'outline'}
                   size="sm"
                   className="px-3 py-1.5"
-                >
+>
                   <UIText className="text-[13px] font-medium capitalize">
                     {s}
                   </UIText>
                 </Button>
               );
             })}
-          </View>
+          </div>
           <Button
-            onPress={createTask}
+            onClick={createTask}
             variant="default"
             className="rounded-xl px-4 py-3"
             disabled={!newTitle.trim() || saving}
-          >
+>
             <UIText className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</UIText>
           </Button>
         </FormSheet>
-      </SafeAreaView>
+      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}
@@ -591,6 +566,6 @@ export function KanbanScreen() {
           if (!o) setConfirmDelete(null);
         }}
       />
-    </View>
+    </div>
   );
 }
