@@ -113,6 +113,19 @@ handlers where `useNavigate` is not available, and threading a hook through
 implementations. The dev server serves `index.html` for unknown paths; a static
 host needs the equivalent rewrite rule, or deep links 404 on reload.
 
+**A reload of a non-chat route has two ways to lose the place**, both of which
+were live before the first authenticated run, and both are easy to reintroduce:
+
+- `RootLayout` withholds `<Outlet />` while the store is booting. Every screen
+  guards itself with `if (!authed) return <Redirect to="/login" replace />`, and
+  on a hard load that guard sees `authed === false` before the cookie has been
+  checked — so without the gate a reload of `/logs` went `/logs` → `/login` →
+  `/chat`.
+- `openSession` takes `{ navigate: false }`, and the boot path in `useConnection`
+  passes it. Landing on `/chat` is right when the user picks a session from the
+  drawer and wrong when boot is calling it only to restore the last one. The
+  unconditional navigate it used to have turned every deep link into `/chat`.
+
 History mode means **the gateway host must allow this origin in CORS** — see the
 CORS diagnostic in `services/dashboard.ts`.
 
@@ -157,6 +170,13 @@ What the port changed, so the reasoning is not re-derived:
   `<Text>` nested inline. `scripts/jsx-nesting.mts` finds this — use it rather
   than reading for it. (It also prints a lot of `<div>` in `<div>`, which is
   normal; only the Text-like names matter.)
+- **`pointer-events-none` on native text meant something different.** On native
+  it was handed to a `<Text>` inside a `<Pressable>`, so touches fell through to
+  the parent. Merged into a `<button>`'s own className — which is what the port
+  did — it disables the button, and it disabled *every* button in the app while
+  the typecheck, the tests and the build all stayed green. If a control is
+  mysteriously unclickable, check its computed `pointer-events` before anything
+  else. The descendant form, `[_svg]:pointer-events-none`, is the correct one.
 - **Two lists, two strategies.** `WindowedList` (files, cron, logs) renders a
   trailing window that grows on scroll. `Transcript` (chat) is a plain scroller
   with an imperative handle, because the transcript needs scroll-position
