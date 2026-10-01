@@ -7,37 +7,17 @@
 // Every shape a source can take is resolved here:
 //
 //   data:image/png;base64,…        → used as-is
-//   https://…                      → used as-is (+ session cookie when ours)
-//   /api/…  /static/…              → app host + path (+ session cookie)
+//   https://…                      → used as-is
+//   /api/…  /static/…              → app host + path (cookie-gated, see below)
 //   #media:… / ~/shot.png / /home/u/shot.png
 //                                  → fetched with the app's cookie and shown
 //                                    as a data URL (see readServerFile)
 //
 // Server files are cookie-gated, so the system browser can't open them — they
 // are read in-app instead.
-//
-// Rendering goes through expo-image (not RN's Image) so every source gets disk
-// + memory caching, downsampling to the on-screen box, and a progressive
-// fade-in over a themed placeholder. Its `source` takes the same
-// `{uri, headers}` shape buildImageSource() already produced, so the
-// cookie-leak guard below is unchanged.
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Share,
-  Text,
-  View,
-  useWindowDimensions,
-} from 'react-native';
-import type { StyleProp, TextStyle } from 'react-native';
-import { Image } from 'expo-image';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, ImageOff, Share2, X } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { ChevronRight, ImageOff, Share2, X } from 'lucide-react';
 import { useApp } from '../../hooks/app-store';
 import { base64ToUtf8, mediaPathFromHref } from '../../utils/messages';
 import {
@@ -48,9 +28,10 @@ import {
   serverFilePending,
 } from '../../services/media-cache';
 import { buildImageSource, shouldAttachDashboardCookie } from '../../services/media-policy';
+import { cn } from '../../utils/cn';
 import { Button } from '../ui/button';
+import { Spinner } from '../ui/bits';
 import { Text as UIText } from '../ui/text';
-import { deleteAsync, writeAsStringAsync, cacheDirectory } from 'expo-file-system/legacy';
 import * as api from '../../services/api';
 import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../../services/constants';
 
@@ -72,14 +53,18 @@ const looksLikeFilePath = (s: string) => {
 const base = (host: string) => host.replace(/\/+$/, '');
 const basename = (s: string) => s.split(/[\\/]/).pop()?.split('?')[0] || s;
 
-// Disk caching is a win for network sources only. A `data:`/`blob:` source is
-// already resident in JS memory, and its multi-MB URL would become the cache
-// key — so those are held in the memory cache alone.
-const cachePolicyFor = (uri: string): 'memory' | 'memory-disk' =>
-  /^(data|blob):/i.test(uri) ? 'memory' : 'memory-disk';
+/** True when `url` points at a different origin than the page. */
+const isCrossOrigin = (url: string) => {
+  try {
+    return new URL(url, globalThis.location?.href ?? 'http://localhost/').origin !==
+      (globalThis.location?.origin ?? 'http://localhost');
+  } catch {
+    return false;
+  }
+};
 
 // Text-ish payloads get an in-app preview; anything else (pdf, zip, video…)
-// says so rather than dumping mojibake into a <Text>.
+// says so rather than dumping mojibake into the transcript.
 const TEXT_MIME = /^(text\/|application\/(json|xml|yaml|x-yaml|javascript|csv)|image\/svg)/i;
 
 // `#media:` href, the `?path=` of a /api/files/read link, or a bare path.
@@ -122,9 +107,7 @@ async function readServerFile(
         const v = pick(
           await Promise.race([
             opsGet(url),
-            new Promise((_, rej) =>
-              setTimeout(() => rej(new Error('media timeout')), MEDIA_FETCH_TIMEOUT_MS),
-            ),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('media timeout')), MEDIA_FETCH_TIMEOUT_MS)),
           ]),
         );
         if (typeof v === 'string' && v.startsWith('data:')) {
@@ -151,52 +134,44 @@ async function readServerFile(
   return p;
 }
 
-/** Share or download a resolved media URI. Remote/relative sources share the URL;
- *  an embedded data URL is written to a cache file first; web uses the Web Share
- *  API, falling back to an <a download>. */
+/** Share or download a resolved media URI. */
 async function shareUri(uri: string, name?: string): Promise<void> {
   try {
-    if (Platform.OS === 'web') {
-      const nav: any = (globalThis as any).navigator;
-      if (nav?.share) {
-        await nav.share({ url: uri });
-        return;
-      }
-      const a = (globalThis as any).document?.createElement('a');
-      if (a) {
-        a.href = uri;
-        a.download = name || 'hermes-download';
-        a.rel = 'noopener';
-        a.click();
-      }
+    if (navigator.share) {
+      await navigator.share({ url: uri });
       return;
     }
-    if (/^data:/i.test(uri)) {
-      const m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(uri);
-      const mime = m?.[1] || 'application/octet-stream';
-      const isB64 = !!m?.[2];
-      const data = m?.[3] ?? '';
-      const ext = (mime.split('/')[1] || 'bin').split('+')[0];
-      const path = `${cacheDirectory ?? ''}hermes-${Date.now()}.${ext}`;
-      try {
-        if (isB64) await writeAsStringAsync(path, data, { encoding: 'base64' });
-        else await writeAsStringAsync(path, decodeURIComponent(data));
-        await Share.share({ url: path });
-      } finally {
-        await deleteAsync(path, { idempotent: true }).catch(() => {});
-      }
-      return;
-    }
-    await Share.share({ url: uri, message: uri });
+    const a = document.createElement('a');
+    a.href = uri;
+    a.download = name || 'hermes-download';
+    a.rel = 'noopener';
+    a.click();
   } catch {}
 }
 
-// Resolve a markdown image src into something <Image> can actually load.
+/**
+ * Resolve a markdown image src into something `<img>` can load.
+ *
+ * The native build attached the dashboard session cookie as a `Cookie` *header*
+ * on the image request, because React Native's image loader does not share the
+ * app's fetch jar. A browser `<img>` has no header channel at all — the only
+ * credential it can send is the cookie jar, and only if the request is
+ * same-origin or explicitly opted into credentials.
+ *
+ * So: same-origin URLs are handed straight to `<img>` and the browser's own
+ * cookie handling applies. Cross-origin ones are fetched with
+ * `credentials: 'include'` and turned into a blob URL, because a
+ * `SameSite=Lax` session cookie is not attached to a cross-site subresource
+ * request and the image would otherwise render as broken.
+ */
 function useResolvedImage(src: string) {
   const { host, username, activeProfile, opsGet, getCookie } = useApp();
   const [uri, setUri] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const cacheScope = JSON.stringify([host, username, activeProfile, getCookie()]);
+  // Object URLs handed out by the cross-origin branch, revoked when the src
+  // changes — otherwise every scrolled-past bubble leaks its blob.
+  const objectUrl = useRef<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -211,7 +186,22 @@ function useResolvedImage(src: string) {
 
     const p = serverPath(src);
     if (isRemote(p)) return done(p);
-    if (isWebPath(p)) return done(`${base(host)}${p}`);
+    if (isWebPath(p)) {
+      const url = `${base(host)}${p}`;
+      if (!isCrossOrigin(url)) return done(url);
+      void fetch(url, { credentials: 'include' })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((blob) => {
+          if (!alive) return;
+          if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+          objectUrl.current = URL.createObjectURL(blob);
+          done(objectUrl.current);
+        })
+        .catch(fail);
+      return () => {
+        alive = false;
+      };
+    }
     if (!looksLikeFilePath(p)) return fail();
 
     void readServerFile(opsGet, p, cacheScope).then((d) => {
@@ -224,9 +214,16 @@ function useResolvedImage(src: string) {
     };
   }, [src, host, opsGet, cacheScope]);
 
-  // Do not even read/passthrough the cookie for external images. React Native's
-  // Image loader does not share the app's fetch cookie jar, but a custom header
-  // on an arbitrary URI would disclose the dashboard session to that host.
+  useEffect(
+    () => () => {
+      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+    },
+    [],
+  );
+
+  // Kept for the cookie-leak guard: an external image must never receive the
+  // dashboard session. The web path relies on the browser not offering a
+  // header channel, but the decision is still worth making explicitly.
   const cookie = uri && shouldAttachDashboardCookie(uri, host) ? getCookie() : '';
   return { uri, error, cookie, cacheScope };
 }
@@ -244,17 +241,29 @@ function BrokenImage({ src, alt, dark }: { src: string; alt?: string; dark: bool
     <Button
       variant="outline"
       disabled={!openable}
-      onPress={() => void Linking.openURL(url).catch(() => {})}
-      accessibilityLabel={alt || basename(p) || 'Open link'}
-      className="my-1 h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700"
-    >
+      onClick={() => {
+        if (url) window.open(url, '_blank', 'noopener');
+      }}
+      aria-label={alt || basename(p) || 'Open link'}
+      className="my-1 h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700">
       <ImageOff size={15} color={dark ? '#aaa' : '#777'} />
-      <Text className="flex-1 text-[13px] text-neutral-600 dark:text-neutral-300" numberOfLines={1}>
+      <UIText numberOfLines={1} className="flex-1 text-left text-[13px] text-neutral-600 dark:text-neutral-300">
         {alt || basename(p) || 'image'}
-      </Text>
+      </UIText>
       {openable && <ChevronRight size={14} color={dark ? '#aaa' : '#777'} />}
     </Button>
   );
+}
+
+/** Viewport width, tracked live. Replaces RN's useWindowDimensions. */
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() => globalThis.innerWidth || 1024);
+  useEffect(() => {
+    const onResize = () => setWidth(globalThis.innerWidth || 1024);
+    globalThis.addEventListener('resize', onResize);
+    return () => globalThis.removeEventListener('resize', onResize);
+  }, []);
+  return width;
 }
 
 export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark: boolean }) {
@@ -262,16 +271,20 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
   const { uri, error, cookie, cacheScope } = useResolvedImage(src);
   const [ratio, setRatio] = useState<number | null>(null);
   const [broken, setBroken] = useState(false);
-  const { width: winW } = useWindowDimensions();
-  // Pixel box, not `width: '100%'`: markdown renders inline content inside a
-  // textgroup <Text>, where percentages are unreliable.
+  const [decoded, setDecoded] = useState(false);
+  const winW = useViewportWidth();
+  // Pixel box, not `width: 100%`: markdown renders inline content inside a
+  // paragraph, and a fixed width keeps a screenshot from filling the column.
   let boxW = Math.min(Math.round(winW * 0.62), 320);
   let boxH = ratio ? Math.round(boxW / ratio) : Math.round(boxW * 0.75);
   if (boxH > 340) {
     boxH = 340;
     if (ratio) boxW = Math.round(boxH * ratio);
   }
-  const imgSource = useMemo(() => buildImageSource(uri ?? '', host, cookie), [uri, host, cookie]);
+  // The native build handed expo-image a `{uri, headers}` source. A DOM <img>
+  // takes a plain URL; the cookie is delivered by the browser's jar (see
+  // useResolvedImage), so this only reads `uri`.
+  const imgUri = useMemo(() => buildImageSource(uri ?? '', host, cookie).uri, [uri, host, cookie]);
   const boxStyle = useMemo(
     () => ({
       width: boxW,
@@ -282,11 +295,9 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     [boxW, boxH, dark],
   );
 
-  // Cached aspect ratios. The rendered image reports its own pixel size in
-  // onLoad, so this costs no extra native probe — and unlike the Image.getSize
-  // call it replaces, the event carries the source's headers, so a
-  // cookie-gated dashboard image finally resolves a real ratio instead of
-  // quietly keeping the 0.75 default.
+  // Cached aspect ratios, so a re-visited image lays out at its true height on
+  // the first frame instead of after the load lands. The <img> load event
+  // carries the rendered pixel size, so this costs no extra probe.
   const rememberRatio = useCallback(
     (w: number, h: number) => {
       if (!uri || w <= 0 || h <= 0) return;
@@ -301,10 +312,9 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     [uri, cacheScope],
   );
 
-  // Seed from the cache so a re-visited image lays out at its true height on
-  // the first frame instead of after the load lands.
   useEffect(() => {
     if (!uri) return;
+    setDecoded(false);
     const cached = ratioCache.get(mediaCacheKey(cacheScope, uri));
     if (cached) setRatio(cached);
   }, [uri, cacheScope]);
@@ -315,39 +325,37 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
   if (error || broken) return <BrokenImage src={src} alt={alt} dark={dark} />;
   if (!uri) {
     return (
-      <View
+      <div
         className="my-1 items-center justify-center rounded-[10px]"
-        style={{
-          width: boxW,
-          height: 120,
-          backgroundColor: dark ? '#1b1b1b' : '#e9e9ee',
-        }}
-      >
-        <ActivityIndicator size="small" color={dark ? '#888' : '#666'} />
-      </View>
+        style={{ width: boxW, height: 120, backgroundColor: dark ? '#1b1b1b' : '#e9e9ee', display: 'flex' }}>
+        <Spinner size={14} color={dark ? '#888' : '#666'} />
+      </div>
     );
   }
   return (
-    <Pressable
-      onPress={() => showPreview({ kind: 'image', uri, caption })}
-      className="my-1"
-      style={{ width: boxW, height: boxH }}
-    >
-      <Image
-        source={imgSource}
-        contentFit="contain"
-        cachePolicy={cachePolicyFor(uri)}
-        onLoad={(e) => rememberRatio(e.source.width, e.source.height)}
-        onError={() => setBroken(true)}
-        // No blurhash ships with these sources, so the box's own themed fill
-        // (boxStyle.backgroundColor) is the placeholder; the transition fades
-        // the decoded frame in over it.
-        transition={220}
-        recyclingKey={uri}
+    <button
+      type="button"
+      onClick={() => showPreview({ kind: 'image', uri, caption })}
+      className="my-1 block"
+      style={boxStyle}>
+      <img
+        src={imgUri}
         alt={caption}
-        style={boxStyle}
+        onLoad={(e) => {
+          rememberRatio(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+          setDecoded(true);
+        }}
+        onError={() => setBroken(true)}
+        // The box's own themed fill is the placeholder — no blurhash ships with
+        // these sources — and the frame fades in over it once decoded.
+        className={cn(
+          'size-full object-contain transition-opacity duration-200',
+          decoded ? 'opacity-100' : 'opacity-0',
+        )}
+        loading="lazy"
+        decoding="async"
       />
-    </Pressable>
+    </button>
   );
 }
 
@@ -355,9 +363,9 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
 
 type Preview = { kind: 'image'; uri: string; caption?: string } | { kind: 'text'; text: string } | { kind: 'other' };
 
-// Markdown groups inline tokens inside a <Text>, so the link rule must return
-// text (a Modal nested in a Text is not a thing). The preview therefore lives
-// in one host mounted at the app root and is driven through this tiny store.
+// Markdown renders link tokens inline, so a modal cannot be nested inside them.
+// The preview therefore lives in one host mounted at the app root and is driven
+// through this tiny store.
 let previewListener: ((p: Preview | null) => void) | null = null;
 const showPreview = (p: Preview | null) => previewListener?.(p);
 
@@ -377,95 +385,79 @@ export function FilePreviewHost() {
 }
 
 function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClose: () => void }) {
-  const insets = useSafeAreaInsets();
   const { host, getCookie } = useApp();
-  if (!preview) return null;
-  const previewCookie = preview.kind === 'image' && shouldAttachDashboardCookie(preview.uri, host) ? getCookie() : '';
+  const previewCookie = preview?.kind === 'image' && shouldAttachDashboardCookie(preview.uri, host) ? getCookie() : '';
+  const inset = { top: 'env(safe-area-inset-top, 0px)', bottom: 'env(safe-area-inset-bottom, 0px)' };
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <View
-        className="flex-1 bg-black/95"
-        style={{
-          paddingTop: insets.top + 44,
-          paddingBottom: insets.bottom + 12,
-        }}
-      >
-        {preview.kind === 'image' ? (
-          <>
-            <Pressable className="flex-1 items-center justify-center p-3" onPress={onClose}>
-              <Image
-                source={buildImageSource(preview.uri, host, previewCookie)}
-                contentFit="contain"
-                cachePolicy={cachePolicyFor(preview.uri)}
-                // The user just asked for this one full size — let it take
-                // priority over whatever is still loading behind the modal.
-                priority="high"
-                transition={200}
-                alt={preview.caption}
-                style={{ width: '100%', height: '100%' }}
-              />
-            </Pressable>
-            {!!preview.caption && (
-              <Text className="px-4 pb-1 text-center text-xs text-white/70" numberOfLines={3}>
-                {preview.caption}
-              </Text>
-            )}
-          </>
-        ) : preview.kind === 'text' ? (
-          <ScrollView className="mx-3 rounded-xl bg-white/5 p-3">
-            <Text selectable className="text-[13px] leading-[19px] text-white/90">
-              {preview.text || '(empty file)'}
-            </Text>
-          </ScrollView>
-        ) : (
-          <View className="flex-1 items-center justify-center gap-2 p-6">
-            <ImageOff size={28} color="#888" />
-            <Text className="text-sm text-white/70">Can’t preview this file type in the app.</Text>
-            <Text className="text-xs text-white/40">Open it from the Files tab instead.</Text>
-          </View>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={onClose}
-          accessibilityLabel="Close preview"
-          hitSlop={12}
-          className="absolute right-3 h-10 w-10 rounded-full bg-white/15"
-          style={{ top: insets.top + 8 }}
-        >
-          <X size={20} color="#fff" />
-        </Button>
-        {(preview.kind === 'image' || preview.kind === 'text') && (
+    <DialogPrimitive.Root open={!!preview} onOpenChange={(o) => !o && onClose()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/95" />
+        <DialogPrimitive.Content
+          className="fixed inset-0 z-50 flex flex-col outline-none"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 44px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}>
+          <DialogPrimitive.Title className="sr-only">File preview</DialogPrimitive.Title>
+          <DialogPrimitive.Description className="sr-only">
+            Preview of the selected file. Click outside the content to close.
+          </DialogPrimitive.Description>
+          {preview?.kind === 'image' ? (
+            <>
+              <button type="button" className="flex flex-1 items-center justify-center p-3" onClick={onClose}>
+                <img
+                  src={buildImageSource(preview.uri, host, previewCookie).uri}
+                  alt={preview.caption ?? ''}
+                  className="size-full object-contain"
+                />
+              </button>
+              {!!preview.caption && (
+                <UIText numberOfLines={3} className="px-4 pb-1 text-center text-xs text-white/70">
+                  {preview.caption}
+                </UIText>
+              )}
+            </>
+          ) : preview?.kind === 'text' ? (
+            <div className="mx-3 overflow-y-auto rounded-xl bg-white/5 p-3">
+              <UIText className="select-text whitespace-pre-wrap text-[13px] leading-[19px] text-white/90">
+                {preview.text || '(empty file)'}
+              </UIText>
+            </div>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6">
+              <ImageOff size={28} color="#888" />
+              <UIText className="text-center text-sm text-white/70">Can’t preview this file type in the app.</UIText>
+              <UIText className="text-center text-xs text-white/40">Open it from the Files tab instead.</UIText>
+            </div>
+          )}
           <Button
             variant="ghost"
-            onPress={() => {
-              if (preview.kind === 'image') void shareUri(preview.uri, preview.caption);
-              else if (preview.kind === 'text') void Share.share({ message: preview.text }).catch(() => {});
-            }}
-            accessibilityLabel="Share"
-            hitSlop={12}
-            className="absolute left-3 h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
-            style={{ top: insets.top + 8 }}
-          >
-            <Share2 size={16} color="#fff" />
-            <UIText className="text-[12px] font-semibold text-white">Share</UIText>
+            size="icon"
+            onClick={onClose}
+            aria-label="Close preview"
+            className="absolute right-3 h-10 w-10 rounded-full bg-white/15"
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
+            <X size={20} color="#fff" />
           </Button>
-        )}
-        <Text className="pt-2 text-center text-[11px] text-white/30">tap to close</Text>
-      </View>
-    </Modal>
+          {(preview?.kind === 'image' || preview?.kind === 'text') && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (preview.kind === 'image') void shareUri(preview.uri, preview.caption);
+                else if (preview.kind === 'text') void navigator.share?.({ text: preview.text });
+              }}
+              aria-label="Share"
+              className="absolute left-3 h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
+              style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
+              <Share2 size={16} color="#fff" />
+              <UIText className="text-[12px] font-semibold text-white">Share</UIText>
+            </Button>
+          )}
+          <UIText className="pt-2 text-center text-[11px] text-white/30">tap to close</UIText>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 
-export function FileChip({
-  href,
-  label,
-  textStyle,
-}: {
-  href: string;
-  label: string;
-  textStyle?: StyleProp<TextStyle>;
-}) {
+export function FileChip({ href, label, className }: { href: string; label: string; className?: string }) {
   const { host, username, activeProfile, opsGet, getCookie } = useApp();
   const [busy, setBusy] = useState(false);
 
@@ -473,7 +465,7 @@ export function FileChip({
     const path = pathOfHref(href);
     if (!path) {
       const url = isRemote(href) ? href : `${base(host)}${href}`;
-      await Linking.openURL(url).catch(() => showPreview({ kind: 'other' }));
+      window.open(url, '_blank', 'noopener');
       return;
     }
     setBusy(true);
@@ -495,12 +487,12 @@ export function FileChip({
     }
   }, [href, host, username, activeProfile, opsGet, getCookie]);
 
-  // Inline <Text>: the markdown pipeline puts link tokens inside a textgroup
-  // Text, so this must not be a View.
+  // Inline element: markdown puts link tokens inside a paragraph, so this must
+  // stay inline and must not introduce a block box.
   return (
-    <Text style={textStyle} onPress={() => void open()}>
+    <button type="button" onClick={() => void open()} className={`inline ${className ?? ''}`}>
       {busy ? '… ' : '📎 '}
       {label}
-    </Text>
+    </button>
   );
 }

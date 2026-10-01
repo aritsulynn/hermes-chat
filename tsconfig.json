@@ -30,13 +30,20 @@
   // drops its folder from this list, which is also what makes `npm run
   // typecheck` a meaningful gate again instead of a wall of known errors.
   // Ends up with the list deleted entirely.
+  // STAGED — and note this is weaker than it looks. `exclude` only removes a
+  // file from the root set; anything in the set that *imports* it pulls it back
+  // in. So src/app and src/main.tsx have to stay out together with src/features,
+  // because main.tsx -> app/routes -> features/* -> the chat components, and
+  // the remaining unported files are all down that chain. The list goes away
+  // entirely once the last feature screen is ported.
   "exclude": [
     "node_modules",
     "dist",
     "src/app",
-    "src/components/chat",
-    "src/components/drawer",
-    "src/components/connection-banner.tsx",
-    "src/features"
+    "src/main.tsx",
+    "src/features",
+    "src/components/chat/composer.tsx",
+    "src/components/chat/markdown.tsx",
+    "src/components/chat/message-bubble.tsx"
   ]
 }

@@ -10,18 +10,16 @@
 // first connect — the login screen reports its own progress), and on
 // "auth-expired" (which forces a logout on the next tick, see useGateway), so
 // the strip only appears when it has something durable to say.
-import { ActivityIndicator, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CloudOff, RefreshCw } from 'lucide-react-native';
+import { CloudOff, RefreshCw } from 'lucide-react';
 import { useApp, useThemeValue } from '../hooks/app-store';
 import { Button } from './ui/button';
+import { Spinner } from './ui/bits';
 import { Text as UIText } from './ui/text';
 
 export function ConnectionBanner() {
   const { conn, authed, login } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
-  const insets = useSafeAreaInsets();
 
   if (!authed) return null;
   const stalled = conn === 'connecting' || conn === 'reconnecting';
@@ -35,39 +33,35 @@ export function ConnectionBanner() {
       : 'Connecting to the gateway…';
 
   return (
-    // Absolute so showing/hiding it never reflows the screen underneath, and
-    // box-none so the strip only swallows taps on itself.
-    <View
-      pointerEvents="box-none"
-      style={{ position: 'absolute', top: insets.top + 4, left: 0, right: 0, zIndex: 60 }}
-    >
-      <View className="mx-2 flex-row items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-50 px-3 py-2 dark:border-amber-500/30 dark:bg-amber-950/80">
+    // Fixed so showing/hiding it never reflows the screen underneath, and
+    // pointer-events-none on the wrapper so the strip only swallows taps on
+    // itself — the screen below stays fully interactive while it is up.
+    <div
+      className="pointer-events-none fixed inset-x-0 z-[60]"
+      style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4px)' }}>
+      <div className="pointer-events-auto mx-2 flex items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-50 px-3 py-2 dark:border-amber-500/30 dark:bg-amber-950/80">
         {dropped ? (
           <CloudOff size={16} color={dark ? '#fcd34d' : '#b45309'} />
         ) : (
-          <ActivityIndicator size="small" color={dark ? '#fcd34d' : '#b45309'} />
+          <Spinner size={14} color={dark ? '#fcd34d' : '#b45309'} />
         )}
         <UIText
           numberOfLines={2}
-          className="flex-1 text-xs font-medium text-amber-900 dark:text-amber-100"
-        >
+          className="flex-1 text-xs font-medium text-amber-900 dark:text-amber-100">
           {message}
         </UIText>
         {dropped && (
           <Button
             variant="ghost"
             size="sm"
-            accessibilityLabel="Reconnect to the gateway"
-            onPress={() => void login()}
-            className="h-auto shrink-0 rounded-lg px-2 py-1"
-          >
+            aria-label="Reconnect to the gateway"
+            onClick={() => void login()}
+            className="h-auto shrink-0 rounded-lg px-2 py-1">
             <RefreshCw size={13} color={dark ? '#fcd34d' : '#b45309'} />
-            <UIText className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-              Retry
-            </UIText>
+            <UIText className="text-xs font-semibold text-amber-800 dark:text-amber-200">Retry</UIText>
           </Button>
         )}
-      </View>
-    </View>
+      </div>
+    </div>
   );
 }

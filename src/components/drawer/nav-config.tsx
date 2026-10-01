@@ -1,8 +1,8 @@
-// Drawer navigation config + icon helper, shared by the custom drawer content
-// and the Drawer.Screen options in app/_layout.tsx.
-import { Activity, BellRing, Boxes, Clock, Folder, Kanban, ScrollText, Wrench } from 'lucide-react-native';
+// Drawer navigation config + icon helper, shared by the drawer content and the
+// route table in app/routes.tsx.
+import { Activity, BellRing, Boxes, Clock, Folder, Kanban, ScrollText, Wrench } from 'lucide-react';
 
-// Module-level icon helper — used both in drawer content and screen options.
+// Module-level icon helper — used by the route table and the drawer content.
 export const drawerIcon = (C: any) => ({ color, size }: any) => <C size={size} color={color} />;
 
 export const NAV_ITEMS = [

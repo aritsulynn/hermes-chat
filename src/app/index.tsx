@@ -1,7 +1,7 @@
-// Root index — expo-router needs a `/` route; auth gating lives in the
+// Root index — React Router needs a `/` route; auth gating lives in the
 // screens themselves (login bounces authed users to /chat).
-import { Redirect } from 'expo-router';
+import { Navigate } from 'react-router-dom';
 
 export default function Index() {
-  return <Redirect href="/login" />;
+  return <Navigate to="/login" replace />;
 }
