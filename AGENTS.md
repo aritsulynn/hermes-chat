@@ -50,6 +50,16 @@ Anything needing a DOM (`services/clipboard.ts`, `services/file-picker.ts`) is
 deliberately *not* in that set — there is nothing meaningful to assert about it
 without one, and a mock of the thing under test tests the mock.
 
+**No JSX is under test at all, and that is a real gap.** The harness is
+`node --experimental-strip-types`, which cannot load a `.tsx` file, so every
+component in this repo is verified only by typecheck and by running the app. The
+sharpest case is `components/chat/markdown.tsx`: the port replaced
+`react-native-markdown-display` with `react-markdown`, and nothing automated
+confirms the output. What *is* tested is the pure preprocessing that feeds it —
+`cleanThinking`, `flattenLists` and `renderMediaTags` in
+`utils/markdown-preprocess.test.mjs`. If you change the renderer, that file is
+the safety net for its input, not for its output; check the rest by hand.
+
 ## Architecture
 
 ```
