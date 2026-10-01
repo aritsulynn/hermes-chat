@@ -587,23 +587,43 @@ export function cleanThinking(text: string): string {
   return out.join('\n').replace(/[\s\u200B\u200C\u200D\u2060\uFEFF]+$/, '');
 }
 
-// Markdown list markers are flattened to plain-text bullets so every line is a
-// normal wrapping paragraph. A list rendered as a marker + text flex row can
-// measure as unbounded inside an auto-width bubble, so the text never wraps and
-// spills out of the bubble.
-export function flattenLists(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => {
-      // Unordered (- * +) with optional [ ]/[x] checkbox → •
-      let m = line.match(/^(\s*)[-*+]\s+(?:\[[ xX]\]\s+)?(.*)$/);
-      if (m) return `${m[1].slice(0, 3)}• ${m[2]}`;
-      // Ordered (1. / 1)) → escape the dot so it stays a literal paragraph.
-      m = line.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
-      if (m) return `${m[1].slice(0, 3)}${m[2]}\\. ${m[3]}`;
-      return line;
-    })
-    .join('\n');
+// ── Streaming markdown ───────────────────────────────────────────────────────
+//
+// A streaming reply is re-rendered once per animation frame, and re-parsing the
+// WHOLE body each time is what makes the text stutter on a long answer: measured
+// at ~1ms for 1KB but ~6ms for 9KB, which does not fit in a 16ms frame alongside
+// the layout of a markdown tree that size.
+//
+// So the body is split at the last blank line that is not inside a code fence.
+// Everything before that boundary cannot change again — the text only ever grows
+// — so its parse is memoised and paid once. Only the tail, which is one block at
+// most, is re-parsed per frame. That is the same shape streamdown uses, and it
+// keeps the cost per frame flat no matter how long the reply gets.
+//
+// The boundary is a blank line, i.e. a markdown BLOCK boundary, which is what
+// lets the two halves be rendered as two independent documents and still come
+// out identical to rendering the whole.
+//
+// The transform above (renderMediaTags) is line-local and left-to-right, so
+// splitting after it is safe: the prefix of the transformed text renders exactly
+// as the prefix of the full render will.
+export function splitSettled(body: string): [settled: string, tail: string] {
+  let fence: string | null = null;
+  let cut = 0;
+  let offset = 0;
+  for (const line of body.split('\n')) {
+    const fenceMark = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (fenceMark) {
+      const marker = fenceMark[1][0];
+      if (!fence) fence = marker;
+      else if (fence === marker) fence = null;
+    } else if (!fence && line.trim() === '') {
+      // Just past this line's newline: the boundary is the blank line itself.
+      cut = offset + line.length + 1;
+    }
+    offset += line.length + 1;
+  }
+  return cut > 0 ? [body.slice(0, cut), body.slice(cut)] : ['', body];
 }
 
 // ── Composer options ─────────────────────────────────────────────────────────

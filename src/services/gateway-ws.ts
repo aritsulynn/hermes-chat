@@ -32,7 +32,6 @@ import {
   WS_REPLAY_TIMEOUT_MS,
   WS_RPC_TIMEOUT_MS,
   WS_SEQ_MAP_MAX,
-  WS_TOKEN_FLUSH_MS,
 } from './constants.ts';
 
 export type ConnState = 'idle' | 'connecting' | 'ready' | 'reconnecting' | 'closed' | 'auth-expired';
@@ -298,11 +297,6 @@ export class GatewayWs {
   // generations so a reconnect replay cannot create a second wire response.
   private socketGeneration = 0;
   private askRecords = new Map<string, { generation: number; sent: boolean; cancelled: boolean }>();
-  // Token coalescing — deltas arrive ~30Hz; flushing per frame = setState storm.
-  // Buffer per session and flush at most every 50ms (or on turn end).
-  private tokenBuf = new Map<string, string>();
-  private reasoningBuf = new Map<string, string>();
-  private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Snapshot of handshake diagnostics for error messages / debugging. */
   wsDebug(): WsDebug {
@@ -350,10 +344,6 @@ export class GatewayWs {
 
   close() {
     this.closed = true;
-    // Closing a connection invalidates buffered deltas; never flush them into
-    // the next account/session after logout or a reconnect.
-    this.tokenBuf.clear();
-    this.reasoningBuf.clear();
     this.clearTimers();
     try {
       asWsLike(this.ws)?.close?.();
@@ -370,10 +360,8 @@ export class GatewayWs {
   private clearTimers() {
     if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    if (this.flushTimer) clearTimeout(this.flushTimer);
     this.pingTimer = null;
     this.reconnectTimer = null;
-    this.flushTimer = null;
     this.reconnectScheduled = false;
   }
 
@@ -389,8 +377,6 @@ export class GatewayWs {
     this.replaying = false;
     this.replayOverflow = false;
     this.replayHold = null;
-    this.tokenBuf.clear();
-    this.reasoningBuf.clear();
     this.setState(this.backoff > WS_INITIAL_BACKOFF_MS ? 'reconnecting' : 'connecting');
     let ws: WebSocket;
     try {
@@ -1212,30 +1198,6 @@ export class GatewayWs {
     this.dispatch(type, sid, asResult(rec.payload ?? rec));
   }
 
-  /** Fan one event out to the registered callbacks (live or replayed). */
-  private flushBuffers() {
-    if (this.tokenBuf.size === 0 && this.reasoningBuf.size === 0) return;
-    const tokens = [...this.tokenBuf.entries()];
-    const reasonings = [...this.reasoningBuf.entries()];
-    this.tokenBuf.clear();
-    this.reasoningBuf.clear();
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-    for (const [sid, t] of tokens) {
-      if (t) this.events.onToken?.(sid, t);
-    }
-    for (const [sid, t] of reasonings) {
-      if (t) this.events.onReasoning?.(sid, t);
-    }
-  }
-
-  private scheduleFlush() {
-    if (this.flushTimer) return;
-    this.flushTimer = setTimeout(() => this.flushBuffers(), WS_TOKEN_FLUSH_MS);
-  }
-
   private dispatch(type: string, sid: string, body: Record<string, unknown>) {
     this.dbg.lastEvent = type;
     this.dbg.lastSid = sid || null;
@@ -1270,29 +1232,24 @@ export class GatewayWs {
       }
       case 'message.delta': {
         const t = strOf(body.text);
-        if (t) {
-          this.tokenBuf.set(sid, (this.tokenBuf.get(sid) ?? '') + t);
-          this.scheduleFlush();
-        }
+        // Straight through: a delta wakes exactly one bubble in the streaming
+        // store, so there is nothing to coalesce here. Time-based coalescing in
+        // the transport is what capped the text at 20 updates a second.
+        if (t) this.events.onToken?.(sid, t);
         break;
       }
       case 'reasoning.delta':
       case 'thinking.delta': {
         const t = strOf(body.text);
-        if (t) {
-          this.reasoningBuf.set(sid, (this.reasoningBuf.get(sid) ?? '') + t);
-          this.scheduleFlush();
-        }
+        if (t) this.events.onReasoning?.(sid, t);
         break;
       }
       case 'message.interim': {
-        this.flushBuffers();
         const t = strOf(body.text);
         if (t) this.events.onInterim?.(sid, t);
         break;
       }
       case 'message.complete':
-        this.flushBuffers();
         this.events.onComplete?.(sid, strOf(body.text), body);
         break;
       case 'tool.start':

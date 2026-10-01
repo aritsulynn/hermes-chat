@@ -9,6 +9,7 @@ import {
   applySlashCompletion,
   parseClarify,
   sliceOlderThan,
+  splitSettled,
   stripFailedTurnNotice,
 } from './messages.ts';
 
@@ -167,4 +168,24 @@ test('pairThinkingText settles live fragments to the persisted reasoning', () =>
   );
   // Empty history text never clobbers.
   assert.deepEqual(pairThinkingText([think('h', '   ')], [think('l', 'fragments…')]), []);
+});
+
+test('splitSettled splits a streaming body at the last blank line', () => {
+  // Nothing settled yet: a first block still being written has no boundary.
+  assert.deepEqual(splitSettled('one line so far'), ['', 'one line so far']);
+  assert.deepEqual(splitSettled(''), ['', '']);
+  // A completed paragraph is settled; the next one is not.
+  assert.deepEqual(splitSettled('first\n\nsecond'), ['first\n\n', 'second']);
+  assert.deepEqual(splitSettled('first\n\nsecond\n\nthird'), ['first\n\nsecond\n\n', 'third']);
+  // The boundary is the blank line, so a trailing blank line settles everything.
+  assert.deepEqual(splitSettled('done\n\n'), ['done\n\n', '']);
+});
+
+test('splitSettled does not split inside a code fence', () => {
+  assert.deepEqual(splitSettled('```ts\nlet a = 1;\n\nlet b = 2;\n'), ['', '```ts\nlet a = 1;\n\nlet b = 2;\n']);
+  // A fence that closes leaves the blank line after it as a real boundary.
+  assert.deepEqual(splitSettled('```ts\nlet a = 1;\n```\n\ntail'), ['```ts\nlet a = 1;\n```\n\n', 'tail']);
+  // Tilde fences too, and an unterminated fence swallows any later blank line.
+  assert.deepEqual(splitSettled('~~~\ncode\n~~~\n\ntail'), ['~~~\ncode\n~~~\n\n', 'tail']);
+  assert.deepEqual(splitSettled('a\n\n```\nopen\n\nstill code'), ['a\n\n', '```\nopen\n\nstill code']);
 });

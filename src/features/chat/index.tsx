@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pickFiles } from '../../services/file-picker';
 import { Navigate as Redirect } from 'react-router-dom';
 import { ChevronDown, ChevronUp, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
-import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
+import { useApp, useStreamingChars, useStreamingRead, useThemeValue } from '../../hooks/app-store';
 import { Transcript } from '../../components/chat/transcript';
+import { MessageScrollerItem } from '../../components/ui/message-scroller';
 import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
 import type { TranscriptHandle } from '../../components/chat/transcript';
 import { useScrollbarGutter, useViewportSize } from '../../hooks/use-viewport';
@@ -121,10 +122,11 @@ export function ChatScreen() {
     dismissAsk,
     getGw,
   } = useApp();
-  // High-frequency token deltas live in their own context (see useStreaming):
-  // subscribing here keeps per-token re-renders inside the chat screen while
-  // the rest of the app stays put.
-  const streamingTexts = useStreaming();
+  // Reading the live stream is deliberately NON-reactive here. Following it is
+  // the bubble's job, per message id (see useStreamingText); this screen wants
+  // streamed text in exactly two places — the long-press menu's Copy target and
+  // the session-info token estimate — and both read it on demand instead.
+  const readStreamedText = useStreamingRead();
   // Theme lives on its own context for the same reason: a toggle would
   // otherwise hand every useApp() consumer a new object.
   const { theme } = useThemeValue();
@@ -344,25 +346,14 @@ export function ChatScreen() {
   // Long-press fired: swallow the onPress that fires on release (else a
   // long-press on thinking/tool bubbles toggles them instead of selecting).
   const longFired = useRef(false);
-  // True while the user sits at the bottom (following the live turn).
-  // Content-size growth (stream tokens, expand thinking) auto-scrolls only
-  // then — expanding an old bubble mid-list no longer yanks to the bottom.
-  const stickEnd = useRef(true);
-  // px from the true end that still counts as "at the bottom" (jump button
-  // hides, transcript auto-follows). Shared by onScroll and snapToEnd below.
-  const AT_END_PX = 120;
-  // True briefly while the keyboard/dock padding changes — suppresses the
-  // content-size auto-scroll so opening the keyboard doesn't shift the transcript.
-  const kbResizeRef = useRef(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Agent todo checklist above the composer — collapsed to a one-line summary.
   const [todosOpen, setTodosOpen] = useState(false);
-  // False while the list is scrolled up — shows the jump-to-bottom button.
+  // Mirrored out of MessageScroller's `scrollable.end` (see Transcript). Used
+  // for exactly one thing now: gating the head-trim below, so reading history
+  // up top is never yanked. The jump-to-bottom button reads the same state
+  // directly inside the transcript.
   const [atBottom, setAtBottom] = useState(true);
-  // True while the transcript actually overflows the viewport. Gates the jump
-  // button so short chats never show it, and so a stale "not at bottom"
-  // reading on a non-scrollable list can't pin the button on screen.
-  const [canScroll, setCanScroll] = useState(false);
   // Height of the bottom footer (panels + composer), keyboard lift included.
   // Feeds the scroll-to-bottom button anchor above it. The footer overlays
   // the transcript (absolute, transparent), so the list reserves room for it
@@ -396,49 +387,16 @@ export function ChatScreen() {
   // Gap between the lifted dock and the keyboard so the composer doesn't sit
   // flush on it. Only while the keyboard is open.
   const kbGap = kbH > 0 ? 8 : 0;
-  const contentH = useRef(0);
-  const layoutH = useRef(0);
-  const endPad = useRef(0);
-  // Tail gap lives in the list content padding (= dockH, see
-  // listContentStyle) so the last bubble can scroll above the overlaid
-  // footer instead of hiding behind it.
-  endPad.current = 0;
-  // Fresh-load pin: after F5 / session switch / resume, land at the bottom
-  // explicitly (instant, one shot). The content-size follow alone can lose the
-  // race against MVCP stabilization on a cold load and strand the viewport at
-  // the top. Detects reloads by session/first-message/length signature —
-  // plain appends (new messages while reading history) deliberately do NOT
-  // pin; stickEnd governs those.
-  const pinTrack = useRef({ sid: null as string | null, first: null as string | null, len: 0 });
-  // Y where the current drag started — snap only fires on net-downward moves.
-  const dragStartY = useRef(0);
-  // Consecutive non-touch, non-bottom scroll frames (see handleScroll) —
-  // transients must persist before they may cancel following.
-  const missEnd = useRef(0);
-  // Fresh-load intent: set on reload signature, cleared on landing, on user
-  // positioning (drag/momentum release), or never — it survives transient
-  // system events that must not strand a cold load mid-list. Plain appends
-  // never set it, so reading history is never yanked.
-  const pinWanted = useRef(false);
-  // Latest scroll offset (mirrored in onScroll) — the jump button instant-jumps
-  // when far instead of smooth-scrolling ten thousand pixels sluggishly.
-  const scrollY = useRef(0);
-  // True while the user's finger is down — onScroll only flips follow state on
-  // user-driven scrolls, never mid-flight of a programmatic scrollEnd.
-  const touching = useRef(false);
-  // True while a programmatic scrollEnd is in flight (cleared on arrival or by
-  // timeout). Without this, onScroll mid-flight flips stickEnd=false, and any
-  // growth during the flight (stream tokens, a loading image resolving) lands
-  // the list short with nobody left to finish the trip.
-  const flying = useRef(false);
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
+  // `useStreamingChars` follows the stream only while the sheet is open, so the
+  // screen does not sit on the per-token render path for a display-only number.
+  const streamedChars = useStreamingChars(infoOpen);
   const tokenEstimate = useMemo(() => {
-    let n = 0;
+    let n = Math.ceil(streamedChars / 4);
     for (const m of messages) n += Math.ceil(m.text.length / 4);
-    for (const k in streamingTexts) n += Math.ceil(streamingTexts[k].length / 4);
     return n;
-  }, [messages, streamingTexts]);
+  }, [messages, streamedChars]);
   // Regenerate targets the last assistant bubble; the rewind target is the last
   // user row that carries a durable id.
   const lastAssistantId = useMemo(() => [...messages].reverse().find((m) => m.role === 'assistant')?.id, [messages]);
@@ -505,101 +463,6 @@ export function ChatScreen() {
     });
   }, []);
 
-  const scrollEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Trailing throttle for the per-token auto-follow (see
-  // handleContentSizeChange): without it every streamed token fires a scroll
-  // command (~30/s) — layout thrash and a viewport that fights back.
-  const followTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Backstop for the fresh-load pin below (cleared + reset per reload).
-  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollEnd = useCallback((animated?: unknown) => {
-    const anim = animated === false ? false : true;
-    // Double-tick: one frame for layout shrink (keyboard resize), one for content.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        // Exact offset, not scrollToEnd(): the measured end is deterministic
-        // (contentH/layoutH track the same geometry the padding is built from).
-        const end = Math.max(0, contentH.current - layoutH.current);
-        if (end <= 0) return;
-        flying.current = true;
-        // `flying` means "the next scroll events are mine, not the user's".
-        //
-        // `behavior: 'auto'` is applied synchronously and emits exactly one
-        // scroll event, so a short window is correct; `'smooth'` genuinely does
-        // animate and needs longer. The two are separate because the
-        // over-long window on the instant path was a livelock, not just waste —
-        // `handleScroll` ignores the user's own scroll while `flying` is set, so
-        // a follow re-arming it every 250ms meant the counter that disengages
-        // following could never advance, and wheeling up was dragged back to the
-        // bottom indefinitely. The scrollbar still worked, which is what made it
-        // look like a pointer problem rather than a follow problem.
-        if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
-        scrollEndTimer.current = setTimeout(
-          () => {
-            flying.current = false;
-          },
-          anim ? 600 : 120,
-        );
-        listRef.current?.scrollToOffset({ offset: end, animated: anim });
-      });
-    });
-  }, []);
-  useEffect(
-    () => () => {
-      if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
-      if (followTimer.current) clearTimeout(followTimer.current);
-      if (pinTimer.current) clearTimeout(pinTimer.current);
-    },
-    [],
-  );
-
-  // Small snap-through near the end on downward releases only — an upward
-  // release is the user reading back, and must never be stolen.
-  //
-  // Fired from the scroller's pointerup rather than from a scroll event: a
-  // fling can come to rest before its last scroll event is delivered, so a
-  // screen that only heard `onScroll` would settle the follow state late or not
-  // at all.
-  const snapToEnd = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    touching.current = false;
-    const y = el.scrollTop();
-    // Settle follow state from the release position itself (don't wait for
-    // scroll events that may never come on a static list): released at the
-    // bottom → following; released mid-list → user parked deliberately.
-    const rest = el.distanceFromEnd();
-    stickEnd.current = rest < AT_END_PX;
-    pinWanted.current = false;
-    if (y < dragStartY.current - 4) return;
-    if (rest <= 2 || rest > endPad.current + 8) return;
-    stickEnd.current = true;
-    setAtBottom(true);
-    scrollEnd();
-  }, [scrollEnd, setAtBottom]);
-
-  // pointerdown on the scroller. Both values are read at the gesture's start:
-  // dragStartY is the reference the release is compared against, and reading it
-  // later would compare the release against itself and make every drag look
-  // like it scrolled nowhere.
-  const handleInteractStart = useCallback(() => {
-    const el = listRef.current;
-    touching.current = true;
-    dragStartY.current = el ? el.scrollTop() : 0;
-  }, []);
-
-  // The scroller's own height. This is the number the distance-to-the-end
-  // arithmetic needs, and it is genuinely separate from the content height: a
-  // keyboard opening shrinks the scroller and leaves the content untouched.
-  const handleViewportResize = useCallback(
-    (viewportH: number) => {
-      layoutH.current = viewportH;
-      setCanScroll(contentH.current > viewportH + 40);
-      if (stickEnd.current) scrollEnd(false);
-    },
-    [scrollEnd],
-  );
-
   // When the keyboard slides up the list height shrinks but content offset
   // stays — explicitly scroll so the latest message sits above the keyboard,
   // like every normal chat app. Delay covers the keyboard animation (~250ms).
@@ -614,7 +477,7 @@ export function ChatScreen() {
     const onKeyboard = () => {
       setKbH(vv ? Math.max(0, Math.round(window.innerHeight - vv.height - (vv.offsetTop ?? 0))) : 0);
       t1 = setTimeout(() => {
-        scrollEnd(true);
+        listRef.current?.scrollToEnd({ behavior: 'smooth' });
         remeasurePopover();
       }, 50);
     };
@@ -624,49 +487,7 @@ export function ChatScreen() {
       if (t1) clearTimeout(t1);
       if (t2) clearTimeout(t2);
     };
-  }, [scrollEnd, remeasurePopover]);
-
-  // Keyboard/footer resize does NOT auto-scroll: other chat apps leave the
-  // transcript where it is and let the user scroll down to the newest message.
-  // (kbResizeRef guards the follow during the resize transition.)
-  useEffect(() => {
-    if (kbH === 0 && dockH === 0) return;
-    kbResizeRef.current = true;
-    const t = setTimeout(() => {
-      kbResizeRef.current = false;
-    }, 450);
-    return () => clearTimeout(t);
-  }, [kbH, dockH]);
-
-  useEffect(() => {
-    const prev = pinTrack.current;
-    const first = messages.length ? messages[0].id : null;
-    pinTrack.current = { sid: sessionId, first, len: messages.length };
-    if (!sessionId || messages.length === 0) return;
-    const reloaded = sessionId !== prev.sid || first !== prev.first || prev.len === 0;
-    if (!reloaded) return;
-    // Declare intent immediately; the actual pin rides the content-size
-    // follow (correct measurements post-layout), NOT a direct scrollEnd here:
-    // on a cold load contentH/layoutH are still stale when this effect runs,
-    // so an immediate scroll computes a bogus small offset, strands the
-    // viewport up top, and reads exactly like "went down then bounced back".
-    stickEnd.current = true;
-    setAtBottom(true);
-    // Backstop: if no content-size event ever arrives to trigger the follow
-    // (static transcript, kb-suppressed window), pin once, late. Survives
-    // appends (only a new reload resets it); holding a finger down re-arms
-    // instead of firing into an actively-driven list.
-    if (pinTimer.current) clearTimeout(pinTimer.current);
-    pinWanted.current = true;
-    pinTimer.current = setTimeout(function tick() {
-      pinTimer.current = null;
-      if (touching.current) {
-        pinTimer.current = setTimeout(tick, 600);
-        return;
-      }
-      if (stickEnd.current || pinWanted.current) scrollEnd(false);
-    }, 600);
-  }, [sessionId, messages, scrollEnd]);
+  }, [remeasurePopover]);
 
   // Fetch picker inventory when entering a chat (WS model.options, REST fallback).
   useEffect(() => {
@@ -676,10 +497,13 @@ export function ChatScreen() {
   }, [sessionId, providers, providersLoading, loadProviders]);
 
   const onSend = useCallback(() => {
-    stickEnd.current = true;
     void send();
-    scrollEnd();
-  }, [send, scrollEnd]);
+    // Sending has to re-engage following, not just scroll: if the user had
+    // scrolled up into history, MessageScroller is in free-scrolling mode and
+    // the reply would stream in off-screen. scrollToEnd puts it back in follow
+    // mode, which is what the old `stickEnd = true` did.
+    listRef.current?.scrollToEnd({ behavior: 'smooth' });
+  }, [send]);
 
   // Attach actions live here (not in the composer) because their UI — the "+"
   // popover — is rendered at screen level. See pickImage/pickFile callers below.
@@ -743,99 +567,24 @@ export function ChatScreen() {
       })
       .filter((p) => (q ? (p.models?.length ?? 0) > 0 : true));
   }, [modelProviders, mq]);
-  // `paddingBottom: dockH` keeps the last bubble scrollable above the overlaid
-  // composer; the gap between rows is `gap-2` on this box.
-  // Static classes only. The composer clearance is a style, not a class: a
-  // Tailwind utility built from a template literal is never emitted by the
-  // scanner, so `pb-[${dockH}px]` produced no rule at all and the transcript had
-  // no bottom padding — the last bubble sat under the composer.
-  const listContentClass = 'mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pt-3';
-  const listContentStyle = useMemo(() => ({ paddingBottom: Math.round(dockH) }), [dockH]);
+  // The composer clearance is passed to Transcript as `clearance`, not as
+  // `padding-bottom` here: the scroller watches the content with a
+  // ResizeObserver, which observes the content BOX, and with `h-max` +
+  // `box-sizing: border-box` growing the bottom padding shrinks that box by
+  // exactly as much — so the observer never fires and the transcript settles one
+  // composer-height short of the bottom. Transcript renders the clearance as a
+  // real trailing child instead; see the note on TranscriptProps.clearance. The
+  // row gap is Transcript's too, for the same reason.
+  // The column and the content box are separate because Transcript puts the jump
+  // button on a rail that matches the column, so the button lands on the
+  // bubbles' right edge — see TranscriptProps.columnClassName.
+  const listColumnClass = 'mx-auto w-full max-w-3xl';
+  const listContentClass = 'flex flex-col px-3 pt-3';
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
-  // Armed while an older page loads: offset + content height captured after
-  // the fetch resolves, consumed by the next content-size growth (see
-  // handleContentSizeChange). Without it a prepend yanks the viewport upward.
-  const prependAdj = useRef<{ prevY: number; prevContentH: number } | null>(null);
-  const handleContentSizeChange = useCallback(
-    (h: number) => {
-      const prevH = contentH.current;
-      contentH.current = h;
-      setCanScroll(h > layoutH.current + 40);
-      // Prepended an older page above the viewport: shift the offset down by
-      // the growth so the row under the finger stays put (no yank to top).
-      if (prependAdj.current) {
-        const { prevY, prevContentH } = prependAdj.current;
-        prependAdj.current = null;
-        const dh = h - (prevContentH ?? prevH);
-        if (dh > 8) {
-          flying.current = true;
-          if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
-          scrollEndTimer.current = setTimeout(() => {
-            flying.current = false;
-          }, 1200);
-          listRef.current?.scrollToOffset({ offset: Math.max(0, prevY + dh), animated: false });
-        }
-        return;
-      }
-      if (touching.current) return;
-      if (!stickEnd.current || kbResizeRef.current) return;
-      // Coalesce: at most one follow per window no matter how many tokens
-      // land inside it. Discrete follows (send, keyboard, session open) call
-      // scrollEnd directly and are unaffected.
-      if (followTimer.current) return;
-      followTimer.current = setTimeout(() => {
-        followTimer.current = null;
-        if ((!stickEnd.current && !pinWanted.current) || touching.current) return;
-        // Skip micro-gaps: the bottom is already on screen, and firing a
-        // scroll per tick for a few pixels is what made following look
-        // steppy. Glide (animated) for short hops, jump (instant) for long
-        // hauls — same rule as the scroll-to-bottom button (a full-transcript
-        // animated glide reads as a slow descent).
-        const end = Math.max(0, contentH.current - layoutH.current);
-        const dist = end - scrollY.current;
-        if (dist < 12) return;
-        scrollEnd(dist < 3000);
-      }, 250);
-    },
-    [scrollEnd],
-  );
-  // The stick-to-bottom heuristic, reading position off the element.
-  // `AT_END_PX` and every ref below are unchanged.
-  const handleScroll = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    scrollY.current = el.scrollTop();
-    const atEnd = el.distanceFromEnd() < AT_END_PX;
-    if (flying.current && !touching.current) {
-      if (atEnd) flying.current = false;
-      else return;
-    }
-    if (atEnd) {
-      // Landing near the bottom (re)engages following and retires any fresh-
-      // load intent — self-healing after programmatic scrolls, layout shifts
-      // and keyboard transitions. A fling that lands here is over by definition.
-      missEnd.current = 0;
-      stickEnd.current = true;
-      pinWanted.current = false;
-    } else if (touching.current) {
-      // Genuine user driving (finger down, wheel, or trackpad): disengage
-      // immediately and retire load intent — the user positioned deliberately.
-      // A trackpad fling is a wheel gesture, so `touching` covers it.
-      missEnd.current = 0;
-      stickEnd.current = false;
-      pinWanted.current = false;
-    } else {
-      // No touch, no momentum: MVCP adjustments, layout shifts and stray
-      // events. A lone transient must never cancel following (it strands the
-      // viewport mid-list with no further follow queued) — require it to
-      // persist across frames. pinWanted deliberately survives this branch.
-      missEnd.current += 1;
-      if (missEnd.current >= 3) {
-        stickEnd.current = false;
-      }
-    }
-    setAtBottom((p) => (p === atEnd ? p : atEnd));
-  }, []);
+  // Following the tail, holding position across a prepend, and settling the
+  // follow state on a release all used to live here as ~150 lines of scroll
+  // arithmetic over a known content height. MessageScroller owns all three now;
+  // see components/chat/transcript.tsx for what is left on this side.
   const onBranchChat = useCallback(() => void branchSession(), [branchSession]);
   const renderMessage = useCallback(
     ({ item }: { item: UiMessage }) => {
@@ -878,17 +627,20 @@ export function ChatScreen() {
   );
 
   // ── Transcript window ────────────────────────────────────────────────
-  // Older pages prepend above the viewport: capture the offset AFTER the
-  // fetch resolves (pre-flush, so contentH still excludes the new rows) and
-  // let handleContentSizeChange shift it down by the growth.
+  // Older pages prepend above the viewport. The offset shift that keeps the
+  // row under the finger put is MessageScroller's (`preserveScrollOnPrepend`),
+  // so there is nothing to capture here any more.
   const onLoadOlder = useCallback(() => {
-    void loadOlderMessages().then((ran) => {
-      if (ran) prependAdj.current = { prevY: scrollY.current, prevContentH: contentH.current };
-    });
+    void loadOlderMessages();
   }, [loadOlderMessages]);
   const handleStartReached = useCallback(() => {
     onLoadOlder();
   }, [onLoadOlder]);
+  // The scroller reports whether there is anything below the fold; `end` is the
+  // negation of "at the bottom". The head-trim below is the only reader.
+  const handleScrollableChange = useCallback((s: { start: boolean; end: boolean }) => {
+    setAtBottom(!s.end);
+  }, []);
   // Head trim past the soft cap: only while pinned at the bottom, idle, and
   // not paging — reading history up top is never yanked. Trimmed rows stay
   // server-side and come back through onLoadOlder.
@@ -1005,8 +757,9 @@ export function ChatScreen() {
           {userMenu &&
             (() => {
               const target = messages.find((m) => m.id === userMenu.id);
-              const delta = target ? streamingTexts[target.id] : undefined;
-              const fullText = target ? target.text + (delta ?? '') : '';
+              // Read on demand, not followed: the menu only ever offers Copy on a
+              // settled row, so there is no live delta worth re-rendering for.
+              const fullText = target ? target.text + readStreamedText(target.id) : '';
               const showCopy = !!target && !!fullText && !target.pending;
               const showEdit = !!target && target.role === 'user' && target.rowId != null && !generating;
               if (!target || (!showCopy && !showEdit)) return null;
@@ -1068,29 +821,31 @@ export function ChatScreen() {
           let it grow to the transcript's full height instead of letting the
           scroller inside it scroll. */}
         <div className="flex min-h-0 flex-1 flex-col">
-          {/* A plain scroll container, not a virtualizer — see
-            components/chat/transcript.tsx for why this list is the exception.
-            `onScroll` is the only scroll signal; stick-to-bottom and the
-            prepend correction are driven from here. */}
+          {/* Rows are MessageScrollerItem and must stay direct children of the
+            content box: the prepend correction restores position by measuring
+            the first visible row, and it skips any child without a message id.
+            The old `contents` wrapper is gone with it — a display:contents box
+            has no rect, and the row alignment it existed for now lives inside
+            Message (see components/ui/message.tsx).
+            `key` on the scroller is the session: a switch has to remount the
+            scroll state, or a transcript opened while scrolled up in the
+            previous session would land at the top. */}
           <Transcript
+            key={sessionId}
             ref={listRef}
             scrollerRef={scrollerRef}
+            columnClassName={listColumnClass}
             contentClassName={listContentClass}
-            contentStyle={listContentStyle}
-            onStartReached={handleStartReached}
-            onContentSizeChange={handleContentSizeChange}
-            onViewportResize={handleViewportResize}
-            onInteractStart={handleInteractStart}
-            onInteractEnd={snapToEnd}
-            onScroll={handleScroll}>
+            clearance={dockH}
+            gutter={gutter}
+            jumpBottom={dockH + 12}
+            onScrollableChange={handleScrollableChange}
+            onStartReached={handleStartReached}>
             {ListHeader()}
             {messages.map((item) => (
-              // `contents` so the bubble itself is the flex item of the content
-              // column and its self-* alignment applies. See the note in
-              // components/chat/transcript.tsx.
-              <div key={listKeyExtractor(item)} className="contents">
+              <MessageScrollerItem key={listKeyExtractor(item)} messageId={item.id}>
                 {renderMessage({ item })}
-              </div>
+              </MessageScrollerItem>
             ))}
           </Transcript>
           {/* Overlay footer: absolute + transparent, so the transcript scrolls
@@ -1378,27 +1133,9 @@ export function ChatScreen() {
             </div>
           </div>
         </div>
-        {/* Jump to the newest message — shown only when the transcript
-          overflows and the user has scrolled up. */}
-        {canScroll && !atBottom && (
-          <Button
-            variant="ghost"
-            size="icon"
-            data-testid="scroll-to-bottom"
-            onClick={() => {
-              stickEnd.current = true;
-              // Far away: jump instantly (smooth-scrolling ~10k px is the sludge);
-              // nearby: keep the short smooth glide.
-              const dist = contentH.current - (scrollY.current + layoutH.current);
-              scrollEnd(dist < 3000);
-            }}
-            className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
-            // Floats just above the footer, whose measured height already
-            // includes the keyboard lift.
-            style={{ bottom: dockH + 12, boxShadow: '0 2px 6px rgb(0 0 0 / 0.18)' }}>
-            <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
-          </Button>
-        )}
+        {/* The jump-to-newest button lives inside <Transcript> now — it is the
+          visual half of the scroller's own `scrollable.end` state, and it has
+          to be rendered under the same provider to read it. */}
         <AskSheet
           open={!!ask}
           ask={ask}

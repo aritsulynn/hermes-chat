@@ -51,8 +51,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
     liveToolAid,
     liveTurnTools,
     liveTurnDiffs,
-    streamingRef,
-    setStreamingTexts,
+    streaming,
     turnOwnerRef,
     parkedLiveRef,
     lastTurnEventAt,
@@ -360,14 +359,9 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             const aid = liveAid.current;
             if (!aid || !delta) return;
             lastTurnEventAt.current = Date.now();
-            // O(1): buffer outside `messages`, no transcript map per delta.
-            // Update the ref synchronously — onComplete may fire before React re-renders.
-            const next = {
-              ...streamingRef.current,
-              [aid]: (streamingRef.current[aid] ?? '') + delta,
-            };
-            streamingRef.current = next;
-            setStreamingTexts(next);
+            // O(1): appended outside `messages`, and it wakes exactly the live
+            // bubble — no transcript map, and no app-wide re-render per delta.
+            streaming.push(aid, delta);
           },
           onReasoning: (sid, delta) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
@@ -389,12 +383,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             const id = aid;
             if (!delta) return;
             lastTurnEventAt.current = Date.now();
-            const next = {
-              ...streamingRef.current,
-              [id]: (streamingRef.current[id] ?? '') + delta,
-            };
-            streamingRef.current = next;
-            setStreamingTexts(next);
+            streaming.push(id, delta);
           },
           onInterim: (sid, text) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
@@ -527,7 +516,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             generatingRef.current = false;
             setToolLine(null);
             // Single merge: fold buffered deltas into the durable transcript once.
-            const deltas = streamingRef.current;
+            const deltas = streaming.snapshot();
             const hasDeltas = (aid && deltas[aid] !== undefined) || (thinkId && deltas[thinkId] !== undefined);
             if (aid || thinkId || settled) {
               const base = messagesRef.current;
@@ -554,8 +543,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
               messagesRef.current = next;
               setMessages(next);
             }
-            streamingRef.current = {};
-            setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
+            streaming.clear();
             // End-of-turn file summary: fold every inline diff this turn produced.
             const turnDiffs = liveTurnDiffs.current;
             liveTurnDiffs.current = [];

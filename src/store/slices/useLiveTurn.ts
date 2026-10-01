@@ -2,16 +2,15 @@
 // (which room owns the running turn), plus the park/reanchor helpers used when
 // navigating or rebuilding the transcript.
 import { useCallback, useRef, useState } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { MutableRefObject } from 'react';
 import { nid } from '../../utils/messages';
 import type { UiMessage } from '../../utils/messages';
+import { createStreamingStore, type StreamingStore } from '../streaming';
 import { profileSessionKey } from '../helpers';
 import type { StoreCtx } from '../ctx';
 
 export interface LiveTurnSlice {
-  streamingTexts: Record<string, string>;
-  setStreamingTexts: Dispatch<SetStateAction<Record<string, string>>>;
-  streamingRef: MutableRefObject<Record<string, string>>;
+  streaming: StreamingStore;
   liveAid: MutableRefObject<string | null>;
   liveThinkAid: MutableRefObject<string | null>;
   liveTools: MutableRefObject<Map<string, string>>;
@@ -27,9 +26,9 @@ export interface LiveTurnSlice {
 }
 
 export function useLiveTurnSlice({ latest, sessionIdRef, generatingRef, runtimeOwners }: StoreCtx): LiveTurnSlice {
-  const [streamingTexts, setStreamingTexts] = useState<Record<string, string>>({});
-  const streamingRef = useRef<Record<string, string>>({});
-  streamingRef.current = streamingTexts;
+  // The streamed text is NOT React state: a delta has to wake one bubble, not
+  // every consumer of the store. See store/streaming.ts.
+  const [streaming] = useState(createStreamingStore);
   const liveAid = useRef<string | null>(null);
   const liveThinkAid = useRef<string | null>(null);
   const liveTools = useRef<Map<string, string>>(new Map());
@@ -45,9 +44,8 @@ export function useLiveTurnSlice({ latest, sessionIdRef, generatingRef, runtimeO
   const lastTurnEventAt = useRef(0);
 
   const clearStreaming = useCallback(() => {
-    streamingRef.current = {};
-    setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
-  }, []);
+    streaming.clear();
+  }, [streaming]);
   // Park the visible room's live turn before leaving it, so coming back can
   // restore its Stop button instead of stranding Send/Stop on the wrong room.
   const parkLiveTurn = useCallback(() => {
@@ -76,9 +74,7 @@ export function useLiveTurnSlice({ latest, sessionIdRef, generatingRef, runtimeO
   }, []);
 
   return {
-    streamingTexts,
-    setStreamingTexts,
-    streamingRef,
+    streaming,
     liveAid,
     liveThinkAid,
     liveTools,

@@ -5,7 +5,16 @@
 // the turn engine, and the gateway WS wiring (openWs). The leaf slices hold the
 // per-domain state/refs; this file wires them and exposes the `AppStore` context
 // consumed via `useApp()` (re-exported from hooks/app-store.tsx).
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { ReactNode } from 'react';
 import {
   checkMe,
@@ -49,6 +58,7 @@ import {
 } from './helpers';
 import type { AgentProfile, AppStore } from './types';
 import type { StoreCtx } from './ctx';
+import type { StreamingStore } from './streaming';
 import { useThemeSlice } from './slices/useTheme';
 import type { ThemeSlice } from './slices/useTheme';
 import { useNotificationsSlice } from './slices/useNotifications';
@@ -74,17 +84,56 @@ import { useSessionMiscSlice } from './slices/useSessionMisc';
 
 const AppContext = createContext<AppStore | null>(null);
 
-// High-frequency streaming deltas, isolated from AppContext: every token
-// produces a new object identity, and a single shared context would re-render
-// every useApp() consumer app-wide ~30x/s during streaming (drawer, header,
-// composer, all screens). Only the chat transcript reads this, so it gets its
-// own context — everyone else stays put while tokens flow.
-const StreamingContext = createContext<Record<string, string> | null>(null);
+// High-frequency streaming deltas, isolated from AppContext: a token used to
+// produce a new object identity, and a single shared context re-rendered every
+// useApp() consumer app-wide ~30x/s during streaming (drawer, header, composer,
+// all screens). Isolating it helped the rest of the app, but every transcript
+// row still subscribed to the whole record, so a token still re-rendered all of
+// them — which is what forced the WebSocket client to coalesce deltas into 50ms
+// windows, and that coalescing is what capped the visible text at 20 updates a
+// second.
+//
+// So the value here is the store itself, not a snapshot: its identity never
+// changes, and a delta wakes exactly one subscriber. See store/streaming.ts.
+const StreamingContext = createContext<StreamingStore | null>(null);
 
-export function useStreaming(): Record<string, string> {
-  const v = useContext(StreamingContext);
-  if (!v) throw new Error('useStreaming must be used inside AppProvider');
-  return v;
+function useStreamingStore(): StreamingStore {
+  const store = useContext(StreamingContext);
+  if (!store) throw new Error('the streaming store must be used inside AppProvider');
+  return store;
+}
+
+/** Streamed text for one message. Re-renders only this message's subscriber. */
+export function useStreamingText(id: string): string {
+  const store = useStreamingStore();
+  const subscribe = useCallback((cb: () => void) => store.subscribe(id, cb), [store, id]);
+  const read = useCallback(() => store.read(id), [store, id]);
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+/** A one-off read of one message's streamed text, without following it. */
+export function useStreamingRead(): (id: string) => string {
+  const store = useStreamingStore();
+  return useCallback((id: string) => store.read(id), [store]);
+}
+
+/**
+ * Total streamed characters, for the session-info sheet's token estimate.
+ *
+ * Subscribes only while `enabled`: the estimate is display-only, and following
+ * the stream for a whole turn would put the chat screen back on the per-token
+ * render path this store exists to remove.
+ */
+export function useStreamingChars(enabled: boolean): number {
+  const store = useStreamingStore();
+  const [chars, setChars] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    const sync = () => setChars(store.totalChars());
+    sync();
+    return store.subscribeAll(sync);
+  }, [enabled, store]);
+  return enabled ? chars : 0;
 }
 
 // The theme triple, isolated from AppContext for the same reason as streaming.
@@ -359,7 +408,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   generatingRef.current = generating;
   messagesRef.current = messages;
   const {
-    streamingTexts,
+    streaming,
 
     parkedLiveRef,
     lastTurnEventAt,
@@ -1076,7 +1125,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={value}>
       <ThemeContext.Provider value={themeSlice}>
-        <StreamingContext.Provider value={streamingTexts}>{children}</StreamingContext.Provider>
+        <StreamingContext.Provider value={streaming}>{children}</StreamingContext.Provider>
       </ThemeContext.Provider>
     </AppContext.Provider>
   );
