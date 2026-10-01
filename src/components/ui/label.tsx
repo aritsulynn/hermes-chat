@@ -1,40 +1,29 @@
 import { cn } from '@/utils/cn';
-import * as LabelPrimitive from '@rn-primitives/label';
-import { Platform } from 'react-native';
+import * as React from 'react';
 
-function Label({
-  className,
-  onPress,
-  onLongPress,
-  onPressIn,
-  onPressOut,
-  disabled,
-  ...props
-}: React.ComponentProps<typeof LabelPrimitive.Text>) {
+type LabelProps = React.ComponentProps<'label'>;
+
+/**
+ * A plain `<label>`.
+ *
+ * The native version was a pressable Root wrapping a Text, because
+ * react-native has no `<label>`. That split existed only to forward
+ * `onPress`/`onPressIn`/`onLongPress` to a touchable wrapper; no call site
+ * passed any of them, and on the web clicking a `<label>` focuses and toggles
+ * its associated control natively, which is strictly better than a synthetic
+ * press handler.
+ */
+function Label({ className, ...props }: LabelProps) {
   return (
-    <LabelPrimitive.Root
+    <label
       className={cn(
-        'flex select-none flex-row items-center gap-2',
-        Platform.select({
-          web: 'cursor-default leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50',
-        }),
-        disabled && 'opacity-50'
+        'text-foreground flex select-none items-center gap-2 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50',
+        className,
       )}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      disabled={disabled}>
-      <LabelPrimitive.Text
-        className={cn(
-          'text-foreground text-sm font-medium',
-          Platform.select({ web: 'leading-none' }),
-          className
-        )}
-        {...props}
-      />
-    </LabelPrimitive.Root>
+      {...props}
+    />
   );
 }
 
 export { Label };
+export type { LabelProps };

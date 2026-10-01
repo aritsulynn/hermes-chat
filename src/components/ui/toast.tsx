@@ -6,13 +6,9 @@
 // `toast()` is a plain module function so it can be called from callbacks and
 // async handlers without threading a hook through every feature. <ToastHost />
 // must be mounted once near the root (see app/_layout.tsx).
-import { NativeOnlyAnimatedView } from '@/components/ui/native-only-animated-view';
 import { Text as UIText } from '@/components/ui/text';
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
-import { FadeInUp, FadeOutDown, ReduceMotion } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleCheck, TriangleAlert, X } from 'lucide-react-native';
+import { CircleCheck, TriangleAlert, X } from 'lucide-react';
 
 type ToastVariant = 'default' | 'destructive' | 'success';
 
@@ -72,75 +68,68 @@ function ToastItem({
   const Icon = variant === 'destructive' ? TriangleAlert : CircleCheck;
   const iconColor = variant === 'destructive' ? '#ef4444' : variant === 'success' ? '#10b981' : '#888888';
   return (
-    <Pressable
-      onPress={onDismiss}
-      // Errors interrupt; everything else is announced politely when the row
-      // mounts (Pressable's role union has no "status").
-      accessibilityRole={variant === 'destructive' ? 'alert' : undefined}
-      accessibilityLiveRegion={variant === 'destructive' ? 'assertive' : 'polite'}
-      accessibilityLabel={description ? `${title}. ${description}` : title}
-      className="w-full max-w-[420px] flex-row items-start gap-2.5 rounded-xl border border-neutral-200 bg-white px-3.5 py-3 shadow-lg shadow-black/10 dark:border-neutral-700 dark:bg-[#1c1c1e]">
-      <View className="mt-0.5">
+    <button
+      type="button"
+      onClick={onDismiss}
+      // Errors interrupt; everything else is announced politely. The native
+      // build used accessibilityLiveRegion for this, which has no DOM
+      // equivalent, so it is a live region here — same intent, and it is what
+      // actually reaches a screen reader on the web.
+      role={variant === 'destructive' ? 'alert' : 'status'}
+      aria-live={variant === 'destructive' ? 'assertive' : 'polite'}
+      aria-label={description ? `${title}. ${description}` : title}
+      className="flex w-full max-w-[420px] animate-[toast-in_220ms_ease-out] items-start gap-2.5 rounded-xl border border-neutral-200 bg-white px-3.5 py-3 text-left shadow-lg shadow-black/10 dark:border-neutral-700 dark:bg-[#1c1c1e]">
+      <span className="mt-0.5">
         <Icon size={17} color={iconColor} />
-      </View>
-      <View className="min-w-0 flex-1">
+      </span>
+      <span className="min-w-0 flex-1">
         <UIText
           numberOfLines={2}
           className={`text-[14px] font-semibold ${
             variant === 'destructive'
               ? 'text-red-600 dark:text-red-400'
               : 'text-neutral-950 dark:text-neutral-100'
-          }`}
-        >
+          }`}>
           {title}
         </UIText>
         {!!description && (
           <UIText
             numberOfLines={3}
-            className="mt-0.5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300"
-          >
+            className="mt-0.5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300">
             {description}
           </UIText>
         )}
-      </View>
-      <View className="mt-0.5">
+      </span>
+      <span className="mt-0.5">
         <X size={15} color={iconColor} />
-      </View>
-    </Pressable>
+      </span>
+    </button>
   );
 }
 
 /** Mount once, last in the root layout. Renders nothing while idle. */
 export function ToastHost() {
   const list = useToasts();
-  const insets = useSafeAreaInsets();
   if (!list.length) return null;
   return (
-    <View
-      pointerEvents="box-none"
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 100 }}
-    >
-      {/* Animated wrapper so each row's `exiting` plays out before the element
-          is dropped from the tree. */}
-      <NativeOnlyAnimatedView
-        entering={FadeInUp.duration(220).reduceMotion(ReduceMotion.System)}
-        className="items-center gap-2 px-4"
-        style={{ paddingBottom: insets.bottom + 16 }}>
-        {list.map((t) => (
-          <NativeOnlyAnimatedView
-            key={t.id}
-            entering={FadeInUp.duration(220).reduceMotion(ReduceMotion.System)}
-            exiting={FadeOutDown.duration(180).reduceMotion(ReduceMotion.System)}
-            className="w-full items-center">
-            <ToastItem
-              title={t.title}
-              description={t.description}
-              variant={t.variant}
-              onDismiss={() => toast.dismiss(t.id)}
-            />
-          </NativeOnlyAnimatedView>
-        ))}
-      </NativeOnlyAnimatedView>
-    </View>
+    // `pointer-events-none` on the stack so it never swallows a click meant for
+    // the screen underneath; each row opts back in.
+    <div
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex flex-col items-center gap-2 px-4"
+      // The native build read this from useSafeAreaInsets. `env()` is the same
+      // number, resolved by the browser, and it keeps the host free of a
+      // layout-measurement pass on every render.
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}>
+      {list.map((t) => (
+        <div key={t.id} className="pointer-events-auto w-full max-w-[420px]">
+          <ToastItem
+            title={t.title}
+            description={t.description}
+            variant={t.variant}
+            onDismiss={() => toast.dismiss(t.id)}
+          />
+        </div>
+      ))}
+    </div>
   );
 }

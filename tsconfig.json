@@ -34,8 +34,9 @@
     "node_modules",
     "dist",
     "src/app",
-    "src/components",
-    "src/features",
-    "src/hooks"
+    "src/components/chat",
+    "src/components/drawer",
+    "src/components/connection-banner.tsx",
+    "src/features"
   ]
 }

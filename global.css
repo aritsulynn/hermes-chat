@@ -97,3 +97,41 @@ textarea:focus-visible,
   outline: 2px solid hsl(var(--ring));
   outline-offset: 1px;
 }
+
+/* Toast entrance, the CSS stand-in for the reanimated FadeInUp the native host
+   used. Only `in` is animated: a toast is dropped from the tree the instant its
+   timer fires, so an exit animation would have to be driven by a delayed
+   unmount, and a 4s message that lingers an extra 180ms while fading is not
+   worth the bookkeeping. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Typing indicator. The delay is staggered per-dot in the component, so the
+   three rise in sequence instead of pulsing as a single bar. */
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

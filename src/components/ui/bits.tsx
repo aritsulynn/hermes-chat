@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { Animated, Keyboard, Platform, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
-import { AlertCircle, LoaderCircle, Menu as MenuIcon } from 'lucide-react-native';
-import { useNavigation } from 'expo-router';
-import { useApp, useThemeValue } from '../../hooks/app-store';
-import { placeholderColor } from '../../theme';
+import { useState } from 'react';
+import { AlertCircle, LoaderCircle, Menu as MenuIcon } from 'lucide-react';
+import { useThemeValue } from '../../hooks/app-store';
 import { cn } from '../../utils/cn';
+import { openNavDrawer } from '../../store/nav';
 import { Alert as UIAlert, AlertDescription } from './alert';
 import { Button } from './button';
 import { Input } from './input';
@@ -46,15 +43,12 @@ export function CtxRing({
     <Button
       variant="ghost"
       size="icon"
-      testID="ctx-ring"
-      accessibilityRole="button"
-      accessibilityLabel={`Context ${clamped}% — open session info`}
-      onPress={onPress}
-      className="h-9 w-9 items-center justify-center"
-      hitSlop={6}
-    >
-      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <Circle
+      data-testid="ctx-ring"
+      aria-label={`Context ${clamped}% — open session info`}
+      onClick={onPress}
+      className="h-9 w-9 items-center justify-center">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
@@ -62,7 +56,7 @@ export function CtxRing({
           strokeWidth={stroke}
           fill="none"
         />
-        <Circle
+        <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
@@ -71,12 +65,9 @@ export function CtxRing({
           fill="none"
           strokeDasharray={`${(clamped / 100) * c} ${c}`}
           strokeLinecap="round"
-          // `rotation` + `origin` props make react-native-svg emit a
-          // `transform-origin` DOM attribute on web (React warning) — the
-          // equivalent `transform` attribute is valid SVG on both platforms.
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
-      </Svg>
+      </svg>
     </Button>
   );
 }
@@ -84,23 +75,20 @@ export function CtxRing({
 // One shared drawer hamburger so every screen looks and behaves the same.
 export function HamburgerBtn() {
   const { theme } = useThemeValue();
-  const navigation = useNavigation();
   return (
     <Button
       variant="ghost"
       size="icon"
-      testID="hamburger-btn"
-      accessibilityRole="button"
-      accessibilityLabel="Open navigation menu"
-      onPress={() => {
-        // Drop the keyboard first so the drawer isn't stuck behind it while
-        // the user was mid-message.
-        Keyboard.dismiss();
-        (navigation as any).openDrawer?.();
+      data-testid="hamburger-btn"
+      aria-label="Open navigation menu"
+      onClick={() => {
+        // Drop focus first so the drawer isn't left behind the keyboard the
+        // user was mid-sentence in. On the web this means blurring the active
+        // element, which is the whole of what Keyboard.dismiss() did.
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        openNavDrawer();
       }}
-      className="justify-center px-2 py-2"
-      hitSlop={12}
-    >
+      className="justify-center px-2 py-2">
       <MenuIcon size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
     </Button>
   );
@@ -114,27 +102,22 @@ export function HamburgerBtn() {
 export function ScreenHeader({
   title,
   subtitle,
-  insetTop,
   actions,
 }: {
   title: string;
   subtitle?: React.ReactNode;
-  /** Pass insets.top; the +10 keeps the bar off the status bar. */
-  insetTop: number;
   actions?: React.ReactNode;
 }) {
   return (
-    <View
-      className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-      style={{ paddingTop: insetTop + 10 }}
-    >
-      <View className="min-w-0 flex-1 flex-row items-center gap-3">
+    <header
+      className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 pb-4 dark:border-neutral-800 dark:bg-black"
+      // `insetTop` was a prop every call site had to thread a number into. The
+      // browser already knows the safe area, so it asks instead.
+      style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <HamburgerBtn />
-        <View className="min-w-0 flex-1">
-          <UIText
-            numberOfLines={1}
-            className="text-xl font-bold text-neutral-950 dark:text-neutral-100"
-          >
+        <div className="min-w-0 flex-1">
+          <UIText numberOfLines={1} className="text-xl font-bold text-neutral-950 dark:text-neutral-100">
             {title}
           </UIText>
           {!!subtitle && (
@@ -142,10 +125,10 @@ export function ScreenHeader({
               {subtitle}
             </UIText>
           )}
-        </View>
-      </View>
+        </div>
+      </div>
       {actions}
-    </View>
+    </header>
   );
 }
 
@@ -153,17 +136,16 @@ export function ScreenHeader({
 // class string was pasted into 19 places and had already started drifting
 // (two padding sizes, one background variant), so it lives here now. `className`
 // still wins, which is how the compact `p-3.5` variant stays honest.
-export function Card({ className, children, ...props }: React.ComponentProps<typeof View>) {
+export function Card({ className, children, ...props }: React.ComponentProps<'div'>) {
   return (
-    <View
+    <div
       className={cn(
         'rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60',
-        className
+        className,
       )}
-      {...props}
-    >
+      {...props}>
       {children}
-    </View>
+    </div>
   );
 }
 
@@ -189,16 +171,14 @@ export function ErrorRetry({
     <UIAlert
       icon={AlertCircle}
       variant="destructive"
-      className={cn(compact ? 'rounded-xl px-4 pt-3' : 'rounded-2xl', className)}
-    >
+      className={cn(compact ? 'rounded-xl px-4 pt-3' : 'rounded-2xl', className)}>
       <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{error}</AlertDescription>
       <Button
         variant="destructive"
         size="sm"
-        onPress={onRetry}
-        className="ml-6 mt-1 self-start"
-        accessibilityLabel={retryLabel}
-      >
+        onClick={onRetry}
+        className="mt-1 self-start"
+        aria-label={retryLabel}>
         <UIText className="text-xs font-semibold">{retryLabel}</UIText>
       </Button>
     </UIAlert>
@@ -218,122 +198,109 @@ export function Field({
   onChange: (v: string) => void;
   placeholder?: string;
   secure?: boolean;
-  /** Keyboard action (e.g. password Enter = Connect). */
+  /** Enter key action (e.g. password Enter = Connect). */
   onSubmit?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
   const { theme } = useThemeValue();
-  const dark = theme === 'dark';
+  // Makes the browser draw the native input (and its autofill dropdown, and
+  // the on-screen keyboard) in the app's palette rather than the OS default.
+  const scheme = { colorScheme: theme === 'dark' ? ('dark' as const) : ('light' as const) };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && onSubmit) {
+      e.preventDefault();
+      onSubmit();
+    }
+  };
   if (!secure) {
     return (
-      <View className="mb-2.5">
-        <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
+      <div className="mb-2.5">
+        <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400" htmlFor={idFor(label)}>
+          {label}
+        </Label>
         <Input
-          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
+          id={idFor(label)}
+          style={scheme}
+          className="rounded-lg border border-neutral-300 bg-white px-2.5 py-2 text-[15px] text-neutral-950 dark:border-neutral-700 dark:bg-black dark:text-neutral-100"
           value={value}
-          onChangeText={onChange}
+          onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          placeholderTextColor={placeholderColor(dark)}
-          keyboardAppearance={dark ? 'dark' : 'light'}
           autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType={onSubmit ? 'go' : 'default'}
-          onSubmitEditing={() => onSubmit?.()}
+          autoCorrect="off"
+          enterKeyHint={onSubmit ? 'go' : 'enter'}
+          onKeyDown={onKeyDown}
         />
-      </View>
+      </div>
     );
   }
   return (
-    <View className="mb-2.5">
-      <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
-      <View className="flex-row items-center rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black pr-1">
+    <div className="mb-2.5">
+      <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400" htmlFor={idFor(label)}>
+        {label}
+      </Label>
+      <div className="flex items-center rounded-lg border border-neutral-300 bg-white pr-1 dark:border-neutral-700 dark:bg-black">
         <Input
+          id={idFor(label)}
+          style={scheme}
           // The row around this draws the field; the base border + background
           // inside it would read as a frame within a frame. dark:bg-transparent
           // is required — the base sets dark:bg-input/30.
           className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
           value={value}
-          onChangeText={onChange}
-          secureTextEntry={!visible}
-          keyboardAppearance={dark ? 'dark' : 'light'}
+          onChange={(e) => onChange(e.target.value)}
+          type={visible ? 'text' : 'password'}
           autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType={onSubmit ? 'go' : 'default'}
-          onSubmitEditing={() => onSubmit?.()}
+          autoCorrect="off"
+          enterKeyHint={onSubmit ? 'go' : 'enter'}
+          onKeyDown={onKeyDown}
         />
-        <Button variant="link" onPress={() => setVisible((v) => !v)} className="px-2.5 py-2" hitSlop={8}>
+        <Button variant="link" onClick={() => setVisible((v) => !v)} className="px-2.5 py-2">
           <UIText className="text-sm font-semibold">{visible ? 'Hide' : 'Show'}</UIText>
         </Button>
-      </View>
-    </View>
+      </div>
+    </div>
   );
+}
+
+/** A stable DOM id per label, so <Label htmlFor> can point at its field. */
+function idFor(label: string): string {
+  return `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 }
 
 /**
  * A small rotating ring for "this is running right now".
  *
- * Deliberately an icon rather than ActivityIndicator: a spinner next to a title
- * has to sit on the text baseline without nudging the row's height, and the
- * user reads it as a state of that chat, not as a screen-wide loading state.
- * Stops on unmount so a row that scrolls out of the windowed list doesn't leave
- * an animation running.
+ * Deliberately an icon rather than a bare spinner box: next to a title it has
+ * to sit on the text baseline without nudging the row's height, and the user
+ * reads it as a state of that chat, not as a screen-wide loading state.
+ * `animate-spin` needs no mount/unmount bookkeeping — the CSS animation stops
+ * with the element, so a row that scrolls out of a windowed list cannot leave
+ * an animation running. That was the reason the native version kept a ref and
+ * had to stop an Animated.loop on cleanup.
  */
 export function Spinner({ size = 14, color }: { size?: number; color: string }) {
-  const spin = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: 900,
-        // Rotation is a transform, so the native driver can carry it off-thread.
-        // react-native-web has no native driver for transforms and warns on
-        // true, so it animates on the JS thread there instead.
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [spin]);
   return (
-    <Animated.View
-      style={{
-        transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
-      }}
-    >
+    <span className="inline-flex animate-spin" style={{ color }}>
       <LoaderCircle size={size} color={color} />
-    </Animated.View>
+    </span>
   );
 }
 
 export function TypingDots({ dim }: { dim?: boolean }) {
-  const d1 = useRef(new Animated.Value(0)).current;
-  const d2 = useRef(new Animated.Value(0)).current;
-  const d3 = useRef(new Animated.Value(0)).current;
   const { theme } = useThemeValue();
-  const dark = theme === 'dark';
-  useEffect(() => {
-    const pulse = (d: Animated.Value, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(d, { toValue: 1, duration: 350, useNativeDriver: true }),
-          Animated.timing(d, { toValue: 0, duration: 350, useNativeDriver: true }),
-        ]),
-      );
-    const loops = [pulse(d1, 0), pulse(d2, 150), pulse(d3, 300)];
-    loops.forEach((l) => l.start());
-    return () => loops.forEach((l) => l.stop());
-  }, [d1, d2, d3]);
-  const color = dim ? (dark ? '#888' : '#bbb') : (dark ? '#aaa' : '#999');
+  const color = dim ? (theme === 'dark' ? '#888' : '#bbb') : theme === 'dark' ? '#aaa' : '#999';
   return (
-    <View className="flex-row items-center gap-[5px] px-0.5 py-1.5">
-      {[d1, d2, d3].map((d, i) => (
-        <Animated.View
+    <div className="flex items-center gap-[5px] px-0.5 py-1.5">
+      {[0, 1, 2].map((i) => (
+        <span
           key={i}
-          className="h-[7px] w-[7px] rounded-full"
-          style={{ backgroundColor: color, opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }}
+          className="h-[7px] w-[7px] animate-[dot-pulse_700ms_ease-in-out_infinite] rounded-full"
+          // Staggered start so the three dots rise in sequence rather than
+          // pulsing as one bar. The native build got this from three
+          // Animated.timing loops with 0/150/300ms delays.
+          style={{ backgroundColor: color, animationDelay: `${i * 150}ms` }}
         />
       ))}
-    </View>
+    </div>
   );
 }

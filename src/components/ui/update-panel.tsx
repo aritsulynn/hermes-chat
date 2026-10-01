@@ -9,14 +9,6 @@
 // the first dropped request. See src/services/hermes-update.ts for the parsing.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import {
   ArrowDown,
   ChevronDown,
   ChevronUp,
@@ -26,13 +18,14 @@ import {
   Terminal,
   TriangleAlert,
   X,
-} from 'lucide-react-native';
+} from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { asRecord } from '../../utils/ops';
 import { errMsg } from '../../utils/messages';
 import { Button } from './button';
 import { Badge } from './badge';
 import { Alert as UIAlert, AlertDescription } from './alert';
+import { Spinner } from './bits';
 import { Text as UIText } from './text';
 import { ConfirmDialog } from './dialog';
 import * as api from '../../services/api';
@@ -57,16 +50,12 @@ const POLL_MS = 1200;
 /** ~30s of tolerance for the dashboard restarting itself mid-update. */
 const MAX_POLL_ERRORS = 20;
 
-// NativeWind classes per tone, light + dark.
+// Classes per tone, light + dark.
 const CHIP: Record<UpdateTone, string> = {
-  success:
-    'border-emerald-300 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40',
-  warning:
-    'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40',
-  danger:
-    'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40',
-  muted:
-    'border-neutral-300 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800',
+  success: 'border-emerald-300 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40',
+  warning: 'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40',
+  danger: 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40',
+  muted: 'border-neutral-300 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800',
 };
 const CHIP_TEXT: Record<UpdateTone, string> = {
   success: 'text-emerald-700 dark:text-emerald-300',
@@ -112,13 +101,13 @@ export function UpdatePanel() {
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [exitCode, setExitCode] = useState<number | null>(null);
-// Themed replacement for the old Alert.alert confirms.
-const [confirm, setConfirm] = useState<{
-  title: string;
-  body: string;
-  confirmLabel: string;
-  run: () => void;
-} | null>(null);
+  // Themed replacement for the old Alert.alert confirms.
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    run: () => void;
+  } | null>(null);
   const [receipt, setReceipt] = useState<UpdateReceiptSummary | null>(null);
   const [note, setNote] = useState('');
   // While true, new log lines keep the view pinned to the bottom. The user
@@ -130,7 +119,7 @@ const [confirm, setConfirm] = useState<{
 
   const aliveRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const logRef = useRef<ScrollView | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
 
   const ready = conn === 'ready';
@@ -150,19 +139,30 @@ const [confirm, setConfirm] = useState<{
   }, []);
 
   const onLogScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-      const nearBottom =
-        contentOffset.y + layoutMeasurement.height >= contentSize.height - 24;
-      setFollow(nearBottom);
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const el = e.currentTarget;
+      setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 24);
     },
     [setFollow],
   );
 
+  const scrollLogToEnd = useCallback(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
   const jumpToLatest = useCallback(() => {
     setFollow(true);
-    logRef.current?.scrollToEnd({ animated: true });
-  }, [setFollow]);
+    scrollLogToEnd();
+  }, [setFollow, scrollLogToEnd]);
+
+  // The native build used ScrollView's onContentSizeChange to pin the tail as
+  // lines arrived. A DOM scroller has no such event, so this watches the
+  // rendered text instead — same trigger, and only while the user is at the
+  // bottom, so reading earlier output is not yanked away.
+  useEffect(() => {
+    if (atBottomRef.current) scrollLogToEnd();
+  }, [lines, note, scrollLogToEnd]);
 
   const refresh = useCallback(
     async (force: boolean) => {
@@ -337,69 +337,62 @@ const [confirm, setConfirm] = useState<{
   const receiptLabel = receiptOutcomeLabel(receipt);
 
   return (
-    <View className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="min-w-0 flex-1">
-          <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+    <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <UIText className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
             Hermes Update
-          </Text>
-          <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+          </UIText>
+          <UIText className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
             {info?.currentVersion ? `Version ${info.currentVersion}` : 'Check for a new server version'}
-            {info && info.installMethod && info.installMethod !== 'unknown'
-              ? ` · ${info.installMethod}`
-              : ''}
-          </Text>
-        </View>
+            {info && info.installMethod && info.installMethod !== 'unknown' ? ` · ${info.installMethod}` : ''}
+          </UIText>
+        </div>
         <Chip tone={updateStatusTone(info)} label={updateStatusLabel(info)} />
-      </View>
+      </div>
 
       {!!error && (
         <UIAlert icon={TriangleAlert} variant="destructive" className="mt-2">
-          <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
+          <AlertDescription className="whitespace-pre-line text-xs text-red-600 dark:text-red-400">
+            {error}
+          </AlertDescription>
         </UIAlert>
       )}
 
       {info && info.updateAvailable && info.commits.length > 0 && (
-        <View className="mt-3">
+        <div className="mt-3">
           <Button
-            accessibilityRole="button"
-            accessibilityLabel={commitsOpen ? 'Collapse commits' : 'Expand commits'}
-            onPress={() => setCommitsOpen((v) => !v)}
+            aria-label={commitsOpen ? 'Collapse commits' : 'Expand commits'}
+            onClick={() => setCommitsOpen((v) => !v)}
             variant="ghost"
-            className="flex-row items-center gap-1.5 self-start px-0 py-1"
-          >
+            className="self-start px-0 py-1">
             <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
               {info.commits.length} commit{info.commits.length === 1 ? '' : 's'} behind
             </UIText>
-            {commitsOpen ? (
-              <ChevronUp size={14} color="#888" />
-            ) : (
-              <ChevronDown size={14} color="#888" />
-            )}
+            {commitsOpen ? <ChevronUp size={14} color="#888" /> : <ChevronDown size={14} color="#888" />}
           </Button>
-          <View className="gap-1.5">
+          <div className="flex flex-col gap-1.5">
             {(commitsOpen ? info.commits : info.commits.slice(0, 5)).map((c, i) => (
-              <View key={`${c.sha}-${i}`} className="flex-row items-start gap-2">
-                <Text className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
+              <div key={`${c.sha}-${i}`} className="flex items-start gap-2">
+                <UIText className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
                   {(c.sha || '·').slice(0, 7)}
-                </Text>
-                <View className="min-w-0 flex-1">
-                  <Text
+                </UIText>
+                <div className="min-w-0 flex-1">
+                  <UIText
                     numberOfLines={commitsOpen ? undefined : 1}
-                    className="text-[11px] text-neutral-600 dark:text-neutral-300"
-                  >
+                    className="text-[11px] text-neutral-600 dark:text-neutral-300">
                     {c.summary || '(no summary)'}
-                  </Text>
+                  </UIText>
                   {commitsOpen && (!!c.author || !!c.at) && (
-                    <Text className="mt-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+                    <UIText className="mt-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
                       {[c.author, formatCommitDate(c.at)].filter(Boolean).join(' · ')}
-                    </Text>
+                    </UIText>
                   )}
-                </View>
-              </View>
+                </div>
+              </div>
             ))}
-          </View>
-        </View>
+          </div>
+        </div>
       )}
 
       {info && !info.canApply && info.message && (
@@ -407,9 +400,8 @@ const [confirm, setConfirm] = useState<{
           icon={TriangleAlert}
           variant="default"
           iconClassName="text-amber-600"
-          className="mt-3 border-amber-300/70 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30"
-        >
-          <AlertDescription className="text-[11px] text-amber-800 dark:text-amber-300">
+          className="mt-3 border-amber-300/70 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <AlertDescription className="whitespace-pre-line text-[11px] text-amber-800 dark:text-amber-300">
             {info.message}
             {info.updateCommand ? `\n${info.updateCommand}` : ''}
           </AlertDescription>
@@ -417,31 +409,25 @@ const [confirm, setConfirm] = useState<{
       )}
 
       {receiptLabel ? (
-        <View className="mt-3">
+        <div className="mt-3">
           <Chip tone={receiptOutcomeTone(receipt)} label={receiptLabel} />
           {receipt?.finishedAt ? (
-            <Text className="mt-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+            <UIText className="mt-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
               Finished {receipt.finishedAt}
-            </Text>
+            </UIText>
           ) : null}
-        </View>
+        </div>
       ) : null}
 
-      <View className="mt-3 gap-2">
-        <View className="flex-row items-stretch gap-2">
+      <div className="mt-3 flex flex-col gap-2">
+        <div className="flex items-stretch gap-2">
           <Button
-            accessibilityRole="button"
-            accessibilityLabel="Check for updates"
+            aria-label="Check for updates"
             disabled={busy || !ready}
-            onPress={() => void refresh(true)}
+            onClick={() => void refresh(true)}
             variant="outline"
-            className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2"
-          >
-            {checking ? (
-              <ActivityIndicator size="small" />
-            ) : (
-              <RefreshCw size={14} color="#1a73e8" />
-            )}
+            className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2">
+            {checking ? <Spinner size={14} color="#1a73e8" /> : <RefreshCw size={14} color="#1a73e8" />}
             <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
               Check for updates
             </UIText>
@@ -449,96 +435,75 @@ const [confirm, setConfirm] = useState<{
 
           {canApply && (
             <Button
-              accessibilityRole="button"
-              accessibilityLabel="Update Hermes now"
+              aria-label="Update Hermes now"
               disabled={starting || running}
-              onPress={applyUpdate}
-              variant="default"
-              className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2"
-            >
+              onClick={applyUpdate}
+              className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2">
               {starting ? (
-                <ActivityIndicator size="small" color={dark ? '#111' : '#fff'} />
+                <Spinner size={14} color={dark ? '#111' : '#fff'} />
               ) : (
                 <Download size={14} color={dark ? '#111' : '#fff'} />
               )}
-              <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">Update now</UIText>
+              <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
+                Update now
+              </UIText>
             </Button>
           )}
-        </View>
+        </div>
 
         <Button
-          accessibilityRole="button"
-          accessibilityLabel="Restart gateway"
+          aria-label="Restart gateway"
           disabled={!ready || running}
-          onPress={restartGateway}
+          onClick={restartGateway}
           variant="outline"
-          className="gap-1.5 self-stretch rounded-xl px-3 py-2"
-        >
+          className="self-stretch gap-1.5 rounded-xl px-3 py-2">
           <RotateCw size={14} color="#666" />
           <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
             Restart gateway
           </UIText>
         </Button>
-      </View>
+      </div>
 
       {activeAction && (
-        <View
-          className="mt-3 overflow-hidden rounded-xl border border-neutral-800 bg-[#0f1115]"
-          style={{ maxHeight: 280 }}
-        >
-          <View className="flex-row items-center justify-between border-b border-neutral-700/60 px-3 py-2">
-            <View className="min-w-0 flex-1 flex-row items-center gap-2">
+        <div className="relative mt-3 max-h-[280px] overflow-hidden rounded-xl border border-neutral-800 bg-[#0f1115]">
+          <div className="flex items-center justify-between border-b border-neutral-700/60 px-3 py-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <Terminal size={13} color="#9aa0a6" />
-              <Text numberOfLines={1} className="font-mono text-[11px] text-neutral-200">
+              <UIText numberOfLines={1} className="font-mono text-[11px] text-neutral-200">
                 {activeAction}
-              </Text>
+              </UIText>
               <Chip tone={actionOutcomeTone(running, exitCode)} label={actionOutcomeLabel(running, exitCode)} />
-            </View>
+            </div>
             <Button
-              accessibilityRole="button"
-              accessibilityLabel="Close update log"
-              onPress={() => {
+              aria-label="Close update log"
+              onClick={() => {
                 stopPolling();
                 setActiveAction(null);
               }}
-              hitSlop={8}
               variant="ghost"
               size="icon"
-              className="h-auto w-auto p-1.5"
-            >
+              className="h-auto w-auto p-1.5">
               <X size={14} color="#9aa0a6" />
             </Button>
-          </View>
-          <ScrollView
+          </div>
+          <div
             ref={logRef}
-            nestedScrollEnabled
-            scrollEventThrottle={16}
             onScroll={onLogScroll}
-            style={{ maxHeight: 230 }}
-            contentContainerStyle={{ padding: 10, paddingBottom: 28 }}
-            onContentSizeChange={() => {
-              // Only pin to the tail while the user is already at the bottom.
-              if (atBottomRef.current) logRef.current?.scrollToEnd({ animated: false });
-            }}
-          >
-            <Text selectable className="font-mono text-[11px] leading-4 text-neutral-300">
+            className="max-h-[230px] overflow-y-auto overscroll-contain px-2.5 py-2.5 pb-7">
+            <UIText className="select-text whitespace-pre-wrap font-mono text-[11px] leading-4 text-neutral-300">
               {lines.length ? lines.join('\n') : note || 'Starting…'}
-            </Text>
-          </ScrollView>
+            </UIText>
+          </div>
           {!atBottom && (
             <Button
-              accessibilityRole="button"
-              accessibilityLabel="Jump to latest log line"
-              onPress={jumpToLatest}
-              hitSlop={8}
-              variant="default"
-              size="icon"
+              aria-label="Jump to latest log line"
+              onClick={jumpToLatest}
               className="absolute bottom-2.5 right-2.5 h-8 w-8 rounded-full"
-            >
+              size="icon">
               <ArrowDown size={15} color="#fff" />
             </Button>
           )}
-        </View>
+        </div>
       )}
 
       <ConfirmDialog
@@ -552,6 +517,6 @@ const [confirm, setConfirm] = useState<{
           if (!o) setConfirm(null);
         }}
       />
-    </View>
+    </div>
   );
 }
