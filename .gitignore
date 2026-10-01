@@ -3,23 +3,9 @@
 # dependencies
 node_modules/
 
-# Expo
-.expo/
+# build output
 dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
+*.tsbuildinfo
 
 # agent tooling output (screenshots from the browser panel)
 .openchamber/
@@ -29,21 +15,14 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
-.DS_Store
-*.pem
-
-# local env files
+# local env files — the gateway host is entered by the user, not configured here
 .env*
 !.env.example
 !.env.sample
 
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
+# macOS
+.DS_Store
+*.pem
 
 # working docs (manual QA plans, audits, refactor plans) — local only
 docs/

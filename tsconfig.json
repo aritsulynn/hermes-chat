@@ -1,19 +1,42 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    // vite/client for `import.meta.env` + `*.css` modules; node for
+    // vite.config.ts, which needs `node:path` to resolve the `@/` alias.
+    "types": ["vite/client", "node"],
+
     "strict": true,
+    "noEmit": true,
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // `paths` is relative to this file; `baseUrl` is gone (deprecated in TS 6).
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "nativewind-env.d.ts"
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+  // STAGED. This is the migration's definition of "already ported": every
+  // excluded folder still imports react-native/expo-*, so including it would
+  // drown the signal in "cannot find module 'react-native'". Each port phase
+  // drops its folder from this list, which is also what makes `npm run
+  // typecheck` a meaningful gate again instead of a wall of known errors.
+  // Ends up with the list deleted entirely.
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/app",
+    "src/components",
+    "src/features",
+    "src/hooks",
+    "src/store"
   ]
 }

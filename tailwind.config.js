@@ -1,12 +1,16 @@
-const { hairlineWidth } = require('nativewind/theme');
+import tailwindcssAnimate from 'tailwindcss-animate';
 
 /** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: ['./src/app/**/*.{js,jsx,ts,tsx}', './src/**/*.{js,jsx,ts,tsx}'],
-  presets: [require('nativewind/preset')],
-  // 'class' (not the tailwind default 'media'): the app sets no dark:
-  // variants, and 'media' makes react-native-css-interop throw
-  // "Cannot manually set color scheme..." on web whenever <head> mutates.
+export default {
+  content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
+  // The NativeWind preset is gone: this is now the only stylesheet pipeline.
+  // `hairlineWidth()` was the other thing that preset provided, and it is just
+  // a 1px hairline — spelled out below rather than imported.
+  //
+  // `darkMode: 'class'` is no longer a workaround for react-native-css-interop
+  // (that package does not exist here any more), but the choice itself is kept:
+  // the store owns the theme and toggles `.dark` on <html> explicitly, which is
+  // what lets a user override the OS preference.
   darkMode: 'class',
   theme: {
     extend: {
@@ -53,12 +57,12 @@ module.exports = {
         sm: 'calc(var(--radius) - 4px)',
       },
       borderWidth: {
-        hairline: hairlineWidth(),
+        hairline: '1px',
       },
     },
   },
   future: {
     hoverOnlyWhenSupported: true,
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [tailwindcssAnimate],
 };

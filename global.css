@@ -6,9 +6,9 @@
    `bg-background` / `text-muted-foreground` resolve to these via
    `hsl(var(--token))` in tailwind.config.js.
 
-   The dark palette lives under `.dark:root` (not `.dark`) because NativeWind
-   sets the scheme on the root element. Keep this file and src/theme.ts in
-   sync — theme.ts mirrors these values as `hsl()` strings for inline styles. */
+   The dark palette lives under `.dark` on <html>. Keep this file and
+   src/theme.ts in sync — theme.ts mirrors these values as `hsl()` strings for
+   inline styles. */
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -37,7 +37,7 @@
     --chart-5: 27 87% 67%;
   }
 
-  .dark:root {
+  .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
     --card: 0 0% 3.9%;
@@ -62,12 +62,38 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+
+  /* The app fills the viewport and scrolls its own panes (chat log, file list),
+     not the document — the same shape the native app had. */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    /* Prevents iOS Safari from inflating text in landscape, and stops the
+       rubber-band scroll chaining from dragging the page behind a sheet. */
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior: none;
+  }
 }
 
-/* Web only: kill the browser's default focus outline on text fields
-   (react-native-web renders TextInput as input/textarea). Borders
-   from classNames already signal focus. */
+/* Text fields get their focus state from the border (Tailwind's
+   focus-visible:ring classes in the reusables), so the UA outline is redundant
+   on pointer interaction. It is *not* redundant for keyboard users, which the
+   native build never had to think about — so the outline comes back as soon as
+   the focus is keyboard-driven. */
 input:focus,
 textarea:focus {
   outline: none;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+[role='textbox']:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
 }
