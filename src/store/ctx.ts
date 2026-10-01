@@ -34,7 +34,6 @@ import type { LiveRosterSlice } from './slices/useLiveRoster';
 import type { LiveSessionsSlice } from './slices/useLiveSessions';
 import type { LiveTurnSlice } from './slices/useLiveTurn';
 import type { ModelsSlice } from './slices/useModels';
-import type { NotificationResponsesSlice } from './slices/useNotificationResponses';
 import type { NotificationsSlice } from './slices/useNotifications';
 import type { ProfileOpsSlice } from './slices/useProfileOps';
 import type { QueueSlice } from './slices/useQueue';
@@ -69,7 +68,6 @@ export interface StoreCtx
     LiveSessionsSlice,
     LiveTurnSlice,
     ModelsSlice,
-    NotificationResponsesSlice,
     NotificationsSlice,
     ProfileOpsSlice,
     QueueSlice,
@@ -126,8 +124,6 @@ export interface StoreCtx
   setToolLine: Setter<string | null>;
   editingRowId: number | null;
   setEditingRowId: Setter<number | null>;
-  /** Whether the password is persisted for the next launch. */
-  rememberPw: boolean;
 
   // ── the provider's cross-cutting helpers ──
   latest: LatestRef;

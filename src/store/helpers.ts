@@ -1,12 +1,10 @@
 // Store helpers — pure, non-React logic extracted from hooks/app-store.tsx:
 // timeouts, profile/session keys, usage merging, context hydration, attachment
 // uploads, and history→transcript conversion.
-import { readAsStringAsync } from 'expo-file-system/legacy';
 import * as api from '../services/api';
 import { opsGet as dashboardOpsGet } from '../services/dashboard';
 import { DEFAULT_PROFILE, MAX_UPLOAD_BYTES } from '../services/constants';
 import type { AskInboxEntry } from '../services/ask-inbox';
-import type { HermesNotificationResponse } from '../services/notifications';
 import type { GatewayWs, HistoryMessage, ServerAsk } from '../services/gateway-ws';
 import { cleanThinking, nid } from '../utils/messages';
 import type { Attachment, UiMessage } from '../utils/messages';
@@ -100,16 +98,13 @@ export function serverAskFromInbox(entry: AskInboxEntry): ServerAsk {
   };
 }
 
-export function notificationResponseKey(response: HermesNotificationResponse): string {
-  const data = response.data ?? {};
-  return JSON.stringify([
-    String(data.connectionId ?? ''),
-    String(data.askKey ?? ''),
-    String(data.rpcId ?? ''),
-    response.actionIdentifier,
-    String(response.userText ?? ''),
-  ]);
-}
+// `notificationResponseKey` lived here — it keyed a notification reply by
+// (connection, ask, rpc, action, text) so a response could be sent to the
+// gateway exactly once even across reconnects. It went with the reply flow
+// itself; see the "Scope note" at the top of services/notifications.ts. If Web
+// Push ever lands, this is the dedup key it needs, and the
+// "Notification replies use the original request id exactly once" invariant in
+// AGENTS.md is what it would have to keep satisfying.
 
 /** Keep the raw gateway usage shape in state; `readUsage` normalizes at render. */
 export function mergeUsageState(
@@ -180,15 +175,6 @@ export async function blobToBase64(uri: string): Promise<string> {
   });
 }
 
-export async function attachmentBytes(a: Attachment): Promise<string> {
-  try {
-    // file:// (or content://) URI straight off the picker.
-    return await readAsStringAsync(a.uri, { encoding: 'base64' });
-  } catch {
-    return blobToBase64(a.uri); // blob: URIs (web)
-  }
-}
-
 export async function uploadAttachments(
   files: Attachment[],
   gateway: GatewayWs,
@@ -201,7 +187,10 @@ export async function uploadAttachments(
     const f = files[index];
     const name = f.name.replace(/[\\/]/g, '_') || `upload-${Date.now()}-${index}`;
     const image = isImageAttachment(f);
-    const b64 = await attachmentBytes(f);
+    // Attachments come from an <input type="file">, so the uri is always a
+    // blob:/data: URL now. This used to try a native file:// read first and
+    // fall back to this; the fallback was the only path that ever ran on web.
+    const b64 = await blobToBase64(f.uri);
     if (!b64) throw new Error(`${name}: could not read the file`);
     if (b64.length > MAX_UPLOAD_BYTES * 1.4) throw new Error(`${name}: too large (10 MB max)`);
     const dataUrl = `data:${f.mime || 'application/octet-stream'};base64,${b64}`;

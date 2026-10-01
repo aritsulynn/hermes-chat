@@ -1,54 +1,76 @@
-// Theme slice — light/dark/system preference, NativeWind color-scheme sync,
+// Theme slice — light/dark/system preference, `.dark` class sync on <html>,
 // and the saved-preference hydration used during boot.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useColorScheme as useSystemScheme } from 'react-native';
-import { useColorScheme as useNWColorScheme } from 'nativewind';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { saveTheme } from '../../services/connection';
 import type { ResolvedTheme, Theme } from '../../services/connection';
+
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/**
+ * The OS preference, as a live subscription. It has to be a subscription and
+ * not a read at mount: the user can flip their system theme while the tab is
+ * open, and `themeMode === 'system'` has to follow it.
+ *
+ * `matches` is a boolean, so the snapshot is referentially stable and
+ * useSyncExternalStore will not loop on it.
+ */
+function subscribeToSystemScheme(onChange: () => void): () => void {
+  const mql = globalThis.matchMedia?.(DARK_QUERY);
+  if (!mql) return () => {};
+  // Safari below 14 only has the deprecated add/removeListener pair.
+  if (typeof mql.addEventListener === 'function') {
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }
+  mql.addListener(onChange);
+  return () => mql.removeListener(onChange);
+}
+
+function readSystemScheme(): boolean {
+  try {
+    return globalThis.matchMedia?.(DARK_QUERY).matches ?? false;
+  } catch {
+    return false;
+  }
+}
 
 export interface ThemeSlice {
   themeMode: Theme;
   theme: ResolvedTheme;
   setTheme: (t: Theme) => void;
-  /** Apply the persisted preference during boot (also syncs NativeWind). */
+  /** Apply the persisted preference during boot (also syncs the `.dark` class). */
   hydrateTheme: (saved?: Theme | null) => void;
 }
 
 export function useThemeSlice(): ThemeSlice {
-  const systemScheme = useSystemScheme();
-  const systemTheme: ResolvedTheme = systemScheme === 'dark' ? 'dark' : 'light';
+  const systemDark = useSyncExternalStore(subscribeToSystemScheme, readSystemScheme, () => false);
+  const systemTheme: ResolvedTheme = systemDark ? 'dark' : 'light';
   // First install follows the device. An explicit saved Light/Dark choice wins.
   const [themeMode, setThemeMode] = useState<Theme>('system');
   const theme: ResolvedTheme = themeMode === 'system' ? systemTheme : themeMode;
-  const { setColorScheme } = useNWColorScheme();
 
-  // react-native-css-interop's colorScheme.set() calls Appearance.setColorScheme()
-  // UNCONDITIONALLY — no equality check — and every call invalidates every
-  // appearance-dependent style, i.e. all 841 `dark:` sites. setTheme applies the
-  // scheme eagerly (so the className channel starts moving in the same frame as
-  // the press) and the effect below applies it again once React has re-rendered,
-  // so a single toggle used to invalidate the whole tree twice. Remember what we
-  // last pushed and skip the redundant call.
+  // Every `dark:` variant in the app resolves against `.dark` on <html>, so one
+  // redundant classList write means a style recalc across the whole document.
+  // setTheme applies the class eagerly (so the palette starts moving in the same
+  // frame as the press) and the effect below applies it again once React has
+  // re-rendered, so without this guard one toggle would recalc twice.
   const appliedSchemeRef = useRef<ResolvedTheme | null>(null);
-  const applyScheme = useCallback(
-    (next: ResolvedTheme) => {
-      if (appliedSchemeRef.current === next) return;
-      appliedSchemeRef.current = next;
-      try {
-        setColorScheme(next);
-      } catch (e) {
-        console.warn('[theme] setColorScheme failed', e);
-      }
-    },
-    [setColorScheme],
-  );
+  const applyScheme = useCallback((next: ResolvedTheme) => {
+    if (appliedSchemeRef.current === next) return;
+    appliedSchemeRef.current = next;
+    try {
+      document.documentElement.classList.toggle('dark', next === 'dark');
+    } catch (e) {
+      console.warn('[theme] could not toggle the .dark class', e);
+    }
+  }, []);
 
   const setTheme = useCallback(
     (t: Theme) => {
       setThemeMode(t);
-      // Resolve immediately so the className channel starts moving in the same
-      // frame as the press; the effect below keeps it synced if the device
-      // appearance changes later.
+      // Resolve immediately so the classList write lands in the same frame as
+      // the press; the effect below keeps it synced if the OS preference
+      // changes later.
       applyScheme(t === 'system' ? systemTheme : t);
       void saveTheme(t).catch((e: unknown) => console.warn('[theme] saveTheme failed', e));
     },

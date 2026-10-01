@@ -1,6 +1,6 @@
 // Profile-ops slice — switchProfile (workspace move + reset) and branchSession.
 import { useCallback } from 'react';
-import { router } from 'expo-router';
+import { navigate } from '../nav';
 import type { HistoryMessage } from '../../services/gateway-ws';
 import { connectionScope, getModel, saveActiveProfile, saveLastSession } from '../../services/connection';
 import { CHAT_HISTORY_PAGE, CHAT_WINDOW_TRIM_KEEP } from '../../services/constants';
@@ -190,7 +190,7 @@ export function useProfileOpsSlice(ctx: StoreCtx): ProfileOpsSlice {
       } finally {
         if (activeProfileRef.current === next && profileEpochRef.current === epoch) {
           setBusy(false);
-          router.replace('/chat');
+          navigate('/chat', { replace: true });
         }
       }
     },
@@ -274,7 +274,7 @@ export function useProfileOpsSlice(ctx: StoreCtx): ProfileOpsSlice {
       hydrateSessionContext(g, liveId);
       draftKeyRef.current = owner;
       setInputRaw(draftsRef.current.get(owner) ?? '');
-      router.push('/chat');
+      navigate('/chat');
     } catch (e: any) {
       if (
         connectionEpochRef.current === connectionEpoch &&

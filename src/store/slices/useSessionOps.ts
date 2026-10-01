@@ -1,6 +1,6 @@
 // Session-ops slice — openSession (resume) and newSession (create).
 import { useCallback } from 'react';
-import { router } from 'expo-router';
+import { navigate } from '../nav';
 import type { HistoryMessage } from '../../services/gateway-ws';
 import { getSessionMessages } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
@@ -233,7 +233,7 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
         editRowRef.current = null;
         setEditingRowId(null);
         setSubagents([]);
-        router.push('/chat');
+        navigate('/chat');
       } catch (e) {
         if (
           !isLatestOpen() ||
@@ -350,7 +350,7 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       setUsageInfo(null);
       liveTools.current.clear();
       liveToolAid.current = null;
-      router.push('/chat');
+      navigate('/chat');
     } catch (e) {
       if (
         isLatestOpen() &&

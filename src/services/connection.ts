@@ -4,24 +4,30 @@ import { DEFAULT_PROFILE } from './constants';
 export { connectionScope, normalizeConnectionBase } from './connection-scope';
 export { DEFAULT_PROFILE } from './constants';
 
-// Connection + credential vault. Web storage is NOT encrypted: the password and
-// session cookie sit in plain `localStorage`, readable by any script on this
-// origin. The native build kept secrets in the OS keychain, which had no web
-// equivalent — this is a deliberate downgrade, not an oversight.
+// Connection + credential vault.
 //
-// It is mitigated by scoping every secret key to host+username (see
-// `scopedSecretKey`), so logging into a second dashboard cannot leak across
-// accounts, and by `forgetAll`/`clearPassword` wiping both the scoped and the
-// legacy unscoped key. Treat the "remember password" toggle as opt-in storage
-// of a shared secret, and prefer the cookie flow when a gateway offers it.
+// ── What is actually sensitive here ──────────────────────────────────────────
+// `localStorage` is not encrypted, so the rule is: nothing secret goes in it.
+// The session cookie is never stored — the browser keeps it in its own jar
+// where JS cannot read it, and this module persists only the string 'web-jar'
+// as a marker so boot knows a session *might* exist and should try a silent
+// reconnect. The password is never stored either: the connect pipeline calls
+// `clearPassword` on every boot (see useAppStore) and gates the "remember
+// password" toggle off, so the `K_PASSWORD` keys below exist only to erase
+// values written by older builds.
+//
+// What *is* written: host, username, theme, last session, per-profile model.
+// All of it is low-sensitivity, and all of it is scoped to host+username (see
+// `scopedSecretKey`) so switching dashboards cannot leak one account's model
+// choice or last-opened session into another.
 
 // In-memory read-through cache. It is no longer a speed optimisation — the
 // native build needed it because keychain I/O is slow, and `localStorage` is
 // not. It exists because `localStorage.setItem` *throws* in some conditions
-// (Safari private browsing, blocked third-party storage, quota). The promise
-// this file makes is "storage is best-effort, never fail login over it", and
-// that promise is only keepable if a value that failed to persist can still be
-// read back for the rest of the session. Writes update the cache synchronously
+// (Safari private browsing, blocked site data, quota). The promise this file
+// makes is "storage is best-effort, never fail the app over it", and that
+// promise is only keepable if a value that failed to persist can still be read
+// back for the rest of the session. Writes update the cache synchronously
 // before the physical write is attempted; deletes evict it.
 const memCache = new Map<string, string | null>();
 

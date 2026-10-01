@@ -3,10 +3,38 @@
 // open/resume/new/switch and the send path also write drafts and input.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import * as Clipboard from 'expo-clipboard';
 import { profileSessionKey } from '../helpers';
 import type { StoreCtx } from '../ctx';
 import type { Attachment } from '../../utils/messages';
+
+/**
+ * `navigator.clipboard` is undefined outside a secure context, and this app is
+ * routinely served from a plain-HTTP gateway on a LAN address
+ * (http://192.168.x.x:9119) — which is not one. The execCommand path is
+ * deprecated but is the only thing that works there, and a copy button that
+ * silently does nothing on the exact deployment people use is worse than a few
+ * lines of legacy code. Returns whether the copy landed, so the caller only
+ * shows "Copied" when it did.
+ */
+async function writeToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const el = document.createElement('textarea');
+    el.value = text;
+    // Off-screen but still focusable, or the selection is empty and nothing copies.
+    el.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+    document.body.appendChild(el);
+    el.select();
+    const ok = document.execCommand('copy');
+    el.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 export interface ComposerSlice {
   input: string;
@@ -56,12 +84,10 @@ export function useComposerSlice({
     [],
   );
   const copyText = useCallback(async (id: string, text: string) => {
-    try {
-      await Clipboard.setStringAsync(text);
-      setCopiedId(id);
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => setCopiedId(null), 1500);
-    } catch {}
+    if (!(await writeToClipboard(text))) return;
+    setCopiedId(id);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopiedId(null), 1500);
   }, []);
 
   return {

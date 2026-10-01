@@ -7,7 +7,6 @@
 // consumed via `useApp()` (re-exported from hooks/app-store.tsx).
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Platform } from 'react-native';
 import {
   checkMe,
   getSessionMessages,
@@ -59,7 +58,6 @@ import { useComposerSlice } from './slices/useComposer';
 import { useSessionsSlice } from './slices/useSessions';
 import { useAskInboxSlice } from './slices/useAskInbox';
 import { useAskRepliesSlice } from './slices/useAskReplies';
-import { useNotificationResponsesSlice } from './slices/useNotificationResponses';
 import { useToolRefreshSlice } from './slices/useToolRefresh';
 import { useLiveTurnSlice } from './slices/useLiveTurn';
 import { useCommandsSlice } from './slices/useCommands';
@@ -122,7 +120,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [host, username, setPasswordForScope],
   );
-  const [rememberPw] = useState(true);
   useEffect(() => {
     const nextScope = connectionScope(host, username);
     if (passwordScopeRef.current && passwordScopeRef.current !== nextScope) {
@@ -313,7 +310,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToolLine,
     editingRowId,
     setEditingRowId,
-    rememberPw,
     latest,
     acceptRotatedCookie,
     refreshProfiles,
@@ -429,7 +425,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     askInboxRef,
     resolveAskOwner,
     applyAskInbox,
-    dismissAskNotifications,
     markAskStatus,
     markAskByRpc,
     bindAskOwner,
@@ -710,29 +705,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     answerValue,
     answerApproval,
     dismissAsk,
-    confirmSensitiveNotification,
   } = add(useAskRepliesSlice(ctx));
-  const {
-    pendingNotificationResponsesRef,
-    notificationDrainRef,
-    notificationActionInFlightRef,
-    askHydrationRef,
-    handledNotificationResponsesRef,
-    queueNotificationResponse,
-    clearQueuedNotificationResponse,
-    handleNotificationResponse,
-    drainPendingNotificationResponse,
-  } = add(useNotificationResponsesSlice(ctx));
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const c = await loadConnection();
-        if (Platform.OS === 'web') await clearPassword(c.host, c.username);
+        // Assert, not migrate: nothing on this platform writes a password, so
+        // this can only ever be clearing a value left by an older build. It is
+        // kept because "no secret is ever read back out of localStorage" is a
+        // property worth enforcing on every boot rather than a one-time fix.
+        await clearPassword(c.host, c.username);
         if (cancelled) return;
         setHost(c.host);
         setUsername(c.username);
-        // Prefill saved password so the user never retypes it.
+        // Prefill: always empty on web — the browser's cookie jar is the
+        // session, and there is no stored password to restore.
         const savedPw = await getPassword(c.host, c.username).catch(() => null);
         if (cancelled) return;
         const accountScope = connectionScope(c.host, c.username);

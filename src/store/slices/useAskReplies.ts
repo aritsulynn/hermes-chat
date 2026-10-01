@@ -1,8 +1,7 @@
 // Ask-replies slice — sending a reply to a server ask (foreground or inbox),
 // opening the owning session, and the biometric confirm for sensitive asks.
 import { useCallback } from 'react';
-import * as LocalAuth from 'expo-local-authentication';
-import { router } from 'expo-router';
+import { navigate } from '../nav';
 import { findAsk, findAskByRpc } from '../../services/ask-inbox';
 import type { AskInboxEntry } from '../../services/ask-inbox';
 import { connectionScope } from '../../services/connection';
@@ -19,7 +18,6 @@ export interface AskRepliesSlice {
   answerValue: (value: string) => void;
   answerApproval: (choice: string) => boolean;
   dismissAsk: () => void;
-  confirmSensitiveNotification: () => Promise<boolean>;
 }
 
 export function useAskRepliesSlice({
@@ -76,7 +74,7 @@ export function useAskRepliesSlice({
     if (entry.status !== 'pending' && entry.status !== 'answering') return;
     if (!entry.owner.resolved || !entry.owner.storedSessionId) {
       setError('This background request has no resolved profile yet. Open its session to answer it safely.');
-      router.push('/asks' as any);
+      navigate('/asks');
       return;
     }
     if (entry.owner.profile !== activeProfileRef.current) {
@@ -107,7 +105,7 @@ export function useAskRepliesSlice({
       }
       const refreshed = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId) ?? entry;
       setAsk(serverAskFromInbox(refreshed));
-      router.push('/chat');
+      navigate('/chat');
     } catch (e) {
       setError(errMsg(e));
     }
@@ -138,18 +136,13 @@ export function useAskRepliesSlice({
 
   const dismissAsk = useCallback(() => setAsk(null), [setAsk]);
 
-  const confirmSensitiveNotification = useCallback(async (): Promise<boolean> => {
-    try {
-      const [hasHardware, enrolled] = await Promise.all([LocalAuth.hasHardwareAsync(), LocalAuth.isEnrolledAsync()]);
-      if (!hasHardware || !enrolled) return false;
-      const result = await LocalAuth.authenticateAsync({
-        promptMessage: 'Confirm Hermes request',
-      });
-      return result.success === true;
-    } catch {
-      return false;
-    }
-  }, []);
+  // `confirmSensitiveNotification` used to sit here: a biometric gate in front
+  // of answering an ask from a notification. Its only caller was the
+  // notification-reply flow, so it went with it. The browser's equivalent is
+  // WebAuthn (`navigator.credentials.get` against a passkey), which is a
+  // different mechanism with a server-side challenge and an origin-bound RP id
+  // — not a port of `expo-local-authentication`. It belongs to the same
+  // Web Push backlog item as the reply flow it guarded.
 
   return {
     respondToInbox,
@@ -160,6 +153,5 @@ export function useAskRepliesSlice({
     answerValue,
     answerApproval,
     dismissAsk,
-    confirmSensitiveNotification,
   };
 }
