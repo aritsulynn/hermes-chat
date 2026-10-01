@@ -468,7 +468,11 @@ export function LogsScreen() {
           {/* Status Bar info & quick severity toggles */}
           <div className="mt-3 flex items-center justify-between">
             <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
-              Showing <UIText className="font-semibold text-neutral-700 dark:text-neutral-200">{stats.total}</UIText> lines
+              {/* A <span>, not another UIText: this component renders a <div>,
+                  and a div inside a div breaks the sentence across three
+                  lines. Native's <Text> nested inline, which is why this read
+                  as one string there. */}
+              Showing <span className="font-semibold text-neutral-700 dark:text-neutral-200">{stats.total}</span> lines
             </UIText>
             <div className="flex items-center" style={{ gap: 8 }}>
               {stats.errorCount> 0 && (
