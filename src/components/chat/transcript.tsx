@@ -93,6 +93,12 @@ export interface TranscriptProps {
    * bottom padding at all.
    */
   contentStyle?: CSSProperties;
+  /**
+   * The scroller element, for callers that need to measure something off it —
+   * the chat screen reads the reserved scrollbar gutter this way, and its ref is
+   * a callback so it survives the scroller being in a conditional branch.
+   */
+  scrollerRef?: (el: HTMLElement | null) => void;
 }
 
 export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function Transcript(
@@ -109,6 +115,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     className,
     contentClassName,
     contentStyle,
+    scrollerRef,
   },
   ref,
 ) {
@@ -173,6 +180,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       // that fires on a height change.
       ref={(el) => {
         scroller.current = el;
+        scrollerRef?.(el);
         if (!el) return;
         // This is the scroller's box, as opposed to the content box observed
         // below. Watching only the content would never report a height change,
@@ -183,7 +191,13 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         onViewportResize?.(el.clientHeight);
         return () => ro.disconnect();
       }}
-      className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${className ?? ''}`}
+      // `scrollbar-gutter: stable` reserves the scrollbar's width permanently,
+      // including for an overlay scrollbar that otherwise draws on top of
+      // whatever is layered over the list. The chat composer sits over the
+      // right edge of this scroller, so without a reserved gutter the composer
+      // painted over the scroll control: the scrollbar was still there and
+      // still draggable, just invisible.
+      className={`min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] ${className ?? ''}`}
       onPointerDown={() => onInteractStart?.()}
       // pointercancel is not optional here: a drag that leaves the window, or a
       // scrollbar grab the browser takes over, never delivers pointerup — and

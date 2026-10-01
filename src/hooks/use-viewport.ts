@@ -4,7 +4,7 @@
 // of the window and its composer listens to the visual viewport, so both have
 // to react to a resize, a rotation, or a mobile browser's address bar
 // collapsing.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface ViewportSize {
   width: number;
@@ -47,4 +47,54 @@ export function useViewportSize(): ViewportSize {
  */
 export function blurActiveElement(): void {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+}
+
+/**
+ * Width of the scrollbar gutter a scroller has reserved, in px, plus the ref to
+ * put on that scroller.
+ *
+ * `scrollbar-gutter: stable` holds that space open whether or not the scrollbar
+ * is currently showing, which is what lets an overlay stop sitting on top of the
+ * scroll control. The reserved width is *not* a constant: it is 0 on a platform
+ * with overlay scrollbars until the gutter is asked for, ~15px with classic ones
+ * on Linux and Windows, and 0 on macOS. So it has to be measured rather than
+ * hardcoded, and re-measured on resize because the OS scrollbar preference can
+ * change between sessions.
+ *
+ * This returns a *callback ref* rather than taking one, and that matters. The
+ * scroller lives in a conditional branch of the chat screen's render, so a
+ * plain ref plus a mount effect measures nothing: the effect runs during the
+ * first render, that render has no scroller, and the value is 0 forever. A
+ * callback ref fires when the element actually attaches, and again on resize.
+ *
+ *   const { scrollerRef, gutter } = useScrollbarGutter();
+ *   <div ref={scrollerRef} className="[scrollbar-gutter:stable]" />
+ */
+export function useScrollbarGutter(): { scrollerRef: (el: HTMLElement | null) => void; gutter: number } {
+  const [gutter, setGutter] = useState(0);
+  // A callback ref cannot return a cleanup, so the listener it installs is torn
+  // down here instead: on the next attach, and on unmount.
+  const attached = useRef<{ el: HTMLElement; onResize: () => void } | null>(null);
+  useEffect(
+    () => () => {
+      attached.current?.el.removeEventListener('resize', attached.current.onResize);
+      attached.current = null;
+    },
+    [],
+  );
+  const scrollerRef = useCallback((el: HTMLElement | null) => {
+    attached.current?.el.removeEventListener('resize', attached.current.onResize);
+    attached.current = null;
+    if (!el) {
+      setGutter(0);
+      return;
+    }
+    // The gutter is fixed once the element exists and does not vary with its
+    // content, so the initial read plus a resize listener is enough.
+    const read = () => setGutter(el.offsetWidth - el.clientWidth);
+    read();
+    el.addEventListener('resize', read);
+    attached.current = { el, onResize: read };
+  }, []);
+  return { scrollerRef, gutter };
 }

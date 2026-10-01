@@ -8,7 +8,7 @@ import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
 import { Transcript } from '../../components/chat/transcript';
 import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
 import type { TranscriptHandle } from '../../components/chat/transcript';
-import { blurActiveElement, useViewportSize } from '../../hooks/use-viewport';
+import { blurActiveElement, useScrollbarGutter, useViewportSize } from '../../hooks/use-viewport';
 import {
   FALLBACK_PROVIDERS,
   applySlashCompletion,
@@ -309,6 +309,10 @@ export function ChatScreen() {
   );
 
   const listRef = useRef<TranscriptHandle>(null);
+  // The reserved scrollbar gutter, and the ref that measures it. The composer is
+  // layered over the scroller's right edge, so it has to stop short of the
+  // gutter or it hides the scroll control.
+  const { scrollerRef, gutter } = useScrollbarGutter();
   // Latest transcript for stable callbacks (tool expand → REST result fill).
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -1196,6 +1200,7 @@ export function ChatScreen() {
             prepend correction are unchanged and still driven from here. */}
         <Transcript
           ref={listRef}
+          scrollerRef={scrollerRef}
           contentClassName={listContentClass}
           contentStyle={listContentStyle}
           onStartReached={handleStartReached}
@@ -1225,7 +1230,17 @@ export function ChatScreen() {
         <div
           ref={observeDock}
           className="pointer-events-none"
-          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: kbH + kbGap, backgroundColor: 'transparent' }}
+          // `right: gutter` keeps the composer, the status strip and the panels
+          // out of the scrollbar's reserved lane. Measured rather than assumed:
+          // it is 0 on macOS overlay scrollbars and ~15px on a classic one.
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: gutter,
+            bottom: 0,
+            paddingBottom: kbH + kbGap,
+            backgroundColor: 'transparent',
+          }}
         >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
