@@ -10,7 +10,7 @@
 //
 // Answering an ask is therefore **in-app only** — Ask Inbox, reachable from
 // More → Ask Inbox. That is a real feature regression, tracked as the Web Push
-// backlog item; see the "Notifications" section of AGENTS.md. It is not a bug.
+// backlog item. It is not a bug.
 //
 // Notifications only fire while the tab is in the BACKGROUND: in the foreground
 // the ask sheet / transcript already show the same thing, and a banner would

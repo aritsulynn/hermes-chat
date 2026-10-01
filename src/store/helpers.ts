@@ -103,8 +103,8 @@ export function serverAskFromInbox(entry: AskInboxEntry): ServerAsk {
 // gateway exactly once even across reconnects. It went with the reply flow
 // itself; see the "Scope note" at the top of services/notifications.ts. If Web
 // Push ever lands, this is the dedup key it needs, and the
-// "Notification replies use the original request id exactly once" invariant in
-// AGENTS.md is what it would have to keep satisfying.
+// "a reply uses the original request id exactly once, and is deferred never
+// dropped or misrouted" invariant is what it would have to keep satisfying.
 
 /** Keep the raw gateway usage shape in state; `readUsage` normalizes at render. */
 export function mergeUsageState(

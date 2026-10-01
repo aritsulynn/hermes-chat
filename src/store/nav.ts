@@ -5,8 +5,8 @@
 // equivalent: `useNavigate()` is a hook, so calling it from a WS event handler
 // or from a `useCallback` that `openWs` froze would mean threading a navigate
 // function through the orchestrator and its dependency arrays — the one thing
-// AGENTS.md explicitly warns against, because `openWs` already closes over ~50
-// symbols.
+// worth never doing here, because `openWs` already closes over ~50 symbols and
+// unwinding that is a redesign rather than a refactor.
 //
 // So this module reproduces the singleton shape on purpose. The provider (which
 // *is* inside the Router) registers the real navigator once, and everything

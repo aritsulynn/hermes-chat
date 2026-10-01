@@ -167,9 +167,28 @@ The gateway runs many concurrent sessions — cron jobs, background turns, other
 devices. Every WebSocket event is filtered by `session_id` against the currently open
 session, and getting that wrong is subtle in both directions: too little filtering
 bleeds another session's output into the open chat, while too much makes the chat
-appear completely hung. If you touch `src/store/slices/useGateway.ts`,
-`useTurn.ts`, or `useAskInbox.ts`, read the gateway invariants in
-[`AGENTS.md`](./AGENTS.md) first.
+appear completely hung. So if you touch `src/store/slices/useGateway.ts`,
+`useTurn.ts`, or `useAskInbox.ts`:
+
+- `session.info` from another session must not overwrite the open chat's model chip.
+- Another session's `onAsk` must never hijack the current chat's ask sheet — it
+  goes to the Ask Inbox. If a profile or stored session cannot be resolved, fail
+  closed and surface it there rather than guessing which session owns it.
+- Reconnect must restore `open_requests` without duplicating inbox entries, and
+  must restore locked clarify answers.
+- `stop()` must release the local turn even when the session died mid-turn, or the
+  composer stays stuck on `generating`.
+- Todo state must survive opening a session — restored from `todo_state`, never
+  blanked by `setTodos([])`.
+- Edit/resend must rewind the correct session; message row ids are per-session, so
+  a stale id truncates the wrong history.
+- Logout must fully reset composer state — no stuck Stop button, queue, todos,
+  attachments or pending asks.
+
+When chat looks hung, log before guessing: a temporary log of `sid` in
+`GatewayWs.dispatch` and of `event_sid` vs `sessionIdRef.current` in
+`isCurrentSession` tells you whether the ids match. Matching ids mean the filter
+is fine; ids that never match mean the id spaces differ.
 
 ## Development
 
@@ -236,9 +255,11 @@ fix(chat): stop clipping the model name on wide screens
 refactor(store): extract live-turn slice
 ```
 
-Typecheck and test after each change, and keep commits focused. If you are an AI
-agent or a new contributor, read [`AGENTS.md`](./AGENTS.md) first — it documents the
-conventions and the failure modes that are easy to miss.
+Typecheck and test after each change, and keep commits focused.
+
+The verification bar is `npm run typecheck` and `npm test`; neither can see gateway
+behaviour, so anything touching sessions or the turn engine needs a manual pass
+against a real gateway.
 
 ## License
 
