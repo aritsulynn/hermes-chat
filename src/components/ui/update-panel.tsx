@@ -487,7 +487,7 @@ export function UpdatePanel() {
               onClick={jumpToLatest}
               className="absolute bottom-2.5 right-2.5 h-8 w-8 rounded-full"
               size="icon">
-              <ArrowDown size={15} color="#fff" />
+              <ArrowDown size={15} color={dark ? '#111' : '#fff'} />
             </Button>
           )}
         </div>

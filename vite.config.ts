@@ -34,6 +34,11 @@ function buildId(): string {
 // entirely: v4 does its own imports and vendor prefixing, so the autoprefixer
 // and postcss-import pair that v3 needed has nothing left to do.
 export default defineConfig({
+  // Relative base so the built `dist/index.html` loads from anywhere:
+  // a static host sub-path, `capacitor://localhost`, or Electron's `file://`.
+  // An absolute `/` base assumes the bundle is always served from the domain
+  // root, which is exactly what a native shell does not do.
+  base: './',
   plugins: [react(), tailwindcss()],
   define: {
     __BUILD_ID__: JSON.stringify(buildId()),

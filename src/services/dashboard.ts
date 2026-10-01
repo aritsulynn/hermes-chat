@@ -18,6 +18,7 @@
 // between an `http://192.168.x.x` host and the app's own origin are easier to
 // debug when the header is visible in the request.
 import { normalizeConnectionBase } from './connection-scope';
+import { nativeHttpAvailable, nativeRequest, nativeSetCookies } from './native-http';
 import { formatToolCommand } from '../utils/toolResult';
 import { asList, asRecord } from '../utils/ops';
 import {
@@ -52,17 +53,72 @@ export function normalizeBase(baseUrl: string): string {
   return normalized;
 }
 
+/** Transport-neutral response for every dashboard REST call.
+ *
+ *  On web this wraps `fetch`; inside a native shell it wraps the NativeHttp
+ *  plugin (see native-http.ts), which bypasses the WebView's SameSite/CORS
+ *  rules. Either way callers see the same shape — and, crucially, the same
+ *  `setCookies`, because the browser hides `Set-Cookie` from JS while the
+ *  native pipe hands every value back for the JS jar (`mergeCookies`).
+ */
+export interface GwResponse {
+  ok: boolean;
+  status: number;
+  setCookies: string[];
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
+
+function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {};
+  const entries: [string, string][] =
+    headers instanceof Headers
+      ? [...headers.entries()]
+      : Array.isArray(headers)
+        ? headers.map(([k, v]) => [k, String(v)] as [string, string])
+        : Object.entries(headers).map(([k, v]) => [k, String(v)] as [string, string]);
+  const out: Record<string, string> = {};
+  for (const [k, v] of entries) {
+    // Absent beats empty: pre-login there is no cookie yet, and an explicit
+    // `Cookie: ''` header buys nothing but risks picky servers.
+    if (v === '') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 /** fetch with a hard timeout so the UI never hangs forever on an
  *  unreachable host (wrong WiFi / changed LAN IP / dashboard down).
  *  `credentials: include` lets the session cookie flow once the dashboard
  *  CORS-allows our origin (a no-op for same-origin). */
-async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = HTTP_TIMEOUT_MS): Promise<Response> {
+async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = HTTP_TIMEOUT_MS): Promise<GwResponse> {
+  // Native shells bypass the WebView network stack (SameSite=lax cookies are
+  // never attached cross-origin, and error responses without CORS headers get
+  // masked as TypeErrors). String bodies cover every dashboard REST call —
+  // attachments travel over the WebSocket, not here.
+  if (nativeHttpAvailable() && (init.body === undefined || init.body === null || typeof init.body === 'string')) {
+    const res = await nativeRequest({
+      url,
+      method: init.method ?? 'GET',
+      headers: headersToRecord(init.headers),
+      body: typeof init.body === 'string' ? init.body : null,
+      timeoutMs: ms,
+    });
+    const text = res.body;
+    return {
+      ok: res.status >= 200 && res.status < 300,
+      status: res.status,
+      setCookies: nativeSetCookies(res.headers),
+      text: async () => text,
+      json: async () => JSON.parse(text) as unknown,
+    };
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
     // no-store: a cached /api/status hit would fake a passing probe while
     // the network is actually down, sending POSTs into a raw TypeError.
-    return await fetch(url, {
+    const res = await fetch(url, {
       credentials: 'include',
       cache: 'no-store',
       // Never follow an authenticated redirect to another origin with the
@@ -71,6 +127,15 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = HTTP_T
       ...init,
       signal: ctrl.signal,
     });
+    return {
+      ok: res.ok,
+      status: res.status,
+      // [] on web by design — the browser hides Set-Cookie from JS but keeps
+      // it in its own jar, which `credentials: 'include'` then sends.
+      setCookies: getSetCookies(res),
+      text: () => res.text(),
+      json: () => res.json() as Promise<unknown>,
+    };
   } catch (e: unknown) {
     if (e && typeof e === 'object' && (e as { name?: unknown }).name === 'AbortError')
       throw new Error(`Request timed out (${ms / 1000}s): ${url}`);
@@ -129,7 +194,7 @@ export function getSetCookies(res: Response): string[] {
 
 export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
   const base = normalizeBase(baseUrl);
-  let res: Response;
+  let res: GwResponse;
   try {
     res = await fetchWithTimeout(`${base}${api.status()}`, {}, HTTP_PROBE_TIMEOUT_MS);
   } catch (e) {
@@ -167,7 +232,7 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
 /** Step 1: password login → session cookie string. Throws with server message. */
 export async function passwordLogin(baseUrl: string, username: string, password: string): Promise<string> {
   const base = normalizeBase(baseUrl);
-  let res: Response;
+  let res: GwResponse;
   try {
     res = await fetchWithTimeout(
       `${base}${api.passwordLogin()}`,
@@ -197,7 +262,7 @@ export async function passwordLogin(baseUrl: string, username: string, password:
   // carry it automatically. So an empty string here is the *expected* web
   // result, not a failure — `saveCookie` turns it into a 'web-jar' marker and
   // boot validates the session against `me`.
-  return mergeCookies('', getSetCookies(res));
+  return mergeCookies('', res.setCookies);
 }
 
 /** Step 2: mint a single-use WS ticket (must be consumed within ~30s). */
@@ -207,7 +272,7 @@ export async function mintWsTicket(
   onCookie?: (nextCookie: string) => void,
 ): Promise<string> {
   const base = normalizeBase(baseUrl);
-  let res: Response;
+  let res: GwResponse;
   try {
     res = await fetchWithTimeout(
       `${base}${api.wsTicket()}`,
@@ -222,7 +287,7 @@ export async function mintWsTicket(
     throw new Error(`Ticket request failed: ${e instanceof Error ? e.message : String(e)}`);
   }
   // Cookie may have rotated — caller should merge any Set-Cookie it carries.
-  const rotated = mergeCookies(cookie, getSetCookies(res));
+  const rotated = mergeCookies(cookie, res.setCookies);
   if (rotated !== cookie) onCookie?.(rotated);
   if (!res.ok) {
     const err = new Error(`WS ticket mint failed: HTTP ${res.status}`) as Error & {
@@ -247,9 +312,9 @@ async function fetchAuthed(
   cookie: string,
   ms: number,
   onCookie?: CookieUpdater,
-): Promise<Response> {
+): Promise<GwResponse> {
   const res = await fetchWithTimeout(url, init, ms);
-  const rotated = mergeCookies(cookie, getSetCookies(res));
+  const rotated = mergeCookies(cookie, res.setCookies);
   if (rotated !== cookie) await onCookie?.(rotated);
   return res;
 }

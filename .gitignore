@@ -28,5 +28,15 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# Android (Capacitor shell is tracked for its custom source — MainActivity,
+# NativeHttpPlugin, manifest flags — but never its local outputs)
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/.idea/
+*.apk
+
 # working docs (manual QA plans, audits, refactor plans) — local only
 docs/

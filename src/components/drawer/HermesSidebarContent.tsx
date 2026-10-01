@@ -341,7 +341,7 @@ export function HermesSidebarContent() {
 
   return (
     <>
-      <SidebarHeader className="gap-1 px-3 pt-2">
+      <SidebarHeader className="gap-1 px-3 pt-[max(env(safe-area-inset-top,0px),8px)]">
         {searchOpen ? (
           <div className="flex items-center gap-1">
             <Input
