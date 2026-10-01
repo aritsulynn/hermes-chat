@@ -266,6 +266,8 @@ export const AskSheet = forwardRef<
   HTMLDivElement,
   {
     open: boolean;
+    /** Only fires for a programmatic close; the sheet blocks Escape/backdrop. */
+    onOpenChange: (open: boolean) => void;
     ask: ServerAsk | null;
     onValue: (v: string) => void;
     onApproval: (c: string) => boolean;
@@ -274,7 +276,7 @@ export const AskSheet = forwardRef<
     /** Which chat this ask belongs to (the approval acts on the open chat). */
     contextLabel?: string;
   }
->(function AskSheet({ open, ask, onValue, onApproval, onAskResult, gw, contextLabel }, ref) {
+>(function AskSheet({ open, onOpenChange, ask, onValue, onApproval, onAskResult, gw, contextLabel }, ref) {
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   // Which button was tapped — keeps the sheet from answering twice.
@@ -553,7 +555,7 @@ export const AskSheet = forwardRef<
   // The overlay is deliberately dimmer than a normal sheet's: the user is still
   // meant to be able to read the chat this ask came from.
   return (
-    <DialogPrimitive.Root open={open}>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40" />
         <DialogPrimitive.Content

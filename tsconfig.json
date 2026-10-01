@@ -23,24 +23,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
-  // STAGED. This is the migration's definition of "already ported": every
-  // excluded folder still imports react-native/expo-*, so including it would
-  // drown the signal in "cannot find module 'react-native'". Each port phase
-  // drops its folder from this list, which is also what makes `npm run
-  // typecheck` a meaningful gate again instead of a wall of known errors.
-  // Ends up with the list deleted entirely.
-  // STAGED — and note this is weaker than it looks. `exclude` only removes a
-  // file from the root set; anything in the set that *imports* it pulls it back
-  // in. So src/app and src/main.tsx have to stay out together with src/features,
-  // because main.tsx -> app/routes -> features/* -> the chat components, and
-  // the remaining unported files are all down that chain. The list goes away
-  // entirely once the last feature screen is ported.
-  "exclude": [
-    "node_modules",
-    "dist",
-    "src/app",
-    "src/main.tsx",
-    "src/features",
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

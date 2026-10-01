@@ -1,10 +1,19 @@
 // File picking.
 //
 // expo-document-picker and expo-image-picker both open a native chooser and
-// hand back a URI, sometimes base64. The browser's equivalent is an
-// <input type="file">, and it gives the bytes directly — which is actually
-// better, because the upload path wants a data URL anyway and reading a
-// `blob:` URI back out again was a round trip for nothing.
+// hand back a URI. The browser's equivalent is an <input type="file">.
+//
+// What it hands back matters: the attachment pipeline identifies an attachment
+// by its `uri`, and that uri also becomes a cache key (see
+// services/media-cache). A `data:` URL would be megabytes in a Map key and in
+// every React key derived from it, so this returns `blob:` URLs instead. That
+// is the same shape the old web build already produced via the picker.
+//
+// Two things worth knowing about the blob URLs:
+//   - They are revoked by the browser when the document unloads, not before, so
+//     there is nothing to leak within a session — but the caller must revoke
+//     explicitly if it drops an attachment before the page goes away.
+//   - `fetch()` on a blob URL works, which is all the upload path needs.
 //
 // The input is created, clicked and discarded per call rather than kept mounted
 // and hidden. A persistent one has to have its `value` cleared by hand between
@@ -13,54 +22,65 @@
 export interface PickedFile {
   name: string;
   mime: string;
-  /** base64, without the data-URL prefix. */
-  base64: string;
-  dataUrl: string;
+  /** `blob:` URL. Pass this straight through as the attachment's `uri`. */
+  uri: string;
   size: number;
+  /** A data URL, for the handful of places that want bytes rather than a URI. */
+  dataUrl: string;
 }
 
 /**
  * @param accept  An `accept` attribute value, e.g. 'image/*' or '.json,text/*'.
+ * @param multiple  Allow selecting more than one file.
  */
-export function pickFile(accept?: string): Promise<PickedFile | null> {
+export function pickFiles(options: { accept?: string; multiple?: boolean } = {}): Promise<PickedFile[]> {
+  const { accept, multiple = false } = options;
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     if (accept) input.accept = accept;
+    if (multiple) input.multiple = true;
     input.style.cssText = 'position:fixed;left:-9999px;opacity:0';
 
     let settled = false;
-    const finish = (value: PickedFile | null) => {
+    const finish = (files: PickedFile[]) => {
       if (settled) return;
       settled = true;
       input.remove();
       window.removeEventListener('focus', onFocus);
-      resolve(value);
+      resolve(files);
     };
 
     // There is no "cancel" event on a file input. The window regaining focus
     // without a change event is the only signal that the chooser was dismissed,
-    // and it fires after a successful pick too — hence the `settled` guard.
-    const onFocus = () => setTimeout(() => finish(null), 500);
+    // and it fires after a successful pick too — hence the `settled` guard and
+    // the delay, so a real selection always wins the race.
+    const onFocus = () => setTimeout(() => finish([]), 500);
 
     input.addEventListener('change', () => {
-      const file = input.files?.[0];
-      if (!file) return finish(null);
-      const reader = new FileReader();
-      reader.onerror = () => finish(null);
-      reader.onload = () => {
-        const result = String(reader.result ?? '');
-        const comma = result.indexOf(',');
-        const base64 = comma >= 0 ? result.slice(comma + 1) : '';
-        finish({
-          name: file.name,
-          mime: file.type || 'application/octet-stream',
-          base64,
-          dataUrl: result,
-          size: file.size,
-        });
-      };
-      reader.readAsDataURL(file);
+      const list = Array.from(input.files ?? []);
+      if (!list.length) return finish([]);
+      Promise.all(
+        list.map(
+          (file) =>
+            new Promise<PickedFile>((done) => {
+              const reader = new FileReader();
+              reader.onerror = () =>
+                done({ name: file.name, mime: file.type, uri: '', size: file.size, dataUrl: '' });
+              reader.onload = () => {
+                const dataUrl = String(reader.result ?? '');
+                done({
+                  name: file.name,
+                  mime: file.type || 'application/octet-stream',
+                  uri: URL.createObjectURL(file),
+                  size: file.size,
+                  dataUrl,
+                });
+              };
+              reader.readAsDataURL(file);
+            }),
+        ),
+      ).then((files) => finish(files.filter((f) => f.uri)));
     });
 
     document.body.appendChild(input);
@@ -69,8 +89,14 @@ export function pickFile(accept?: string): Promise<PickedFile | null> {
   });
 }
 
-/** Read a picked file as text. Used where the caller wants content, not bytes. */
-export async function pickFileAsText(accept?: string): Promise<{ name: string; text: string } | null> {
+/** Single-file convenience wrapper, for the paths that only ever take one. */
+export async function pickFile(options: { accept?: string } = {}): Promise<PickedFile | null> {
+  const [first] = await pickFiles(options);
+  return first ?? null;
+}
+
+/** Read a picked file as text, for callers that want content rather than bytes. */
+export function pickFileAsText(accept?: string): Promise<{ name: string; text: string } | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';

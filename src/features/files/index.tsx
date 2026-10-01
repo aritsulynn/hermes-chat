@@ -339,7 +339,7 @@ export function FilesScreen() {
   const handlePickAndUploadImage = async () => {
     const scope = getAuthScope();
     try {
-      const asset = await pickFile('image/*');
+      const asset = await pickFile({ accept: 'image/*' });
       if (asset) {
         setUploading(true);
         const filename = asset.name || `photo_${Date.now()}.jpg`;

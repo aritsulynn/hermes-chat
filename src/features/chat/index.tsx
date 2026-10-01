@@ -1,14 +1,14 @@
 // Chat route — transcript + composer (was the 'chat' screen in App.tsx).
 // Header back opens the drawer; the native Drawer replaces NavDrawer/EdgeSwipe.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
-import type { FlashListRef } from '@shopify/flash-list';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
+import { pickFiles } from '../../services/file-picker';
 import { Navigate as Redirect } from 'react-router-dom';
-import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil, Search } from 'lucide-react';
 import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
+import { Transcript } from '../../components/chat/transcript';
+import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
+import type { TranscriptHandle } from '../../components/chat/transcript';
+import { blurActiveElement, useViewportSize } from '../../hooks/use-viewport';
 import {
   FALLBACK_PROVIDERS,
   applySlashCompletion,
@@ -148,22 +148,26 @@ export function ChatScreen() {
     usage?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(usage.contextPercent))) : null;
   const ctxTone = ctxPct == null ? 'ok' : contextTone(ctxPct);
 
-  // Numeric bubble cap: percent maxWidth resolves too late for Yoga to wrap
-  // row-nested markdown (lists) — a pixel value constrains measurement itself.
-  const { width: winW, height: winH } = useWindowDimensions();
+  // Numeric bubble cap. A percentage max-width is not enough here: markdown
+  // nests lists inside the bubble, and a percentage only resolves against a
+  // parent that has already been laid out. A pixel value constrains the
+  // measurement itself.
+  const { width: winW, height: winH } = useViewportSize();
   const bubbleMax = Math.round(winW * 0.85);
 
   // Theme tokens resolved once per scheme: this screen re-renders on every
   // streamed token, and a fresh style object per render would re-push the
   // surface colours to native each time.
   const screen = useMemo(() => screenStyle(dark), [dark]);
+  // The 52px bar plus the OS inset. `env()` in a class would be tidier, but this
+  // one also reports a height the layout below reads, so it stays a value.
   const noSessionHeader = useMemo(
     () => ({
-      height: insets.top + 52,
-      paddingTop: insets.top,
-      backgroundColor: screenBg(dark),
+      height: 'calc(env(safe-area-inset-top, 0px) + 52px)',
+      paddingTop: 'env(safe-area-inset-top, 0px)',
+      background: screenBg(dark),
     }),
-    [insets.top, dark],
+    [dark],
   );
   const placeholder = useMemo(() => placeholderColor(dark), [dark]);
 
@@ -178,7 +182,7 @@ export function ChatScreen() {
   const popoverMeasure = useRef<AnchorMeasure | null>(null);
   const [modelQuery, setModelQuery] = useState('');
   const [modelExpanded, setModelExpanded] = useState<Record<string, boolean>>({});
-  const rootRef = useRef<div>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const rootWin = useRef({ y: 0, h: 0 });
 
   const openPopover = useCallback(
@@ -304,7 +308,7 @@ export function ChatScreen() {
     [input, completionKind, completionFrom, setInput],
   );
 
-  const listRef = useRef<FlashListRef<UiMessage>>(null);
+  const listRef = useRef<TranscriptHandle>(null);
   // Latest transcript for stable callbacks (tool expand → REST result fill).
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -530,23 +534,26 @@ export function ChatScreen() {
   useEffect(() => {
     let t1: ReturnType<typeof setTimeout> | null = null;
     let t2: ReturnType<typeof setTimeout> | null = null;
-    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e: any) => {
-      setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0)));
+    // `winH` is the layout viewport; the visual viewport is what shrinks when
+    // the keyboard opens, and the difference between them is its height.
+    const vv = window.visualViewport;
+    const onKeyboard = () => {
+      setKbH(vv ? Math.max(0, Math.round(window.innerHeight - vv.height - (vv.offsetTop ?? 0))) : 0);
       t1 = setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
       }, 50);
-    });
-    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
+    };
+    const onKeyboardHide = () => {
       setKbH(0);
       t2 = setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
       }, 50);
-    });
+    };
+    vv?.addEventListener('resize', onKeyboard);
     return () => {
-      show.remove();
-      hide.remove();
+      vv?.removeEventListener('resize', onKeyboard);
       if (t1) clearTimeout(t1);
       if (t2) clearTimeout(t2);
     };
@@ -610,98 +617,49 @@ export function ChatScreen() {
 
   // Attach actions live here (not in the composer) because their UI — the "+"
   // popover — is rendered at screen level. See pickImage/pickFile callers below.
+  // Images go through the same <input type="file"> as everything else, with an
+  // `accept` filter standing in for the native picker's `mediaTypes`. Note what
+  // is *not* here: the native path asked the picker to downscale to quality
+  // 0.8. A browser cannot re-encode an image it did not decode, and the
+  // upload has a size ceiling that rejects anything too large anyway, so the
+  // original file goes up as-is.
   const pickImage = useCallback(async () => {
     setPopover(null);
-    try {
-      const r = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.8,
-      });
-      if (!r.canceled && r.assets?.length) {
-        const picked = r.assets.map((a, i) => ({
-          uri: a.uri,
-          name: a.fileName ?? `image-${Date.now()}-${i}.jpg`,
-          mime: a.mimeType,
-        }));
-        setAttachments([...attachments, ...picked]);
-      }
-    } catch {}
+    const picked = await pickFiles({ accept: 'image/*', multiple: true });
+    if (picked.length) {
+      setAttachments([
+        ...attachments,
+        ...picked.map((f) => ({ uri: f.uri, name: f.name || `image-${Date.now()}.jpg`, mime: f.mime })),
+      ]);
+    }
   }, [attachments, setAttachments]);
 
   const pickFile = useCallback(async () => {
     setPopover(null);
-    try {
-      const r = await DocumentPicker.getDocumentAsync({ multiple: true });
-      if (!r.canceled && r.assets?.length) {
-        const picked = r.assets.map((a) => ({
-          uri: a.uri,
-          name: a.name ?? 'file',
-          mime: a.mimeType,
-        }));
-        setAttachments([...attachments, ...picked]);
-      }
-    } catch {}
+    const picked = await pickFiles({ multiple: true });
+    if (picked.length) {
+      setAttachments([
+        ...attachments,
+        ...picked.map((f) => ({ uri: f.uri, name: f.name || 'file', mime: f.mime })),
+      ]);
+    }
   }, [attachments, setAttachments]);
 
-  // Bottom sheets are programmatic: present/dismiss as store state changes.
-  // NEVER dismiss a modal that was never presented: gorhom's dismiss() on a
-  // fresh modal flips its internal status to DISMISSING, after which the
-  // portal refuses to render anything — silently, forever. Track presented.
-  const infoRef = useRef<BottomSheetModal>(null);
-  const infoPresented = useRef(false);
-  useEffect(() => {
-    if (infoSeq> 0) {
-      infoRef.current?.present();
-      infoPresented.current = true;
-    }
-  }, [infoSeq]);
-  useEffect(() => {
-    if (!infoOpen && infoPresented.current) {
-      // Programmatic close only — a user-swiped sheet already closed itself
-      // (onDismiss reset the flag); dismissing it again repoisons the modal.
-      infoPresented.current = false;
-      infoRef.current?.dismiss();
-    }
-  }, [infoOpen]);
-  const askRef = useRef<BottomSheetModal>(null);
-  const askPresented = useRef(false);
-  // A dismiss animation in flight — presenting during it strands the backdrop
-  // (stuck dark screen). A new ask waits for onDismiss instead of barging in.
-  const askDismissing = useRef(false);
-  const askQueued = useRef(false);
-  // Fresh `ask` for the dismiss handler (the effect closure would see stale).
-  const askMirror = useRef(ask);
-  askMirror.current = ask;
-  useEffect(() => {
-    if (ask) {
-      if (askPresented.current) return; // already open — content flows via props
-      if (askDismissing.current) {
-        askQueued.current = true; // show once the close animation lands
-        return;
-      }
-      askRef.current?.present();
-      askPresented.current = true;
-    } else {
-      askQueued.current = false;
-      if (askPresented.current) {
-        askPresented.current = false;
-        askDismissing.current = true;
-        askRef.current?.dismiss();
-      }
-    }
-  }, [ask]);
-  // A close landing must not kill a newer ask: if one arrived mid-dismiss,
-  // re-present instead of clearing it (the old path cleared it AND dismissed
-  // under it — the stuck dark backdrop).
+  // The ask and info sheets are controlled Radix dialogs: `open` is the store
+  // state, full stop.
+  //
+  // The 60 lines this replaces were a state machine for two gorhom bugs. Its
+  // dismiss() on a never-presented sheet flipped the internal status to
+  // DISMISSING, after which the portal refused to render anything — silently,
+  // forever — and presenting mid-dismiss stranded the backdrop as a stuck dark
+  // screen. Both needed a flag to avoid the call. Neither has a DOM equivalent:
+  // React re-renders from `open`, so "presenting again" and "staying open" are
+  // the same statement.
+  //
+  // `ask` and `infoOpen` are the whole contract. The sheet cannot be dismissed
+  // by the user at all (AskSheet prevents Escape and outside-press), so
+  // onOpenChange only ever fires for a programmatic close we asked for.
   const onAskSheetDismiss = useCallback(() => {
-    askDismissing.current = false;
-    if (askMirror.current) {
-      askQueued.current = false;
-      askRef.current?.present();
-      askPresented.current = true;
-      return;
-    }
-    askQueued.current = false;
     dismissAsk();
   }, [dismissAsk]);
 
@@ -791,26 +749,25 @@ export function ChatScreen() {
     }
     return s;
   }, [searchOpen, sq, messages, streamingTexts]);
-  const listContentStyle = useMemo(
-    () => ({ padding: 12, paddingBottom: dockH }),
+  // `paddingBottom: dockH` keeps the last bubble scrollable above the overlaid
+  // composer; the gap between rows is `gap-2` on this box, which is what
+  // FlashList's explicit separator existed to work around (its cells are
+  // absolutely positioned, so `gap` on the container was ignored).
+  const listContentClass = useMemo(
+    () => `flex flex-col gap-2 px-3 pt-3 pb-[${Math.round(dockH)}px]`,
     [dockH],
   );
-  // FlashList วาง cell แบบ absolute — `gap` ใน contentContainerStyle โดนเมิน
-  // ข้อความเลยติดกัน ใช้ separator คั่น 8px แทน (เท่า gap เดิม)
-  const listSeparator = useCallback(() => <div style={{ height: 8 }} />, []);
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
-  // Recycle per bubble role (user/assistant/tool/thinking/…) — a tall tool
+  // (was: FlashList recycled per bubble role, and
   // Armed while an older page loads: offset + content height captured after
   // the fetch resolves, consumed by the next content-size growth (see
   // handleContentSizeChange). Without it a prepend yanks the viewport upward.
   const prependAdj = useRef<{ prevY: number; prevContentH: number } | null>(null);
-  // row never reuses a short user cell, so no measure-then-jump on scroll.
-  const listGetItemType = useCallback((m: UiMessage) => m.role, []);
-  // FlashList v2 maintains visible position itself; auto-scroll to bottom is
-  // owned by the stickEnd follow system below, so keep the native helper off.
-  const listMaintainVisible = useMemo(() => ({ disabled: true }), []);
+  // held the viewport steady across a prepend. Both are gone: the scroller is
+  // plain DOM, so `renderItem` re-runs on any prop change and the position is
+  // corrected by handleContentSizeChange.)
   const handleContentSizeChange = useCallback(
-    (_w: number, h: number) => {
+    (h: number) => {
       const prevH = contentH.current;
       contentH.current = h;
       setCanScroll(h> layoutH.current + 40);
@@ -864,10 +821,14 @@ export function ChatScreen() {
     touching.current = true;
     dragStartY.current = e.nativeEvent.contentOffset.y;
   }, []);
-  const handleScroll = useCallback((e: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    scrollY.current = contentOffset.y;
-    const atEnd = contentSize.height - (contentOffset.y + layoutMeasurement.height) < AT_END_PX;
+  // The same stick-to-bottom heuristic as before, reading position off the
+  // element instead of a native scroll event. `AT_END_PX` and every ref below
+  // are unchanged — only the source of the numbers moved.
+  const handleScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    scrollY.current = el.scrollTop();
+    const atEnd = el.distanceFromEnd() < AT_END_PX;
     if (flying.current && !touching.current) {
       if (atEnd) flying.current = false;
       else return;
@@ -927,17 +888,9 @@ export function ChatScreen() {
     },
     [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, onBranchChat, openUserMenu, showTip],
   );
-  const listExtraData = useMemo(
-    // Minimal: only per-row affordances that data-item identity alone won't
-    // refresh (old/new last-assistant rows for regenerate, expand/highlight/
-    // copy flags, generating). Theme/width flow through renderMessage's
-    // closure; streaming deltas flow via StreamingContext in the bubble.
-    () => ({ expanded, highlightIds, copiedId, generating, lastAssistantId }),
-    [expanded, highlightIds, copiedId, generating, lastAssistantId],
-  );
 
   const closeSearch = useCallback(() => {
-    Keyboard.dismiss();
+    blurActiveElement();
     setSearchOpen(false);
     setSearchQuery('');
   }, []);
@@ -979,7 +932,7 @@ export function ChatScreen() {
     if (trimmedOlder> 0 || !historyExhausted) {
       return (
         <div className="items-center py-1.5">
-          <Button variant="ghost" onClick={onLoadOlder} hitSlop={8} className="px-3 py-1.5">
+          <Button variant="ghost" onClick={onLoadOlder} className="px-3 py-1.5">
             <UIText className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
               ↑ Load older messages
             </UIText>
@@ -991,14 +944,6 @@ export function ChatScreen() {
   }, [historyLoadingMore, historyExhausted, trimmedOlder, onLoadOlder]);
 
   const searchVisible = Boolean(sessionId && searchOpen);
-
-  // The screen owns the full header row. Keeping React Navigation's native
-  // header mounted as well would overlay its session title and hamburger on
-  // top of the search row, especially on iOS.
-  const navigation = useNavigation();
-  useLayoutEffect(() => {
-    navigation.setOptions({ headerShown: false });
-  }, [navigation]);
 
   if (booting) {
     return (
@@ -1069,13 +1014,14 @@ export function ChatScreen() {
   return (
     <div
       ref={rootRef}
-      onLayout={() =>
-        rootRef.current?.measureInWindow((_x, y, _w, h) => {
-          rootWin.current = { y, h };
-          // Keyboard resize moves the composer; keep the popover glued to it.
-          remeasurePopover();
-        })
-      }
+      onLoad={() => {
+        const el = rootRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        rootWin.current = { y: r.y, h: r.height };
+        // Keyboard resize moves the composer; keep the popover glued to it.
+        remeasurePopover();
+      }}
       style={screen}
 >
       {searchVisible ? (
@@ -1115,20 +1061,14 @@ export function ChatScreen() {
         
 
       {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
-      <Modal
-        visible={!!userMenu}
-        transparent
-
-        statusBarTranslucent
-
->
-        <div style={{ flex: 1 }}>
-          <button type="button"
-            style={{ position: 'absolute', inset: 0 }}
-            onClick={closeUserMenu}
-          />
-          {!!userMenu &&
-            (() => {
+      <UserMenuDialog
+        open={!!userMenu}
+        onOpenChange={(o) => !o && closeUserMenu()}
+        anchor={userMenu?.anchor}
+        viewportWidth={winW}
+      >
+        {userMenu &&
+          (() => {
               const target = messages.find((m) => m.id === userMenu.id);
               const delta = target ? streamingTexts[target.id] : undefined;
               const fullText = target ? target.text + (delta ?? '') : '';
@@ -1144,7 +1084,7 @@ export function ChatScreen() {
                   style={
                     above
                       ? { bottom: winH - userMenu.anchor.y + 8, left }
-                      : { top: userMenu.anchor.y + userMenu.anchor.h + 8 + insets.top, left }
+                      : { top: userMenu.anchor.y + userMenu.anchor.h + 8, left }
                   }
 >
                   {!!target.ts && (
@@ -1184,8 +1124,7 @@ export function ChatScreen() {
                 </div>
               );
             })()}
-        </div>
-      </Modal>
+      </UserMenuDialog>
 
       {/* Plain View, not KeyboardAvoidingView: the composer is an absolute
           overlay at the bottom of the transcript container with a transparent
@@ -1193,37 +1132,24 @@ export function ChatScreen() {
           absolute child ignores the view's padding, and the keyboard is
           handled explicitly via kbH (footer padding lifts the card). */}
       <div className="flex-1">
-        <FlashList
+        {/* A plain scroll container, not a virtualizer — see
+            components/chat/transcript.tsx for why this list is the exception.
+            `onScroll` is the only scroll signal: a DOM scroller fires it
+            continuously, where the native list needed momentum/drag-end events
+            as a backstop and had to distinguish them. Stick-to-bottom and the
+            prepend correction are unchanged and still driven from here. */}
+        <Transcript
           ref={listRef}
-          data={messages}
-          style={{ flex: 1 }}
-          keyExtractor={listKeyExtractor}
-          getItemType={listGetItemType}
-          extraData={listExtraData}
-          drawDistance={800}
-          contentClassName={listContentStyle}
-          ItemSeparatorComponent={listSeparator}
-          ListHeaderComponent={ListHeader}
+          contentClassName={listContentClass}
           onStartReached={handleStartReached}
-          onStartReachedThreshold={0.4}
           onContentSizeChange={handleContentSizeChange}
-
-          onMomentumScrollBegin={() => {
-            momentum.current = true;
-          }}
-          onMomentumScrollEnd={(e: any) => {
-            momentum.current = false;
-            snapToEnd(e);
-          }}
-          onScrollEndDrag={snapToEnd}
-          onScrollBeginDrag={handleScrollBeginDrag}
           onScroll={handleScroll}
-          scrollEventThrottle={32}
-          maintainVisibleContentPosition={listMaintainVisible}
-          automaticallyAdjustKeyboardInsets={false}
-          keyboardDismissMode="none"
-          renderItem={renderMessage}
-        />
+        >
+          {ListHeader()}
+          {messages.map((item) => (
+            <div key={listKeyExtractor(item)}>{renderMessage({ item })}</div>
+          ))}
+        </Transcript>
         {/* Overlay footer: absolute + transparent, so the transcript scrolls
             underneath and shows through around the composer card. The list
             keeps the last bubble reachable via bottom content padding
@@ -1283,7 +1209,7 @@ export function ChatScreen() {
                   )}
                 </Button>
                 {todosOpen && (
-                  <ScrollArea style={{ maxHeight: 200 }}>
+                  <ScrollArea className="max-h-[200px]">
                     {todos.map((t, i) => {
                       const d = todoDone(t);
                       const a = todoActive(t);
@@ -1351,7 +1277,7 @@ export function ChatScreen() {
                   )}
                 </Button>
                 {subagentsOpen && (
-                  <ScrollArea style={{ maxHeight: 160 }}>
+                  <ScrollArea className="max-h-[160px]">
                     {subagents.map((s) => {
                       const done = subagentDone(s);
                       return (
@@ -1394,16 +1320,16 @@ export function ChatScreen() {
                 {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
               </UIText>
               {queueParked ? (
-                <Button variant="link" onClick={resumeQueue} hitSlop={8} className="px-1.5 py-0.5">
+                <Button variant="link" onClick={resumeQueue} className="px-1.5 py-0.5">
                   <UIText className="text-[11px] font-semibold">Resume</UIText>
                 </Button>
               ) : (
-                <Button variant="link" onClick={clearQueue} hitSlop={8} className="px-1.5 py-0.5">
+                <Button variant="link" onClick={clearQueue} className="px-1.5 py-0.5">
                   <UIText className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</UIText>
                 </Button>
               )}
             </div>
-            <ScrollArea style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled">
+            <ScrollArea className="max-h-[160px]">
               {queued.map((q) => (
                 <div key={q.id} className="flex items-center gap-2 px-3 py-1.5">
                   <UIText
@@ -1419,7 +1345,7 @@ export function ChatScreen() {
 >
                     <UIText className="text-[11px] font-semibold">Send</UIText>
                   </Button>
-                  <Button variant="link" onClick={() => removeQueued(q.id)} hitSlop={10} className="shrink-0 px-1.5 py-0.5">
+                  <Button variant="link" onClick={() => removeQueued(q.id)} className="shrink-0 px-1.5 py-0.5">
                     <UIText className="text-[15px] leading-[15px] text-neutral-400">×</UIText>
                   </Button>
                 </div>
@@ -1439,7 +1365,7 @@ export function ChatScreen() {
               </UIText>
               <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">{visibleCompletions.length}</UIText>
             </div>
-            <ScrollArea style={{ maxHeight: 248 }} keyboardShouldPersistTaps="handled">
+            <ScrollArea className="max-h-[248px]">
               {visibleCompletions.slice(0, 40).map((item, i) => {
                 const label = item.display || item.text;
                 return (
@@ -1482,7 +1408,7 @@ export function ChatScreen() {
             <UIText className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
               Editing — resend to rewind and rerun from here
             </UIText>
-            <Button variant="link" onClick={cancelEdit} hitSlop={8} className="shrink-0 px-1.5 py-0.5">
+            <Button variant="link" onClick={cancelEdit} className="shrink-0 px-1.5 py-0.5">
               <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</UIText>
             </Button>
           </div>
@@ -1527,27 +1453,24 @@ export function ChatScreen() {
           className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
           // Floats just above the footer, whose measured height already
           // includes the keyboard lift.
-          style={{ bottom: dockH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
+          style={{ bottom: dockH + 12, boxShadow: '0 2px 6px rgb(0 0 0 / 0.18)' }}
 >
           <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
         </Button>
       )}
       <AskSheet
-        ref={askRef}
+        open={!!ask}
         ask={ask}
         onValue={answerValue}
         onApproval={answerApproval}
         onAskResult={answerAsk}
-        onDismiss={onAskSheetDismiss}
+        onOpenChange={(o) => !o && onAskSheetDismiss()}
         gw={getGw()}
         contextLabel={sessionTitle || undefined}
       />
       <InfoSheet
-        ref={infoRef}
-        onClose={() => {
-          infoPresented.current = false;
-          setInfoOpen(false);
-        }}
+        open={infoOpen}
+        onOpenChange={(o) => !o && setInfoOpen(false)}
         title={sessionTitle}
         model={model}
         provider={modelProvider}
@@ -1717,7 +1640,7 @@ export function ChatScreen() {
                     {providersError}
                   </UIText>
                 )}
-                <ScrollArea style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+                <ScrollArea className="min-h-0 flex-1">
                   {modelVisibleProviders.map((p) => {
                     const count = p.models?.length ?? p.totalModels;
                     const open = mq ? true : (modelExpanded[p.slug] ?? false);
@@ -1772,7 +1695,6 @@ export function ChatScreen() {
 >
                                   <UIText
                                     numberOfLines={1}
-                                    ellipsizeMode="tail"
                                     className={`min-w-0 flex-1 text-left text-[14px] ${
                                       on
                                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'

@@ -1,15 +1,23 @@
 // Chat top bar — the normal header and the in-transcript search header.
 // Extracted from index.tsx to keep the screen focused on orchestration.
+//
+// Neither header takes an `insetTop` prop any more. The native build had every
+// call site thread a measured safe-area number into a `paddingTop`; the browser
+// knows the safe area already, so the bar reads `env(safe-area-inset-top)`.
 import { ChevronDown, ChevronUp, Info, MoreVertical, Search, X } from 'lucide-react';
 import { CtxRing, HamburgerBtn } from '../../../components/ui/bits';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Text as UIText } from '../../../components/ui/text';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
-import { placeholderColor } from '../../../theme';
+
+/** The 52px bar plus whatever the OS inset wants above it. */
+const barStyle = {
+  height: 'calc(env(safe-area-inset-top, 0px) + 52px)',
+  paddingTop: 'env(safe-area-inset-top, 0px)',
+} as const;
 
 export function ChatNormalHeader({
-  insetTop,
   dark,
   iconColor,
   title,
@@ -19,7 +27,6 @@ export function ChatNormalHeader({
   onSelectInfo,
   onOpenInfo,
 }: {
-  insetTop: number;
   dark: boolean;
   iconColor: string;
   title: string;
@@ -30,23 +37,14 @@ export function ChatNormalHeader({
   onOpenInfo: () => void;
 }) {
   return (
-    <div
-      style={{
-        height: insetTop + 52,
-        paddingTop: insetTop,
-        backgroundColor: dark ? '#000' : '#fff',
-      }}
->
-      <div className="h-[52px] flex items-center gap-1 px-2">
-        <div className="w-11 shrink-0 items-start">
+    <header className={`shrink-0 ${dark ? 'bg-black' : 'bg-white'}`} style={barStyle}>
+      <div className="flex h-[52px] items-center gap-1 px-2">
+        <div className="w-11 shrink-0">
           <HamburgerBtn />
         </div>
-        <UIText
-          numberOfLines={1}
-          className="min-w-0 flex-1 px-1 text-[17px] font-semibold text-neutral-950 dark:text-neutral-100"
->
+        <h1 className="min-w-0 flex-1 truncate px-1 text-[17px] font-semibold text-neutral-950 dark:text-neutral-100">
           {title}
-        </UIText>
+        </h1>
         <div className="flex items-center gap-1">
           {contextPercent != null && (
             <CtxRing pct={contextPercent} tone={contextTone} dark={dark} onPress={onOpenInfo} />
@@ -55,21 +53,13 @@ export function ChatNormalHeader({
             variant="ghost"
             size="icon"
             data-testid="search-open"
-            role="button"
             aria-label="Search conversation"
-            onClick={onOpenSearch}
->
+            onClick={onOpenSearch}>
             <Search size={20} color={iconColor} />
           </Button>
           <Popover>
             <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                data-testid="kebab-btn"
-                role="button"
-                aria-label="Chat menu"
->
+              <Button variant="ghost" size="icon" data-testid="kebab-btn" aria-label="Chat menu">
                 <MoreVertical size={20} color={iconColor} />
               </Button>
             </PopoverTrigger>
@@ -79,22 +69,20 @@ export function ChatNormalHeader({
                   variant="ghost"
                   data-testid="menu-info"
                   onClick={onSelectInfo}
-                  className="flex items-center justify-start gap-2.5 px-3 py-2.5"
->
+                  className="w-full items-center justify-start gap-2.5 px-3 py-2.5">
                   <Info size={17} color={iconColor} />
-                  <UIText className="text-[15px]">Session info</UIText>
+                  <UIText className="text-left text-[15px]">Session info</UIText>
                 </Button>
               </PopoverClose>
             </PopoverContent>
           </Popover>
         </div>
       </div>
-    </div>
+    </header>
   );
 }
 
 export function ChatSearchHeader({
-  insetTop,
   dark,
   iconColor,
   query,
@@ -105,7 +93,6 @@ export function ChatSearchHeader({
   onNext,
   onClose,
 }: {
-  insetTop: number;
   dark: boolean;
   iconColor: string;
   query: string;
@@ -116,19 +103,13 @@ export function ChatSearchHeader({
   onNext: () => void;
   onClose: () => void;
 }) {
-  const hasQuery = query.trim().length> 0;
+  const hasQuery = query.trim().length > 0;
   const disabledColor = dark ? '#666' : '#aaa';
   return (
-    <div
-      style={{
-        height: insetTop + 52,
-        paddingTop: insetTop,
-        backgroundColor: dark ? '#000' : '#fff',
-      }}
->
-      <div className="h-[52px] flex items-center gap-1 px-2">
-        <div className="min-w-0 flex-1 flex items-center gap-1">
-          <div className="h-11 min-w-0 flex-1 flex items-center rounded-xl border border-neutral-200 bg-[#f4f4f6] px-3 dark:border-neutral-700 dark:bg-[#212121]">
+    <header className={`shrink-0 ${dark ? 'bg-black' : 'bg-white'}`} style={barStyle}>
+      <div className="flex h-[52px] items-center gap-1 px-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <div className="flex h-11 min-w-0 flex-1 items-center gap-1 rounded-xl border border-neutral-200 bg-[#f4f4f6] px-3 dark:border-neutral-700 dark:bg-[#212121]">
             <Search size={18} color={dark ? '#aaa' : '#666'} />
             <Input
               data-testid="conversation-search"
@@ -136,12 +117,15 @@ export function ChatSearchHeader({
               // The pill around this draws the field; the base border inside it
               // would read as a frame within a frame, and dark:bg-transparent is
               // needed because the base sets dark:bg-input/30.
-              className="ml-2 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-[16px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
+              className="ml-2 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-[16px] text-neutral-950 shadow-none focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
               value={query}
               onChange={(e) => onChangeQuery(e.target.value)}
               placeholder="Search conversation…"
               autoCapitalize="none"
+              autoCorrect="off"
               autoFocus
+              enterKeyHint="search"
+              style={{ caretColor: '#1a73e8', colorScheme: dark ? 'dark' : 'light' }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -150,33 +134,29 @@ export function ChatSearchHeader({
               }}
             />
             {hasQuery && (
-              <UIText className="ml-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="ml-1.5 text-xs text-neutral-500 dark:text-neutral-400">
                 {matchCount ? matchIndex + 1 : 0}/{matchCount}
-              </UIText>
+              </span>
             )}
           </div>
           <Button
             variant="ghost"
             size="icon"
             data-testid="search-prev"
-            role="button"
             aria-label="Previous search match"
             onClick={onPrevious}
             disabled={!matchCount}
-            className="h-11 w-10"
->
+            className="h-11 w-10">
             <ChevronUp size={20} color={matchCount ? iconColor : disabledColor} />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             data-testid="search-next"
-            role="button"
             aria-label="Next search match"
             onClick={onNext}
             disabled={!matchCount}
-            className="h-11 w-10"
->
+            className="h-11 w-10">
             <ChevronDown size={20} color={matchCount ? iconColor : disabledColor} />
           </Button>
         </div>
@@ -184,14 +164,12 @@ export function ChatSearchHeader({
           variant="ghost"
           size="icon"
           data-testid="search-close"
-          role="button"
           aria-label="Close conversation search"
           onClick={onClose}
-          className="h-11 w-10"
->
+          className="h-11 w-10">
           <X size={22} color={iconColor} />
         </Button>
       </div>
-    </div>
+    </header>
   );
 }
