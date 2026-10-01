@@ -1,23 +1,13 @@
 // Login route — connect to the dashboard (was the 'login' screen in App.tsx).
 import { useEffect, useRef, useState } from 'react';
-import { Redirect } from 'expo-router';
-import {
-  ActivityIndicator,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { AlertCircle, Fingerprint } from 'lucide-react-native';
+import { Navigate as Redirect } from 'react-router-dom';
+import { AlertCircle, Fingerprint } from 'lucide-react';
 import * as LocalAuth from 'expo-local-authentication';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Field } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { BUILD_ID } from '../../build';
 import { getPassword } from '../../services/connection';
@@ -31,7 +21,7 @@ export function LoginScreen() {
   // can't lift the form — track the keyboard height (like the chat dock does)
   // and pad + scroll the form above it ourselves.
   const [kbH, setKbH] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollArea>(null);
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', (e: any) => {
       setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0)));
@@ -74,57 +64,50 @@ export function LoginScreen() {
 
   if (booting) {
     return (
-      <SafeAreaView
+      <div
         className="flex-1 bg-white dark:bg-black items-center justify-center gap-3"
-        edges={['top', 'left', 'right', 'bottom']}
+       
       >
-        <StatusBar style="auto" />
-        <ActivityIndicator size="large" />
-        <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
-      </SafeAreaView>
+        
+        <Spinner size={24} color=currentColor />
+        <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</UIText>
+      </div>
     );
   }
-  if (authed) return <Redirect href="/chat" />;
+  if (authed) return <Redirect to="/chat" replace />;
 
   return (
-    <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar style="auto" />
-      <KeyboardAvoidingView
+    <div className="flex-1 bg-white dark:bg-black">
+      
+      <div
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        <ScrollView
+        <ScrollArea
           ref={scrollRef}
           className="flex-1"
-          contentContainerStyle={{
-            flexGrow: 1,
-            justifyContent: 'center',
-            padding: 24,
-            paddingBottom: 24 + kbH,
-          }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+          contentClassName="grow justify-center p-[object Object] pb-[object Object]"
         >
           {/* Brand */}
-          <View className="mb-6 items-center">
-            <View className="h-16 w-16 items-center justify-center rounded-3xl bg-[#1a73e8] shadow-lg">
-              <Text className="text-[32px] font-extrabold text-white">H</Text>
-            </View>
-            <Text className="mt-3 text-[28px] font-extrabold tracking-tight text-neutral-950 dark:text-neutral-100">
+          <div className="mb-6 items-center">
+            <div className="h-16 w-16 items-center justify-center rounded-3xl bg-[#1a73e8] shadow-lg">
+              <UIText className="text-[32px] font-extrabold text-white">H</UIText>
+            </div>
+            <UIText className="mt-3 text-[28px] font-extrabold tracking-tight text-neutral-950 dark:text-neutral-100">
               Hermes
-            </Text>
-            <Text className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Connect to your dashboard</Text>
-          </View>
+            </UIText>
+            <UIText className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Connect to your dashboard</UIText>
+          </div>
 
           {/* Credentials card */}
-          <View className="rounded-3xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div className="rounded-3xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
             <Field label="Host" value={host} onChange={setHost} placeholder="http://your-server:9119" />
             <Field label="Username" value={username} onChange={setUsername} />
-            <View className="-mb-2">
+            <div className="-mb-2">
               <Field label="Password" value={password} onChange={setPassword} secure onSubmit={submit} />
-            </View>
-          </View>
+            </div>
+          </div>
 
           {error && (
             <Alert icon={AlertCircle} variant="destructive" className="mt-3">
@@ -133,13 +116,13 @@ export function LoginScreen() {
           )}
 
           <Button
-            onPress={submit}
-            accessibilityLabel="Connect to the gateway"
+            onClick={submit}
+            aria-label="Connect to the gateway"
             className="mt-4 h-auto rounded-2xl bg-[#1a73e8] px-[18px] py-3.5 active:opacity-80"
             disabled={busy}
           >
             {busy ? (
-              <ActivityIndicator color="#fff" />
+              <Spinner size={14} color=#fff />
             ) : (
               <UIText className="text-[16px] font-bold text-white">Connect</UIText>
             )}
@@ -147,8 +130,8 @@ export function LoginScreen() {
           {bioAvailable && (
             <Button
               variant="outline"
-              onPress={() => void bioLogin()}
-              accessibilityLabel="Unlock with biometrics"
+              onClick={() => void bioLogin()}
+              aria-label="Unlock with biometrics"
               className="mt-2.5 h-auto rounded-2xl px-2.5 py-3"
               disabled={busy}
             >
@@ -158,9 +141,9 @@ export function LoginScreen() {
               </UIText>
             </Button>
           )}
-          <Text className="mt-5 text-center text-xs text-neutral-400">build {BUILD_ID}</Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          <UIText className="mt-5 text-center text-xs text-neutral-400">build {BUILD_ID}</UIText>
+        </ScrollArea>
+      </div>
+    </div>
   );
 }

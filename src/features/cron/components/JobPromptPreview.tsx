@@ -1,7 +1,8 @@
+import { Text as UIText } from '../../../components/ui/text';
 // Collapsible prompt preview for a cron job (clamped to 3 lines).
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { Platform } from 'react-native';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 export function JobPromptPreview({
   prompt,
@@ -47,8 +48,8 @@ export function JobPromptPreview({
   }, [checkOverflow]);
 
   return (
-    <View className="mt-3 rounded-xl bg-white/80 p-2.5 dark:bg-neutral-950/60">
-      <Text
+    <div className="mt-3 rounded-xl bg-white/80 p-2.5 dark:bg-neutral-950/60">
+      <UIText
         ref={textRef}
         numberOfLines={isExpanded ? undefined : 3}
         onLayout={checkOverflow}
@@ -61,15 +62,15 @@ export function JobPromptPreview({
         className="text-xs leading-relaxed text-neutral-800 dark:text-neutral-200"
       >
         {prompt}
-      </Text>
+      </UIText>
       {canExpand && (
-        <Pressable onPress={onToggleExpand} hitSlop={8} className="mt-1.5 flex-row items-center justify-end gap-1">
-          <Text className="text-[10px] font-medium text-[#1a73e8] dark:text-[#7aa7ff]">
+        <button type="button" onClick={onToggleExpand} hitSlop={8} className="mt-1.5 flex items-center justify-end gap-1">
+          <UIText className="text-[10px] font-medium text-[#1a73e8] dark:text-[#7aa7ff]">
             {isExpanded ? 'Collapse' : 'Show more'}
-          </Text>
+          </UIText>
           {isExpanded ? <ChevronUp size={12} color="#1a73e8" /> : <ChevronDown size={12} color="#1a73e8" />}
-        </Pressable>
+        </button>
       )}
-    </View>
+    </div>
   );
 }

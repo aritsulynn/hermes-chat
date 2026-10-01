@@ -126,6 +126,18 @@ textarea:focus-visible,
   }
 }
 
+/* Horizontal chip strips have no affordance to scroll with on touch, and a
+   fat overlay scrollbar across a row of chips looks broken. The scroller still
+   scrolls; only the bar is hidden. */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

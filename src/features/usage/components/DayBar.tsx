@@ -1,6 +1,6 @@
+import { Text as UIText } from '../../../components/ui/text';
 // Memo bar — selecting one day shouldn't re-render the other 89 bars.
 import { memo } from 'react';
-import { Pressable, Text, View } from 'react-native';
 import { formatDayLabel } from '../../../utils/format';
 
 export const DayBar = memo(function DayBar({
@@ -19,8 +19,8 @@ export const DayBar = memo(function DayBar({
   const hasTokens = tokens > 0;
   const heightPercent = hasTokens ? Math.max(12, Math.round((tokens / maxTokens) * 100)) : 4;
   return (
-    <Pressable onPress={() => onSelect(day)} className="items-center justify-end w-7 h-full">
-      <View
+    <button type="button" onClick={() => onSelect(day)} className="items-center justify-end w-7 h-full">
+      <div
         className={`w-full rounded-t-sm ${
           selected
             ? 'bg-blue-600 dark:bg-blue-500'
@@ -30,7 +30,7 @@ export const DayBar = memo(function DayBar({
         }`}
         style={{ height: `${heightPercent}%` }}
       />
-      <Text
+      <UIText
         className={`mt-1.5 font-mono text-[9px] ${
           selected
             ? 'font-bold text-blue-600 dark:text-blue-400'
@@ -40,7 +40,7 @@ export const DayBar = memo(function DayBar({
         }`}
       >
         {formatDayLabel(day)}
-      </Text>
-    </Pressable>
+      </UIText>
+    </button>
   );
 });
