@@ -251,7 +251,7 @@ export function ToolsetsScreen() {
           </Card>
 
           {!loading && !unsupported && !error && (
-            <div className="mb-3 flex items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
+            <div className="frame-focus mb-3 flex items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
               <Search size={16} color={dark ? '#888' : '#777'} />
               <Input
                 value={query}
@@ -263,7 +263,7 @@ export function ToolsetsScreen() {
                 // inside it would read as a frame within a frame. dark: is
                 // needed too — the base sets dark:bg-input/30, which a plain
                 // bg-transparent does not cancel in dark mode.
-                className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
+                className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
               />
             </div>
           )}

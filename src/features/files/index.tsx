@@ -591,7 +591,7 @@ export function FilesScreen() {
 
         {/* Search / Filter Bar */}
         <div className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-          <div className="flex items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
+          <div className="frame-focus flex items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
             <Search size={15} color={dark ? '#888' : '#9ca3af'} />
             <Input
               value={searchQuery}
@@ -601,7 +601,7 @@ export function FilesScreen() {
               // base background inside it read as a frame within a frame.
               // dark:bg-transparent is required — the base sets
               // dark:bg-input/30, which a plain bg-transparent does not cancel.
-              className="flex-1 border-0 bg-transparent text-sm text-neutral-900 dark:bg-transparent dark:text-neutral-100"
+              className="flex-1 border-0 bg-transparent text-sm text-neutral-900 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
               autoCapitalize="none"
             />
             {searchQuery ? (

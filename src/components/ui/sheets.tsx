@@ -22,6 +22,7 @@ import { Button } from './button';
 import { Input } from './input';
 import { Progress } from './progress';
 import { Text } from './text';
+import { Textarea } from './textarea';
 
 /** `['70%']` -> `max-h-[70%]`. A sheet with no snap points fills the viewport. */
 function snapHeight(snapPoints?: Array<string | number>): string {
@@ -385,13 +386,18 @@ export const AskSheet = forwardRef<
                   );
                 })}
               </div>
+              {/* Was a raw `<textarea>`, and the only field in the app with no focus
+                  state of its own — global.css used to cover for that, and that rule
+                  is gone (see global.css for why it could not stay). `<Textarea>`
+                  brings the ring every other field uses; the overrides here are only
+                  this dialog's radius and padding. */}
               {q.choices.length === 0 && (
-                <textarea
-                  className="w-full rounded-lg border border-neutral-300 bg-transparent p-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                <Textarea
+                  className="min-h-0 w-full rounded-lg border-neutral-300 bg-transparent p-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Type your answer…"
-                  rows={2}
+                  numberOfLines={2}
                 />
               )}
             </div>

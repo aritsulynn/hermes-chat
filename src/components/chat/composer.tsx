@@ -129,7 +129,7 @@ export const Composer = memo(function Composer({
         // indicator. `env()` beats a measured inset here — no layout pass.
         paddingBottom: webKb > 0 ? webKb + 18 : 'max(env(safe-area-inset-bottom, 0px), 10px)',
       }}>
-      <div className="flex flex-col gap-1.5 rounded-2xl border border-neutral-200/80 bg-[#f4f4f6] px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-[#212121]">
+      <div className="frame-focus flex flex-col gap-1.5 rounded-2xl border border-neutral-200/80 bg-[#f4f4f6] px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-[#212121]">
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.map((a) => {

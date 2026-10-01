@@ -109,7 +109,7 @@ export function ChatSearchHeader({
     <header className={`shrink-0 ${dark ? 'bg-black' : 'bg-white'}`} style={barStyle}>
       <div className="flex h-[52px] items-center gap-1 px-2">
         <div className="flex min-w-0 flex-1 items-center gap-1">
-          <div className="flex h-11 min-w-0 flex-1 items-center gap-1 rounded-xl border border-neutral-200 bg-[#f4f4f6] px-3 dark:border-neutral-700 dark:bg-[#212121]">
+          <div className="frame-focus flex h-11 min-w-0 flex-1 items-center gap-1 rounded-xl border border-neutral-200 bg-[#f4f4f6] px-3 dark:border-neutral-700 dark:bg-[#212121]">
             <Search size={18} color={dark ? '#aaa' : '#666'} />
             <Input
               data-testid="conversation-search"

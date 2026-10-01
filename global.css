@@ -81,21 +81,44 @@
   }
 }
 
-/* Text fields get their focus state from the border (Tailwind's
-   focus-visible:ring classes in the reusables), so the UA outline is redundant
-   on pointer interaction. It is *not* redundant for keyboard users, which the
-   native build never had to think about — so the outline comes back as soon as
-   the focus is keyboard-driven. */
-input:focus,
-textarea:focus {
-  outline: none;
-}
+/* ── Focus on a text field ──────────────────────────────────────────────────
+   Two cases, and the highlight belongs in a different place for each.
 
-input:focus-visible,
-textarea:focus-visible,
-[role='textbox']:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 1px;
+   A field that *is* the `<Input>`/`<Textarea>` brings its own focus state with
+   it — `focus-visible:border-ring` plus a 3px ring, in the reusables' base
+   className. Nothing is needed here for those.
+
+   A *frameless* field is the other case: the field is transparent with no
+   border because the row around it draws the field, since a frame within a
+   frame is what you would otherwise get. Those fields carry
+   `focus-visible:ring-0` and their container carries `frame-focus` further
+   down. With only the reusables' ring removed and nothing put back, the
+   highlight lands on the bare input box: a stray rectangle floating inside the
+   rounded frame it was supposed to be, with the field's own padding showing as
+   a gap all the way round. That is the bug `frame-focus` exists to fix.
+
+   What is left is only for fields that are *not* a reusable, and there are none:
+   the ask sheet's one raw `<textarea>` became a `<Textarea>`. So this file has no
+   field-focus rule at all, which is the point — a global one cannot be made to
+   defer to the reusables' ring. `input:focus-visible` is specificity 0,1,1 and
+   beats the utilities layer's `.outline-none` at 0,1,0 no matter which `@layer`
+   it is written in, so it painted an outline on top of every field's own ring:
+   two indicators, offset from each other, on every text input in the app. The
+   reusables' ring is the better indicator and it is already there. */
+
+/* `frame-focus` lights the element that *drew* the frame, when the frameless
+   field inside it takes focus. This one *does* have to outrank the container's
+   own `border-neutral-200` / `bg-*`, so it is unlayered — that is the only place
+   in the cascade that beats the utilities layer.
+
+   `:focus-visible`, not `:focus-within`, so clicking a button *inside* the frame
+   — the composer's toolbar, the password field's Show toggle — does not light
+   up a frame whose text field was never focused. `0 0 0 3px` with no offset
+   matches the reusables' `focus-visible:ring-[3px]`, so the two kinds of field
+   look the same focused. */
+.frame-focus:has(:focus-visible) {
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.5);
 }
 
 /* Toast entrance, the CSS stand-in for the reanimated FadeInUp the native host

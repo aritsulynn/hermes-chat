@@ -238,14 +238,14 @@ export function Field({
       <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400" htmlFor={idFor(label)}>
         {label}
       </Label>
-      <div className="flex items-center rounded-lg border border-neutral-300 bg-white pr-1 dark:border-neutral-700 dark:bg-black">
+      <div className="frame-focus flex items-center rounded-lg border border-neutral-300 bg-white pr-1 dark:border-neutral-700 dark:bg-black">
         <Input
           id={idFor(label)}
           style={scheme}
           // The row around this draws the field; the base border + background
           // inside it would read as a frame within a frame. dark:bg-transparent
           // is required — the base sets dark:bg-input/30.
-          className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
+          className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           type={visible ? 'text' : 'password'}
