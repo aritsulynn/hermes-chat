@@ -4,12 +4,19 @@ import { ArrowUp, ChevronDown, Paperclip, Plus, Square, X } from 'lucide-react';
 import type { Attachment } from '../../utils/messages';
 import { reasoningLabel } from '../../utils/reasoning';
 import { Button } from '../ui/button';
+import { DropdownMenuTrigger, type DropdownMenuHandle } from '../ui/dropdown-menu';
 import { Textarea } from '../ui/textarea';
 
 // How a control reports its position for a screen-level popover. The popover
 // lives in the chat screen (not here) so it can float above the list and still
 // receive taps. ChatScreen re-invokes the measure fn when the layout shifts
 // (keyboard).
+//
+// One caller left: the model picker. The attach and effort menus used to go
+// through here too, and moved to detached `DropdownMenuTrigger`s — Base UI
+// portals its popup to `body`, so the Android reason for keeping the body on the
+// screen no longer applies, and a menu can anchor itself. The model picker stays
+// measured because it is not a menu (see the note on it in the chat screen).
 export type AnchorRect = { x: number; y: number; w: number; h: number };
 export type AnchorMeasure = (cb: (a: AnchorRect) => void) => void;
 
@@ -46,8 +53,8 @@ export const Composer = memo(function Composer({
   effort,
   effortWire,
   showEffort,
-  onOpenEffortPicker,
-  onOpenAttachPicker,
+  attachMenu,
+  effortMenu,
   attachments,
   setAttachments,
   dark,
@@ -70,17 +77,20 @@ export const Composer = memo(function Composer({
   effortWire?: string;
   /** Hidden when the current model reports no reasoning support. */
   showEffort: boolean;
-  onOpenEffortPicker: (measure: AnchorMeasure) => void;
-  onOpenAttachPicker: (measure: AnchorMeasure) => void;
+  /**
+   * Detached menu handles. The triggers are the buttons below; the bodies live
+   * on the chat screen, which is where the data they read lives. Base UI anchors
+   * each popup to whichever trigger opened it, so nothing here has to measure.
+   */
+  attachMenu: DropdownMenuHandle;
+  effortMenu: DropdownMenuHandle;
   attachments: Attachment[];
   setAttachments: (v: Attachment[]) => void;
   /** Theme comes in as a prop — a store subscription here would defeat memo(). */
   dark: boolean;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const plusRef = useRef<HTMLButtonElement>(null);
   const modelRef = useRef<HTMLButtonElement>(null);
-  const effortRef = useRef<HTMLButtonElement>(null);
 
   // While a turn streams, something outside the composer (a portal teardown, a
   // re-render) can drop focus out of the text field mid-draft — the user has to
@@ -183,15 +193,14 @@ export const Composer = memo(function Composer({
             shrink already caps it on a phone, and a cap here would also clip the
             name on a wide screen where there is nothing to protect against. */}
         <div className="flex items-center gap-1.5">
-          <Button
-            ref={plusRef}
-            variant="ghost"
-            size="icon"
-            aria-label="Attach"
-            onClick={() => onOpenAttachPicker(measurer(plusRef.current))}
-            className="h-8 w-8 shrink-0 shadow-none">
+          <DropdownMenuTrigger
+            handle={attachMenu}
+            id="attach"
+            render={
+              <Button variant="ghost" size="icon" aria-label="Attach" className="h-8 w-8 shrink-0 shadow-none" />
+            }>
             <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
-          </Button>
+          </DropdownMenuTrigger>
           <Button
             ref={modelRef}
             variant="ghost"
@@ -206,16 +215,14 @@ export const Composer = memo(function Composer({
             </span>
           </Button>
           {showEffort && (
-            <Button
-              ref={effortRef}
-              variant="ghost"
-              size="sm"
-              onClick={() => onOpenEffortPicker(measurer(effortRef.current))}
-              className="shrink-0 px-2 py-1.5 shadow-none">
+            <DropdownMenuTrigger
+              handle={effortMenu}
+              id="effort"
+              render={<Button variant="ghost" size="sm" className="shrink-0 px-2 py-1.5 shadow-none" />}>
               <span className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
                 {reasoningLabel(effort, effortWire)}
               </span>
-            </Button>
+            </DropdownMenuTrigger>
           )}
           <div className="flex-1" />
           {generating ? (

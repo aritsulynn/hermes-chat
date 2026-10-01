@@ -202,7 +202,6 @@ export const MessageBubble = memo(function MessageBubble({
   item,
   dark,
   expanded,
-  highlight,
   longFired,
   onToggleExpand,
   copied,
@@ -217,7 +216,6 @@ export const MessageBubble = memo(function MessageBubble({
   item: UiMessage;
   dark: boolean;
   expanded: boolean;
-  highlight?: boolean;
   longFired: React.MutableRefObject<boolean>;
   onToggleExpand: (id: string) => void;
   /** Boolean, not the copied id: an id prop would re-render every bubble. */
@@ -352,7 +350,7 @@ export const MessageBubble = memo(function MessageBubble({
                   : item.role === 'summary'
                     ? 'self-start bg-transparent'
                     : 'self-start bg-[#f0f0f2] dark:bg-[#272727]'
-      }${highlight ? ' border-2 border-[#b45309] dark:border-[#fbbf24]' : ''}`}
+      }`}
       // 85% of the *content column*, not the window, so a long row (a thinking
       // summary, a tool card) can never spill past the column and drag a
       // horizontal scrollbar across the transcript.

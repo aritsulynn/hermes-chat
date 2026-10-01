@@ -2,22 +2,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pickFiles } from '../../services/file-picker';
 import { Navigate as Redirect } from 'react-router-dom';
-import {
-  ChevronDown,
-  ChevronUp,
-  Check,
-  ChevronRight,
-  Clock,
-  Copy,
-  FileText,
-  Image as ImageIcon,
-  Pencil,
-} from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
 import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
 import { Transcript } from '../../components/chat/transcript';
 import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
 import type { TranscriptHandle } from '../../components/chat/transcript';
-import { blurActiveElement, useScrollbarGutter, useViewportSize } from '../../hooks/use-viewport';
+import { useScrollbarGutter, useViewportSize } from '../../hooks/use-viewport';
 import {
   FALLBACK_PROVIDERS,
   applySlashCompletion,
@@ -39,16 +29,27 @@ import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../services/gateway-ws';
 import { Composer } from '../../components/chat/composer';
 import type { AnchorMeasure, AnchorRect } from '../../components/chat/composer';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  createDropdownMenuHandle,
+} from '../../components/ui/dropdown-menu';
 import { MessageBubble, formatBubbleTime } from '../../components/chat/message-bubble';
 import { AskSheet, InfoSheet } from '../../components/ui/sheets';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Spinner } from '../../components/ui/bits';
-import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
-import { FALLBACK_SLASH, messageMatchesSearch } from './helpers';
+import { ChatNormalHeader } from './components/ChatHeader';
+import { FALLBACK_SLASH } from './helpers';
 import { CHAT_WINDOW_SOFT_CAP } from '../../services/constants';
-import type { TranscriptHit } from '../../store/types';
 
 export function ChatScreen() {
   const {
@@ -109,8 +110,6 @@ export function ChatScreen() {
     trimmedOlder,
     loadOlderMessages,
     trimHead,
-    searchTranscript,
-    findHitIndex,
     todos,
     subagents,
     refreshToolResults,
@@ -173,32 +172,34 @@ export function ChatScreen() {
   // the composer, so they can float above the list and still receive taps — on
   // Android touches outside a parent's bounds are dropped, so a popover inside
   // the composer wouldn't work.
+  // Only the model picker is still a measured, screen-level panel — see the note
+  // on it where it renders. The attach and effort menus used to share this
+  // mechanism; they are Base UI menus now, anchored by Base UI to triggers that
+  // live in the composer.
   const [popover, setPopover] = useState<{
-    kind: 'effort' | 'attach' | 'model';
     x: number;
     y: number;
     w: number;
     h: number;
   } | null>(null);
   const popoverMeasure = useRef<AnchorMeasure | null>(null);
+  // Detached menu handles. A `useRef` keeps the identity stable: the handle is a
+  // mutable object that Base UI attaches to, not a value to re-create per render.
+  const attachMenu = useRef(createDropdownMenuHandle()).current;
+  const effortMenu = useRef(createDropdownMenuHandle()).current;
   const [modelQuery, setModelQuery] = useState('');
   const [modelExpanded, setModelExpanded] = useState<Record<string, boolean>>({});
   const rootRef = useRef<HTMLDivElement>(null);
-  const rootWin = useRef({ y: 0, h: 0 });
+  const rootWin = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
   const openPopover = useCallback(
-    (kind: 'effort' | 'attach' | 'model', measure: AnchorMeasure) => {
+    (measure: AnchorMeasure) => {
       popoverMeasure.current = measure;
-      if (kind === 'model') {
-        setModelQuery('');
-        void loadProviders();
-      }
-      if (kind === 'effort') {
-        void loadReasoningDisplay();
-      }
-      measure((a) => setPopover({ kind, ...a }));
+      setModelQuery('');
+      void loadProviders();
+      measure((a) => setPopover(a));
     },
-    [loadProviders, loadReasoningDisplay],
+    [loadProviders],
   );
   // Re-anchor after the keyboard slides in/out and lifts the composer.
   const remeasurePopover = useCallback(() => {
@@ -208,6 +209,31 @@ export function ChatScreen() {
     popoverMeasure.current = null;
     setPopover(null);
   }, []);
+
+  // The screen's box, in viewport coordinates.
+  //
+  // This replaces an `onLoad` handler on the root div, which never fired — React
+  // only dispatches `load` for elements that load a resource, so `rootWin` sat
+  // at all-zeroes. That went unnoticed while the root began at the viewport
+  // origin: `y` of 0 was correct, and `x` was never read. The sidebar gave the
+  // root an x, and the model panel then landed a sidebar-width right of the chip
+  // it is anchored to.
+  //
+  // A ResizeObserver rather than a one-off read because the root's box is what
+  // moves when the on-screen keyboard lifts the composer.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const read = () => {
+      const r = el.getBoundingClientRect();
+      rootWin.current = { x: r.x, y: r.y, w: r.width, h: r.height };
+      remeasurePopover();
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [remeasurePopover]);
 
   // Composer completion panel — shows above the input for two triggers:
   //   `/token`  → slash commands (built-ins + quick_commands + skills, curated
@@ -420,10 +446,6 @@ export function ChatScreen() {
     () => messages.some((m) => m.role === 'user' && m.rowId != null && m.text.trim()),
     [messages],
   );
-  // In-conversation search.
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [matchIdx, setMatchIdx] = useState(0);
 
   const onRedirect = useCallback(
     (text: string) => {
@@ -448,9 +470,7 @@ export function ChatScreen() {
   // Stable handlers — MessageBubble and Composer are memo()'d, so inline arrows
   // here would re-render every bubble (markdown re-parse + DOM rebuild)
   // and the focused TextInput on each streamed token.
-  const openModelPicker = useCallback((m: AnchorMeasure) => openPopover('model', m), [openPopover]);
-  const openEffortPicker = useCallback((m: AnchorMeasure) => openPopover('effort', m), [openPopover]);
-  const openAttachPicker = useCallback((m: AnchorMeasure) => openPopover('attach', m), [openPopover]);
+  const openModelPicker = useCallback((m: AnchorMeasure) => openPopover(m), [openPopover]);
   const onToggleExpand = useCallback(
     (id: string) => {
       // Expanding a tool with no result/diff yet → pull it from the transcript.
@@ -699,56 +719,6 @@ export function ChatScreen() {
     dismissAsk();
   }, [dismissAsk]);
 
-  // In-conversation search — full-transcript hits (server rows, not just the
-  // loaded window), with jumps that page older history in until the hit is
-  // mounted. Window highlight stays query-local (see highlightIds below).
-  const sq = searchQuery.trim().toLowerCase();
-  const [searchHits, setSearchHits] = useState<TranscriptHit[]>([]);
-  const jumpToHit = useCallback(
-    async (n: number, hits: TranscriptHit[]) => {
-      if (hits.length === 0) return;
-      const k = ((n % hits.length) + hits.length) % hits.length;
-      setMatchIdx(k);
-      stickEnd.current = false;
-      let idx = findHitIndex(hits[k]);
-      // Page older history in until the hit mounts (bounded; exhausted stops).
-      let guard = 0;
-      while (idx < 0 && guard++ < 8 && !historyExhausted) {
-        const ran = await loadOlderMessages();
-        if (!ran) break;
-        idx = findHitIndex(hits[k]);
-      }
-      if (idx < 0) return;
-      try {
-        void listRef.current?.scrollToIndex({ index: idx, viewPosition: 0.5, animated: true })?.catch(() => {});
-      } catch {}
-    },
-    [findHitIndex, historyExhausted, loadOlderMessages],
-  );
-  const jumpToHitRef = useRef(jumpToHit);
-  jumpToHitRef.current = jumpToHit;
-  // Debounced so a burst of keystrokes makes one index filter (the full fetch
-  // itself is cached per transcript revision inside searchTranscript).
-  useEffect(() => {
-    if (!searchOpen || !sq) {
-      setSearchHits([]);
-      setMatchIdx(0);
-      return;
-    }
-    let live = true;
-    const t = setTimeout(() => {
-      void searchTranscript(sq).then((hits) => {
-        if (!live) return;
-        setSearchHits(hits);
-        void jumpToHitRef.current(0, hits);
-      });
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [searchOpen, sq, searchTranscript]);
-
   // Model picker + list memos must live before the early returns below
   // (hooks can't run after a conditional return). They only read state/props.
   const modelProviders = providers ?? FALLBACK_PROVIDERS;
@@ -773,16 +743,6 @@ export function ChatScreen() {
       })
       .filter((p) => (q ? (p.models?.length ?? 0) > 0 : true));
   }, [modelProviders, mq]);
-  // Search highlight: precompute matched ids once instead of toLowerCase per bubble per render.
-  // Includes buffered streaming text for searchable conversation messages.
-  const highlightIds = useMemo(() => {
-    if (!searchOpen || !sq) return null;
-    const s = new Set<string>();
-    for (const m of messages) {
-      if (messageMatchesSearch(m, streamingTexts[m.id], sq)) s.add(m.id);
-    }
-    return s;
-  }, [searchOpen, sq, messages, streamingTexts]);
   // `paddingBottom: dockH` keeps the last bubble scrollable above the overlaid
   // composer; the gap between rows is `gap-2` on this box.
   // Static classes only. The composer clearance is a style, not a class: a
@@ -888,7 +848,6 @@ export function ChatScreen() {
           item={item}
           dark={dark}
           expanded={!!expanded[item.id]}
-          highlight={highlightIds?.has(item.id) ?? false}
           longFired={longFired}
           onToggleExpand={onToggleExpand}
           copied={copiedId === item.id}
@@ -905,7 +864,6 @@ export function ChatScreen() {
     [
       dark,
       expanded,
-      highlightIds,
       onToggleExpand,
       copiedId,
       onCopy,
@@ -918,17 +876,6 @@ export function ChatScreen() {
       showTip,
     ],
   );
-
-  const closeSearch = useCallback(() => {
-    blurActiveElement();
-    setSearchOpen(false);
-    setSearchQuery('');
-  }, []);
-
-  // A room switch should not carry another conversation's search term/results.
-  useEffect(() => {
-    closeSearch();
-  }, [closeSearch, sessionId]);
 
   // ── Transcript window ────────────────────────────────────────────────
   // Older pages prepend above the viewport: capture the offset AFTER the
@@ -971,8 +918,6 @@ export function ChatScreen() {
     return null;
   }, [historyLoadingMore, historyExhausted, trimmedOlder, onLoadOlder]);
 
-  const searchVisible = Boolean(sessionId && searchOpen);
-
   if (booting) {
     return (
       <div style={screen}>
@@ -1012,72 +957,39 @@ export function ChatScreen() {
     );
   }
 
-  // Popover geometry: anchor above the tapped control (window → root coords).
-  // (modelVisibleProviders/highlight/list memos live above the early returns.)
-  const popW = popover
-    ? popover.kind === 'model'
-      ? Math.min(winW - 24, 340)
-      : popover.kind === 'attach'
-        ? 184
-        : 168
-    : 0;
+  // Popover geometry for the model picker only. Anchor above the tapped control
+  // (window → root coords).
+  const popW = popover ? Math.min(winW - 24, 340) : 0;
   const popRootH = rootWin.current.h || Math.max(0, winH - rootWin.current.y);
+  const popRootW = rootWin.current.w || winW;
   const popRelY = popover ? popover.y - rootWin.current.y : 0;
   const popBottom = popover ? Math.max(8, popRootH - popRelY + 6) : 0;
-  const popLeft = popover
-    ? popover.kind === 'model'
-      ? // Wide panel: dock to the left screen margin instead of the mid-screen
-        // anchor chip, so it never floats mid-air or clips past the right edge.
-        12
-      : Math.max(8, Math.min(popover.x, winW - popW - 8))
-    : 0;
+  // Anchored to the chip that opened it, then clamped to the panel's own width.
+  // This used to be a hardcoded `12` — docked to the left screen margin on the
+  // theory that a 340px panel under a mid-screen chip would clip. It does not:
+  // `min` against `rootW - popW - 8` handles a phone (390 - 340 - 8 = 42, still
+  // on screen), so the hardcoding bought nothing and cost the panel its anchor.
+  const popRelX = popover ? popover.x - rootWin.current.x : 0;
+  const popLeft = popover ? Math.max(8, Math.min(popRelX, popRootW - popW - 8)) : 0;
   // Height budget = the space between the anchor and the top of the screen
   // content, minus the 6px anchor gap and an 8px top margin. The popover grows
   // upward from the composer, so without this the model list (which gets long
   // as soon as a search auto-expands every matching provider) slides up under
   // the header and hides the search field being typed into.
   const popSpaceAbove = popover ? Math.max(0, popRelY - 14) : 0;
-  const popMaxH =
-    popover?.kind === 'model' ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove)) : undefined;
+  const popMaxH = popover ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove)) : undefined;
 
   return (
-    <div
-      ref={rootRef}
-      onLoad={() => {
-        const el = rootRef.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        rootWin.current = { y: r.y, h: r.height };
-        // Keyboard resize moves the composer; keep the popover glued to it.
-        remeasurePopover();
-      }}
-      style={screen}>
-      {searchVisible ? (
-        <ChatSearchHeader
-          dark={dark}
-          iconColor={headerIcon}
-          query={searchQuery}
-          matchIndex={matchIdx}
-          matchCount={searchHits.length}
-          onChangeQuery={setSearchQuery}
-          onPrevious={() => void jumpToHit(matchIdx - 1, searchHits)}
-          onNext={() => void jumpToHit(matchIdx + 1, searchHits)}
-          onClose={closeSearch}
-        />
-      ) : (
-        <ChatNormalHeader
-          dark={dark}
-          iconColor={headerIcon}
-          title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
-          contextPercent={ctxPct}
-          contextTone={ctxTone}
-          onOpenSearch={() => {
-            setSearchOpen(true);
-          }}
-          onSelectInfo={() => void openInfo()}
-          onOpenInfo={() => void openInfo()}
-        />
-      )}
+    <div ref={rootRef} style={screen}>
+      <ChatNormalHeader
+        dark={dark}
+        iconColor={headerIcon}
+        title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
+        contextPercent={ctxPct}
+        contextTone={ctxTone}
+        onSelectInfo={() => void openInfo()}
+        onOpenInfo={() => void openInfo()}
+      />
 
       {/* No 'bottom' edge here: Composer already pads with insets.bottom
           itself when the keyboard is closed, and KeyboardAvoidingView lifts
@@ -1457,8 +1369,8 @@ export function ChatScreen() {
                 effort={effort}
                 effortWire={effortWire}
                 showEffort={showEffort}
-                onOpenEffortPicker={openEffortPicker}
-                onOpenAttachPicker={openAttachPicker}
+                attachMenu={attachMenu}
+                effortMenu={effortMenu}
                 attachments={attachments}
                 setAttachments={setAttachments}
                 dark={dark}
@@ -1510,10 +1422,106 @@ export function ChatScreen() {
           onRename={(t) => void renameSession(t)}
         />
 
-        {/* Screen-level anchored popovers: "+" attach, model picker, thinking
-          effort. Rendered here (not in the composer) so they float above the
-          list and still receive taps — Android drops touches outside a
-          parent's bounds. */}
+        {/* Thinking effort, as a menu. It was a hand-drawn list in the panel
+            below; as a menu it gains arrow-key roving and typeahead, and the
+            effort choice becomes a real radio group rather than eight buttons
+            each re-deriving its own selected state. */}
+        <DropdownMenu
+          handle={effortMenu}
+          onOpenChange={(o) => {
+            // Only on open: the same call the old `openPopover('effort')` made.
+            if (o) void loadReasoningDisplay();
+          }}>
+          <DropdownMenuContent side="top" align="start" className="w-[190px]">
+            {/* The label has to sit inside a group: Base UI's GroupLabel reads
+                its context and throws without one ("MenuGroupContext is
+                missing"), where Radix's Label was happy on its own. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide uppercase">
+                Thinking effort
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={effort.trim().toLowerCase()}
+                onValueChange={(v) => void applyEffort(String(v))}>
+                {effortOptions.map((e) => (
+                  <DropdownMenuRadioItem
+                    key={e}
+                    value={e}
+                    data-testid={`effort-option-${e}`}
+                    className="px-2.5 py-2 pr-8 text-[14px]">
+                    {reasoningLabel(e)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+            {/* Fast mode — separate from reasoning (`config.set fast`). */}
+            <DropdownMenuSeparator className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+            <DropdownMenuCheckboxItem
+              data-testid="fast-toggle"
+              checked={sessionInfo?.fast === true}
+              onCheckedChange={() => void applyFast(!(sessionInfo?.fast === true))}
+              className="px-2.5 py-2 pr-8 text-[14px]">
+              Fast mode
+            </DropdownMenuCheckboxItem>
+            {/* Reasoning display — the switch behind live tool + reasoning
+                streaming (`config.set reasoning show|hide`). `hide` persists
+                tool calls to history without live events; `show` streams
+                everything. Shared display setting (desktop included).
+                Never disabled: with an unknown value a tap turns live
+                streaming ON (the useful direction — this is the switch that
+                fixes "bubbles only appear after the turn ends"). */}
+            <DropdownMenuCheckboxItem
+              data-testid="show-reasoning-toggle"
+              checked={showReasoning === true}
+              onCheckedChange={() => void applyShowReasoning(showReasoning !== true)}
+              className="px-2.5 py-2 pr-8 text-[14px]">
+              Show reasoning
+            </DropdownMenuCheckboxItem>
+            <div className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
+              {showReasoning === null
+                ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
+                : 'Streams tool calls + reasoning live (shared display setting).'}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Attach, as a menu. The two actions close the menu themselves now. */}
+        <DropdownMenu handle={attachMenu}>
+          <DropdownMenuContent side="top" align="start" className="w-[184px]">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide uppercase">
+                Attach
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                data-testid="attach-photo"
+                onClick={() => void pickImage()}
+                className="gap-2.5 px-2.5 py-2 text-[14px]">
+                <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
+                <span className="text-neutral-900 dark:text-neutral-100">Photo</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-testid="attach-file"
+                onClick={() => void pickFile()}
+                className="gap-2.5 px-2.5 py-2 text-[14px]">
+                <FileText size={17} color={dark ? '#ccc' : '#444'} />
+                <span className="text-neutral-900 dark:text-neutral-100">File</span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* The model picker, deliberately NOT a menu.
+            It reads as one, but it is a search + browse + act surface: a filter
+            field over ~300 models across a dozen providers, providers that
+            expand in place, and *two* actions per model (use for this chat, and
+            set as the global default). A menu item is a single action, and a
+            menu owns focus — typing into the search field would be fighting the
+            menu's own typeahead. Its natural home is a combobox, not a menu.
+            So it keeps the measured screen-level panel.
+            This is also why the panel is still rendered at screen level rather
+            than in the composer: that split was for Android's touch bounds,
+            which Base UI's portal makes moot for the two menus above, but this
+            panel is measured and positioned by hand. */}
         {popover && (
           <>
             <button
@@ -1524,226 +1532,123 @@ export function ChatScreen() {
             />
             <div
               data-testid="anchor-popover"
-              className="absolute z-[70] rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
+              // `flex flex-col` is load-bearing, not decoration: the body below
+              // is `flex-1 min-h-0 overflow-y-auto` and the panel's own height is
+              // capped by `maxHeight`. With a block parent all three of those
+              // are inert — the scroller takes its content height (a few
+              // thousand px once a provider is expanded) and spills straight out
+              // of the capped panel instead of scrolling inside it.
+              className="absolute z-[70] flex flex-col rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
               style={{
                 width: popW,
                 left: popLeft,
                 bottom: popBottom,
                 maxHeight: popMaxH,
               }}>
-              {popover.kind === 'effort' && showEffort && (
-                <>
-                  <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Thinking effort
-                  </div>
-                  {effortOptions.map((e) => {
-                    const on = e === effort.trim().toLowerCase();
+              <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Switch model (this chat)
+              </div>
+              <div className="px-1.5 pb-1.5">
+                <Input
+                  className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                  value={modelQuery}
+                  onChange={(e) => setModelQuery(e.target.value)}
+                  placeholder="Search models…"
+                  autoCapitalize="none"
+                />
+              </div>
+              {providersLoading && (
+                <div className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</div>
+              )}
+              {!!providersError && (
+                <div role="alert" className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]">
+                  {providersError}
+                </div>
+              )}
+              <div className="overflow-y-auto min-h-0 flex-1">
+                <div>
+                  {modelVisibleProviders.map((p) => {
+                    const count = p.models?.length ?? p.totalModels;
+                    const open = mq ? true : (modelExpanded[p.slug] ?? false);
                     return (
-                      <Button
-                        variant="ghost"
-                        key={e}
-                        data-testid={`effort-option-${e}`}
-                        onClick={() => {
-                          void applyEffort(e);
-                          closePopover();
-                        }}
-                        className={`flex items-center gap-2 px-2.5 py-2 ${
-                          on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                        }`}>
-                        <span
-                          className={`min-w-0 flex-1 text-[14px] ${
-                            on
-                              ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                              : 'text-neutral-900 dark:text-neutral-100'
-                          }`}>
-                          {reasoningLabel(e)}
-                        </span>
-                        {on && <Check size={15} color="#1a73e8" />}
-                      </Button>
+                      <div key={p.slug || p.name}>
+                        <Button
+                          variant="ghost"
+                          onClick={() => setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))}
+                          className="flex items-center gap-2 px-2.5 py-2">
+                          <span className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100 truncate">
+                            {p.name}
+                          </span>
+                          <span className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                            {count} model{count === 1 ? '' : 's'}
+                          </span>
+                          {open ? (
+                            <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
+                          ) : (
+                            <ChevronRight size={15} color={dark ? '#a3a3a3' : '#666'} />
+                          )}
+                        </Button>
+                        {open &&
+                          (p.models ?? []).map((mm) => {
+                            const on = mm === model && p.slug === modelProvider;
+                            return (
+                              <div
+                                key={mm}
+                                className={`flex items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
+                                  on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
+                                }`}>
+                                {' '}
+                                <Button
+                                  variant="ghost"
+
+                                  aria-pressed={on}
+                                  aria-label={mm}
+                                  onClick={() => {
+                                    void pickModel(p.slug, mm);
+                                    closePopover();
+                                  }}
+                                  // The button base centres its content, which
+                                  // reads as a floating label in a full-width row.
+                                  // Left-align here and let the label take the
+                                  // slack so a long model id ellipsizes against
+                                  // the Global button instead of pushing it out.
+                                  className="h-auto sm:h-auto min-w-0 flex-1 justify-start">
+                                  <span
+                                    className={`min-w-0 flex-1 text-left text-[14px] ${
+                                      on
+                                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                                        : 'text-neutral-950 dark:text-neutral-100'
+                                    } truncate`}>
+                                    {on ? '● ' : '○ '}
+                                    {mm}
+                                  </span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  aria-label={`Set ${mm} as the global default`}
+                                  onClick={() => {
+                                    void setGlobalModel(p.slug, mm);
+                                    closePopover();
+                                  }}
+                                  className="h-auto sm:h-auto shrink-0 px-2 py-1">
+                                  <span className="text-[13px]">Global</span>
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        {open && !p.models && (
+                          <div className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                            list unavailable — pull to refresh on server
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
-                  {/* Fast mode — separate from reasoning (`config.set fast`). */}
-                  <div className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
-                  <Button
-                    variant="ghost"
-                    data-testid="fast-toggle"
-                    onClick={() => {
-                      void applyFast(!(sessionInfo?.fast === true));
-                      closePopover();
-                    }}
-                    className="flex items-center gap-2 px-2.5 py-2">
-                    <span
-                      className={`min-w-0 flex-1 text-[14px] ${
-                        sessionInfo?.fast === true
-                          ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                          : 'text-neutral-900 dark:text-neutral-100'
-                      }`}>
-                      Fast mode
-                    </span>
-                    {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
-                  </Button>
-                  {/* Reasoning display — the switch behind live tool + reasoning
-                    streaming (`config.set reasoning show|hide`). `hide` persists
-                    tool calls to history without live events; `show` streams
-                    everything. Shared display setting (desktop included).
-                    Never disabled: with an unknown value a tap turns live
-                    streaming ON (the useful direction — this is the switch that
-                    fixes "bubbles only appear after the turn ends"). */}
-                  <Button
-                    variant="ghost"
-                    data-testid="show-reasoning-toggle"
-                    onClick={() => void applyShowReasoning(showReasoning !== true)}
-                    className="flex items-center gap-2 px-2.5 py-2">
-                    <span
-                      className={`min-w-0 flex-1 text-[14px] ${
-                        showReasoning === true
-                          ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                          : 'text-neutral-900 dark:text-neutral-100'
-                      }`}>
-                      Show reasoning
-                    </span>
-                    {showReasoning === true && <Check size={15} color="#1a73e8" />}
-                  </Button>
-                  <div className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
-                    {showReasoning === null
-                      ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
-                      : 'Streams tool calls + reasoning live (shared display setting).'}
-                  </div>
-                </>
-              )}
-
-              {popover.kind === 'attach' && (
-                <>
-                  <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Attach
-                  </div>
-                  <Button
-                    variant="ghost"
-                    data-testid="attach-photo"
-                    onClick={() => void pickImage()}
-                    className="flex items-center gap-2.5 px-2.5 py-2">
-                    <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
-                    <span className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    data-testid="attach-file"
-                    onClick={() => void pickFile()}
-                    className="flex items-center gap-2.5 px-2.5 py-2">
-                    <FileText size={17} color={dark ? '#ccc' : '#444'} />
-                    <span className="text-[14px] text-neutral-900 dark:text-neutral-100">File</span>
-                  </Button>
-                </>
-              )}
-
-              {popover.kind === 'model' && (
-                <>
-                  <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Switch model (this chat)
-                  </div>
-                  <div className="px-1.5 pb-1.5">
-                    <Input
-                      className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                      value={modelQuery}
-                      onChange={(e) => setModelQuery(e.target.value)}
-                      placeholder="Search models…"
-                      autoCapitalize="none"
-                    />
-                  </div>
-                  {providersLoading && (
-                    <div className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</div>
+                  {modelVisibleProviders.length === 0 && !providersLoading && (
+                    <div className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</div>
                   )}
-                  {!!providersError && (
-                    <div role="alert" className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]">
-                      {providersError}
-                    </div>
-                  )}
-                  <div className="overflow-y-auto min-h-0 flex-1">
-                    <div>
-                      {modelVisibleProviders.map((p) => {
-                        const count = p.models?.length ?? p.totalModels;
-                        const open = mq ? true : (modelExpanded[p.slug] ?? false);
-                        return (
-                          <div key={p.slug || p.name}>
-                            <Button
-                              variant="ghost"
-                              onClick={() => setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))}
-                              className="flex items-center gap-2 px-2.5 py-2">
-                              <span className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100 truncate">
-                                {p.name}
-                              </span>
-                              <span className="text-[12px] text-neutral-500 dark:text-neutral-400">
-                                {count} model{count === 1 ? '' : 's'}
-                              </span>
-                              {open ? (
-                                <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
-                              ) : (
-                                <ChevronRight size={15} color={dark ? '#a3a3a3' : '#666'} />
-                              )}
-                            </Button>
-                            {open &&
-                              (p.models ?? []).map((mm) => {
-                                const on = mm === model && p.slug === modelProvider;
-                                return (
-                                  <div
-                                    key={mm}
-                                    className={`flex items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
-                                      on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                                    }`}>
-                                    {' '}
-                                    <Button
-                                      variant="ghost"
-
-                                      aria-pressed={on}
-                                      aria-label={mm}
-                                      onClick={() => {
-                                        void pickModel(p.slug, mm);
-                                        closePopover();
-                                      }}
-                                      // The button base centres its content, which
-                                      // reads as a floating label in a full-width row.
-                                      // Left-align here and let the label take the
-                                      // slack so a long model id ellipsizes against
-                                      // the Global button instead of pushing it out.
-                                      className="h-auto sm:h-auto min-w-0 flex-1 justify-start">
-                                      <span
-                                        className={`min-w-0 flex-1 text-left text-[14px] ${
-                                          on
-                                            ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                                            : 'text-neutral-950 dark:text-neutral-100'
-                                        } truncate`}>
-                                        {on ? '● ' : '○ '}
-                                        {mm}
-                                      </span>
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      aria-label={`Set ${mm} as the global default`}
-                                      onClick={() => {
-                                        void setGlobalModel(p.slug, mm);
-                                        closePopover();
-                                      }}
-                                      className="h-auto sm:h-auto shrink-0 px-2 py-1">
-                                      <span className="text-[13px]">Global</span>
-                                    </Button>
-                                  </div>
-                                );
-                              })}
-                            {open && !p.models && (
-                              <div className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
-                                list unavailable — pull to refresh on server
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {modelVisibleProviders.length === 0 && !providersLoading && (
-                        <div className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
+                </div>
+              </div>
             </div>
           </>
         )}

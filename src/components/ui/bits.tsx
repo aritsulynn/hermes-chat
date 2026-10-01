@@ -274,9 +274,25 @@ function idFor(label: string): string {
  * with the element, so a row that leaves the viewport cannot leave an animation
  * running.
  */
-export function Spinner({ size = 14, color }: { size?: number; color: string }) {
+export function Spinner({
+  size = 14,
+  color,
+  className,
+}: {
+  size?: number;
+  /**
+   * A raw colour string for the places that cannot use a class — inline styles,
+   * a value read off the theme in JS. Prefer `className` with a `text-*`
+   * utility (and `dark:text-*` for the other scheme): it keeps the colour in
+   * CSS, so switching theme is a class swap rather than a re-render.
+   */
+  color?: string;
+  className?: string;
+}) {
   return (
-    <span className="inline-flex animate-spin" style={{ color }}>
+    // No `color` prop on the icon means `currentColor`, which is what lets
+    // `className` drive it.
+    <span className={cn('inline-flex animate-spin', className)} style={color ? { color } : undefined}>
       <LoaderCircle size={size} color={color} />
     </span>
   );

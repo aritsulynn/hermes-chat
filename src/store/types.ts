@@ -32,13 +32,6 @@ export type OpsResult = unknown;
 export type OpsGet = (path: string) => Promise<OpsResult>;
 /** Cookie-authed mutation against the dashboard (`services/dashboard`). */
 export type OpsMut = (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<OpsResult>;
-/** One row of the full-history search index (plain data, not a live bubble). */
-export interface TranscriptHit {
-  role: string;
-  text: string;
-  rowId: number | null;
-}
-
 export interface AppStore {
   booting: boolean;
   authed: boolean;
@@ -177,12 +170,6 @@ export interface AppStore {
   /** Reply to the current foreground ask with its method-specific result. */
   answerAsk: (result: Record<string, unknown>) => boolean;
   dismissAsk: () => void;
-  /** One transcript row in the full-history search index (not a live bubble). */
-  /** Full-history search: match `query` across the server transcript, not just
-   *  the loaded window. Returns hits oldest-first. */
-  searchTranscript: (query: string) => Promise<TranscriptHit[]>;
-  /** Window index of a search hit, or -1 when it is not loaded yet. */
-  findHitIndex: (hit: TranscriptHit) => number;
   // The theme triple (theme / themeMode / setTheme) is deliberately NOT on
   // AppStore — it lives on its own context so a theme toggle does not hand all
   // ~30 useApp() consumers a new object. Read it with useThemeValue().

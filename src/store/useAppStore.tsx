@@ -47,7 +47,7 @@ import {
   scheduleContextHydration,
   withTimeout,
 } from './helpers';
-import type { AgentProfile, AppStore, TranscriptHit } from './types';
+import type { AgentProfile, AppStore } from './types';
 import type { StoreCtx } from './ctx';
 import { useThemeSlice } from './slices/useTheme';
 import type { ThemeSlice } from './slices/useTheme';
@@ -469,66 +469,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setHistoryLoadingMore(false);
     }
   }, [acceptRotatedCookie]);
-  // ── Full-history search ─────────────────────────────────────────────
-  // In-conversation search must cover the server transcript, not just the
-  // loaded window (windowing would otherwise hide older matches). The backend
-  // has no search endpoint, so build a transient plain-data index (capped at
-  // CHAT_HISTORY_MAX_ROWS) once per transcript revision and filter per
-  // keystroke. Thinking bubbles stay excluded, mirroring messageMatchesSearch.
-  const searchIndexRef = useRef<{ key: string; rows: TranscriptHit[] } | null>(null);
-  const searchTranscript = useCallback(
-    async (query: string): Promise<TranscriptHit[]> => {
-      const q = query.trim().toLowerCase();
-      if (!q) return [];
-      const h = latest.current.host;
-      const profile = latest.current.activeProfile;
-      const epoch = profileEpochRef.current;
-      const sk = latest.current.sessionKey;
-      const connectionEpoch = connectionEpochRef.current;
-      const targetUser = latest.current.username;
-      if (!h || !sk) return [];
-      const key = JSON.stringify([h, targetUser, profile, sk, messagesRef.current.length]);
-      let rows = searchIndexRef.current?.key === key ? searchIndexRef.current.rows : null;
-      if (!rows) {
-        try {
-          const items = await getSessionMessages(
-            h,
-            cookie.current,
-            sk,
-            profile,
-            CHAT_HISTORY_MAX_ROWS,
-            connectionScope(h, targetUser),
-            async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
-          );
-          if (
-            activeProfileRef.current !== profile ||
-            profileEpochRef.current !== epoch ||
-            connectionEpochRef.current !== connectionEpoch ||
-            latest.current.sessionKey !== sk
-          )
-            return [];
-          rows = historyToItems(items)
-            .filter((m) => m.role !== 'thinking')
-            .map((m) => ({ role: m.role, text: m.text, rowId: m.rowId ?? null }));
-          searchIndexRef.current = { key, rows };
-        } catch {
-          return [];
-        }
-      }
-      return rows.filter((r) => r.text.toLowerCase().includes(q));
-    },
-    [acceptRotatedCookie],
-  );
-  // Locate a global hit inside the loaded window: durable rows by rowId,
-  // transient ones (tool labels) by exact text. -1 means "page it in first".
-  const findHitIndex = useCallback((hit: TranscriptHit): number => {
-    const cur = messagesRef.current;
-    if (hit.rowId != null) {
-      const i = cur.findIndex((m) => m.role === hit.role && m.rowId === hit.rowId);
-      if (i >= 0) return i;
-    }
-    return cur.findIndex((m) => m.role === hit.role && m.text === hit.text);
-  }, []);
   // Stamp durable row ids onto live messages (edit/rewind targets) by aligning
   // the REST transcript tail with the local transcript from the end.
   stampRowIdsRef.current = () => {
@@ -943,8 +883,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       trimmedOlder,
       loadOlderMessages,
       trimHead,
-      searchTranscript,
-      findHitIndex,
       input,
       setInput,
       model,
@@ -1053,8 +991,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       trimmedOlder,
       loadOlderMessages,
       trimHead,
-      searchTranscript,
-      findHitIndex,
       input,
       setInput,
       model,
