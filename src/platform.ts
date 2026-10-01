@@ -6,7 +6,7 @@
 // "are we inside a native shell?", so features never import `@capacitor/core`
 // directly and Electron can become a second `||` here instead of a refactor.
 import { Capacitor } from '@capacitor/core';
-import { StatusBar } from '@capacitor/status-bar';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 /** True inside Capacitor (and later, any native shell we add here). */
 export function isNativeShell(): boolean {
@@ -34,5 +34,26 @@ export async function initNativeChrome(): Promise<void> {
     await StatusBar.setOverlaysWebView({ overlay: false });
   } catch {
     // Old shells without the plugin: the CSS `env()` insets stay the fallback.
+  }
+}
+
+/**
+ * Keep the status-bar icons readable against whatever the app drew behind
+ * them. Edge-to-edge is enforced on current Android, so the bar is
+ * transparent and its icons float over the topmost screen.
+ *
+ * Watch the naming: Capacitor's `Style` describes the BAR, not the text —
+ * `Dark` is a dark bar with light icons, `Light` is a light bar with dark
+ * icons (see StatusBar.java: `setAppearanceLightStatusBars(!style == DARK)`).
+ * Dark theme (black top) therefore wants `Style.Dark`. Getting this backwards
+ * shows nothing at all — dark icons on a black top read as a "missing" clock.
+ * Call whenever `theme` changes.
+ */
+export async function syncStatusBarStyle(dark: boolean): Promise<void> {
+  if (!isNativeShell()) return;
+  try {
+    await StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light });
+  } catch {
+    // Cosmetic only — never break boot for an icon colour.
   }
 }

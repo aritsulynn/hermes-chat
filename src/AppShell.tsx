@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useThemeValue } from './hooks/app-store';
 import { setDrawerOpener, setNavigator, setSidebarShown } from './store/nav';
+import { syncStatusBarStyle } from './platform';
 import { ConnectionBanner } from './components/connection-banner';
 import { HermesSidebarContent } from './components/drawer/HermesSidebarContent';
 import { FilePreviewHost } from './components/chat/media';
@@ -81,6 +82,12 @@ export function AppShell() {
   const { theme } = useThemeValue();
   // `booting` is the store restoring the session from the browser's cookie jar.
   const { booting } = useApp();
+
+  // Native only: the status bar is transparent (edge-to-edge is enforced), so
+  // its icons must contrast with the app's own top. Web no-ops.
+  useEffect(() => {
+    void syncStatusBarStyle(theme === 'dark');
+  }, [theme]);
 
   return (
     <SidebarProvider

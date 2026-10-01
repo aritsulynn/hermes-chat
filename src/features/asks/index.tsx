@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, BellRing, Check, Clock3, MessageCircleQuestion, ShieldAlert, X } from 'lucide-react';
 
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ScreenHeader } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
@@ -335,10 +335,10 @@ export function AskInboxScreen() {
   return (
     <div style={screenStyle(dark)}>
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        <div className="flex items-center gap-3 border-b border-neutral-200 px-4 py-4 dark:border-neutral-800">
-          <HamburgerBtn />
-          <div className="text-xl font-bold text-neutral-950 dark:text-neutral-100">Ask Inbox</div>
-        </div>
+        {/* Shared header like every other screen — the bespoke div that lived
+            here had no safe-area top pad, so on an edge-to-edge phone the
+            title sat under the status bar. */}
+        <ScreenHeader title="Ask Inbox" />
         <div className="overflow-y-auto">
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
             <div className="mb-1 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
