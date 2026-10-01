@@ -117,7 +117,13 @@ export const Composer = memo(function Composer({
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
   return (
     <div
-      className="px-2.5 pt-2"
+      // `pointer-events-auto` is load-bearing and is the counterpart to the
+      // `pointer-events-none` on the chat screen's overlay footer, which owns
+      // this whole band. The footer must be transparent to gestures so the
+      // transcript underneath still scrolls; the composer inside it must be
+      // opaque, or the send button and the text field stop responding. That is
+      // the DOM spelling of the native footer's `pointerEvents="box-none"`.
+      className="pointer-events-auto px-2.5 pt-2"
       style={{
         // Above the keyboard when one is up, otherwise clear of the home
         // indicator. `env()` beats a measured inset here — no layout pass.

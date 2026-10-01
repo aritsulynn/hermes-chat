@@ -339,6 +339,32 @@ export function ChatScreen() {
   // the transcript (absolute, transparent), so the list reserves room for it
   // via content padding (see listContentStyle) instead of flex space.
   const [dockH, setDockH] = useState(0);
+  // The overlay footer's own box, measured. This is the composer clearance the
+  // transcript's bottom padding is built from, and it was silently zero: the
+  // native build measured it with `onLayout`, the port dropped that prop, and
+  // nothing was left to write the state. Symptom was the last bubble rendering
+  // underneath the composer card.
+  //
+  // A ResizeObserver rather than a layout callback, and it watches the footer
+  // rather than the composer card, because the footer's box is what the
+  // transcript has to clear: it includes the `paddingBottom: kbH + kbGap` that
+  // lifts the card above the keyboard, so one number covers both cases.
+  //
+  // A *callback* ref, not a ref plus a mount effect. The footer only exists in
+  // the active-session branch of the render, so the first render is the booting
+  // or no-session branch, an effect with `[]` deps runs there, finds a null ref,
+  // and never runs again — which is exactly the bug the first attempt at this
+  // fix had.
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  const observeDock = useCallback((el: HTMLDivElement | null) => {
+    dockRef.current = el;
+    if (!el) return;
+    const read = () => setDockH(el.getBoundingClientRect().height);
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Keyboard height — the footer is lifted by hand with bottom padding. The
   // list stays full-height underneath the transparent footer zone.
   const [kbH, setKbH] = useState(0);
@@ -369,9 +395,6 @@ export function ChatScreen() {
   // system events that must not strand a cold load mid-list. Plain appends
   // never set it, so reading history is never yanked.
   const pinWanted = useRef(false);
-  // True between momentum-begin/end — the only reliable "user flung,
-  // finger already up" signal. Programmatic scrolls don't emit these.
-  const momentum = useRef(false);
   // Latest scroll offset (mirrored in onScroll) — the jump button instant-jumps
   // when far instead of smooth-scrolling ten thousand pixels sluggishly.
   const scrollY = useRef(0);
@@ -486,11 +509,23 @@ export function ChatScreen() {
         const end = Math.max(0, contentH.current - layoutH.current);
         if (end <= 0) return;
         flying.current = true;
-        // Safety: never strand the follow state if the flight never lands.
+        // `flying` means "the next scroll events are mine, not the user's".
+        //
+        // On a native list that had to cover a momentum animation, so it was held
+        // for 1200ms as a backstop. A DOM scroll is not like that:
+        // `behavior: 'auto'` is applied synchronously and emits exactly one
+        // scroll event, so a short window is correct; `'smooth'` genuinely does
+        // animate and needs longer. The two are now separated because the
+        // over-long window on the instant path was a livelock, not just waste —
+        // `handleScroll` ignores the user's own scroll while `flying` is set, so
+        // a follow re-arming it every 250ms meant the counter that disengages
+        // following could never advance, and wheeling up was dragged back to the
+        // bottom indefinitely. The scrollbar still worked, which is what made it
+        // look like a pointer problem rather than a follow problem.
         if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
         scrollEndTimer.current = setTimeout(() => {
           flying.current = false;
-        }, 1200);
+        }, anim ? 600 : 120);
         listRef.current?.scrollToOffset({ offset: end, animated: anim });
       });
     });
@@ -776,10 +811,12 @@ export function ChatScreen() {
   // composer; the gap between rows is `gap-2` on this box, which is what
   // FlashList's explicit separator existed to work around (its cells are
   // absolutely positioned, so `gap` on the container was ignored).
-  const listContentClass = useMemo(
-    () => `flex flex-col gap-2 px-3 pt-3 pb-[${Math.round(dockH)}px]`,
-    [dockH],
-  );
+  // Static classes only. The composer clearance is a style, not a class: a
+  // Tailwind utility built from a template literal is never emitted by the
+  // scanner, so `pb-[${dockH}px]` produced no rule at all and the transcript had
+  // no bottom padding — the last bubble sat under the composer.
+  const listContentClass = 'flex flex-col gap-2 px-3 pt-3';
+  const listContentStyle = useMemo(() => ({ paddingBottom: Math.round(dockH) }), [dockH]);
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
   // (was: FlashList recycled per bubble role, and
   // Armed while an older page loads: offset + content height captured after
@@ -849,12 +886,16 @@ export function ChatScreen() {
       // load intent — self-healing after programmatic scrolls, layout shifts
       // and keyboard transitions. A fling that lands here is over by definition.
       missEnd.current = 0;
-      momentum.current = false;
       stickEnd.current = true;
       pinWanted.current = false;
-    } else if (touching.current || momentum.current) {
-      // Genuine user driving (finger down, or fling in flight): disengage
+    } else if (touching.current) {
+      // Genuine user driving (finger down, wheel, or trackpad): disengage
       // immediately and retire load intent — the user positioned deliberately.
+      //
+      // This used to read `touching.current || momentum.current`, and the
+      // momentum half was dead on arrival: its only setter was FlashList's
+      // onMomentumScrollBegin, which went when FlashList did. On the web a
+      // trackpad fling is a wheel gesture, so `touching` now covers it.
       missEnd.current = 0;
       stickEnd.current = false;
       pinWanted.current = false;
@@ -1156,6 +1197,7 @@ export function ChatScreen() {
         <Transcript
           ref={listRef}
           contentClassName={listContentClass}
+          contentStyle={listContentStyle}
           onStartReached={handleStartReached}
           onContentSizeChange={handleContentSizeChange}
           onViewportResize={handleViewportResize}
@@ -1181,10 +1223,10 @@ export function ChatScreen() {
             through to the list (which dismisses the keyboard); the card and
             panels stay fully tappable. */}
         <div
-
+          ref={observeDock}
+          className="pointer-events-none"
           style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: kbH + kbGap, backgroundColor: 'transparent' }}
-
->
+        >
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
         {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling

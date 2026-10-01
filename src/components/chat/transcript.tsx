@@ -20,7 +20,13 @@
 // The list is bounded by the store, not here: CHAT_WINDOW_TRIM_KEEP trims the
 // transcript to ~600 rows, so every row is mounted and that is the intended
 // cost, not an oversight.
-import { forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 
 export interface TranscriptHandle {
   /** Absolute scroll, in px. */
@@ -64,11 +70,29 @@ export interface TranscriptProps {
    * (a snap-through, a settle-the-follow-state) needs to be told the edges
    * directly. `onInteractEnd` also covers a trackpad fling that has already
    * come to rest before the last scroll event was delivered.
+   *
+   * A wheel or trackpad gesture fires neither pointerdown nor pointerup, so
+   * `onInteractStart` is also raised for those and held open until the gesture
+   * goes quiet. Without it, "the user is driving" was only ever true for a
+   * mouse drag, and on a desktop every wheel scroll looked like a stray layout
+   * shift to the chat screen — which is what made wheel-up get dragged back to
+   * the bottom while dragging the scrollbar worked.
    */
   onInteractStart?: () => void;
   onInteractEnd?: () => void;
+  /** Idle ms after the last wheel event before the gesture counts as over. */
+  wheelIdleMs?: number;
   className?: string;
   contentClassName?: string;
+  /**
+   * Inline style for the content box, for values Tailwind cannot know at
+   * build time. The composer clearance is one: it is the measured footer
+   * height, so it has to be a style and not a class — a class built from a
+   * template literal is invisible to the scanner and is simply never
+   * emitted, which is how the transcript ended up with `pb-[0px]` and no
+   * bottom padding at all.
+   */
+  contentStyle?: CSSProperties;
 }
 
 export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function Transcript(
@@ -81,13 +105,18 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     onViewportResize,
     onInteractStart,
     onInteractEnd,
+    wheelIdleMs = 160,
     className,
     contentClassName,
+    contentStyle,
   },
   ref,
 ) {
   const scroller = useRef<HTMLDivElement | null>(null);
   const inner = useRef<HTMLDivElement | null>(null);
+  // Debounce handle for the wheel gesture. Kept here rather than in the screen
+  // so the idle window is a property of the gesture, not of the caller.
+  const wheelIdle = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Row offsets, refreshed whenever the content resizes. `scrollToIndex` needs
   // them and a DOM query per row is not an option on a 600-row transcript.
   const rowTops = useRef<number[]>([]);
@@ -161,6 +190,18 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       // leaving `touching` set would wedge the follow heuristic.
       onPointerUp={() => onInteractEnd?.()}
       onPointerCancel={() => onInteractEnd?.()}
+      // A wheel or trackpad gesture has no pointer events at all, so it is
+      // opened on the first event and closed once `wheelIdleMs` passes with
+      // nothing. `deltaY` is only read to keep the handler honest about being a
+      // wheel listener; the direction is the screen's business, not this one's.
+      onWheel={() => {
+        onInteractStart?.();
+        if (wheelIdle.current) clearTimeout(wheelIdle.current);
+        wheelIdle.current = setTimeout(() => {
+          wheelIdle.current = null;
+          onInteractEnd?.();
+        }, wheelIdleMs);
+      }}
       onScroll={() => {
         onScroll?.();
         const el = scroller.current;
@@ -168,6 +209,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       }}>
       <div
         className={contentClassName}
+        style={contentStyle}
         onLoad={measureRows}
         // A ResizeObserver rather than a layout callback: rows change height
         // without the content box's own ref firing (a wrapped markdown block, an
