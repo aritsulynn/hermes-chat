@@ -50,7 +50,9 @@ export interface StoreRuntime {
   stampRowIdsRef: MutableRefObject<() => void>;
   resyncRef: MutableRefObject<() => void>;
   connectRef: MutableRefObject<(h: string, user: string, pw: string) => Promise<void>>;
-  openSessionRef: MutableRefObject<(s: SessionSummary) => Promise<void>>;
+  openSessionRef: MutableRefObject<
+    (s: SessionSummary, options?: { navigate?: boolean }) => Promise<void>
+  >;
   newSessionRef: MutableRefObject<() => Promise<void>>;
   stopRef: MutableRefObject<() => void>;
   renameSessionRef: MutableRefObject<(t: string) => Promise<void>>;
@@ -87,7 +89,9 @@ export function useStoreRuntime(): StoreRuntime {
     stampRowIdsRef: useRef<() => void>(() => {}),
     resyncRef: useRef<() => void>(() => {}),
     connectRef: useRef<(h: string, user: string, pw: string) => Promise<void>>(async () => {}),
-    openSessionRef: useRef<(s: SessionSummary) => Promise<void>>(async () => {}),
+    openSessionRef: useRef<(s: SessionSummary, options?: { navigate?: boolean }) => Promise<void>>(
+      async () => {},
+    ),
     newSessionRef: useRef<() => Promise<void>>(async () => {}),
     stopRef: useRef<() => void>(() => {}),
     renameSessionRef: useRef<(t: string) => Promise<void>>(async () => {}),

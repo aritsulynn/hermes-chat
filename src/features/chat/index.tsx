@@ -1161,7 +1161,12 @@ export function ChatScreen() {
         >
           {ListHeader()}
           {messages.map((item) => (
-            <div key={listKeyExtractor(item)}>{renderMessage({ item })}</div>
+            // `contents` so the bubble itself is the flex item of the content
+            // column and its self-* alignment applies. See the note in
+            // components/chat/transcript.tsx.
+            <div key={listKeyExtractor(item)} className="contents">
+              {renderMessage({ item })}
+            </div>
           ))}
         </Transcript>
         {/* Overlay footer: absolute + transparent, so the transcript scrolls

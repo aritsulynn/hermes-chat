@@ -11,7 +11,11 @@ import type { ScopedSessionSummary } from '../types';
 import type { StoreCtx } from '../ctx';
 
 export interface SessionOpsSlice {
-  openSession: (s: ScopedSessionSummary) => Promise<void>;
+  /**
+   * @param navigate  Set false when the caller is restoring rather than
+   *                 navigating — see the note at the call site. Defaults true.
+   */
+  openSession: (s: ScopedSessionSummary, options?: { navigate?: boolean }) => Promise<void>;
   newSession: () => Promise<void>;
 }
 
@@ -78,7 +82,14 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
   } = ctx;
 
   const openSession = useCallback(
-    async (s: ScopedSessionSummary) => {
+    async (s: ScopedSessionSummary, options?: { navigate?: boolean }) => {
+      // Landing on /chat is right when the user picked this session from the
+      // drawer, and wrong when boot is restoring the last one. The boot path
+      // calls this for its side effects only, and the unconditional navigate
+      // turned every deep link into /chat — a /logs reload would end up showing
+      // the transcript. The native build never showed it because there was no
+      // such thing as a deep link to a non-chat screen.
+      const shouldNavigate = options?.navigate !== false;
       const g = gw.current;
       if (!g) {
         setError('Not connected — please login again');
@@ -233,7 +244,7 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
         editRowRef.current = null;
         setEditingRowId(null);
         setSubagents([]);
-        navigate('/chat');
+        if (shouldNavigate) navigate('/chat');
       } catch (e) {
         if (
           !isLatestOpen() ||
@@ -350,6 +361,9 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       setUsageInfo(null);
       liveTools.current.clear();
       liveToolAid.current = null;
+      // Unconditional, unlike the two in openSession: starting a new session is
+      // itself a request to go to the chat, so there is no restore-vs-navigate
+      // distinction to make.
       navigate('/chat');
     } catch (e) {
       if (

@@ -227,7 +227,10 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
             if (found) target = found;
           } catch {}
           try {
-            await withTimeout(openSessionRef.current(target), 25000);
+            // Restore for its side effects only — do not navigate. See the note
+            // in openSession: navigating here is what made every deep link to a
+            // non-chat route land on /chat instead.
+            await withTimeout(openSessionRef.current(target, { navigate: false }), 25000);
           } catch {
             if (isCurrent()) navigate('/chat', { replace: true });
           }

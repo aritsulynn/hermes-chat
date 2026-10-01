@@ -184,6 +184,19 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           ro.observe(el);
           return () => ro.disconnect();
         }}>
+        {/*
+         The rows are wrapped in a div so each can carry a key, and that wrapper
+         is given `display: contents` so it does not become the flex item. This
+         is load-bearing: the content box is a flex column, and MessageBubble
+         positions itself with `self-end` (the user's own messages) and
+         `self-center` (notices). With a real wrapper in between, the wrapper
+         stretched to the full width and the bubble's align-self had no effect —
+         every bubble came out full-width and left-aligned, instead of the
+         user's sitting on the right. `display: contents` removes the wrapper
+         from layout so the bubble is the direct flex item, which is exactly
+         what FlashList's cell was on native. It is safe here because the
+         wrapper carries no semantics of its own.
+        */}
         {children}
       </div>
     </div>

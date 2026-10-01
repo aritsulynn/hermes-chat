@@ -43,9 +43,23 @@ export function UserMenuDialog({
   const left = anchor
     ? Math.max(EDGE, Math.min(anchor.x + anchor.w - MENU_W, viewportWidth - MENU_W - EDGE))
     : EDGE;
-  const openUp = !anchor || anchor.y > FLIP_Y;
+  // Open upward when there is room above, downward otherwise.
+  //
+  // The `anchor` check has to come first and separately. This used to be
+  // `!anchor || anchor.y > FLIP_Y`, which reads as "assume upward when we have
+  // no anchor" and then dereferences `anchor.y` in that very branch — so the
+  // no-anchor case was the one that threw. The `!` assertions hid it from the
+  // typecheck, and it only surfaced on the first authenticated run of the app,
+  // where the chat screen mounts this dialog before the first long-press has
+  // ever produced a rect.
+  const openUp = anchor ? anchor.y > FLIP_Y : false;
+  const position = anchor
+    ? openUp
+      ? { bottom: Math.max(EDGE, window.innerHeight - anchor.y + 8) }
+      : { top: anchor.y + anchor.h + 8 }
+    : { top: EDGE };
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root open={open && !!anchor} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         {/* Transparent: the transcript behind stays readable. This is a
             context menu over the content, not a task dialog. */}
@@ -53,10 +67,7 @@ export function UserMenuDialog({
         <DialogPrimitive.Content
           onEscapeKeyDown={(e) => e.preventDefault()}
           className="bg-popover border-border fixed z-50 w-[192px] rounded-xl border p-1.5 shadow-lg outline-none"
-          style={{
-            left,
-            ...(openUp ? { bottom: window.innerHeight - anchor!.y + 8 } : { top: anchor!.y + anchor!.h + 8 }),
-          }}>
+          style={{ left, ...position }}>
           <DialogPrimitive.Title className="sr-only">Message actions</DialogPrimitive.Title>
           {children}
         </DialogPrimitive.Content>

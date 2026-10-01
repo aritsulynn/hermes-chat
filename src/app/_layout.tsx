@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { AppProvider, useThemeValue } from '../hooks/app-store';
+import { AppProvider, useApp, useThemeValue } from '../hooks/app-store';
 import { setDrawerOpener, setNavigator } from '../store/nav';
 import { ConnectionBanner } from '../components/connection-banner';
 import { HermesDrawerContent } from '../components/drawer/HermesDrawerContent';
@@ -30,6 +30,9 @@ export default function RootLayout() {
 
 function Shell() {
   const { theme } = useThemeValue();
+  // `booting` is the store restoring the session from the browser's cookie jar.
+  // The outlet is withheld until that settles — see the note at the render site.
+  const { booting } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -67,7 +70,23 @@ function Shell() {
       </DialogPrimitive.Root>
 
       <main className="relative flex min-h-0 flex-1 flex-col">
-        <Outlet />
+        {/* Withheld while the store boots, and this is load-bearing rather than
+            a nicety. Every screen guards itself with
+            `if (!authed) return <Redirect to="/login" replace />`, and on a hard
+            load that guard sees `authed === false` during the window before the
+            store has restored the session from the cookie jar. So a deep link to
+            any route other than /chat went /logs -> /login -> /chat: the screen
+            bounced before the cookie had been checked, then the login screen
+            bounced back once auth came back true, and the visitor lost their
+            place. Withholding the outlet closes the window in which that
+            race can happen, and it is the one place to do it — the alternative
+            is teaching ten screens to distinguish "not authed" from "not authed
+            yet".
+
+            The login screen has its own `booting` branch, which this makes
+            unreachable. It is left in place deliberately: it is correct, and
+            LoginScreen is also reachable directly. */}
+        {!booting && <Outlet />}
       </main>
 
       {/* File links inside markdown preview through this host (a Modal can't
