@@ -1,6 +1,6 @@
 import type * as React from 'react';
 import { memo, useCallback, useMemo, useRef } from 'react';
-import { Brain, Check, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react';
+import { Brain, Check, ChevronDown, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react';
 import { cleanThinking, renderMediaTags, splitSettled } from '../../utils/messages';
 import type { Role, UiMessage } from '../../utils/messages';
 import {
@@ -261,6 +261,18 @@ export const MessageBubble = memo(function MessageBubble({
     [item.role, item.diff, item.output, item.detail],
   );
   const toolStats = useMemo(() => countDiffLineStats(toolDiff), [toolDiff]);
+  // First meaningful line of the tool's input/output (e.g. the skill name for
+  // skill_view) so the collapsed row says what ran without expanding.
+  const toolSubtitle = useMemo(() => {
+    if (item.role !== 'tool') return '';
+    const src = item.command || item.detail || item.output || '';
+    const line = src
+      .split('\n')
+      .map((s) => s.trim())
+      .find((s) => s.length > 0);
+    if (!line) return '';
+    return line.length > 60 ? `${line.slice(0, 60)}…` : line;
+  }, [item.role, item.command, item.detail, item.output]);
   // Anchors for the long-press tooltips on the copy/regenerate footer icons
   // (same measurer shape as Composer).
   const copyAnchor = useRef<HTMLSpanElement | null>(null);
@@ -308,12 +320,10 @@ export const MessageBubble = memo(function MessageBubble({
   const handleUserLongPress = useCallback(() => {
     onUserMenu(measureOf(bubbleRef.current), item.id);
   }, [onUserMenu, item.id]);
-  // Expand/collapse lives on the bubble surface for thinking + tool output: the
-  // press must sit on an ANCESTOR of the text so taps anywhere (text included)
-  // toggle. These two roles never render footer pressables, so there is no
-  // nested-pressable conflict; other roles get an inert surface and keep their
-  // inner pressables untouched.
-  const toggleable = think || item.role === 'tool';
+  // Expand/collapse moved to the flat timeline rows above (thinking + tool
+  // output); the remaining bubble roles never toggle, so the surface stays
+  // inert and keeps its inner pressables untouched.
+  const toggleable = false;
   // All four gestures are wired up here, unconditionally and before any of the
   // conditional branches in the JSX below. `useLongPress` was originally spread
   // straight into the footer buttons, which put a hook call inside a
@@ -330,66 +340,74 @@ export const MessageBubble = memo(function MessageBubble({
   // MessageContent is a flex column, where the old transcript's `self-center`
   // silently did nothing (a plain block parent ignores align-self).
   const align = item.role === 'user' ? 'end' : 'start';
-  return (
-    <Message align={align}>
-      <MessageContent>
-        <Bubble
-          ref={bubbleRef}
-          variant={BUBBLE_VARIANT[item.role]}
-          align={align}
-          // 85% of the *content column*, not the window, so a long row (a thinking
-          // summary, a tool card) can never spill past the column and drag a
-          // horizontal scrollbar across the transcript.
-          className={`max-w-[85%] ${item.role === 'notice' ? 'self-center' : ''}`}
-          role={toggleable ? 'button' : undefined}
-          aria-label={
-            toggleable ? `${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}` : undefined
-          }
-          aria-expanded={toggleable ? expanded : undefined}
-          onClick={toggleable ? handleToggleClick : dismissKeyboard}
-          {...(toggleable ? toggleLongPress : {})}>
-          {/* The bubble's own radius, not shadcn's `rounded-xl`: the surface used
-              to be 14px and the brief was to keep the transcript's look. */}
-          <BubbleContent className="rounded-[14px]">
-            {typing ? (
-              <TypingDots />
-            ) : think ? (
+
+  // Tool calls and thinking render as flat timeline rows, not bubbles: a
+  // chevron header line (status icon + summary + diff stats) that expands in
+  // place. Tapping anywhere toggles, same contract the bubble surface had.
+  if (think || item.role === 'tool') {
+    return (
+      <Message align="start">
+        <MessageContent>
+          <div
+            className="w-full py-0.5"
+            role="button"
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}`}
+            aria-expanded={expanded}
+            onClick={handleToggleClick}
+            {...toggleLongPress}>
+            {think ? (
               mergedText ? (
-                <div className="flex gap-1.5">
-                  {/* Icon is 14px but a text line is 18px tall — center it inside a
-                      line-height box so it lines up with the first line's glyphs
-                      instead of riding the top of the line box. */}
-                  <div className="flex h-[18px] items-center">
-                    <Brain size={14} color={dark ? '#999' : '#777'} />
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <ChevronDown
+                      size={13}
+                      className={`shrink-0 text-neutral-400 transition-transform dark:text-neutral-500 ${expanded ? '' : '-rotate-90'}`}
+                    />
+                    <Brain size={13} color={dark ? '#999' : '#777'} />
+                    {/* Collapsed shows the label plus the first line; expanded
+                        swaps the preview for the full text below, so the row
+                        never repeats the body. */}
+                    {expanded ? (
+                      <div className="min-w-0 flex-1 text-left text-[13px] font-semibold leading-[18px] text-neutral-500 dark:text-neutral-400">
+                        Thought
+                      </div>
+                    ) : (
+                      <div className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left text-[13px] leading-[18px]">
+                        <span className="shrink-0 font-semibold text-neutral-500 dark:text-neutral-400">Thought</span>
+                        <span className="min-w-0 flex-1 truncate text-neutral-400 dark:text-neutral-500">
+                          {cleanThinking(mergedText)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <div
-                    className={`shrink text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400 ${expanded ? '' : 'truncate'}`}>
-                    {cleanThinking(mergedText)}
-                  </div>
-                </div>
+                  {expanded && (
+                    <div className="py-1 pl-5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300">
+                      {cleanThinking(mergedText)}
+                    </div>
+                  )}
+                </>
               ) : (
                 <TypingDots dim />
               )
-            ) : item.role === 'tool' ? (
+            ) : (
               <>
-                <div className="flex gap-1.5">
-                  {/* Same line-height box as the thinking bubble: the 14px icon
-                      centers against the first 18px text line. */}
-                  <div className="flex h-[18px] items-center">
-                    {item.pending ? (
-                      <Cog size={14} color={dark ? '#8fa8ff' : '#3b5bdb'} />
-                    ) : (
-                      <Check size={14} color={dark ? '#8fa8ff' : '#3b5bdb'} />
-                    )}
-                  </div>
-                  <div
-                    className={`shrink text-[13px] leading-[18px] text-[#3b5bdb] dark:text-[#8fa8ff] ${expanded ? '' : 'line-clamp-2'}`}>
+                <div className="flex items-center gap-1.5">
+                  <ChevronDown
+                    size={13}
+                    className={`shrink-0 text-neutral-400 transition-transform dark:text-neutral-500 ${expanded ? '' : '-rotate-90'}`}
+                  />
+                  {item.pending ? (
+                    <Cog size={13} color={dark ? '#8fa8ff' : '#3b5bdb'} />
+                  ) : (
+                    <Check size={13} color={dark ? '#8fa8ff' : '#3b5bdb'} />
+                  )}
+                  <div className="min-w-0 flex-1 truncate text-left text-[13px] leading-[18px] text-neutral-700 dark:text-neutral-200">
                     {mergedText}
+                    {!expanded && toolSubtitle ? (
+                      <span className="font-normal text-neutral-400 dark:text-neutral-500"> · {toolSubtitle}</span>
+                    ) : null}
                   </div>
                   {!!toolDiff && (
-                    // A <span> wrapper, not a nested Text: the outer element is a div
-                    // and a div inside a div would break the run of added/removed
-                    // counts onto separate lines.
                     <span className="shrink-0 text-[11px] font-semibold leading-[18px]">
                       <span className="text-[#1a7f37] dark:text-[#5fd28a]">＋{toolStats.added}</span>{' '}
                       <span className="text-[#c5221f] dark:text-[#ff8a8a]">−{toolStats.removed}</span>
@@ -420,6 +438,36 @@ export const MessageBubble = memo(function MessageBubble({
                   </>
                 )}
               </>
+            )}
+          </div>
+        </MessageContent>
+      </Message>
+    );
+  }
+
+  return (
+    <Message align={align}>
+      <MessageContent>
+        <Bubble
+          ref={bubbleRef}
+          variant={BUBBLE_VARIANT[item.role]}
+          align={align}
+          // 85% of the *content column*, not the window, so a long row (a thinking
+          // summary, a tool card) can never spill past the column and drag a
+          // horizontal scrollbar across the transcript.
+          className={`max-w-[85%] ${item.role === 'notice' ? 'self-center' : ''}`}
+          role={toggleable ? 'button' : undefined}
+          aria-label={
+            toggleable ? `${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}` : undefined
+          }
+          aria-expanded={toggleable ? expanded : undefined}
+          onClick={toggleable ? handleToggleClick : dismissKeyboard}
+          {...(toggleable ? toggleLongPress : {})}>
+          {/* The bubble's own radius, not shadcn's `rounded-xl`: the surface used
+              to be 14px and the brief was to keep the transcript's look. */}
+          <BubbleContent className="rounded-[14px]">
+            {typing ? (
+              <TypingDots />
             ) : item.role === 'summary' ? (
               <div className="flex items-center gap-1.5">
                 <FileText size={12} color={dark ? '#777' : '#999'} />

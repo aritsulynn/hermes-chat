@@ -121,6 +121,7 @@ export function ChatScreen() {
     answerAsk,
     dismissAsk,
     getGw,
+    applyApprovalMode,
   } = useApp();
   // Reading the live stream is deliberately NON-reactive here. Following it is
   // the bubble's job, per message id (see useStreamingText); this screen wants
@@ -132,6 +133,14 @@ export function ChatScreen() {
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const headerIcon = dark ? '#f5f5f5' : '#111';
+  // Approval mode shown on the composer's shield. Unknown yet (session info
+  // still loading) reads as manual — the safe side.
+  const approvalMode =
+    sessionInfo?.approval_mode === 'smart' || sessionInfo?.approval_mode === 'off' ? sessionInfo.approval_mode : 'manual';
+  const cycleApproval = useCallback(() => {
+    const next = approvalMode === 'manual' ? 'smart' : approvalMode === 'smart' ? 'off' : 'manual';
+    void applyApprovalMode(next).catch(() => {});
+  }, [approvalMode, applyApprovalMode]);
 
   // Thinking-effort control follows the MODEL's published capability: hide it
   // when the route reports `reasoning: false` (an unknown/older gateway keeps it
@@ -1149,6 +1158,10 @@ export function ChatScreen() {
                 attachments={attachments}
                 setAttachments={setAttachments}
                 dark={dark}
+                stackModel={winW < 768}
+                keyboardUp={kbH > 0}
+                approvalMode={approvalMode}
+                onCycleApproval={cycleApproval}
               />
             </div>
           </div>

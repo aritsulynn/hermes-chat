@@ -1,5 +1,5 @@
-import { memo, useCallback, useRef } from 'react';
-import { ArrowUp, ChevronDown, Paperclip, Plus, Square, X } from 'lucide-react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowUp, ChevronDown, Paperclip, Plus, ShieldCheck, ShieldOff, ShieldUser, Square, X } from 'lucide-react';
 
 import type { Attachment } from '../../utils/messages';
 import { reasoningLabel } from '../../utils/reasoning';
@@ -34,6 +34,55 @@ const measurer =
     cb({ x: r.x, y: r.y, w: r.width, h: r.height });
   };
 
+// Model + effort picker row, shared by the expanded footer and the collapsed
+// pill so the two never drift apart. Owns its own anchor ref.
+const ModelRow = memo(function ModelRow({
+  modelLabel,
+  onOpenModelPicker,
+  effort,
+  effortWire,
+  showEffort,
+  effortMenu,
+  dark,
+}: {
+  modelLabel: string;
+  onOpenModelPicker: (measure: AnchorMeasure) => void;
+  effort: string;
+  effortWire?: string;
+  showEffort: boolean;
+  effortMenu: DropdownMenuHandle;
+  dark: boolean;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Button
+        ref={btnRef}
+        variant="ghost"
+        size="sm"
+        onClick={() => onOpenModelPicker(measurer(btnRef.current))}
+        className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none">
+        <span className="flex min-w-0 shrink items-center gap-0.5">
+          <span className="min-w-0 shrink text-left text-[13px] font-semibold text-neutral-700 dark:text-neutral-200 truncate">
+            {modelLabel}
+          </span>
+          <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
+        </span>
+      </Button>
+      {showEffort && (
+        <DropdownMenuTrigger
+          handle={effortMenu}
+          id="effort"
+          render={<Button variant="ghost" size="sm" className="shrink-0 px-2 py-1.5 shadow-none" />}>
+          <span className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
+            {reasoningLabel(effort, effortWire)}
+          </span>
+        </DropdownMenuTrigger>
+      )}
+    </>
+  );
+});
+
 // memo(): every streamed token re-renders the chat screen. Without this the
 // focused textarea re-renders ~30x/s, which drops focus and caret position
 // mid-draft. All props must therefore be referentially stable — see the
@@ -58,6 +107,10 @@ export const Composer = memo(function Composer({
   attachments,
   setAttachments,
   dark,
+  stackModel,
+  keyboardUp,
+  approvalMode,
+  onCycleApproval,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -88,9 +141,42 @@ export const Composer = memo(function Composer({
   setAttachments: (v: Attachment[]) => void;
   /** Theme comes in as a prop — a store subscription here would defeat memo(). */
   dark: boolean;
+  /** Narrow screen: model + effort drop to their own row below the icon row,
+      like OpenChamber's mobile composer, so the action row stays roomy. */
+  stackModel: boolean;
+  /** Keyboard is up (visual-viewport gap). On narrow screens the composer is
+      a collapsed pill while it is down, and expands on tap. */
+  keyboardUp: boolean;
+  /** Dangerous-command approval mode + cycler (the shield in the footer). */
+  approvalMode: 'manual' | 'smart' | 'off';
+  onCycleApproval: () => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const modelRef = useRef<HTMLButtonElement>(null);
+  // Collapsed pill on narrow screens while the keyboard is down: tapping the
+  // preview expands and focuses the field; dismissing the keyboard collapses.
+  const [tapExpand, setTapExpand] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!keyboardUp) setTapExpand(false);
+  }, [keyboardUp]);
+  const expanded = !stackModel || keyboardUp || focused || tapExpand || attachments.length > 0;
+  useEffect(() => {
+    if (tapExpand && expanded) {
+      inputRef.current?.focus();
+      setTapExpand(false);
+    }
+  }, [tapExpand, expanded]);
+  // Shield glyph per approval mode, like OpenChamber's permission button:
+  // manual asks every time, smart lets the model decide, off runs everything.
+  const ApprovalIcon = approvalMode === 'off' ? ShieldOff : approvalMode === 'smart' ? ShieldCheck : ShieldUser;
+  const approvalColor =
+    approvalMode === 'off' ? (dark ? '#f0b429' : '#d97706') : approvalMode === 'smart' ? 'var(--brand-hex)' : dark ? '#a3a3a3' : '#555';
+  const approvalLabel =
+    approvalMode === 'off'
+      ? 'Approvals off — run everything'
+      : approvalMode === 'smart'
+        ? 'Smart approvals — model decides'
+        : 'Manual approvals — ask every time';
 
   // While a turn streams, something outside the composer (a portal teardown, a
   // re-render) can drop focus out of the text field mid-draft — the user has to
@@ -116,6 +202,7 @@ export const Composer = memo(function Composer({
   const trimmedInput = input.trim();
   const hasText = trimmedInput.length > 0;
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
+  const placeholder = generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…';
   return (
     <div
       // `pointer-events-auto` is load-bearing and is the counterpart to the
@@ -156,7 +243,11 @@ export const Composer = memo(function Composer({
             })}
           </div>
         )}
-        <Textarea
+        {/* Collapsed pill on narrow screens: one tappable line instead of the
+            field + icon row. Tapping expands and focuses the field. */}
+        {expanded ? (
+          <>
+            <Textarea
           ref={inputRef}
           aria-label="Message"
           // The container draws the border and background; the field itself is
@@ -174,16 +265,18 @@ export const Composer = memo(function Composer({
             }
             setInput(t);
           }}
-          placeholder={generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…'}
+          placeholder={placeholder}
           style={{ colorScheme: dark ? 'dark' : 'light' }}
-          onBlur={handleBlur}
+          onBlur={() => {
+            setFocused(false);
+            handleBlur();
+          }}
+          onFocus={() => setFocused(true)}
         />
-        {/* The model chip is the only shrinkable item: without it the row (plus
-            + chip + effort + Steer + stop/send) is wider than a phone screen and
-            spills past the right edge. It has no max-width on purpose - flex
-            shrink already caps it on a phone, and a cap here would also clip the
-            name on a wide screen where there is nothing to protect against. */}
-        <div className="flex items-center gap-1.5">
+        {/* Narrow screens wrap the model row below the icon row (see
+            stackModel): the action row keeps full width for Queue/Steer/send
+            instead of squeezing beside the model name. */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <DropdownMenuTrigger
             handle={attachMenu}
             id="attach"
@@ -193,28 +286,27 @@ export const Composer = memo(function Composer({
             <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
           </DropdownMenuTrigger>
           <Button
-            ref={modelRef}
             variant="ghost"
-            size="sm"
-            onClick={() => onOpenModelPicker(measurer(modelRef.current))}
-            className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none">
-            <span className="flex min-w-0 shrink items-center gap-0.5">
-              <span className="min-w-0 shrink text-left text-[13px] font-semibold text-neutral-700 dark:text-neutral-200 truncate">
-                {modelLabel}
-              </span>
-              <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
-            </span>
+            size="icon"
+            onClick={onCycleApproval}
+            aria-label={approvalLabel}
+            title={approvalLabel}
+            className="h-8 w-8 shrink-0 shadow-none">
+            <ApprovalIcon size={20} color={approvalColor} />
           </Button>
-          {showEffort && (
-            <DropdownMenuTrigger
-              handle={effortMenu}
-              id="effort"
-              render={<Button variant="ghost" size="sm" className="shrink-0 px-2 py-1.5 shadow-none" />}>
-              <span className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
-                {reasoningLabel(effort, effortWire)}
-              </span>
-            </DropdownMenuTrigger>
-          )}
+          {/* basis-full + order pushes model/effort onto their own row when
+              stacked; inline and shrinkable otherwise. */}
+          <div className={`flex min-w-0 items-center gap-1 ${stackModel ? 'order-3 basis-full' : 'shrink'}`}>
+            <ModelRow
+              modelLabel={modelLabel}
+              onOpenModelPicker={onOpenModelPicker}
+              effort={effort}
+              effortWire={effortWire}
+              showEffort={showEffort}
+              effortMenu={effortMenu}
+              dark={dark}
+            />
+          </div>
           <div className="flex-1" />
           {generating ? (
             <>
@@ -256,6 +348,62 @@ export const Composer = memo(function Composer({
             </Button>
           )}
         </div>
+          </>
+        ) : (
+          <>
+            <div className="flex h-12 min-w-0 items-center gap-0.5 pl-1 pr-1">
+              <DropdownMenuTrigger
+                handle={attachMenu}
+                id="attach"
+                render={
+                  <Button variant="ghost" size="icon" aria-label="Attach" className="h-8 w-8 shrink-0 shadow-none" />
+                }>
+                <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
+              </DropdownMenuTrigger>
+              <button
+                type="button"
+                aria-label="Expand composer"
+                className="flex h-full min-w-0 flex-1 cursor-text items-center px-1.5 text-left"
+                onClick={() => setTapExpand(true)}>
+                <span
+                  className={`truncate text-[15px] ${hasText ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-400 dark:text-neutral-500'}`}>
+                  {hasText ? input : placeholder}
+                </span>
+              </button>
+              {generating ? (
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={stop}
+                  aria-label="Stop"
+                  className="h-9 w-9 shrink-0 rounded-full shadow-none">
+                  <Square size={13} color="#fff" fill="#fff" />
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="icon"
+                  onClick={send}
+                  aria-label="Send"
+                  disabled={!hasText}
+                  className="h-9 w-9 shrink-0 rounded-full shadow-none disabled:opacity-40">
+                  <ArrowUp size={19} color={dark ? '#111' : '#fff'} />
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-1 px-1.5 pb-1.5">
+              <ModelRow
+                modelLabel={modelLabel}
+                onOpenModelPicker={onOpenModelPicker}
+                effort={effort}
+                effortWire={effortWire}
+                showEffort={showEffort}
+                effortMenu={effortMenu}
+                dark={dark}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
