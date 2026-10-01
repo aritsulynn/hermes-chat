@@ -9,14 +9,13 @@ import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { ScreenHeader, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { Input } from '../../components/ui/input';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import { FormSheet } from '../../components/ui/sheets';
-import { Spinner } from '../../components/ui/bits';
 import { CardChips } from './components/CardChips';
 import { screenStyle } from '../../theme';
 import { asTask, dotOf } from './helpers';
@@ -89,13 +88,12 @@ export function KanbanScreen() {
     setError(null);
   }, [authed]);
 
-  useEffect(() => {
-    (navigation as any).setOptions?.({
-      headerLeft: () => <HamburgerBtn />,
-      headerTintColor: dark ? '#f5f5f5' : '#111',
-      title: 'Kanban',
-    });
-  }, [navigation, dark]);
+  // A `navigation.setOptions({ headerLeft, title })` effect used to live here.
+  // Under React Navigation the *navigator* drew the screen's title bar, so this
+  // screen never rendered one of its own — and `navigation` does not exist in
+  // the web build, so nothing drew it there either. Kanban had no header at all,
+  // which meant no title and, on a phone, no way to open the sidebar.
+  // It is a `ScreenHeader` now, like every other screen.
 
   const boardQuery = useCallback(
     (extra = '') => {
@@ -314,10 +312,36 @@ export function KanbanScreen() {
   return (
     <div style={screenStyle(dark)}>
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        {/* Board switcher + new-task button */}
+        <ScreenHeader
+          title="Kanban"
+          subtitle={activeBoard?.name}
+          actions={
+            <div className="flex items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Refresh board"
+                onClick={() => void reload(true)}
+                className="h-9 w-9 rounded-lg">
+                <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+              </Button>
+              <Button
+                onClick={() => setShowCreate(true)}
+                role="button"
+                aria-label="New task"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg">
+                <span className="text-[20px] leading-[20px]">+</span>
+              </Button>
+            </div>
+          }
+        />
+        {/* Board switcher. The refresh and new-task buttons moved up into the
+            header, so this row is chips only and can scroll the full width. */}
         <div className="flex items-center gap-2 px-3 pt-2">
           <div className="overflow-x-auto">
-            <div className="gap-2 grow">
+            <div className="grow flex gap-2">
               {boards.map((b) => {
                 const active = b.slug === slug || (!slug && b.is_current);
                 return (
@@ -344,23 +368,6 @@ export function KanbanScreen() {
               )}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Refresh board"
-            onClick={() => void reload(true)}
-            className="h-9 w-9 shrink-0">
-            <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-          </Button>
-          <Button
-            onClick={() => setShowCreate(true)}
-            role="button"
-            aria-label="New task"
-            variant="default"
-            size="icon"
-            className="h-9 w-9 rounded-full">
-            <span className="text-[20px] leading-[20px]">+</span>
-          </Button>
         </div>
         {!!error && (
           <div className="px-3.5 pt-2">
@@ -370,7 +377,12 @@ export function KanbanScreen() {
           </div>
         )}
         <div className="overflow-y-auto">
-          <div className="mx-auto w-full max-w-4xl p-3 gap-2.5 pb-6">
+          {/* `flex flex-col` because `gap-2.5` is inert on a block box — this is
+              the same trap the old drawer's recents list carried a note about.
+              As a block container the gap did nothing and the column cards sat
+              flush against each other, border to border, reading as one tall
+              striped object rather than a list. */}
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-2.5 p-3 pb-6">
             {loading && <Spinner size={14} color="currentColor" />}
             {!loading && !board && !error && (
               <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
