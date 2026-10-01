@@ -42,8 +42,5 @@
     "src/app",
     "src/main.tsx",
     "src/features",
-    "src/components/chat/composer.tsx",
-    "src/components/chat/markdown.tsx",
-    "src/components/chat/message-bubble.tsx"
   ]
 }

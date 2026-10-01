@@ -1,7 +1,7 @@
 import { cn } from '@/utils/cn';
-import * as React from 'react';
+import { forwardRef, type ComponentProps } from 'react';
 
-type TextareaProps = Omit<React.ComponentProps<'textarea'>, 'rows'> & {
+type TextareaProps = Omit<ComponentProps<'textarea'>, 'rows'> & {
   /** react-native always rendered multiline; a <textarea> always is one. */
   multiline?: boolean;
   /** Sets the starting height. `undefined` lets the field grow with content. */
@@ -11,9 +11,14 @@ type TextareaProps = Omit<React.ComponentProps<'textarea'>, 'rows'> & {
   placeholderClassName?: string;
 };
 
-function Textarea({ className, multiline, numberOfLines = 2, placeholderClassName, ...props }: TextareaProps) {
+/** Forwards the ref so the composer can hold focus across a re-render. */
+const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
+  { className, multiline, numberOfLines = 2, placeholderClassName, ...props },
+  ref,
+) {
   return (
     <textarea
+      ref={ref}
       // `field-sizing: content` grows the box with its content up to a cap set
       // by `max-height` in className, so the composer does not need a
       // scrollHeight measurement on every keystroke.
@@ -26,7 +31,7 @@ function Textarea({ className, multiline, numberOfLines = 2, placeholderClassNam
       {...props}
     />
   );
-}
+});
 
 export { Textarea };
 export type { TextareaProps };

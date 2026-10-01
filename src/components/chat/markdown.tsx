@@ -1,192 +1,196 @@
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import { CODE_SURFACE, MARKDOWN_INK, brandColor } from '../../theme';
+// Markdown rendering for chat bubbles.
+//
+// The native build fed `react-native-markdown-display` a `rules` object and one
+// of four StyleSheet themes (assistant/user × light/dark). Both halves collapse
+// here:
+//
+//   - `rules` became react-markdown's `components` map, keyed by tag name.
+//   - Four themes became two. The light/dark split was a StyleSheet limitation —
+//     NativeWind cannot reach into a library's internal styles — and the web has
+//     `dark:` variants keyed off the `.dark` class the store already puts on
+//     <html>. So the theme argument is now just *which bubble* (assistant ink
+//     vs the user's blue chip), and the scheme follows the document.
+//
+// A third thing went away with it: the rules were a factory over `dark` because
+// "markdown has no styles channel for dark". That problem does not exist for
+// react-markdown, so `mdComponents` depends only on the bubble role.
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { Components } from 'react-markdown';
 import { ChatImage, FileChip } from './media';
+import { CODE_SURFACE, MARKDOWN_INK, brandColor } from '../../theme';
 
-// Plain text out of a markdown AST node (link labels are inline children).
-function astText(node: any): string {
-  if (!node) return '';
-  if (typeof node.content === 'string') return node.content;
-  if (Array.isArray(node.children)) return node.children.map(astText).join('');
+/**
+ * Which bubble the markdown sits in. This is the only styling axis left: the
+ * scheme is handled by `dark:` variants, so there is no `dark` parameter and no
+ * reason for these to be objects built per render.
+ */
+export type MdTheme = 'ai' | 'user';
+
+/** Pull the plain text out of a React node, for the code-block copy button. */
+function textOf(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  if (typeof node === 'object' && 'props' in (node as any)) {
+    return textOf((node as any).props?.children);
+  }
   return '';
 }
 
-// Leaf text nodes render selectable so long-press selects partial text.
-// A factory (not a constant) because the media rules need the active theme —
-// markdown has no styles channel for `dark`.
-export const makeSelectableRules = (dark: boolean) => ({
-  // Selectable lives ONLY on the outermost textgroup — nested selectable Texts
-  // double TextView cost on Android. Leaf text stays plain.
-  text: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <Text key={node.key} style={[inheritedStyles, styles.text]}>
-      {node.content}
-    </Text>
-  ),
-  // ^ leaf-only selectable is ignored on Android when nested — the selectable
-  // must sit on the OUTERMOST Text of each block (one TextView = one
-  // selectable unit). textgroup wraps a paragraph's inline spans.
-  textgroup: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} selectable style={styles.textgroup}>
-      {children}
-    </Text>
-  ),
-  code_block: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => {
-    let { content } = node;
-    if (typeof node.content === 'string' && node.content.charAt(node.content.length - 1) === '\n') {
-      content = node.content.substring(0, node.content.length - 1);
-    }
-    return (
-      <Text key={node.key} selectable style={[inheritedStyles, styles.code_block]}>
-        {content}
-      </Text>
-    );
-  },
-  fence: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => {
-    let { content } = node;
-    if (typeof node.content === 'string' && node.content.charAt(node.content.length - 1) === '\n') {
-      content = node.content.substring(0, node.content.length - 1);
-    }
-    const lang = String(node?.info ?? node?.sourceInfo ?? '').trim() || 'code';
-    return (
-      <View key={node.key} style={{ marginVertical: 4 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 8,
-            marginBottom: 2,
-          }}
-        >
-          <Text style={{ fontSize: 11, color: dark ? '#9aa0a6' : '#8a8a8a' }}>{lang}</Text>
-          {/* Stays a raw Pressable: it renders inside the markdown <Text> tree,
-              which cannot host a NativeWind-styled component. */}
-          <Pressable
-            onPress={() => void Clipboard.setStringAsync(String(content))}
-            accessibilityRole="button"
-            accessibilityLabel="Copy code block"
-            hitSlop={8}
-            style={{ paddingHorizontal: 4, paddingVertical: 2 }}
-          >
-            <Text style={{ fontSize: 11, fontWeight: '600', color: brandColor(dark) }}>Copy</Text>
-          </Pressable>
-        </View>
-        <Text selectable style={[inheritedStyles, styles.fence]}>
-          {content}
-        </Text>
-      </View>
-    );
-  },
-  // Images: the library default (FitImage) can't carry our cookie and has no
-  // viewer — see media.tsx for the resolution rules.
-  image: (node: any) => {
-    const src = String(node?.attributes?.src ?? '');
-    if (!src) return null;
-    // markdown-it keeps alt text in the children, not in `attributes.alt`.
-    const alt = (String(node?.attributes?.alt ?? '') || astText(node)).trim() || undefined;
-    return <ChatImage key={node.key} src={src} alt={alt} dark={dark} />;
-  },
-  // Web links keep the normal look; anything pointing at a file on the server
-  // becomes a chip that previews it in-app (the browser has no session cookie).
-  link: (node: any, children: any, _parent: any, styles: any) => {
-    const href = String(node?.attributes?.href ?? '');
-    if (/^(https?|mailto|tel):/i.test(href)) {
-      return (
-        <Text
-          key={node.key}
-          style={styles.link}
-          onPress={() => void Linking.openURL(href).catch(() => {})}
-        >
-          {children}
-        </Text>
-      );
-    }
-    if (!href) return <Text key={node.key}>{children}</Text>;
-    const label = astText(node).trim() || href;
-    return <FileChip key={node.key} href={href} label={label} textStyle={styles.link} />;
-  },
-});
+/** GFM tables, task lists and strikethrough are all cheap to enable and the
+ *  agent emits them; without remark-gfm they render as literal `|`. */
+const REMARK = [remarkGfm];
 
-export const mdAi = StyleSheet.create({
-  body: { fontSize: 15, lineHeight: 21, color: MARKDOWN_INK },
-  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: MARKDOWN_INK },
-  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: MARKDOWN_INK },
-  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: MARKDOWN_INK },
-  paragraph: { marginVertical: 4 },
-  link: { color: brandColor(false) },
-  blockquote: { backgroundColor: '#e8eef7', borderLeftWidth: 3, borderLeftColor: brandColor(false), paddingHorizontal: 8, paddingVertical: 4 },
-  code_inline: { backgroundColor: '#e4e4e8', borderRadius: 4, paddingHorizontal: 4, fontSize: 13 },
-  fence: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  code_block: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  bullet_list: { marginVertical: 4 },
-  ordered_list: { marginVertical: 4 },
-  list_item: { flexDirection: 'row', marginVertical: 2 },
-  bullet_list_content: { flex: 1 },
-  ordered_list_content: { flex: 1 },
-  hr: { backgroundColor: '#ddd', height: 1, marginVertical: 8 },
-  table: { borderWidth: 1, borderColor: '#ddd', borderRadius: 6 },
-  th: { padding: 6, fontWeight: '700' },
-  td: { padding: 6 },
-  tr: { borderBottomWidth: 1, borderColor: '#eee' },
-});
+/**
+ * Class strings per theme. Kept as one object per element rather than a cva
+ * call so the light/dark pair sits on a single line where they are compared.
+ */
+const C = {
+  ai: {
+    body: 'text-[15px] leading-[21px] text-[#111] dark:text-[#e8e8ea]',
+    h1: 'my-1.5 text-[20px] font-bold leading-tight text-[#111] dark:text-[#e8e8ea]',
+    h2: 'my-1.5 text-[18px] font-bold leading-tight text-[#111] dark:text-[#e8e8ea]',
+    h3: 'my-1 text-[16px] font-bold leading-snug text-[#111] dark:text-[#e8e8ea]',
+    p: 'my-1',
+    list: 'my-1 pl-5',
+    li: 'my-0.5',
+    link: 'text-[#1a73e8] underline underline-offset-2 dark:text-[#7aa7ff]',
+    quote:
+      'my-1 border-l-[3px] border-l-[#1a73e8] bg-[#e8eef7] px-2 py-1 dark:border-l-[#7aa7ff] dark:bg-[#232a3a]',
+    code: 'rounded bg-[#e4e4e8] px-1 py-0.5 text-[13px] dark:bg-[#2b2b31]',
+    fence: 'my-1 overflow-hidden rounded-lg',
+    fenceHead: 'flex items-center justify-between px-2 pb-0.5 pt-1.5',
+    fenceLang: 'text-[11px] text-[#8a8a8a] dark:text-[#9aa0a6]',
+    hr: 'my-2 border-t border-[#ddd] dark:border-[#333]',
+    table: 'my-2 w-full border-collapse overflow-hidden rounded-md border border-[#ddd] text-[13px] dark:border-[#333]',
+    th: 'border-b border-[#eee] px-1.5 py-1.5 text-left font-bold dark:border-[#222]',
+    td: 'px-1.5 py-1.5',
+  },
+  user: {
+    body: 'text-[15px] leading-[21px] text-[#041e49] dark:text-[#f3f4f6]',
+    h1: 'my-1.5 text-[20px] font-bold leading-tight text-[#041e49] dark:text-[#f3f4f6]',
+    h2: 'my-1.5 text-[18px] font-bold leading-tight text-[#041e49] dark:text-[#f3f4f6]',
+    h3: 'my-1 text-[16px] font-bold leading-snug text-[#041e49] dark:text-[#f3f4f6]',
+    p: 'my-1',
+    list: 'my-1 pl-5',
+    li: 'my-0.5',
+    link: 'text-[#0b57d0] underline underline-offset-2 dark:text-[#93c5fd]',
+    quote:
+      'my-1 border-l-[3px] border-l-[#0b57d0] bg-[rgba(4,30,73,.08)] px-2 py-1 dark:border-l-[#93c5fd] dark:bg-[rgba(147,197,253,.12)]',
+    code: 'rounded bg-[rgba(4,30,73,.1)] px-1 py-0.5 text-[13px] dark:bg-[rgba(255,255,255,.1)]',
+    fence: 'my-1 overflow-hidden rounded-lg',
+    fenceHead: 'flex items-center justify-between px-2 pb-0.5 pt-1.5',
+    fenceLang: 'text-[11px] text-[#8a8a8a] dark:text-[#9aa0a6]',
+    hr: 'my-2 border-t border-[rgba(4,30,73,.2)] dark:border-t-[rgba(255,255,255,.2)]',
+    table: 'my-2 w-full border-collapse overflow-hidden rounded-md border border-[#ddd] text-[13px] dark:border-[#333]',
+    th: 'border-b border-[#eee] px-1.5 py-1.5 text-left font-bold dark:border-[#222]',
+    td: 'px-1.5 py-1.5',
+  },
+} as const;
 
-export const mdAiDark = StyleSheet.create({
-  body: { fontSize: 15, lineHeight: 21, color: '#e8e8ea' },
-  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: '#e8e8ea' },
-  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: '#e8e8ea' },
-  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: '#e8e8ea' },
-  paragraph: { marginVertical: 4 },
-  link: { color: brandColor(true) },
-  blockquote: { backgroundColor: '#232a3a', borderLeftWidth: 3, borderLeftColor: brandColor(true), paddingHorizontal: 8, paddingVertical: 4 },
-  code_inline: { backgroundColor: '#2b2b31', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#e8e8ea' },
-  fence: { backgroundColor: '#212121', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  code_block: { backgroundColor: '#212121', color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  bullet_list: { marginVertical: 4 },
-  ordered_list: { marginVertical: 4 },
-  list_item: { flexDirection: 'row', marginVertical: 2 },
-  bullet_list_content: { flex: 1 },
-  ordered_list_content: { flex: 1 },
-  hr: { backgroundColor: '#333', height: 1, marginVertical: 8 },
-  table: { borderWidth: 1, borderColor: '#333', borderRadius: 6 },
-  th: { padding: 6, fontWeight: '700' },
-  td: { padding: 6 },
-  tr: { borderBottomWidth: 1, borderColor: '#222' },
-});
+function CodeBlock({ theme, code, lang }: { theme: MdTheme; code: string; lang: string }) {
+  const c = C[theme];
+  const copy = async () => {
+    try {
+      await navigator.clipboard?.writeText(code);
+    } catch {}
+  };
+  return (
+    <div className={c.fence} style={{ background: CODE_SURFACE }}>
+      <div className={c.fenceHead}>
+        <span className={c.fenceLang}>{lang}</span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label="Copy code block"
+          className="rounded px-1 py-0.5 text-[11px] font-semibold hover:bg-white/10"
+          style={{ color: brandColor(false) }}>
+          Copy
+        </button>
+      </div>
+      <pre className="overflow-x-auto px-2.5 pb-2.5 text-[13px] leading-[19px] text-[#e8e8ea]">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
 
-export const mdUserDark = StyleSheet.create({
-  body: { fontSize: 15, lineHeight: 21, color: '#f3f4f6' },
-  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: '#f3f4f6' },
-  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: '#f3f4f6' },
-  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: '#f3f4f6' },
-  paragraph: { marginVertical: 4 },
-  link: { color: '#93c5fd' },
-  blockquote: { backgroundColor: 'rgba(147,197,253,.12)', borderLeftWidth: 3, borderLeftColor: '#93c5fd', paddingHorizontal: 8, paddingVertical: 4 },
-  code_inline: { backgroundColor: 'rgba(255,255,255,.1)', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#f3f4f6' },
-  fence: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  code_block: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  bullet_list: { marginVertical: 4 },
-  ordered_list: { marginVertical: 4 },
-  list_item: { flexDirection: 'row', marginVertical: 2 },
-  bullet_list_content: { flex: 1 },
-  ordered_list_content: { flex: 1 },
-  hr: { backgroundColor: 'rgba(255,255,255,.2)', height: 1, marginVertical: 8 },
-});
+/**
+ * The react-markdown component map for one bubble theme.
+ *
+ * Memoised per theme by the caller, or not: this object is small and stable, so
+ * building it on each render costs less than remembering to. The heavy work
+ * (parsing) is memoised one level up in MessageBubble.
+ */
+export function mdComponents(theme: MdTheme, dark: boolean): Components {
+  const c = C[theme];
+  return {
+    p: ({ children }) => <p className={c.p}>{children}</p>,
+    h1: ({ children }) => <h1 className={c.h1}>{children}</h1>,
+    h2: ({ children }) => <h2 className={c.h2}>{children}</h2>,
+    h3: ({ children }) => <h3 className={c.h3}>{children}</h3>,
+    h4: ({ children }) => <h4 className="my-1 text-[15px] font-bold">{children}</h4>,
+    ul: ({ children }) => <ul className={`list-disc ${c.list}`}>{children}</ul>,
+    ol: ({ children }) => <ol className={`list-decimal ${c.list}`}>{children}</ol>,
+    li: ({ children }) => <li className={c.li}>{children}</li>,
+    blockquote: ({ children }) => <blockquote className={c.quote}>{children}</blockquote>,
+    hr: () => <hr className={c.hr} />,
+    table: ({ children }) => <table className={c.table}>{children}</table>,
+    th: ({ children }) => <th className={c.th}>{children}</th>,
+    td: ({ children }) => <td className={c.td}>{children}</td>,
 
-export const mdUser = StyleSheet.create({
-  body: { fontSize: 15, lineHeight: 21, color: '#041e49' },
-  heading1: { fontSize: 20, fontWeight: '700', marginVertical: 6, color: '#041e49' },
-  heading2: { fontSize: 18, fontWeight: '700', marginVertical: 6, color: '#041e49' },
-  heading3: { fontSize: 16, fontWeight: '700', marginVertical: 4, color: '#041e49' },
-  paragraph: { marginVertical: 4 },
-  link: { color: '#0b57d0' },
-  blockquote: { backgroundColor: 'rgba(4,30,73,.08)', borderLeftWidth: 3, borderLeftColor: '#0b57d0', paddingHorizontal: 8, paddingVertical: 4 },
-  code_inline: { backgroundColor: 'rgba(4,30,73,.1)', borderRadius: 4, paddingHorizontal: 4, fontSize: 13, color: '#041e49' },
-  fence: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  code_block: { backgroundColor: CODE_SURFACE, color: '#e8e8ea', borderRadius: 8, padding: 10, fontSize: 13 },
-  bullet_list: { marginVertical: 4 },
-  ordered_list: { marginVertical: 4 },
-  list_item: { flexDirection: 'row', marginVertical: 2 },
-  bullet_list_content: { flex: 1 },
-  ordered_list_content: { flex: 1 },
-  hr: { backgroundColor: 'rgba(4,30,73,.2)', height: 1, marginVertical: 8 },
-});
+    // Inline code. Block code never reaches here — it is intercepted in `pre`.
+    code: ({ children, className: codeClass }) =>
+      codeClass ? null : <code className={c.code}>{children}</code>,
+
+    pre: ({ children }) => {
+      // react-markdown hands `pre` the <code> element; the language lives in its
+      // className as `language-xxx`.
+      const child = Array.isArray(children) ? children[0] : children;
+      const codeEl = child as React.ReactElement<{ className?: string; children?: React.ReactNode }> | undefined;
+      const lang = String(codeEl?.props?.className ?? '')
+        .replace(/^language-/, '')
+        .trim();
+      return <CodeBlock theme={theme} lang={lang || 'code'} code={textOf(codeEl?.props?.children).replace(/\n$/, '')} />;
+    },
+
+    // The library default renders a plain <img>, which cannot carry the
+    // dashboard session or open the in-app viewer — see media.tsx.
+    img: ({ src, alt }) => {
+      const s = typeof src === 'string' ? src : '';
+      if (!s) return null;
+      return <ChatImage src={s} alt={alt || undefined} dark={dark} />;
+    },
+
+    // Web links keep the normal look and open in a new tab; anything pointing
+    // at a file on the server becomes a chip that previews it in-app, because
+    // those are cookie-gated and a plain link would just 401.
+    a: ({ href, children }) => {
+      const h = typeof href === 'string' ? href : '';
+      if (/^(https?|mailto|tel):/i.test(h)) {
+        return (
+          <a href={h} target="_blank" rel="noopener noreferrer" className={c.link}>
+            {children}
+          </a>
+        );
+      }
+      if (!h) return <>{children}</>;
+      return <FileChip href={h} label={textOf(children).trim() || h} className={c.link} />;
+    },
+  };
+}
+
+export function ChatMarkdown({ body, theme, dark }: { body: string; theme: MdTheme; dark: boolean }) {
+  return (
+    // The wrapper carries the body ink; the elements below only override
+    // margins and the few things that need their own colour (code, links).
+    <div className={C[theme].body}>
+      <Markdown remarkPlugins={REMARK} components={mdComponents(theme, dark)}>
+        {body}
+      </Markdown>
+    </div>
+  );
+}
+
+export { MARKDOWN_INK };

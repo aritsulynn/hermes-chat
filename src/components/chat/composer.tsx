@@ -1,37 +1,35 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Keyboard, Platform, TextInput, View } from 'react-native';
-import { Image } from 'expo-image';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  ArrowUp,
-  ChevronDown,
-  Paperclip,
-  Plus,
-  Square,
-  X,
-} from 'lucide-react-native';
+import { ArrowUp, ChevronDown, Paperclip, Plus, Square, X } from 'lucide-react';
 
 import type { Attachment } from '../../utils/messages';
 import { reasoningLabel } from '../../utils/reasoning';
-import { placeholderColor } from '../../theme';
 import { Button } from '../ui/button';
+import { Textarea } from '../ui/textarea';
 import { Text as UIText } from '../ui/text';
 
 // How a control reports its position for a screen-level popover. The popover
 // lives in the chat screen (not here) so it can float above the list and still
-// receive taps — on Android touches outside a parent's bounds are dropped.
-// ChatScreen re-invokes the measure fn when the layout shifts (keyboard).
+// receive taps. ChatScreen re-invokes the measure fn when the layout shifts
+// (keyboard).
 export type AnchorRect = { x: number; y: number; w: number; h: number };
 export type AnchorMeasure = (cb: (a: AnchorRect) => void) => void;
 
-const measurer = (ref: { current: View | null }): AnchorMeasure => (cb) => {
-  ref.current?.measureInWindow((x, y, w, h) => cb({ x, y, w, h }));
+/**
+ * Viewport rect of the anchored element. This is what replaced
+ * `View.measureInWindow`; the shape is unchanged so every consumer — the model
+ * picker, the effort picker, the attach picker, the long-press menus — keeps
+ * working without knowing which platform it is on.
+ */
+const measurer = (el: HTMLElement | null): AnchorMeasure => (cb) => {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  cb({ x: r.x, y: r.y, w: r.width, h: r.height });
 };
 
 // memo(): every streamed token re-renders the chat screen. Without this the
-// focused TextInput re-renders ~30×/s, which on Android is enough to drop the
-// keyboard mid-sentence. All props must therefore be referentially stable —
-// see the useCallback'd handlers in ChatScreen and send() in the store.
+// focused textarea re-renders ~30x/s, which drops focus and caret position
+// mid-draft. All props must therefore be referentially stable — see the
+// useCallback'd handlers in ChatScreen and send() in the store.
 export const Composer = memo(function Composer({
   input,
   setInput,
@@ -78,34 +76,32 @@ export const Composer = memo(function Composer({
   /** Theme comes in as a prop — a store subscription here would defeat memo(). */
   dark: boolean;
 }) {
-  const insets = useSafeAreaInsets();
-  const inputRef = useRef<TextInput>(null);
-  const plusRef = useRef<View>(null);
-  const modelRef = useRef<View>(null);
-  const effortRef = useRef<View>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const plusRef = useRef<HTMLButtonElement>(null);
+  const modelRef = useRef<HTMLButtonElement>(null);
+  const effortRef = useRef<HTMLButtonElement>(null);
 
-  // Web only: while a turn streams, something outside the composer (a portal
-  // teardown, a DOM rebuild) can drop focus out of the text field mid-draft —
-  // the user has to click back in. If nothing else claimed focus, take it back.
-  // A deliberate click on a button/link/other input leaves THAT element
-  // focused, so this never fights the user.
+  // While a turn streams, something outside the composer (a portal teardown, a
+  // re-render) can drop focus out of the text field mid-draft — the user has to
+  // click back in. If nothing else claimed focus, take it back. A deliberate
+  // click on a button or another input leaves THAT element focused, so this
+  // never fights the user.
   const handleBlur = useCallback(() => {
-    if (Platform.OS !== 'web' || !generating) return;
+    if (!generating) return;
     requestAnimationFrame(() => {
       const node = inputRef.current;
-      const active = (globalThis as any).document?.activeElement as Element | null | undefined;
-      if (!node || (active && active !== (globalThis as any).document?.body)) return;
+      const active = document.activeElement;
+      if (!node || (active && active !== document.body)) return;
       node.focus();
     });
   }, [generating]);
-  const [kbOpen, setKbOpen] = useState(false);
-  // Mobile browsers don't resize the layout for the virtual keyboard and
-  // KeyboardAvoidingView is a no-op on web — track the visual viewport
-  // shrink instead and pad the composer above the keyboard manually.
+
+  // Mobile browsers do not resize the layout for the virtual keyboard, so the
+  // composer would sit under it. `visualViewport` reports the shrunken height
+  // directly; the gap between it and the layout viewport is the keyboard.
   const [webKb, setWebKb] = useState(0);
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const vv = (window as any).visualViewport;
+    const vv = window.visualViewport;
     if (!vv) return;
     const onResize = () => {
       const gap = window.innerHeight - vv.height - (vv.offsetTop ?? 0);
@@ -115,22 +111,21 @@ export const Composer = memo(function Composer({
     vv.addEventListener('resize', onResize);
     return () => vv.removeEventListener('resize', onResize);
   }, []);
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKbOpen(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbOpen(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
+
   const trimmedInput = input.trim();
   const hasText = trimmedInput.length > 0;
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
   return (
-    <View className="px-2.5 pt-2" style={{ paddingBottom: webKb > 0 ? webKb + 18 : kbOpen ? 18 : Math.max(insets.bottom, 10) }}>
-      <View className="gap-1.5 rounded-2xl border border-neutral-200/80 bg-[#f4f4f6] px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-[#212121]">
+    <div
+      className="px-2.5 pt-2"
+      style={{
+        // Above the keyboard when one is up, otherwise clear of the home
+        // indicator. `env()` beats a measured inset here — no layout pass.
+        paddingBottom: webKb > 0 ? webKb + 18 : 'max(env(safe-area-inset-bottom, 0px), 10px)',
+      }}>
+      <div className="flex flex-col gap-1.5 rounded-2xl border border-neutral-200/80 bg-[#f4f4f6] px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-[#212121]">
         {attachments.length > 0 && (
-          <View className="flex-row flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {attachments.map((a) => {
               const isImg =
                 (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(a.name);
@@ -139,38 +134,37 @@ export const Composer = memo(function Composer({
                   key={a.uri + a.name}
                   variant="secondary"
                   size="sm"
-                  onPress={() => setAttachments(attachments.filter((x) => x.uri !== a.uri))}
-                  className="max-w-[220px] gap-1 px-2 py-1 shadow-none"
-                >
+                  onClick={() => setAttachments(attachments.filter((x) => x.uri !== a.uri))}
+                  className="max-w-[220px] gap-1 px-2 py-1 shadow-none">
                   {isImg ? (
-                    <Image
-                      source={{ uri: a.uri }}
-                      contentFit="cover"
-                      cachePolicy="memory-disk"
-                      recyclingKey={a.uri}
-                      // A 28px chip is never worth pre-empting a real load.
-                      priority="low"
+                    <img
+                      src={a.uri}
                       alt={a.name}
-                      className="h-7 w-7 rounded-md bg-[#d7e3f7]"
+                      className="h-7 w-7 rounded-md bg-[#d7e3f7] object-cover"
                     />
                   ) : (
                     <Paperclip size={12} color="#1a73e8" />
                   )}
-                  <UIText className="min-w-0 shrink text-xs text-[#1a73e8] dark:text-[#7aa7ff]" numberOfLines={1}>
+                  <UIText
+                    numberOfLines={1}
+                    className="min-w-0 shrink text-left text-xs text-[#1a73e8] dark:text-[#7aa7ff]">
                     {a.name}
                   </UIText>
                   <X size={12} color="#1a73e8" />
                 </Button>
               );
             })}
-          </View>
+          </div>
         )}
-        <TextInput
+        <Textarea
           ref={inputRef}
-          accessibilityLabel="Message"
-          className="max-h-[180px] min-h-[64px] px-1.5 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
+          aria-label="Message"
+          // The container draws the border and background; the field itself is
+          // transparent, or it reads as a frame inside a frame.
+          className="max-h-[180px] min-h-[64px] border-0 bg-transparent px-1.5 py-2.5 text-[15px] text-neutral-950 shadow-none focus-visible:ring-0 dark:text-neutral-100"
           value={input}
-          onChangeText={(t) => {
+          onChange={(e) => {
+            const t = e.target.value;
             // A big paste (multi-line wall) is spilled to a server file so it
             // doesn't bloat the prompt; the placeholder names the file the agent
             // can read.
@@ -183,16 +177,7 @@ export const Composer = memo(function Composer({
           placeholder={
             generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…'
           }
-          placeholderTextColor={placeholderColor(dark, 'composer')}
-          keyboardAppearance={dark ? 'dark' : 'light'}
-          multiline
-          textAlignVertical="top"
-          editable
-          returnKeyType="default"
-          // Enter inserts a line break. "blurAndSubmit" used to fire on every
-          // Return: a multi-line draft was sent (or steered) mid-typing and the
-          // keyboard closed under the user. Send/Steer are explicit buttons now.
-          submitBehavior="newline"
+          style={{ colorScheme: dark ? 'dark' : 'light' }}
           onBlur={handleBlur}
         />
         {/* The model chip is the only shrinkable item: without it the row (plus
@@ -200,81 +185,72 @@ export const Composer = memo(function Composer({
             spills past the right edge. It has no max-width on purpose - flex
             shrink already caps it on a phone, and a cap here would also clip the
             name on a wide screen where there is nothing to protect against. */}
-        <View className="flex-row items-center gap-1.5">
+        <div className="flex items-center gap-1.5">
           <Button
-            ref={plusRef as any}
+            ref={plusRef}
             variant="ghost"
             size="icon"
-            accessibilityRole="button"
-            accessibilityLabel="Attach"
-            onPress={() => onOpenAttachPicker(measurer(plusRef))}
-            className="h-8 w-8 shrink-0 shadow-none"
-            hitSlop={8}
-          >
+            aria-label="Attach"
+            onClick={() => onOpenAttachPicker(measurer(plusRef.current))}
+            className="h-8 w-8 shrink-0 shadow-none">
             <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
           </Button>
           <Button
-            ref={modelRef as any}
+            ref={modelRef}
             variant="ghost"
             size="sm"
-            onPress={() => onOpenModelPicker(measurer(modelRef))}
-            className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none"
-            hitSlop={8}
-          >
-            <View className="min-w-0 shrink flex-row items-center gap-0.5">
-              <UIText className="min-w-0 shrink text-[13px] font-semibold text-neutral-700 dark:text-neutral-200" numberOfLines={1}>
+            onClick={() => onOpenModelPicker(measurer(modelRef.current))}
+            className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none">
+            <span className="flex min-w-0 shrink items-center gap-0.5">
+              <UIText
+                numberOfLines={1}
+                className="min-w-0 shrink text-left text-[13px] font-semibold text-neutral-700 dark:text-neutral-200">
                 {modelLabel}
               </UIText>
               <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
-            </View>
+            </span>
           </Button>
           {showEffort && (
             <Button
-              ref={effortRef as any}
+              ref={effortRef}
               variant="ghost"
               size="sm"
-              onPress={() => onOpenEffortPicker(measurer(effortRef))}
-              className="shrink-0 px-2 py-1.5 shadow-none"
-              hitSlop={8}
-            >
+              onClick={() => onOpenEffortPicker(measurer(effortRef.current))}
+              className="shrink-0 px-2 py-1.5 shadow-none">
               <UIText className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
                 {reasoningLabel(effort, effortWire)}
               </UIText>
             </Button>
           )}
-          <View className="flex-1" />
+          <div className="flex-1" />
           {generating ? (
             <>
               {hasText && !attachments.length && (
                 <Button
                   variant="secondary"
                   size="sm"
-                  onPress={() => onQueue(input)}
-                  className="shrink-0 rounded-lg px-2.5 py-1.5 shadow-none"
-                  hitSlop={8}
-                >
-                  <UIText className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</UIText>
+                  onClick={() => onQueue(input)}
+                  className="shrink-0 rounded-lg px-2.5 py-1.5 shadow-none">
+                  <UIText className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">
+                    Queue
+                  </UIText>
                 </Button>
               )}
               {hasText && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onPress={() => onRedirect(input)}
-                  className="shrink-0 rounded-lg px-2 py-1.5 shadow-none"
-                  hitSlop={8}
-                >
+                  onClick={() => onRedirect(input)}
+                  className="shrink-0 rounded-lg px-2 py-1.5 shadow-none">
                   <UIText className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</UIText>
                 </Button>
               )}
               <Button
                 variant="destructive"
                 size="icon"
-                onPress={stop}
-                accessibilityRole="button"
-                accessibilityLabel="Stop"
-                className="h-9 w-9 shrink-0 rounded-full shadow-none"
-              >
+                onClick={stop}
+                aria-label="Stop"
+                className="h-9 w-9 shrink-0 rounded-full shadow-none">
                 <Square size={13} color="#fff" fill="#fff" />
               </Button>
             </>
@@ -282,16 +258,14 @@ export const Composer = memo(function Composer({
             <Button
               variant="default"
               size="icon"
-              onPress={send}
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-              className="h-9 w-9 shrink-0 rounded-full shadow-none"
-            >
+              onClick={send}
+              aria-label="Send"
+              className="h-9 w-9 shrink-0 rounded-full shadow-none">
               <ArrowUp size={19} color={dark ? '#111' : '#fff'} />
             </Button>
           )}
-        </View>
-      </View>
-    </View>
+        </div>
+      </div>
+    </div>
   );
 });

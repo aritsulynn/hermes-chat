@@ -1,6 +1,6 @@
 import { cn } from '@/utils/cn';
 import { cva, type VariantProps } from 'class-variance-authority';
-import * as React from 'react';
+import { forwardRef, type ComponentProps } from 'react';
 
 const buttonVariants = cva(
   "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 group inline-flex shrink-0 items-center justify-center gap-2 rounded-md shadow-none",
@@ -59,11 +59,20 @@ const buttonTextVariants = cva('text-foreground pointer-events-none text-sm font
   },
 });
 
-type ButtonProps = React.ComponentProps<'button'> & VariantProps<typeof buttonVariants>;
+type ButtonProps = ComponentProps<'button'> & VariantProps<typeof buttonVariants>;
 
-function Button({ className, variant, size, type = 'button', ...props }: ButtonProps) {
+/**
+ * Forwards its ref to the underlying <button>. The composer and the chat
+ * bubbles anchor popovers and long-press menus to specific controls, so what
+ * they need to measure is the button itself, not an inner wrapper.
+ */
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant, size, type = 'button', ...props },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type={type}
       className={cn(
         props.disabled && 'opacity-50',
@@ -74,7 +83,7 @@ function Button({ className, variant, size, type = 'button', ...props }: ButtonP
       {...props}
     />
   );
-}
+});
 
 export { Button, buttonTextVariants, buttonVariants };
 export type { ButtonProps };
