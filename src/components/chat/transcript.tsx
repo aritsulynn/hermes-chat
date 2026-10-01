@@ -31,6 +31,8 @@ export interface TranscriptHandle {
   scrollTop: () => number;
   /** contentH - clientHeight, i.e. how far from the bottom we are. */
   distanceFromEnd: () => number;
+  /** The scroller's client height, for callers that need the other half. */
+  viewportHeight: () => number;
 }
 
 export interface TranscriptProps {
@@ -41,12 +43,47 @@ export interface TranscriptProps {
   startReachedThreshold?: number;
   /** Fires when the content box changes size (rows added, keyboard resize). */
   onContentSizeChange?: (contentH: number) => void;
+  /**
+   * Fires when the *scroller* changes height — the keyboard opening, a rotation,
+   * the composer growing.
+   *
+   * This is not the same number as onContentSizeChange and the distinction is
+   * load-bearing: the distance to the end of the list is `content - viewport`,
+   * so a screen deciding whether the user is "at the bottom" needs the viewport
+   * height, not the content height. Reporting only one of the two is how a
+   * transcript ends up unable to work out that it is at the bottom, and
+   * therefore never follows the tail.
+   */
+  onViewportResize?: (viewportH: number) => void;
+  /**
+   * Pointer down / pointer up on the scroller — the DOM spellings of
+   * onScrollBeginDrag / onScrollEndDrag.
+   *
+   * There is no "the user stopped scrolling" event that fires on a release
+   * rather than on a scroll tick, so a screen that wants to act on the release
+   * (a snap-through, a settle-the-follow-state) needs to be told the edges
+   * directly. `onInteractEnd` also covers a trackpad fling that has already
+   * come to rest before the last scroll event was delivered.
+   */
+  onInteractStart?: () => void;
+  onInteractEnd?: () => void;
   className?: string;
   contentClassName?: string;
 }
 
 export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function Transcript(
-  { children, onScroll, onStartReached, startReachedThreshold = 200, onContentSizeChange, className, contentClassName },
+  {
+    children,
+    onScroll,
+    onStartReached,
+    startReachedThreshold = 200,
+    onContentSizeChange,
+    onViewportResize,
+    onInteractStart,
+    onInteractEnd,
+    className,
+    contentClassName,
+  },
   ref,
 ) {
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -95,14 +132,35 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         if (!el) return 0;
         return el.scrollHeight - el.scrollTop - el.clientHeight;
       },
+      viewportHeight: () => scroller.current?.clientHeight ?? 0,
     }),
     [],
   );
 
   return (
     <div
-      ref={scroller}
+      // A callback ref rather than `ref={scroller}`, because observing the
+      // scroller's own box needs the element, and there is no hook equivalent
+      // that fires on a height change.
+      ref={(el) => {
+        scroller.current = el;
+        if (!el) return;
+        // This is the scroller's box, as opposed to the content box observed
+        // below. Watching only the content would never report a height change,
+        // because a keyboard resize shrinks the scroller while the content
+        // stays exactly where it was.
+        const ro = new ResizeObserver(() => onViewportResize?.(el.clientHeight));
+        ro.observe(el);
+        onViewportResize?.(el.clientHeight);
+        return () => ro.disconnect();
+      }}
       className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${className ?? ''}`}
+      onPointerDown={() => onInteractStart?.()}
+      // pointercancel is not optional here: a drag that leaves the window, or a
+      // scrollbar grab the browser takes over, never delivers pointerup — and
+      // leaving `touching` set would wedge the follow heuristic.
+      onPointerUp={() => onInteractEnd?.()}
+      onPointerCancel={() => onInteractEnd?.()}
       onScroll={() => {
         onScroll?.();
         const el = scroller.current;

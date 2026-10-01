@@ -506,25 +506,48 @@ export function ChatScreen() {
 
   // Small snap-through near the end on downward releases only — an upward
   // release is the user reading back, and must never be stolen.
-  const snapToEnd = useCallback(
-    (e: { nativeEvent?: { contentOffset?: { y?: number } } }) => {
-      touching.current = false;
-      const y = e?.nativeEvent?.contentOffset?.y ?? 0;
-      // Settle follow state from the release position itself (don't wait for
-      // scroll events that may never come on a static list): released at the
-      // bottom → following; released mid-list → user parked deliberately.
-      const here = contentH.current - (y + layoutH.current) < AT_END_PX;
-      stickEnd.current = here;
-      pinWanted.current = false;
-      if (y < dragStartY.current - 4) return;
-      const rest = contentH.current - (y + layoutH.current);
-      if (rest <= 2 || rest> endPad.current + 8) return;
-      stickEnd.current = true;
-      setAtBottom(true);
-      scrollEnd();
-    },
-    [scrollEnd, setAtBottom],
-  );
+  //
+  // Fired from the scroller's pointerup rather than from a scroll event: the
+  // native list had a drag-end event, and a scroll tick is not the same thing.
+  // On the web a fling can come to rest before its last scroll event is
+  // delivered, so a screen that only heard `onScroll` would settle the follow
+  // state late or not at all.
+  const snapToEnd = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    touching.current = false;
+    const y = el.scrollTop();
+    // Settle follow state from the release position itself (don't wait for
+    // scroll events that may never come on a static list): released at the
+    // bottom → following; released mid-list → user parked deliberately.
+    const rest = el.distanceFromEnd();
+    stickEnd.current = rest < AT_END_PX;
+    pinWanted.current = false;
+    if (y < dragStartY.current - 4) return;
+    if (rest <= 2 || rest > endPad.current + 8) return;
+    stickEnd.current = true;
+    setAtBottom(true);
+    scrollEnd();
+  }, [scrollEnd, setAtBottom]);
+
+  // pointerdown on the scroller. Both values are read at the gesture's start:
+  // dragStartY is the reference the release is compared against, and reading it
+  // later would compare the release against itself and make every drag look
+  // like it scrolled nowhere.
+  const handleInteractStart = useCallback(() => {
+    const el = listRef.current;
+    touching.current = true;
+    dragStartY.current = el ? el.scrollTop() : 0;
+  }, []);
+
+  // The scroller's own height. This is the number the distance-to-the-end
+  // arithmetic needs, and it is genuinely separate from the content height: a
+  // keyboard opening shrinks the scroller and leaves the content untouched.
+  const handleViewportResize = useCallback((viewportH: number) => {
+    layoutH.current = viewportH;
+    setCanScroll(contentH.current > viewportH + 40);
+    if (stickEnd.current) scrollEnd(false);
+  }, [scrollEnd]);
 
   // When the keyboard slides up the list height shrinks but content offset
   // stays — explicitly scroll so the latest message sits above the keyboard,
@@ -809,18 +832,6 @@ export function ChatScreen() {
     },
     [scrollEnd],
   );
-  const handleListLayout = useCallback(
-    (e: any) => {
-      layoutH.current = e.nativeEvent.layout.height;
-      setCanScroll(contentH.current> e.nativeEvent.layout.height + 40);
-      if (stickEnd.current) scrollEnd(false);
-    },
-    [scrollEnd],
-  );
-  const handleScrollBeginDrag = useCallback((e: any) => {
-    touching.current = true;
-    dragStartY.current = e.nativeEvent.contentOffset.y;
-  }, []);
   // The same stick-to-bottom heuristic as before, reading position off the
   // element instead of a native scroll event. `AT_END_PX` and every ref below
   // are unchanged — only the source of the numbers moved.
@@ -1143,6 +1154,9 @@ export function ChatScreen() {
           contentClassName={listContentClass}
           onStartReached={handleStartReached}
           onContentSizeChange={handleContentSizeChange}
+          onViewportResize={handleViewportResize}
+          onInteractStart={handleInteractStart}
+          onInteractEnd={snapToEnd}
           onScroll={handleScroll}
         >
           {ListHeader()}

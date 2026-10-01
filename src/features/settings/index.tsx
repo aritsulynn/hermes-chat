@@ -65,7 +65,7 @@ export function SettingsScreen() {
 
       <ScrollArea
         className="flex-1 px-4 py-4"
-        contentClassName="pb-[object Object]"
+        contentClassName="pb-[calc(env(safe-area-inset-bottom,0px)+24px)]"
 >
         {/* Appearance Section */}
         <div className="mb-6">

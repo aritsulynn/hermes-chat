@@ -209,7 +209,7 @@ export function LogsScreen() {
 
   // Padding only; the windowed scroller supplies the flex column.
   const logListContentClass =
-    'gap-2 p-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+48px)]';
+    'p-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+48px)]';
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -303,7 +303,7 @@ export function LogsScreen() {
           <div className="flex items-center justify-between" style={{ gap: 10 }}>
             <ScrollArea
               horizontal
-              contentClassName="gap-[object Object] pr-[object Object] items-center"
+              contentClassName="gap-2 pr-1 items-center"
               className="flex-1"
 >
               {LOG_FILES.map((f) => {
@@ -394,7 +394,7 @@ export function LogsScreen() {
                   </UIText>
                   <ScrollArea
                     horizontal
-                    contentClassName="gap-[object Object] pr-[object Object]"
+                    contentClassName="gap-2 pr-1"
 >
                     {LOG_LEVELS.map((lvl) => {
                       const isSelected = level === lvl;

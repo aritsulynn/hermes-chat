@@ -417,7 +417,7 @@ export function AskInboxScreen() {
           </UIText>
         </div>
         <ScrollArea
-          contentClassName="p-[object Object] pb-[object Object] gap-[object Object]"
+          contentClassName="p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] gap-3"
 >
           <div className="mb-1 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
             <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />

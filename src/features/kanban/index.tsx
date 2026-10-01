@@ -4,7 +4,7 @@
 // plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
-import { TriangleAlert } from 'lucide-react';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
@@ -330,7 +330,7 @@ export function KanbanScreen() {
         
         {/* Board switcher + new-task button */}
         <div className="flex items-center gap-2 px-3 pt-2">
-          <ScrollArea horizontal contentClassName="gap-[object Object] grow">
+          <ScrollArea horizontal contentClassName="gap-2 grow">
             {boards.map((b) => {
               const active = b.slug === slug || (!slug && b.is_current);
               return (
@@ -358,13 +358,22 @@ export function KanbanScreen() {
             )}
           </ScrollArea>
           <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Refresh board"
+            onClick={() => void reload(true)}
+            className="h-9 w-9 shrink-0"
+          >
+            <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+          </Button>
+          <Button
             onClick={() => setShowCreate(true)}
             role="button"
             aria-label="New task"
             variant="default"
             size="icon"
             className="h-9 w-9 rounded-full"
->
+          >
             <UIText className="text-[20px] leading-[20px]">+</UIText>
           </Button>
         </div>
@@ -376,7 +385,7 @@ export function KanbanScreen() {
           </div>
         )}
         <ScrollArea
-          contentClassName="p-[object Object] gap-[object Object] pb-[object Object]"
+          contentClassName="p-3 gap-2.5 pb-6"
 
 >
           {loading && <Spinner size={14} color="currentColor" />}

@@ -223,7 +223,7 @@ export function UsageScreen() {
         )}
 
         <ScrollArea
-          contentClassName="p-[object Object] pb-[object Object] gap-[object Object]"
+          contentClassName="p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)] gap-4"
 
 >
           {loading && !refreshing ? (

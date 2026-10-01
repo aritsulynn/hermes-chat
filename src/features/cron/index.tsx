@@ -1019,11 +1019,8 @@ export function CronScreen() {
     }
     return null;
   }, [dark, runsError, runsList.length, runsLoading]);
-  const jobsContentClass = 'gap-3 p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)]';
-  const runsContentClass = 'gap-2 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+30px)]';
-  const handleJobsRefresh = useCallback(() => {
-    void loadJobs(true);
-  }, [loadJobs]);
+  const jobsContentClass = 'p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)]';
+  const runsContentClass = 'p-4 pb-[calc(env(safe-area-inset-bottom,0px)+30px)]';
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -1093,7 +1090,7 @@ export function CronScreen() {
           {/* Body form */}
           <ScrollArea
             className="bg-white dark:bg-black"
-            contentClassName="p-[object Object] gap-[object Object] pb-[object Object]"
+            contentClassName="p-4 gap-3.5 pb-8"
 >
             {formError && (
               <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">

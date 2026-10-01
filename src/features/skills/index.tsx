@@ -191,7 +191,7 @@ export function SkillsScreen() {
 
         <ScrollArea
           className="flex-1 px-4 py-4"
-          contentClassName="pb-[object Object]"
+          contentClassName="pb-[calc(env(safe-area-inset-bottom,0px)+24px)]"
 
 >
           {loading && !refreshing ? (
@@ -255,7 +255,7 @@ export function SkillsScreen() {
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
             </div>
-            <ScrollArea className="flex-1" contentClassName="p-[object Object]">
+            <ScrollArea className="flex-1" contentClassName="p-4">
               {contentLoading ? (
                 <Spinner size={14} color={brand} />
               ) : (

@@ -418,7 +418,7 @@ export function FilesScreen() {
   // The scroller is its own box now, so the content is just padding. The
   // bottom pad clears the home indicator, which the browser reports via env().
   const fileListContentClass =
-    'px-4 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] grow';
+    'pb-[calc(env(safe-area-inset-bottom,0px)+24px)] grow';
   const fileListHeader = useMemo(
     () =>
       listing?.parent ? (
@@ -770,7 +770,7 @@ export function FilesScreen() {
                   />
                 </div>
               ) : fileTextContent ? (
-                <ScrollArea className="flex-1" contentClassName="p-[object Object]" horizontal={false}>
+                <ScrollArea className="flex-1" contentClassName="p-4" horizontal={false}>
                   <ScrollArea horizontal>
                     <UIText className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
                       {fileTextContent}
