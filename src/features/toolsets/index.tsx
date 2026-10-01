@@ -5,9 +5,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { Boxes, RefreshCw, Search } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
-import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
-import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { toast } from '../../components/ui/toast';
@@ -206,25 +205,20 @@ export function ToolsetsScreen() {
 
   return (
     <div style={screenStyle(dark)}>
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        <ScreenHeader
-          title="Toolsets"
-
-          subtitle={`${activeProfile} · ${loading ? 'Loading…' : `${enabledCount}/${visibleToolsets.length} enabled`}`}
-          actions={
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Refresh toolsets"
-              onClick={() => void load(true)}
-              className="h-9 w-9 rounded-lg">
-              <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-            </Button>
-          }
-        />
-
-        <div className="overflow-y-auto flex-1 px-4 py-4">
-          <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
+      <ScreenScaffold
+        header={
+          <ScreenHeader
+            title="Toolsets"
+            subtitle={`${activeProfile} · ${loading ? 'Loading…' : `${enabledCount}/${visibleToolsets.length} enabled`}`}
+            actions={
+              <HeaderIconButton aria-label="Refresh toolsets" onClick={() => void load(true)}>
+                <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+              </HeaderIconButton>
+            }
+          />
+        }
+        contentClassName="px-4 py-4">
+        <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
             <Card className="mb-3">
               <div className="flex items-start gap-2.5">
                 <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
@@ -284,9 +278,8 @@ export function ToolsetsScreen() {
                 ))}
               </div>
             )}
-          </div>
         </div>
-      </div>
+      </ScreenScaffold>
     </div>
   );
 }

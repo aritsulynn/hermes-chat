@@ -3,7 +3,7 @@ import { Navigate as Redirect } from 'react-router-dom';
 import { AlertCircle, Cpu, DollarSign, MessageSquare, RefreshCw, TrendingUp, Wrench, Zap } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { Card, ScreenHeader } from '../../components/ui/bits';
+import { Card, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
@@ -138,52 +138,54 @@ export function UsageScreen() {
   return (
     <div style={screenStyle(dark)}>
       {/* No 'bottom' edge: the scroll content pads the safe area + 32. */}
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        {/* Header */}
-        <ScreenHeader
-          title="Usage & Analytics"
+      <ScreenScaffold
+        header={
+          <>
+            {/* Header */}
+            <ScreenHeader
+              title="Usage & Analytics"
 
-          actions={
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Refresh usage"
-              disabled={loading || refreshing}
-              onClick={() => void fetchUsage(true)}
-              className="h-8 w-8 rounded-lg border border-neutral-300 dark:border-neutral-700">
-              <RefreshCw size={15} color={dark ? '#ccc' : '#444'} />
-            </Button>
-          }
-        />
+              actions={
+                <HeaderIconButton
+                  variant="outline"
+                  aria-label="Refresh usage"
+                  disabled={loading || refreshing}
+                  onClick={() => void fetchUsage(true)}
+                  className="border border-neutral-300 dark:border-neutral-700">
+                  <RefreshCw size={20} color={dark ? '#ccc' : '#444'} />
+                </HeaderIconButton>
+              }
+            />
 
-        {/* Period Selector Bar */}
-        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
-          <div className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</div>
-          <div className="flex gap-1">
-            {PERIOD_OPTIONS.map((opt) => (
-              <Button
-                key={opt.days}
-                variant="ghost"
+            {/* Period Selector Bar */}
+            <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <div className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</div>
+              <div className="flex gap-1">
+                {PERIOD_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.days}
+                    variant="ghost"
 
-                aria-pressed={days === opt.days}
-                aria-label={opt.label}
-                onClick={() => setDays(opt.days)}
-                className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
-                  days === opt.days
-                    ? 'border-[#1a73e8] bg-[#1a73e8]'
-                    : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
-                }`}>
-                <span
-                  className={`text-xs font-semibold ${
-                    days === opt.days ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
-                  }`}>
-                  {opt.label}
-                </span>
-              </Button>
-            ))}
-          </div>
-        </div>
-
+                    aria-pressed={days === opt.days}
+                    aria-label={opt.label}
+                    onClick={() => setDays(opt.days)}
+                    className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
+                      days === opt.days
+                        ? 'border-[#1a73e8] bg-[#1a73e8]'
+                        : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                    }`}>
+                    <span
+                      className={`text-xs font-semibold ${
+                        days === opt.days ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
+                      }`}>
+                      {opt.label}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </>
+        }>
         {error && (
           <div className="m-4">
             <UIAlert icon={AlertCircle} variant="destructive">
@@ -201,8 +203,7 @@ export function UsageScreen() {
           </div>
         )}
 
-        <div className="overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)]">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)]">
             {loading && !refreshing ? (
               <div className="flex flex-col items-center justify-center py-20">
                 <Spinner size={24} color={brand} />
@@ -482,9 +483,8 @@ export function UsageScreen() {
                 )}
               </>
             )}
-          </div>
         </div>
-      </div>
+      </ScreenScaffold>
     </div>
   );
 }

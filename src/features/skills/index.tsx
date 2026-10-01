@@ -7,7 +7,7 @@ import { Navigate as Redirect } from 'react-router-dom';
 import { RefreshCw, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { toast } from '../../components/ui/toast';
@@ -163,26 +163,20 @@ export function SkillsScreen() {
 
   return (
     <div style={screenStyle(dark)}>
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        {/* Header */}
-        <ScreenHeader
-          title="Skills"
-
-          subtitle={loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
-          actions={
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Refresh skills"
-              onClick={() => void load(true)}
-              className="h-9 w-9 rounded-lg">
-              <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-            </Button>
-          }
-        />
-
-        <div className="overflow-y-auto flex-1 px-4 py-4">
-          <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
+      <ScreenScaffold
+        header={
+          <ScreenHeader
+            title="Skills"
+            subtitle={loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
+            actions={
+              <HeaderIconButton aria-label="Refresh skills" onClick={() => void load(true)}>
+                <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+              </HeaderIconButton>
+            }
+          />
+        }
+        contentClassName="px-4 py-4">
+        <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
             {loading && !refreshing ? (
               <div className="flex flex-col items-center py-16">
                 <Spinner size={24} color={brand} />
@@ -213,10 +207,10 @@ export function SkillsScreen() {
                 ))}
               </div>
             )}
-          </div>
         </div>
+      </ScreenScaffold>
 
-        {/* SKILL.md viewer */}
+      {/* SKILL.md viewer */}
         <DialogPrimitive.Root open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
@@ -258,7 +252,6 @@ export function SkillsScreen() {
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
-      </div>
     </div>
   );
 }

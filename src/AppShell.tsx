@@ -7,9 +7,10 @@
 // components/ui/sidebar.tsx), and this file is down to two jobs: mounting it,
 // and registering the module-level bridges the rest of the app routes through
 // (see store/nav.ts for why those cannot be hooks).
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useThemeValue } from './hooks/app-store';
+import { useEdgeSwipe } from './hooks/use-edge-swipe';
 import { setDrawerOpener, setNavigator, setSidebarShown } from './store/nav';
 import { syncStatusBarStyle } from './platform';
 import { ConnectionBanner } from './components/connection-banner';
@@ -78,6 +79,25 @@ function ShellBridges() {
   return null;
 }
 
+/**
+ * Edge-swipe open/close for the mobile drawer. Lives here (inside
+ * `SidebarProvider`) because the open state lives in that context — no bridge
+ * module needed. Closed: swipe right from the left edge opens. Open: swipe
+ * left from anywhere closes. Desktop: disabled, the panel is furniture there.
+ */
+function EdgeSwipeHandler() {
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
+  const openDrawer = useCallback(() => setOpenMobile(true), [setOpenMobile]);
+  const closeDrawer = useCallback(() => setOpenMobile(false), [setOpenMobile]);
+  useEdgeSwipe({
+    enabled: isMobile,
+    anywhere: openMobile,
+    onLeftEdgeSwipe: openMobile ? undefined : openDrawer,
+    onRightEdgeSwipe: openMobile ? closeDrawer : undefined,
+  });
+  return null;
+}
+
 export function AppShell() {
   const { theme } = useThemeValue();
   // `booting` is the store restoring the session from the browser's cookie jar.
@@ -103,6 +123,7 @@ export function AppShell() {
           re-running the open delay. */}
       <TooltipProvider>
         <ShellBridges />
+        <EdgeSwipeHandler />
         <div className="flex min-h-0 flex-1">
           <Sidebar collapsible="icon" side="left">
             <HermesSidebarContent />

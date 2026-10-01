@@ -37,9 +37,9 @@ export function navigate(to: string, options?: { replace?: boolean }): void {
  * Open the navigation drawer.
  *
  * The shell owns the drawer's open state, so it registers the trigger here and
- * every screen header's hamburger calls this. There is no swipe-to-open: a
- * drag gesture is not something a browser page can claim, and the hamburger is
- * always visible, so nothing is lost but the gesture itself.
+ * every screen header's hamburger calls this. The mobile shell additionally
+ * opens it from a left-edge swipe (see `use-edge-swipe`), which calls the
+ * sidebar state directly rather than coming through here.
  */
 export function openNavDrawer(): void {
   if (!openDrawer) {

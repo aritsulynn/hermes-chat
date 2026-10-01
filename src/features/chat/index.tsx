@@ -378,7 +378,14 @@ export function ChatScreen() {
     const read = () => setDockH(el.getBoundingClientRect().height);
     read();
     const ro = new ResizeObserver(read);
-    ro.observe(el);
+    // `box: 'border-box'` is load-bearing. The observer defaults to
+    // content-box, and the keyboard lift reaches this element only as
+    // `paddingBottom` — which grows the border box without touching the
+    // content box, so a default observer never fires. `dockH` then stayed at
+    // its keyboard-closed value and the transcript never reserved room for the
+    // lifted composer: the composer rose, the chat did not. `read` measures
+    // the border box, so observe the same box.
+    ro.observe(el, { box: 'border-box' });
     return () => ro.disconnect();
   }, []);
   // Keyboard height — the footer is lifted by hand with bottom padding. The
@@ -579,7 +586,10 @@ export function ChatScreen() {
   // button on a rail that matches the column, so the button lands on the
   // bubbles' right edge — see TranscriptProps.columnClassName.
   const listColumnClass = 'mx-auto w-full max-w-3xl';
-  const listContentClass = 'flex flex-col px-3 pt-3';
+  // Top pad clears the floating glass header (safe area + bar + a 12px gap),
+  // so the first bubble starts below it but scrolls *under* it — that overlap
+  // is what the header's backdrop-blur blurs.
+  const listContentClass = 'flex flex-col px-3 pt-[calc(var(--safe-area-top,0px)+var(--header-height)+12px)]';
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
   // Following the tail, holding position across a prepend, and settling the
   // follow state on a release all used to live here as ~150 lines of scroll
@@ -732,16 +742,20 @@ export function ChatScreen() {
   const popMaxH = popover ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove)) : undefined;
 
   return (
-    <div ref={rootRef} style={screen}>
-      <ChatNormalHeader
-        dark={dark}
-        iconColor={headerIcon}
-        title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
-        contextPercent={ctxPct}
-        contextTone={ctxTone}
-        onSelectInfo={() => void openInfo()}
-        onOpenInfo={() => void openInfo()}
-      />
+    <div ref={rootRef} style={screen} className="relative">
+      {/* Floating glass header: absolute so the transcript scrolls under it.
+          Same surface as ScreenScaffold uses everywhere else. */}
+      <div className="absolute inset-x-0 top-0 z-30 bg-white/80 backdrop-blur dark:bg-black/80">
+        <ChatNormalHeader
+          dark={dark}
+          iconColor={headerIcon}
+          title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
+          contextPercent={ctxPct}
+          contextTone={ctxTone}
+          onSelectInfo={() => void openInfo()}
+          onOpenInfo={() => void openInfo()}
+        />
+      </div>
 
       {/* No 'bottom' edge here: Composer already pads with insets.bottom
           itself when the keyboard is closed, and KeyboardAvoidingView lifts

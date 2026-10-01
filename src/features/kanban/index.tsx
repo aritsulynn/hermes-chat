@@ -9,7 +9,7 @@ import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
-import { ScreenHeader, Spinner } from '../../components/ui/bits';
+import { HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { Input } from '../../components/ui/input';
@@ -311,64 +311,60 @@ export function KanbanScreen() {
 
   return (
     <div style={screenStyle(dark)}>
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        <ScreenHeader
-          title="Kanban"
-          subtitle={activeBoard?.name}
-          actions={
-            <div className="flex items-center gap-0.5">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Refresh board"
-                onClick={() => void reload(true)}
-                className="h-9 w-9 rounded-lg">
-                <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-              </Button>
-              <Button
-                onClick={() => setShowCreate(true)}
-                role="button"
-                aria-label="New task"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-lg">
-                <span className="text-[20px] leading-[20px]">+</span>
-              </Button>
-            </div>
-          }
-        />
-        {/* Board switcher. The refresh and new-task buttons moved up into the
-            header, so this row is chips only and can scroll the full width. */}
-        <div className="flex items-center gap-2 px-3 pt-2">
-          <div className="overflow-x-auto">
-            <div className="grow flex gap-2">
-              {boards.map((b) => {
-                const active = b.slug === slug || (!slug && b.is_current);
-                return (
-                  <Button
-                    key={b.slug}
-
-                    aria-pressed={active}
-                    aria-label={b.name || b.slug}
-                    onClick={() => pickSlug(b.slug)}
-                    variant={active ? 'default' : 'outline'}
-                    size="sm"
-                    className="rounded-full px-3 py-1.5">
-                    <span className="text-[13px] font-semibold">
-                      {b.name || b.slug}
-                      {typeof b.total === 'number' ? ` · ${b.total}` : ''}
-                    </span>
-                  </Button>
-                );
-              })}
-              {boards.length === 0 && !loading && (
-                <div className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
-                  {activeBoard?.name || 'default board'}
+      <ScreenScaffold
+        header={
+          <>
+            <ScreenHeader
+              title="Kanban"
+              subtitle={activeBoard?.name}
+              actions={
+                <div className="flex items-center gap-0.5">
+                  <HeaderIconButton aria-label="Refresh board" onClick={() => void reload(true)}>
+                    <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                  </HeaderIconButton>
+                  <HeaderIconButton
+                    onClick={() => setShowCreate(true)}
+                    role="button"
+                    aria-label="New task">
+                    <span className="text-[20px] leading-[20px]">+</span>
+                  </HeaderIconButton>
                 </div>
-              )}
+              }
+            />
+            {/* Board switcher. The refresh and new-task buttons moved up into the
+                header, so this row is chips only and can scroll the full width. */}
+            <div className="flex items-center gap-2 px-3 pt-2">
+              <div className="overflow-x-auto">
+                <div className="grow flex gap-2">
+                  {boards.map((b) => {
+                    const active = b.slug === slug || (!slug && b.is_current);
+                    return (
+                      <Button
+                        key={b.slug}
+
+                        aria-pressed={active}
+                        aria-label={b.name || b.slug}
+                        onClick={() => pickSlug(b.slug)}
+                        variant={active ? 'default' : 'outline'}
+                        size="sm"
+                        className="rounded-full px-3 py-1.5">
+                        <span className="text-[13px] font-semibold">
+                          {b.name || b.slug}
+                          {typeof b.total === 'number' ? ` · ${b.total}` : ''}
+                        </span>
+                      </Button>
+                    );
+                  })}
+                  {boards.length === 0 && !loading && (
+                    <div className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                      {activeBoard?.name || 'default board'}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        }>
         {!!error && (
           <div className="px-3.5 pt-2">
             <UIAlert icon={TriangleAlert} variant="destructive">
@@ -376,13 +372,12 @@ export function KanbanScreen() {
             </UIAlert>
           </div>
         )}
-        <div className="overflow-y-auto">
-          {/* `flex flex-col` because `gap-2.5` is inert on a block box — this is
-              the same trap the old drawer's recents list carried a note about.
-              As a block container the gap did nothing and the column cards sat
-              flush against each other, border to border, reading as one tall
-              striped object rather than a list. */}
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-2.5 p-3 pb-6">
+        {/* `flex flex-col` because `gap-2.5` is inert on a block box — this is
+            the same trap the old drawer's recents list carried a note about.
+            As a block container the gap did nothing and the column cards sat
+            flush against each other, border to border, reading as one tall
+            striped object rather than a list. */}
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-2.5 p-3 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
             {loading && <Spinner size={14} color="currentColor" />}
             {!loading && !board && !error && (
               <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
@@ -423,10 +418,10 @@ export function KanbanScreen() {
               );
             })}
           </div>
-        </div>
+      </ScreenScaffold>
 
-        {/* Task detail sheet. */}
-        <FormSheet open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+      {/* Task detail sheet. */}
+      <FormSheet open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
           {detail && (
             <>
               <Input
@@ -534,7 +529,6 @@ export function KanbanScreen() {
             <span className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</span>
           </Button>
         </FormSheet>
-      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}

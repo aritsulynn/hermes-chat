@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import { ArrowUp, ChevronDown, Paperclip, Plus, Square, X } from 'lucide-react';
 
 import type { Attachment } from '../../utils/messages';
@@ -107,22 +107,12 @@ export const Composer = memo(function Composer({
     });
   }, [generating]);
 
-  // Mobile browsers do not resize the layout for the virtual keyboard, so the
-  // composer would sit under it. `visualViewport` reports the shrunken height
-  // directly; the gap between it and the layout viewport is the keyboard.
-  const [webKb, setWebKb] = useState(0);
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const onResize = () => {
-      const gap = window.innerHeight - vv.height - (vv.offsetTop ?? 0);
-      setWebKb(Math.max(0, Math.round(gap)));
-    };
-    onResize();
-    vv.addEventListener('resize', onResize);
-    return () => vv.removeEventListener('resize', onResize);
-  }, []);
-
+  // The virtual keyboard is handled by the chat screen's footer, which owns the
+  // whole bottom block: it pads itself by `kbH` (visual-viewport gap) and the
+  // transcript reserves room from its measured height. This component must NOT
+  // also pad for the keyboard — it used to, and the two lifts stacked, so the
+  // card rose roughly twice the keyboard height and looked like it floated off.
+  // All that belongs here is clearance for the home indicator.
   const trimmedInput = input.trim();
   const hasText = trimmedInput.length > 0;
   const modelLabel = modelProvider ? `${modelProvider}:${model}` : model;
@@ -135,9 +125,10 @@ export const Composer = memo(function Composer({
       // opaque, or the send button and the text field stop responding.
       className="pointer-events-auto px-2.5 pt-2"
       style={{
-        // Above the keyboard when one is up, otherwise clear of the home
-        // indicator. `env()` beats a measured inset here — no layout pass.
-        paddingBottom: webKb > 0 ? webKb + 18 : 'max(env(safe-area-inset-bottom, 0px), 10px)',
+        // Only the home-indicator clearance lives here; the keyboard lift is the
+        // footer's job (see the note above). `env()` beats a measured inset —
+        // no layout pass.
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 10px)',
       }}>
       <div className="frame-focus flex flex-col gap-1.5 rounded-2xl border border-neutral-200/80 bg-[#f4f4f6] px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-[#212121]">
         {attachments.length > 0 && (

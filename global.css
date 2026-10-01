@@ -89,8 +89,45 @@
   --radius-lg: var(--radius);
 }
 
+/* Semantic UI type scale. v4 turns each `--text-*` into a `text-*` utility and
+   reads the paired `--line-height` when the class sets both. Named by role
+   rather than by pixel size, so a header title or a meta line changes app-wide
+   from one place. The pixel values are the ones the app already used — naming
+   them changes nothing visually; it only gives the ad-hoc `text-[15px]` /
+   `text-xl` a single home to move into.
+
+   This is the foundation, not the migration: the header uses `text-ui-title` /
+   `text-ui-meta` today, the rest of the app still says `text-sm` and friends
+   and can be pointed here one screen at a time. */
+@theme {
+  --text-ui-title: 1.25rem; /* 20px — page titles */
+  --text-ui-title--line-height: 1.75rem;
+  --text-ui-header: 0.875rem; /* 14px — header bar title (compact bar) */
+  --text-ui-header--line-height: 1.25rem;
+  --text-ui-body: 0.9375rem; /* 15px — primary body copy */
+  --text-ui-body--line-height: 1.375rem;
+  --text-ui-label: 0.875rem; /* 14px — labels, list rows */
+  --text-ui-label--line-height: 1.25rem;
+  --text-ui-meta: 0.75rem; /* 12px — subtitles, meta */
+  --text-ui-meta--line-height: 1rem;
+  --text-ui-micro: 0.6875rem; /* 11px — chips, badges */
+  --text-ui-micro--line-height: 0.875rem;
+}
+
 @layer base {
   :root {
+    /* Safe-area insets, resolved once. Screens read `var(--safe-area-*)`
+       instead of repeating `env(safe-area-inset-*)` at every call site, so a
+       fallback can only ever be written in one place. */
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+    /* Inner height of a screen header, excluding the safe area. Matches
+       OpenChamber's 56px bar. `ScreenHeader` and the chat header both make
+       their bar exactly this tall, so the two cannot drift apart again —
+       which is what made /chat read as shorter than every other screen. */
+    --header-height: 56px;
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;

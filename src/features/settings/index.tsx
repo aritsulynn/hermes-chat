@@ -16,7 +16,7 @@ import {
   User,
 } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
-import { Card, ScreenHeader } from '../../components/ui/bits';
+import { Card, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Separator } from '../../components/ui/separator';
@@ -67,12 +67,8 @@ export function SettingsScreen() {
       {/* No 'bottom' edge: the only bottom padding lives in the scroll content
         (safe area + 24). Keeping 'bottom' doubles the gap above the gesture
         bar on edge-to-edge Android. */}
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        {/* Header */}
-        <ScreenHeader title="Settings" />
-
-        <div className="overflow-y-auto flex-1 px-4 py-4">
-          <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
+      <ScreenScaffold header={<ScreenHeader title="Settings" />} contentClassName="px-4 py-4">
+        <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
             {/* Appearance Section */}
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-2">
@@ -425,9 +421,8 @@ export function SettingsScreen() {
               <LogOut size={16} color="#dc2626" />
               <span className="text-sm font-semibold text-red-600 dark:text-red-400">Log Out</span>
             </Button>
-          </div>
         </div>
-      </div>
+      </ScreenScaffold>
 
       <ConfirmDialog
         open={confirmLogout}

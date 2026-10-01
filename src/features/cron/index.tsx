@@ -34,7 +34,7 @@ import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
-import { ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { ErrorRetry, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
 import { screenStyle } from '../../theme';
@@ -918,19 +918,18 @@ export function CronScreen() {
   return (
     <div style={screen}>
       {/* No 'bottom' edge: main list content already pads insets.bottom + 32. */}
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        {/* Header */}
-        <ScreenHeader
-          title="Cron Jobs"
-
-          actions={
-            <Button onClick={openCreateModal} className="h-8 rounded-lg bg-[#1a73e8] px-3">
-              <Plus size={16} color="#fff" />
-              <span className="text-xs font-semibold text-white">New</span>
-            </Button>
-          }
-        />
-
+      <ScreenScaffold
+        header={
+          <ScreenHeader
+            title="Cron Jobs"
+            actions={
+              <Button onClick={openCreateModal} className="h-8 rounded-lg bg-[#1a73e8] px-3">
+                <Plus size={16} color="#fff" />
+                <span className="text-xs font-semibold text-white">New</span>
+              </Button>
+            }
+          />
+        }>
         {/* Status feedback toast */}
         {statusNotice && (
           <div className="mx-4 mt-2 rounded-lg bg-emerald-600 px-3 py-2">
@@ -938,10 +937,9 @@ export function CronScreen() {
           </div>
         )}
 
-        <ErrorRetry error={error} onRetry={() => void loadJobs()} className="m-4" compact />
+        <ErrorRetry error={error} onRetry={() => void loadJobs()} className="mx-4 mb-3 mt-3" compact />
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${jobsContentClass}`}>
+        <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${jobsContentClass}`}>
             {jobs.length === 0
               ? jobsEmpty
               : jobs.map((job, i) => (
@@ -962,10 +960,10 @@ export function CronScreen() {
                     />
                   </div>
                 ))}
-          </div>
         </div>
+      </ScreenScaffold>
 
-        {/* Create / Edit sheet */}
+      {/* Create / Edit sheet */}
         <Sheet open={modalOpen} onOpenChange={setModalOpen}>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
@@ -1220,7 +1218,6 @@ export function CronScreen() {
             </div>
           </div>
         </Sheet>
-      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}

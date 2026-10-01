@@ -1,4 +1,4 @@
-import { useSyncExternalStore, useState } from 'react';
+import { useCallback, useSyncExternalStore, useState } from 'react';
 import { AlertCircle, LoaderCircle, PanelLeft } from 'lucide-react';
 import { useThemeValue } from '../../hooks/app-store';
 import { cn } from '../../utils/cn';
@@ -8,8 +8,8 @@ import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
 
-// Circular context-window ring for the chat header — sits left of the kebab,
-// taps into Session info for the exact numbers.
+// Circular context-window ring for the chat header — sits left of the menu
+// button, taps into Session info for the exact numbers.
 export function CtxRing({
   pct,
   tone,
@@ -80,8 +80,36 @@ export function CtxRing({
             transform={`rotate(-90 ${size / 2} ${size / 2})`}
           />
         </svg>
-        <span className="text-xs font-medium tabular-nums text-neutral-600 dark:text-neutral-300">{label}</span>
+        <span className="text-ui-label font-medium tabular-nums text-neutral-600 dark:text-neutral-300">{label}</span>
       </span>
+    </Button>
+  );
+}
+
+// Shared sizing for a header icon control: the hamburger, the chat menu button
+// and every screen's right-hand actions.
+//
+//   40px tap target (`h-10 w-10`), matching OpenChamber's compact bar. The
+//   `sm:h-9 sm:w-9` half of `size="icon"` still shrinks it to 36px from 640px
+//   up, which is the intent for a pointer. This is below the 44pt iOS target —
+//   a deliberate trade for the 56px bar; widen it back if the bar grows.
+//
+//   20px glyph (`[&_svg]:size-5!`). The Button base clamps any class-less <svg>
+//   to 16px (`[&_svg:not([class*='size-'])]:size-4`), which silently overrode
+//   every `size={15|18|19}` these call sites passed — the icons rendered 16px
+//   whatever the prop said. The `!` is load-bearing: it outranks that clamp,
+//   so the glyph is 20px, matching the hamburger and the header title.
+//
+// It is exported as a class rather than only a component because the chat kebab
+// is a Base UI `render` target, and the class drops straight onto the <Button>
+// that `render` swaps in.
+export const headerIconButtonClass = 'h-10 w-10 rounded-lg [&_svg]:size-5!';
+
+/** A header icon button: 40px target, 20px glyph. See `headerIconButtonClass`. */
+export function HeaderIconButton({ className, children, ...props }: React.ComponentProps<typeof Button>) {
+  return (
+    <Button variant="ghost" size="icon" className={cn(headerIconButtonClass, className)} {...props}>
+      {children}
     </Button>
   );
 }
@@ -111,7 +139,7 @@ export function HamburgerBtn() {
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         openNavDrawer();
       }}
-      className="justify-center px-2 py-2">
+      className={cn(headerIconButtonClass, 'justify-center')}>
       <PanelLeft size={20} className="size-5" color={theme === 'dark' ? '#f5f5f5' : '#111'} />
     </Button>
   );
@@ -133,19 +161,85 @@ export function ScreenHeader({
 }) {
   return (
     <header
-      className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 pb-4 dark:border-neutral-800 dark:bg-black"
+      // No background or border of its own: the glass surface belongs to the
+      // frame (`ScreenScaffold`, or the chat screen's own overlay), which spans
+      // the whole header region including any sub-bar. Painting it here would
+      // put a second, opaque surface under those sub-bars.
+      //
       // `insetTop` was a prop every call site had to thread a number into. The
-      // browser already knows the safe area, so it asks instead.
-      style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <HamburgerBtn />
-        <div className="min-w-0 flex-1">
-          <div className="text-xl font-bold text-neutral-950 dark:text-neutral-100 truncate">{title}</div>
-          {!!subtitle && <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{subtitle}</div>}
+      // browser already knows the safe area, so the variable in global.css
+      // resolves it once and every header reads the same value.
+      style={{ paddingTop: 'var(--safe-area-top, 0px)' }}>
+      {/* Fixed inner bar height, not padding: the icon control is centred in
+          `--header-height` so every screen's header lands on the same line. */}
+      <div className="flex h-(--header-height) items-center justify-between px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <HamburgerBtn />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-ui-header font-bold text-neutral-950 dark:text-neutral-100 truncate">{title}</h1>
+            {!!subtitle && (
+              <div className="text-ui-meta text-neutral-500 dark:text-neutral-400 truncate">{subtitle}</div>
+            )}
+          </div>
         </div>
+        {actions}
       </div>
-      {actions}
     </header>
+  );
+}
+
+// Shared screen frame. The header floats over one scrolling body, so the body's
+// content passes *under* it — that overlap is the whole point. The header's
+// `backdrop-blur` blurs whatever is painted behind it, and with the header in
+// normal flow above the scroller there is nothing behind it but the opaque page
+// background, so the glass reads as a plain solid bar. Here the wrapper is
+// `relative`, the header region is `absolute`, and the body is padded down by
+// the region's measured height.
+//
+// `header` is the whole top region — the `ScreenHeader` plus any sub-bar the
+// screen draws under it (usage's period picker, files' breadcrumbs). Measuring
+// the region, rather than assuming `--header-height`, is what lets those
+// screens keep their sub-bar without a second layout pass.
+export function ScreenScaffold({
+  header,
+  children,
+  contentClassName,
+}: {
+  header: React.ReactNode;
+  children: React.ReactNode;
+  contentClassName?: string;
+}) {
+  const [headerH, setHeaderH] = useState(0);
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const read = () => setHeaderH(Math.round(el.getBoundingClientRect().height));
+    read();
+    const ro = new ResizeObserver(read);
+    // `border-box`, not the default `content-box`: the safe-area pad and any
+    // sub-bar change the region's border box, and the measured height is what
+    // the body is padded by. (Same gotcha as the chat footer's dock observer —
+    // a default observer never fires when only padding changes.)
+    ro.observe(el, { box: 'border-box' });
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
+      <div
+        ref={measure}
+        // The glass. 80% opaque + blur behind it; no border — the blur is what
+        // separates the header from the content, the way OpenChamber does it.
+        className="absolute inset-x-0 top-0 z-30 bg-white/80 backdrop-blur dark:bg-black/80">
+        {header}
+      </div>
+      <div
+        className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain', contentClassName)}
+        // The measured height, with the static safe-area + bar height as the
+        // first-paint value so the content does not start under the header for
+        // a frame.
+        style={{ paddingTop: headerH || 'calc(var(--safe-area-top, 0px) + var(--header-height))' }}>
+        {children}
+      </div>
+    </div>
   );
 }
 

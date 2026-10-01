@@ -21,7 +21,7 @@ import { pickFile } from '../../services/file-picker';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { screenStyle } from '../../theme';
-import { ScreenHeader } from '../../components/ui/bits';
+import { HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { Input } from '../../components/ui/input';
@@ -460,138 +460,123 @@ export function FilesScreen() {
   return (
     <div style={screen}>
       {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        {/* Header Bar */}
-        <ScreenHeader
-          title="Files"
+      <ScreenScaffold
+        header={
+          <>
+            {/* Header Bar */}
+            <ScreenHeader
+              title="Files"
 
-          subtitle={loading ? 'Loading...' : `${folderCount} folders · ${fileCount} files`}
-          actions={
-            <div className="flex items-center gap-0.5">
+              subtitle={loading ? 'Loading...' : `${folderCount} folders · ${fileCount} files`}
+              actions={
+                <div className="flex items-center gap-0.5">
+                  <HeaderIconButton aria-label="New folder" onClick={() => setNewFolderModalOpen(true)}>
+                    <FolderPlus size={20} color={dark ? '#e5e5e5' : '#333'} />
+                  </HeaderIconButton>
+
+                  <HeaderIconButton aria-label="New file" onClick={() => setNewFileModalOpen(true)}>
+                    <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
+                  </HeaderIconButton>
+
+                  <HeaderIconButton
+                    aria-label="Upload image"
+                    onClick={handlePickAndUploadImage}
+                    disabled={uploading}>
+                    {uploading ? (
+                      <Spinner size={20} color="#1a73e8" />
+                    ) : (
+                      <Upload size={20} color={dark ? '#e5e5e5' : '#333'} />
+                    )}
+                  </HeaderIconButton>
+
+                  <HeaderIconButton aria-label="Refresh" onClick={() => void load(activeDirectory, true)}>
+                    <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                  </HeaderIconButton>
+                </div>
+              }
+            />
+
+            {/* Path Bar & Breadcrumbs */}
+            <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
+              <div className="overflow-x-auto flex-1 mr-2">
+                <div className="items-center">
+                  <div className="flex items-center gap-1">
+                    <HardDrive size={14} color="#1a73e8" />
+                    {breadcrumbs.map((crumb, idx) => {
+                      const isLast = idx === breadcrumbs.length - 1;
+                      return (
+                        <div key={crumb.path} className="flex items-center">
+                          <Button
+                            variant="ghost"
+                            disabled={isLast}
+                            aria-label={isLast ? crumb.label : `Go to ${crumb.label}`}
+                            onClick={() => {
+                              setSearchQuery('');
+                              void load(crumb.path);
+                            }}
+                            className={`h-auto sm:h-auto rounded px-1.5 py-0.5 ${
+                              isLast
+                                ? 'bg-neutral-200/60 dark:bg-neutral-800'
+                                : 'active:bg-neutral-200 dark:active:bg-neutral-800'
+                            }`}>
+                            <span
+                              className={`font-mono text-xs ${
+                                isLast
+                                  ? 'font-bold text-neutral-900 dark:text-neutral-100'
+                                  : 'text-[#1a73e8] dark:text-blue-400'
+                              } truncate`}>
+                              {crumb.label}
+                            </span>
+                          </Button>
+                          {!isLast && <div className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               <Button
                 variant="ghost"
-                size="icon"
-                aria-label="New folder"
-                onClick={() => setNewFolderModalOpen(true)}
-                className="h-9 w-9 rounded-lg">
-                <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="New file"
-                onClick={() => setNewFileModalOpen(true)}
-                className="h-9 w-9 rounded-lg">
-                <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Upload image"
-                onClick={handlePickAndUploadImage}
-                disabled={uploading}
-                className="h-9 w-9 rounded-lg">
-                {uploading ? (
-                  <Spinner size={14} color="#1a73e8" />
-                ) : (
-                  <Upload size={19} color={dark ? '#e5e5e5' : '#333'} />
-                )}
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Refresh"
-                onClick={() => void load(activeDirectory, true)}
-                className="h-9 w-9 rounded-lg">
-                <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                onClick={() => {
+                  setPathInput(activeDirectory);
+                  setPathModalOpen(true);
+                }}
+                aria-label="Change directory"
+                className="h-auto sm:h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70">
+                <span className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</span>
               </Button>
             </div>
-          }
-        />
 
-        {/* Path Bar & Breadcrumbs */}
-        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
-          <div className="overflow-x-auto flex-1 mr-2">
-            <div className="items-center">
-              <div className="flex items-center gap-1">
-                <HardDrive size={14} color="#1a73e8" />
-                {breadcrumbs.map((crumb, idx) => {
-                  const isLast = idx === breadcrumbs.length - 1;
-                  return (
-                    <div key={crumb.path} className="flex items-center">
-                      <Button
-                        variant="ghost"
-                        disabled={isLast}
-                        aria-label={isLast ? crumb.label : `Go to ${crumb.label}`}
-                        onClick={() => {
-                          setSearchQuery('');
-                          void load(crumb.path);
-                        }}
-                        className={`h-auto sm:h-auto rounded px-1.5 py-0.5 ${
-                          isLast
-                            ? 'bg-neutral-200/60 dark:bg-neutral-800'
-                            : 'active:bg-neutral-200 dark:active:bg-neutral-800'
-                        }`}>
-                        <span
-                          className={`font-mono text-xs ${
-                            isLast
-                              ? 'font-bold text-neutral-900 dark:text-neutral-100'
-                              : 'text-[#1a73e8] dark:text-blue-400'
-                          } truncate`}>
-                          {crumb.label}
-                        </span>
-                      </Button>
-                      {!isLast && <div className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</div>}
-                    </div>
-                  );
-                })}
+            {/* Search / Filter Bar */}
+            <div className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+              <div className="frame-focus flex items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
+                <Search size={15} color={dark ? '#888' : '#9ca3af'} />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search in this folder..."
+                  // The pill around this draws the field; a second border and the
+                  // base background inside it read as a frame within a frame.
+                  // dark:bg-transparent is required — the base sets
+                  // dark:bg-input/30, which a plain bg-transparent does not cancel.
+                  className="flex-1 border-0 bg-transparent text-sm text-neutral-900 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
+                  autoCapitalize="none"
+                />
+                {searchQuery ? (
+                  <Button
+                    variant="ghost"
+                    size="iconSm"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Clear search"
+                    className="rounded-md">
+                    <X size={14} color={dark ? '#888' : '#9ca3af'} />
+                  </Button>
+                ) : null}
               </div>
             </div>
-          </div>
-
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setPathInput(activeDirectory);
-              setPathModalOpen(true);
-            }}
-            aria-label="Change directory"
-            className="h-auto sm:h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70">
-            <span className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</span>
-          </Button>
-        </div>
-
-        {/* Search / Filter Bar */}
-        <div className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-          <div className="frame-focus flex items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
-            <Search size={15} color={dark ? '#888' : '#9ca3af'} />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search in this folder..."
-              // The pill around this draws the field; a second border and the
-              // base background inside it read as a frame within a frame.
-              // dark:bg-transparent is required — the base sets
-              // dark:bg-input/30, which a plain bg-transparent does not cancel.
-              className="flex-1 border-0 bg-transparent text-sm text-neutral-900 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
-              autoCapitalize="none"
-            />
-            {searchQuery ? (
-              <Button
-                variant="ghost"
-                size="iconSm"
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear search"
-                className="rounded-md">
-                <X size={14} color={dark ? '#888' : '#9ca3af'} />
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
+          </>
+        }>
         {/* Error Alert */}
         {error && (
           <div className="m-3">
@@ -608,33 +593,32 @@ export function FilesScreen() {
           </div>
         )}
 
-        {/* File list. Keyed by path; the scroller is the box below. */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${fileListContentClass}`}>
-            {fileListHeader}
-            {filteredEntries.length === 0
-              ? fileListEmpty
-              : filteredEntries.map((item) => (
-                  <FileRow
-                    key={item.path}
-                    entry={item}
-                    dark={dark}
-                    onOpen={handleOpenEntryStable}
-                    onDelete={handleDeleteEntry}
-                  />
-                ))}
+        {/* File list. Plain content now — the scaffold owns the scroller. */}
+        <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${fileListContentClass}`}>
+          {fileListHeader}
+          {filteredEntries.length === 0
+            ? fileListEmpty
+            : filteredEntries.map((item) => (
+                <FileRow
+                  key={item.path}
+                  entry={item}
+                  dark={dark}
+                  onOpen={handleOpenEntryStable}
+                  onDelete={handleDeleteEntry}
+                />
+              ))}
+        </div>
+      </ScreenScaffold>
+
+      {/* Reading File Overlay */}
+      {readingFile && (
+        <div className="flex flex-col absolute inset-0 z-50 items-center justify-center bg-black/40">
+          <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+            <Spinner size={24} color="#1a73e8" />
+            <div className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</div>
           </div>
         </div>
-
-        {/* Reading File Overlay */}
-        {readingFile && (
-          <div className="flex flex-col absolute inset-0 z-50 items-center justify-center bg-black/40">
-            <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
-              <Spinner size={24} color="#1a73e8" />
-              <div className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</div>
-            </div>
-          </div>
-        )}
+      )}
 
         {/* File Preview Modal */}
         <DialogPrimitive.Root open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
@@ -923,7 +907,6 @@ export function FilesScreen() {
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
-      </div>
 
       <ConfirmDialog
         open={!!confirmDelete}

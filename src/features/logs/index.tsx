@@ -21,7 +21,7 @@ import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
 import { screenStyle } from '../../theme';
-import { ScreenHeader } from '../../components/ui/bits';
+import { HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
 import type { LogFile, LogLevelFilter } from './helpers';
@@ -151,7 +151,10 @@ export function LogsScreen() {
   const scrollToBottom = useCallback(() => {
     if (rows.length > 0) {
       try {
-        listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+        // The scaffold owns the scroller now; the list content finds it via
+        // the closest scrolling ancestor so the jump buttons keep working.
+        const scroller = listRef.current?.closest('div.overflow-y-auto');
+        scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
       } catch (e) {
         console.warn('[logs] scrollToEnd failed', e);
       }
@@ -161,7 +164,8 @@ export function LogsScreen() {
   const scrollToTop = useCallback(() => {
     if (rows.length > 0) {
       try {
-        listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        const scroller = listRef.current?.closest('div.overflow-y-auto');
+        scroller?.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) {
         console.warn('[logs] scrollToIndex failed', e);
       }
@@ -175,78 +179,81 @@ export function LogsScreen() {
   return (
     <div style={screen}>
       {/* No 'bottom' edge: the list content already pads insets.bottom + 48. */}
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        {/* Header */}
-        <ScreenHeader
-          title="Logs"
+      {/* Relative so the jump buttons anchor to the screen, not the scroller. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <ScreenScaffold
+          header={
+            <>
+              {/* Header */}
+              <ScreenHeader
+                title="Logs"
 
-          subtitle={`${file}.log · ${stats.total} lines`}
-          actions={
-            <div className="flex items-center" style={{ gap: 8 }}>
-              {/* Live / Auto refresh toggle button */}
-              <Button
-                onClick={() => setAutoRefresh((prev) => !prev)}
+                subtitle={`${file}.log · ${stats.total} lines`}
+                actions={
+                  <div className="flex items-center" style={{ gap: 8 }}>
+                    {/* Live / Auto refresh toggle button */}
+                    <Button
+                      onClick={() => setAutoRefresh((prev) => !prev)}
 
-                aria-checked={autoRefresh}
-                aria-label="Live refresh"
-                className={`h-9 rounded-xl border px-3 ${
-                  autoRefresh
-                    ? 'border-emerald-500/40 bg-emerald-500/10'
-                    : 'border-neutral-200 bg-neutral-100/70 dark:border-neutral-800 dark:bg-neutral-900'
-                }`}>
-                <div
-                  className={`h-2 w-2 rounded-full ${
-                    autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
-                  }`}
-                />
-                <span
-                  className={`text-xs font-semibold ${
-                    autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
-                  }`}>
-                  {autoRefresh ? 'Live' : 'Paused'}
-                </span>
-              </Button>
+                      aria-checked={autoRefresh}
+                      aria-label="Live refresh"
+                      className={`h-9 rounded-xl border px-3 ${
+                        autoRefresh
+                          ? 'border-emerald-500/40 bg-emerald-500/10'
+                          : 'border-neutral-200 bg-neutral-100/70 dark:border-neutral-800 dark:bg-neutral-900'
+                      }`}>
+                      <div
+                        className={`h-2 w-2 rounded-full ${
+                          autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
+                        }`}
+                      />
+                      <span
+                        className={`text-xs font-semibold ${
+                          autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
+                        }`}>
+                        {autoRefresh ? 'Live' : 'Paused'}
+                      </span>
+                    </Button>
 
-              {/* Copy button */}
-              <Button
-                onClick={handleCopy}
-                aria-label="Copy log"
-                className={`h-9 rounded-xl border px-3 ${
-                  copied
-                    ? 'border-emerald-500/40 bg-emerald-500/10'
-                    : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
-                }`}>
-                {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />}
-                <span
-                  className={`text-xs font-medium ${
-                    copied
-                      ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
-                      : 'text-neutral-700 dark:text-neutral-300'
-                  }`}>
-                  {copied ? 'Copied' : 'Copy'}
-                </span>
-              </Button>
+                    {/* Copy button */}
+                    <Button
+                      onClick={handleCopy}
+                      aria-label="Copy log"
+                      className={`h-9 rounded-xl border px-3 ${
+                        copied
+                          ? 'border-emerald-500/40 bg-emerald-500/10'
+                          : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
+                      }`}>
+                      {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />}
+                      <span
+                        className={`text-xs font-medium ${
+                          copied
+                            ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
+                            : 'text-neutral-700 dark:text-neutral-300'
+                        }`}>
+                        {copied ? 'Copied' : 'Copy'}
+                      </span>
+                    </Button>
 
-              {/* Manual refresh button */}
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={loading || refreshing}
-                onClick={() => void fetchLogs()}
-                aria-label="Refresh logs"
-                className="h-9 w-9 rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-                <RefreshCw
-                  size={15}
-                  color={dark ? '#9ca3af' : '#6b7280'}
-                  className={refreshing ? 'animate-spin' : ''}
-                />
-              </Button>
-            </div>
-          }
-        />
+                    {/* Manual refresh button */}
+                    <HeaderIconButton
+                      variant="outline"
+                      disabled={loading || refreshing}
+                      onClick={() => void fetchLogs()}
+                      aria-label="Refresh logs"
+                      className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+                      <RefreshCw
+                        size={20}
+                        color={dark ? '#9ca3af' : '#6b7280'}
+                        className={refreshing ? 'animate-spin' : ''}
+                      />
+                    </HeaderIconButton>
+                  </div>
+                }
+              />
 
-        {/* Filter Toolbar Card */}
-        <div className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
+              {/* Filter Toolbar Card */}
+              <div className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
           {/* Top line: Log File Tabs & Filter Toggle */}
           <div className="flex items-center justify-between" style={{ gap: 10 }}>
             <div className="overflow-x-auto flex-1">
@@ -451,7 +458,8 @@ export function LogsScreen() {
             </div>
           </div>
         </div>
-
+            </>
+        }>
         {/* Error message banner */}
         {error && (
           <UIAlert icon={AlertTriangle} variant="destructive" className="m-3 rounded-xl px-4 pt-2.5 pb-2">
@@ -476,57 +484,61 @@ export function LogsScreen() {
             </div>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col bg-[#101014]">
-            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${logListContentClass}`}>
-                {rows.map((item, index) => {
-                  const isErr = item.sev === 'error';
-                  const isWarn = item.sev === 'warning';
-                  const isDbg = item.sev === 'debug';
-                  return (
+          // Plain content now — the scaffold owns the scroller. min-h-full
+          // keeps the dark surface painted even for a short list.
+          <div className="min-h-full bg-[#101014]">
+            <div ref={listRef} className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${logListContentClass}`}>
+              {rows.map((item, index) => {
+                const isErr = item.sev === 'error';
+                const isWarn = item.sev === 'warning';
+                const isDbg = item.sev === 'debug';
+                return (
+                  <div
+                    key={`${index}-${item.line.length}`}
+                    className={`flex items-start rounded px-1 py-0.5 ${
+                      isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
+                    }`}>
+                    <div className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</div>
                     <div
-                      key={`${index}-${item.line.length}`}
-                      className={`flex items-start rounded px-1 py-0.5 ${
-                        isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
+                      className={`flex-1 font-mono text-[11px] leading-4 ${
+                        isErr
+                          ? 'font-medium text-red-400'
+                          : isWarn
+                            ? 'text-amber-300'
+                            : isDbg
+                              ? 'text-neutral-500'
+                              : 'text-neutral-200'
                       }`}>
-                      <div className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</div>
-                      <div
-                        className={`flex-1 font-mono text-[11px] leading-4 ${
-                          isErr
-                            ? 'font-medium text-red-400'
-                            : isWarn
-                              ? 'text-amber-300'
-                              : isDbg
-                                ? 'text-neutral-500'
-                                : 'text-neutral-200'
-                        }`}>
-                        {item.line}
-                      </div>
+                      {item.line}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
+          </div>
+        )}
+        </ScreenScaffold>
 
-            {/* Quick Jump Buttons (Floating) */}
-            <div className="absolute bottom-6 right-5 flex-col" style={{ gap: 12 }}>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={scrollToTop}
-                aria-label="Scroll to top"
-                className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800">
-                <ArrowUp size={18} color="#fff" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={scrollToBottom}
-                aria-label="Scroll to bottom"
-                className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600">
-                <ArrowDown size={18} color="#fff" />
-              </Button>
-            </div>
+        {/* Quick Jump Buttons (Floating) — outside the scroller so they don't
+            scroll away; anchored to the relative screen wrapper above. */}
+        {!(loading && lines.length === 0) && lines.length > 0 && (
+          <div className="absolute bottom-6 right-5 flex-col" style={{ gap: 12 }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={scrollToTop}
+              aria-label="Scroll to top"
+              className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800">
+              <ArrowUp size={18} color="#fff" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={scrollToBottom}
+              aria-label="Scroll to bottom"
+              className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600">
+              <ArrowDown size={18} color="#fff" />
+            </Button>
           </div>
         )}
       </div>
