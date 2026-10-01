@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" width="112" alt="Hermes" />
+  <img src="public/icon.png" width="112" alt="Hermes" />
 </p>
 
 <h1 align="center">Hermes Web</h1>
@@ -22,6 +22,7 @@
 ## Features
 
 **Chat**
+
 - Token-by-token streaming with collapsible reasoning / "thinking" blocks
 - Tool call cards with live progress and inline diffs
 - Markdown rendering with clickable file links
@@ -31,11 +32,13 @@
 - Slash commands, large-paste handling, and long transcripts windowed in memory
 
 **Sessions & access**
+
 - Profile-aware sessions with server-side pagination and live status in the drawer
 - Dangerous-command approvals in three modes: `manual`, `smart`, or `off`
-- Approvals and clarifying questions raised by *background* sessions are routed to an **Ask Inbox** instead of hijacking the open chat
+- Approvals and clarifying questions raised by _background_ sessions are routed to an **Ask Inbox** instead of hijacking the open chat
 
 **Operations**
+
 - Cron jobs — create, edit, pause, run now, and inspect run history with durations
 - Kanban board for tracked tasks
 - Server file browser with text previews and a binary-file guard
@@ -45,19 +48,19 @@
 
 ## Screens
 
-| Route | Screen | What it does |
-| --- | --- | --- |
-| `/login` | Login | Gateway host and credentials |
-| `/chat` | Chat | Streaming conversation, tools, todos, composer |
-| `/asks` | Ask Inbox | Pending approvals from background sessions |
-| `/cron` | Cron Jobs | Scheduled job CRUD, run history |
-| `/files` | Files | Server file browser and previews |
-| `/kanban` | Kanban | Task board |
-| `/skills` | Skills | Installed skill inventory |
-| `/toolsets` | Toolsets | Enable or disable tool groups |
-| `/logs` | Logs | Gateway log stream |
-| `/usage` | Usage | Token and cost usage by day |
-| `/settings` | Settings | Theme, approvals, profiles, diagnostics |
+| Route       | Screen    | What it does                                   |
+| ----------- | --------- | ---------------------------------------------- |
+| `/login`    | Login     | Gateway host and credentials                   |
+| `/chat`     | Chat      | Streaming conversation, tools, todos, composer |
+| `/asks`     | Ask Inbox | Pending approvals from background sessions     |
+| `/cron`     | Cron Jobs | Scheduled job CRUD, run history                |
+| `/files`    | Files     | Server file browser and previews               |
+| `/kanban`   | Kanban    | Task board                                     |
+| `/skills`   | Skills    | Installed skill inventory                      |
+| `/toolsets` | Toolsets  | Enable or disable tool groups                  |
+| `/logs`     | Logs      | Gateway log stream                             |
+| `/usage`    | Usage     | Token and cost usage by day                    |
+| `/settings` | Settings  | Theme, approvals, profiles, diagnostics        |
 
 `/` simply redirects to `/login`; auth gating lives in the screens themselves.
 
