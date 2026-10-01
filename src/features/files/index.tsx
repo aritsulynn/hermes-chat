@@ -428,10 +428,10 @@ export function FilesScreen() {
           aria-label="Parent directory"
           className="h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
 >
-          <div className="h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
+          <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
             <ArrowUp size={18} color="#f59e0b" />
           </div>
-          <div className="flex-1 items-start">
+          <div className="flex flex-col flex-1 items-start">
             <UIText className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</UIText>
             <UIText className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</UIText>
           </div>
@@ -442,13 +442,13 @@ export function FilesScreen() {
   const fileListEmpty = useMemo(
     () =>
       loading && !refreshing ? (
-        <div className="items-center justify-center py-16">
+        <div className="flex flex-col items-center justify-center py-16">
           <Spinner size={24} color="#1a73e8" />
           <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</UIText>
         </div>
       ) : !loading ? (
-        <div className="items-center justify-center py-20 px-6">
-          <div className="h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
+        <div className="flex flex-col items-center justify-center py-20 px-6">
+          <div className="flex flex-col h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
             <Folder size={28} color={dark ? '#666' : '#999'} />
           </div>
           <UIText className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
@@ -649,8 +649,8 @@ export function FilesScreen() {
 
         {/* Reading File Overlay */}
         {readingFile && (
-          <div className="absolute inset-0 z-50 items-center justify-center bg-black/40">
-            <div className="items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
+          <div className="flex flex-col absolute inset-0 z-50 items-center justify-center bg-black/40">
+            <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
               <Spinner size={24} color="#1a73e8" />
               <UIText className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</UIText>
             </div>
@@ -751,7 +751,7 @@ export function FilesScreen() {
             {/* Preview Content */}
             <div className="flex-1 bg-neutral-50 dark:bg-black">
               {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
-                <div className="flex-1 items-center justify-center p-4">
+                <div className="flex flex-col flex-1 items-center justify-center p-4">
                   <img
                     src={selectedFile.data_url}
                     alt={selectedFile.name}
@@ -778,7 +778,7 @@ export function FilesScreen() {
                   </ScrollArea>
                 </ScrollArea>
               ) : (
-                <div className="flex-1 items-center justify-center p-8">
+                <div className="flex flex-col flex-1 items-center justify-center p-8">
                   <File size={48} color={dark ? '#555' : '#aaa'} />
                   <UIText className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
                     Binary or Unsupported File Preview

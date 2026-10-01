@@ -195,7 +195,7 @@ export function SkillsScreen() {
 
 >
           {loading && !refreshing ? (
-            <div className="items-center py-16">
+            <div className="flex flex-col items-center py-16">
               <Spinner size={24} color={brand} />
             </div>
           ) : unsupported ? (
@@ -211,7 +211,7 @@ export function SkillsScreen() {
               <UIText className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</UIText>
             </Card>
           ) : (
-            <div className="gap-2">
+            <div className="flex flex-col gap-2">
               {skills.map((s) => (
                 <SkillRow
                   key={String(s.name ?? '(unnamed)')}

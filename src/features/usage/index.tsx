@@ -227,7 +227,7 @@ export function UsageScreen() {
 
 >
           {loading && !refreshing ? (
-            <div className="items-center justify-center py-20">
+            <div className="flex flex-col items-center justify-center py-20">
               <Spinner size={24} color={brand} />
               <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading usage analytics…</UIText>
             </div>
@@ -289,7 +289,7 @@ export function UsageScreen() {
               {/* Token Breakdown Card */}
               <Card>
                 <UIText className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Token Breakdown</UIText>
-                <div className="mt-3 gap-2.5">
+                <div className="flex flex-col mt-3 gap-2.5">
                   {/* Input Tokens */}
                   <div>
                     <div className="flex justify-between text-xs mb-1">
@@ -394,7 +394,7 @@ export function UsageScreen() {
               {/* Usage by Model */}
               <Card>
                 <UIText className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</UIText>
-                <div className="mt-3 gap-2.5">
+                <div className="flex flex-col mt-3 gap-2.5">
                   {modelEntries.length === 0 ? (
                     <UIText className="text-xs text-neutral-400">No model usage data available.</UIText>
                   ) : (
@@ -418,7 +418,7 @@ export function UsageScreen() {
                                 {m?.sessions || 0} sessions · {m?.api_calls || 0} calls
                               </UIText>
                             </div>
-                            <div className="items-end">
+                            <div className="flex flex-col items-end">
                               <UIText className="text-sm font-bold font-mono text-neutral-950 dark:text-neutral-100">
                                 {compactNumber(mTokens)}
                               </UIText>

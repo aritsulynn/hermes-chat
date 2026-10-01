@@ -62,7 +62,7 @@ const ToolsetRow = memo(function ToolsetRow({
 >
       <div className="flex items-center gap-3">
         <div
-          className={`h-9 w-9 items-center justify-center rounded-xl ${
+          className={`flex flex-col h-9 w-9 items-center justify-center rounded-xl ${
             enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-neutral-100 dark:bg-neutral-900'
           }`}
 >
@@ -269,7 +269,7 @@ export function ToolsetsScreen() {
           )}
 
           {loading && !refreshing ? (
-            <div className="items-center py-16">
+            <div className="flex flex-col items-center py-16">
               <Spinner size={24} color={brandColor(dark)} />
             </div>
           ) : unsupported ? (
@@ -288,7 +288,7 @@ export function ToolsetsScreen() {
               </UIText>
             </Card>
           ) : (
-            <div className="gap-2">
+            <div className="flex flex-col gap-2">
               {filtered.map((toolset) => (
                 <ToolsetRow
                   key={String(toolset.name ?? '')}

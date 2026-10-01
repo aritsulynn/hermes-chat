@@ -392,7 +392,7 @@ const RunCard = memo(function RunCard({
       {expanded && (
         <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-black/60">
           {messagesLoading && !messages && (
-            <div className="items-center justify-center py-6">
+            <div className="flex flex-col items-center justify-center py-6">
               <Spinner size={14} color="#1a73e8" />
               <UIText className="mt-2 text-xs text-neutral-400">Loading transcript…</UIText>
             </div>
@@ -403,7 +403,7 @@ const RunCard = memo(function RunCard({
           )}
 
           {messages && messages.length> 0 && (
-            <div className="gap-2.5">
+            <div className="flex flex-col gap-2.5">
               {messages.map((m, idx) => {
                 const isUser = m.role === 'user';
                 const isTool = m.role === 'tool';
@@ -933,7 +933,7 @@ export function CronScreen() {
   const jobsEmpty = useMemo(() => {
     if (loading && !refreshing) {
       return (
-        <div className="items-center justify-center py-16">
+        <div className="flex flex-col items-center justify-center py-16">
           <Spinner size={24} color="#1a73e8" />
           <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading cron jobs…</UIText>
         </div>
@@ -941,7 +941,7 @@ export function CronScreen() {
     }
     if (!error) {
       return (
-        <div className="items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
           <Clock size={36} color={dark ? '#666' : '#999'} />
           <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Cron Jobs Yet</UIText>
           <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
@@ -1000,7 +1000,7 @@ export function CronScreen() {
   const runsEmpty = useMemo(() => {
     if (runsLoading && runsList.length === 0) {
       return (
-        <div className="items-center justify-center py-16">
+        <div className="flex flex-col items-center justify-center py-16">
           <Spinner size={24} color="#1a73e8" />
           <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading run history…</UIText>
         </div>
@@ -1008,7 +1008,7 @@ export function CronScreen() {
     }
     if (runsList.length === 0 && !runsError) {
       return (
-        <div className="items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
           <Clock size={36} color={dark ? '#666' : '#999'} />
           <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Runs Recorded</UIText>
           <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
@@ -1197,7 +1197,7 @@ export function CronScreen() {
                   </UIText>
                 </div>
               ) : (
-                <div className="gap-1.5">
+                <div className="flex flex-col gap-1.5">
                   {deliverChoices.map((option) => {
                     const selected = formDeliver === option.id;
                     const disabled = !option.home_target_set;

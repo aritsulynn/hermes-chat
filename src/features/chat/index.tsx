@@ -934,7 +934,7 @@ export function ChatScreen() {
   const ListHeader = useCallback(() => {
     if (historyLoadingMore) {
       return (
-        <div className="items-center py-3">
+        <div className="flex flex-col items-center py-3">
           <Spinner size={14} color="currentColor" />
           <UIText className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</UIText>
         </div>
@@ -942,7 +942,7 @@ export function ChatScreen() {
     }
     if (trimmedOlder> 0 || !historyExhausted) {
       return (
-        <div className="items-center py-1.5">
+        <div className="flex flex-col items-center py-1.5">
           <Button variant="ghost" onClick={onLoadOlder} className="px-3 py-1.5">
             <UIText className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
               ↑ Load older messages
@@ -959,7 +959,7 @@ export function ChatScreen() {
   if (booting) {
     return (
       <div style={screen}>
-        <div className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black">
+        <div className="flex flex-col flex-1 bg-white items-center justify-center gap-3 dark:bg-black">
           
           <Spinner size={24} color="currentColor" />
           <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</UIText>
@@ -974,14 +974,14 @@ export function ChatScreen() {
       <div style={screen}>
         <div style={noSessionHeader}>
           <div className="h-[52px] flex items-center px-2">
-            <div className="w-11 items-start">
+            <div className="flex flex-col w-11 items-start">
               <HamburgerBtn />
             </div>
           </div>
         </div>
         <div className="flex-1 bg-white dark:bg-black">
           
-          <div className="flex-1 items-center justify-center p-6">
+          <div className="flex flex-col flex-1 items-center justify-center p-6">
             <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</UIText>
             <Button variant="default" onClick={() => void newSession()} className="mt-2 items-center px-[18px] py-[11px]">
               <UIText className="text-[15px] font-semibold">+ New chat</UIText>

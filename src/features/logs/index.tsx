@@ -521,12 +521,12 @@ export function LogsScreen() {
 
         {/* Log Output Area */}
         {loading && lines.length === 0 ? (
-          <div className="flex-1 items-center justify-center">
+          <div className="flex flex-col flex-1 items-center justify-center">
             <Spinner size={24} color="#1a73e8" />
             <UIText className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</UIText>
           </div>
         ) : lines.length === 0 ? (
-          <div className="flex-1 items-center justify-center p-6">
+          <div className="flex flex-col flex-1 items-center justify-center p-6">
             <Terminal size={36} color={dark ? '#555' : '#aaa'} />
             <UIText className="mt-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
               No log entries found

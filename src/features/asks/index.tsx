@@ -137,7 +137,7 @@ const AskCard = memo(function AskCard({
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
       <div className="flex items-start gap-3">
-        <div className="h-9 w-9 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/40">
+        <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/40">
           <Icon size={18} color={iconColor} />
         </div>
         <div className="min-w-0 flex-1">
@@ -182,7 +182,7 @@ const AskCard = memo(function AskCard({
       )}
 
       {pending && (
-        <div className="mt-3 gap-3">
+        <div className="flex flex-col mt-3 gap-3">
           {entry.method === 'approval' ? (
             <div className="flex flex-wrap gap-2">
               {canAllow && (
@@ -211,11 +211,11 @@ const AskCard = memo(function AskCard({
             </div>
           ) : clarify ? (
             /* Clarify: choices become pills, a free-form question an input. */
-            <div className="gap-2.5">
+            <div className="flex flex-col gap-2.5">
               {clarify.questions.map((q) => {
                 const sel = picked[q.qid] ?? [];
                 return (
-                  <div key={q.qid} className="gap-1.5">
+                  <div key={q.qid} className="flex flex-col gap-1.5">
                     {!!q.question && (
                       <UIText className="text-sm text-neutral-700 dark:text-neutral-200">
                         {q.question}
@@ -288,7 +288,7 @@ const AskCard = memo(function AskCard({
             </div>
           ) : (
             /* Sudo / secret / vault: one masked string, matching the ask sheet. */
-            <div className="gap-2">
+            <div className="flex flex-col gap-2">
               <Input
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -396,7 +396,7 @@ export function AskInboxScreen() {
 
   if (!authed) {
     return (
-      <div className="flex-1 items-center justify-center bg-white dark:bg-black">
+      <div className="flex flex-col flex-1 items-center justify-center bg-white dark:bg-black">
         <UIText className="text-neutral-500 dark:text-neutral-400">
           Sign in to view asks.
         </UIText>
@@ -439,7 +439,7 @@ export function AskInboxScreen() {
           ))}
 
           {pending.length === 0 && (
-            <div className="items-center rounded-2xl border border-dashed border-neutral-300 px-6 py-12 dark:border-neutral-700">
+            <div className="flex flex-col items-center rounded-2xl border border-dashed border-neutral-300 px-6 py-12 dark:border-neutral-700">
               <Check size={28} color={dark ? '#86efac' : '#16a34a'} />
               <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">
                 You are all caught up
@@ -452,7 +452,7 @@ export function AskInboxScreen() {
           )}
 
           {settled.length> 0 && (
-            <div className="mt-4 gap-2">
+            <div className="flex flex-col mt-4 gap-2">
               <UIText className="px-1 text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 Recent
               </UIText>

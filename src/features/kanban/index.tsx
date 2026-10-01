@@ -312,7 +312,7 @@ export function KanbanScreen() {
 
   if (booting) {
     return (
-      <div className="flex-1 bg-white dark:bg-black items-center justify-center gap-3">
+      <div className="flex flex-col flex-1 bg-white dark:bg-black items-center justify-center gap-3">
         
         <Spinner size={24} color="currentColor" />
       </div>
@@ -419,7 +419,7 @@ export function KanbanScreen() {
                   <UIText className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</UIText>
                 </Button>
                 {!shut && (
-                  <div className="gap-2 p-2.5">
+                  <div className="flex flex-col gap-2 p-2.5">
                     {col.tasks.length === 0 && (
                       <UIText className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</UIText>
                     )}

@@ -86,7 +86,6 @@ export function SettingsScreen() {
             <div className="flex gap-2">
               {/* Light Theme Card */}
               <button type="button"
-                role="button"
                 aria-label="Light theme"
                 aria-pressed={themeMode === 'light'}
                 onClick={() => setTheme('light')}
@@ -116,7 +115,6 @@ export function SettingsScreen() {
 
               {/* Dark Theme Card */}
               <button type="button"
-                role="button"
                 aria-label="Dark theme"
                 aria-pressed={themeMode === 'dark'}
                 onClick={() => setTheme('dark')}
@@ -146,7 +144,6 @@ export function SettingsScreen() {
 
               {/* Follow the device appearance. */}
               <button type="button"
-                role="button"
                 aria-label="System theme"
                 aria-pressed={themeMode === 'system'}
                 onClick={() => setTheme('system')}
@@ -156,7 +153,7 @@ export function SettingsScreen() {
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
                 }`}
 >
-                <div className="mb-2 h-8 w-8 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/60">
+                <div className="flex flex-col mb-2 h-8 w-8 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/60">
                   <Monitor size={18} color={dark ? '#38bdf8' : '#0284c7'} />
                 </div>
                 <UIText
@@ -194,7 +191,7 @@ export function SettingsScreen() {
             <UIText className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
               How the agent handles shell commands flagged as risky
             </UIText>
-            <div className="gap-2">
+            <div className="flex flex-col gap-2">
               {APPROVALS.map((a) => {
                 const on = approvalMode === a.value;
                 return (

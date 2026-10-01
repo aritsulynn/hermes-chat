@@ -326,7 +326,7 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
   if (!uri) {
     return (
       <div
-        className="my-1 items-center justify-center rounded-[10px]"
+        className="flex flex-col my-1 items-center justify-center rounded-[10px]"
         style={{ width: boxW, height: 120, backgroundColor: dark ? '#1b1b1b' : '#e9e9ee', display: 'flex' }}>
         <Spinner size={14} color={dark ? '#888' : '#666'} />
       </div>
