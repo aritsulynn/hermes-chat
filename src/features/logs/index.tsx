@@ -316,7 +316,7 @@ export function LogsScreen() {
                     aria-pressed={isSelected}
                     aria-label={`${f} log`}
                     onClick={() => setFile(f)}
-                    className={`h-auto rounded-xl border px-3.5 py-2 ${
+                    className={`h-auto sm:h-auto rounded-xl border px-3.5 py-2 ${
                       isSelected
                         ? 'border-[#1a73e8] bg-[#1a73e8]'
                         : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
@@ -408,7 +408,7 @@ export function LogsScreen() {
                           aria-pressed={isSelected}
                           aria-label={`${lvl} level`}
                           onClick={() => setLevel(lvl)}
-                          className={`h-auto rounded-lg border px-3 py-1.5 ${
+                          className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
                             isSelected
                               ? `${color.activeBg} ${color.activeBorder}`
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
@@ -443,7 +443,7 @@ export function LogsScreen() {
                           aria-pressed={isSelected}
                           aria-label={`${cnt} lines`}
                           onClick={() => setLineCount(cnt)}
-                          className={`h-auto flex-1 rounded-lg border py-1.5 ${
+                          className={`h-auto sm:h-auto flex-1 rounded-lg border py-1.5 ${
                             isSelected
                               ? 'border-neutral-900 bg-neutral-900 dark:border-neutral-100 dark:bg-neutral-100'
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
@@ -482,7 +482,7 @@ export function LogsScreen() {
 
                   aria-checked={level === 'ERROR'}
                   aria-label={`Show only errors, ${stats.errorCount} found`}
-                  className={`h-auto rounded-lg border px-2.5 py-1 ${
+                  className={`h-auto sm:h-auto rounded-lg border px-2.5 py-1 ${
                     level === 'ERROR'
                       ? 'border-rose-500 bg-rose-500/20'
                       : 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40'
@@ -501,7 +501,7 @@ export function LogsScreen() {
 
                   aria-checked={level === 'WARNING'}
                   aria-label={`Show only warnings, ${stats.warnCount} found`}
-                  className={`h-auto rounded-lg border px-2.5 py-1 ${
+                  className={`h-auto sm:h-auto rounded-lg border px-2.5 py-1 ${
                     level === 'WARNING'
                       ? 'border-amber-500 bg-amber-500/20'
                       : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40'

@@ -86,7 +86,7 @@ export function LoginScreen() {
         <Button
           onClick={submit}
           aria-label="Connect to the gateway"
-          className="mt-4 h-auto rounded-2xl bg-[#1a73e8] px-[18px] py-3.5 text-white hover:bg-[#1a73e8]/90"
+          className="mt-4 h-auto sm:h-auto rounded-2xl bg-[#1a73e8] px-[18px] py-3.5 text-white hover:bg-[#1a73e8]/90"
           disabled={busy}>
           {busy ? (
             <Spinner size={16} color="#fff" />

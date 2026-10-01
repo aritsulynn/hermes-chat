@@ -1771,7 +1771,7 @@ export function ChatScreen() {
                                   // Left-align here and let the label take the
                                   // slack so a long model id ellipsizes against
                                   // the Global button instead of pushing it out.
-                                  className="h-auto min-w-0 flex-1 justify-start"
+                                  className="h-auto sm:h-auto min-w-0 flex-1 justify-start"
 >
                                   <UIText
                                     numberOfLines={1}
@@ -1792,7 +1792,7 @@ export function ChatScreen() {
                                     void setGlobalModel(p.slug, mm);
                                     closePopover();
                                   }}
-                                  className="h-auto shrink-0 px-2 py-1"
+                                  className="h-auto sm:h-auto shrink-0 px-2 py-1"
 >
                                   <UIText className="text-[13px]">Global</UIText>
                                 </Button>

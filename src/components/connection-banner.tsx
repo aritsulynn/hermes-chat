@@ -56,7 +56,7 @@ export function ConnectionBanner() {
             size="sm"
             aria-label="Reconnect to the gateway"
             onClick={() => void login()}
-            className="h-auto shrink-0 rounded-lg px-2 py-1">
+            className="h-auto sm:h-auto shrink-0 rounded-lg px-2 py-1">
             <RefreshCw size={13} color={dark ? '#fcd34d' : '#b45309'} />
             <UIText className="text-xs font-semibold text-amber-800 dark:text-amber-200">Retry</UIText>
           </Button>

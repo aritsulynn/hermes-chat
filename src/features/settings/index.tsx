@@ -418,7 +418,7 @@ export function SettingsScreen() {
               onClick={() =>
                 void writeClipboard(JSON.stringify(diag, null, 2)).catch(() => {})
               }
-              className="mt-2 h-auto w-full rounded-xl py-2.5"
+              className="mt-2 h-auto sm:h-auto w-full rounded-xl py-2.5"
 >
               <UIText className="text-[13px] font-semibold text-neutral-800 dark:text-neutral-200">
                 Copy diagnostics
@@ -433,7 +433,7 @@ export function SettingsScreen() {
           variant="outline"
           onClick={handleLogout}
           aria-label="Log out"
-          className="h-auto w-full rounded-2xl border-red-200 bg-red-50/60 py-3.5 active:bg-red-100/80 dark:border-red-950 dark:bg-red-950/30 dark:active:bg-red-950/50"
+          className="h-auto sm:h-auto w-full rounded-2xl border-red-200 bg-red-50/60 py-3.5 active:bg-red-100/80 dark:border-red-950 dark:bg-red-950/30 dark:active:bg-red-950/50"
 >
           <LogOut size={16} color="#dc2626" />
           <UIText className="text-sm font-semibold text-red-600 dark:text-red-400">

@@ -189,7 +189,7 @@ const AskCard = memo(function AskCard({
                 <Button
                   onClick={() => onAnswer(entry, { choice: 'once' })}
                   aria-label="Allow once"
-                  className="h-auto flex-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
+                  className="h-auto sm:h-auto flex-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
 >
                   <UIText className="text-sm font-semibold text-white">
                     Allow once
@@ -201,7 +201,7 @@ const AskCard = memo(function AskCard({
                   variant="outline"
                   onClick={() => onAnswer(entry, { choice: 'deny' })}
                   aria-label="Reject request"
-                  className="h-auto flex-1 rounded-xl border-red-200 px-3 py-2.5 dark:border-red-950"
+                  className="h-auto sm:h-auto flex-1 rounded-xl border-red-200 px-3 py-2.5 dark:border-red-950"
 >
                   <UIText className="text-sm font-semibold text-red-600 dark:text-red-400">
                     Reject
@@ -244,7 +244,7 @@ const AskCard = memo(function AskCard({
                                   return { ...prev, [q.qid]: next };
                                 })
                               }
-                              className="h-auto rounded-full px-3 py-1.5"
+                              className="h-auto sm:h-auto rounded-full px-3 py-1.5"
 >
                               <UIText className="text-[13px]">{c}</UIText>
                             </Button>
@@ -270,7 +270,7 @@ const AskCard = memo(function AskCard({
                   aria-label="Open in chat"
                   variant="ghost"
                   size="sm"
-                  className="h-auto rounded-lg px-2.5 py-1.5"
+                  className="h-auto sm:h-auto rounded-lg px-2.5 py-1.5"
 >
                   <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
                     Open in chat
@@ -280,7 +280,7 @@ const AskCard = memo(function AskCard({
                   onClick={submit}
                   disabled={!canSubmit}
                   aria-label="Send answer"
-                  className="h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
+                  className="h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
 >
                   <UIText className="text-sm font-semibold text-white">Send</UIText>
                 </Button>
@@ -304,7 +304,7 @@ const AskCard = memo(function AskCard({
                   aria-label="Open in chat"
                   variant="ghost"
                   size="sm"
-                  className="h-auto rounded-lg px-2.5 py-1.5"
+                  className="h-auto sm:h-auto rounded-lg px-2.5 py-1.5"
 >
                   <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
                     Open in chat
@@ -313,7 +313,7 @@ const AskCard = memo(function AskCard({
                 <Button
                   onClick={submit}
                   aria-label="Send answer"
-                  className="h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
+                  className="h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
 >
                   <UIText className="text-sm font-semibold text-white">Send</UIText>
                 </Button>

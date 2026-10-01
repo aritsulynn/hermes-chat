@@ -40,7 +40,7 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
     <Button
       onClick={() => onOpen(task)}
       variant="outline"
-      className="h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
+      className="h-auto sm:h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
 >
       <UIText
         className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
@@ -446,7 +446,7 @@ export function KanbanScreen() {
                 // Input is a fixed 40px single-line field; a title long enough
                 // to wrap has to grow the box and hang from the top, or the
                 // second line spills over the label below.
-                className="h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
+                className="h-auto sm:h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 placeholder="Title"

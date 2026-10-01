@@ -426,7 +426,7 @@ export function FilesScreen() {
           variant="ghost"
           onClick={handleGoUp}
           aria-label="Parent directory"
-          className="h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
+          className="h-auto sm:h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
 >
           <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
             <ArrowUp size={18} color="#f59e0b" />
@@ -552,7 +552,7 @@ export function FilesScreen() {
                         setSearchQuery('');
                         void load(crumb.path);
                       }}
-                      className={`h-auto rounded px-1.5 py-0.5 ${
+                      className={`h-auto sm:h-auto rounded px-1.5 py-0.5 ${
                         isLast
                           ? 'bg-neutral-200/60 dark:bg-neutral-800'
                           : 'active:bg-neutral-200 dark:active:bg-neutral-800'
@@ -583,7 +583,7 @@ export function FilesScreen() {
               setPathModalOpen(true);
             }}
             aria-label="Change directory"
-            className="h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
+            className="h-auto sm:h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
 >
             <UIText className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</UIText>
           </Button>
@@ -680,7 +680,7 @@ export function FilesScreen() {
                     variant="ghost"
                     onClick={handleCopyText}
                     aria-label="Copy file contents"
-                    className="h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
+                    className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
 >
                     {copied ? (
                       <>
@@ -704,7 +704,7 @@ export function FilesScreen() {
                       onClick={handleSaveEditedFile}
                       disabled={savingFile}
                       aria-label="Save file"
-                      className="h-auto rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
+                      className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
 >
                       {savingFile ? (
                         <Spinner size={14} color="#fff" />
@@ -717,7 +717,7 @@ export function FilesScreen() {
                       variant="ghost"
                       onClick={() => setIsEditingFile(true)}
                       aria-label="Edit file"
-                      className="h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
+                      className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
 >
                       <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</UIText>
                     </Button>
@@ -911,7 +911,7 @@ export function FilesScreen() {
                   variant="ghost"
                   onClick={() => setNewFileModalOpen(false)}
                   aria-label="Cancel"
-                  className="h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
+                  className="h-auto sm:h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
 >
                   <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
                 </Button>
@@ -921,7 +921,7 @@ export function FilesScreen() {
                   onClick={handleCreateFile}
                   disabled={creatingFile || !newFileName.trim()}
                   aria-label="Create file"
-                  className="h-auto rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80"
+                  className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80"
 >
                   {creatingFile ? (
                     <Spinner size={14} color="#fff" />

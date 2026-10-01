@@ -177,7 +177,7 @@ const JobCard = memo(function JobCard({
           variant="ghost"
           onClick={() => void onOpenRuns(job)}
           aria-label={`Run history for ${job.name || job.id}`}
-          className="h-auto rounded-lg border border-[#1a73e8]/30 bg-[#1a73e8]/10 px-2.5 py-1.5 active:bg-[#1a73e8]/20"
+          className="h-auto sm:h-auto rounded-lg border border-[#1a73e8]/30 bg-[#1a73e8]/10 px-2.5 py-1.5 active:bg-[#1a73e8]/20"
 >
           <History size={13} color="#1a73e8" />
           <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">History</UIText>
@@ -191,7 +191,7 @@ const JobCard = memo(function JobCard({
             disabled={busy}
             onClick={() => void onTrigger(job)}
             aria-label={`Run ${job.name || job.id} now`}
-            className="h-auto rounded-lg border border-neutral-300 px-2.5 py-1.5 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
+            className="h-auto sm:h-auto rounded-lg border border-neutral-300 px-2.5 py-1.5 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800"
 >
             {busy ? (
               <Spinner size={14} color="#1a73e8" />
@@ -369,7 +369,7 @@ const RunCard = memo(function RunCard({
           onClick={() => void onToggleRun(run.id)}
           
           aria-label={expanded ? 'Hide messages' : 'View messages'}
-          className="h-auto px-0 py-1"
+          className="h-auto sm:h-auto px-0 py-1"
 >
           <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
             {expanded ? 'Hide Messages' : 'View Messages'}
@@ -381,7 +381,7 @@ const RunCard = memo(function RunCard({
           variant="ghost"
           onClick={() => void onOpenInChat(run)}
           aria-label="Open this run in chat"
-          className="h-auto rounded-lg bg-neutral-200/70 px-2.5 py-1 active:bg-neutral-300 dark:bg-neutral-800 dark:active:bg-neutral-700"
+          className="h-auto sm:h-auto rounded-lg bg-neutral-200/70 px-2.5 py-1 active:bg-neutral-300 dark:bg-neutral-800 dark:active:bg-neutral-700"
 >
           <ExternalLink size={12} color={dark ? '#ddd' : '#333'} />
           <UIText className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Open in Chat</UIText>
@@ -946,7 +946,7 @@ export function CronScreen() {
           <Button
             onClick={openCreateModal}
             aria-label="Create first cron job"
-            className="mt-4 h-auto rounded-xl bg-[#1a73e8] px-4 py-2.5"
+            className="mt-4 h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2.5"
 >
             <Plus size={16} color="#fff" />
             <UIText className="text-sm font-semibold text-white">Create First Job</UIText>
@@ -1127,7 +1127,7 @@ export function CronScreen() {
                     aria-pressed={formSchedule === preset.expr}
                     aria-label={`${preset.label} schedule, ${preset.expr}`}
                     onClick={() => setFormSchedule(preset.expr)}
-                    className={`h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
+                    className={`h-auto sm:h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
                       formSchedule === preset.expr
                         ? 'border-[#1a73e8] bg-[#1a73e8]/10'
                         : 'border-neutral-300 dark:border-neutral-700'
@@ -1202,7 +1202,7 @@ export function CronScreen() {
                         aria-label={`Deliver to ${option.name}`}
                         disabled={disabled}
                         onClick={() => setFormDeliver(option.id)}
-                        className={`h-auto w-full items-start justify-start rounded-xl border px-3 py-2.5 ${
+                        className={`h-auto sm:h-auto w-full items-start justify-start rounded-xl border px-3 py-2.5 ${
                           selected
                             ? 'border-[#1a73e8] bg-[#1a73e8]/10'
                             : 'border-neutral-300 dark:border-neutral-700'
@@ -1239,7 +1239,7 @@ export function CronScreen() {
                 disabled={formSaving}
                 onClick={() => setModalOpen(false)}
                 aria-label="Cancel"
-                className="h-auto flex-1 rounded-xl py-3"
+                className="h-auto sm:h-auto flex-1 rounded-xl py-3"
 >
                 <UIText className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
               </Button>
@@ -1248,7 +1248,7 @@ export function CronScreen() {
                 disabled={formSaving}
                 onClick={handleSave}
                 aria-label={editingJob ? 'Save changes' : 'Create job'}
-                className="h-auto flex-1 rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600"
+                className="h-auto sm:h-auto flex-1 rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600"
 >
                 {formSaving ? (
                   <Spinner size={14} color="#fff" />

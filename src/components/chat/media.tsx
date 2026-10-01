@@ -245,7 +245,7 @@ function BrokenImage({ src, alt, dark }: { src: string; alt?: string; dark: bool
         if (url) window.open(url, '_blank', 'noopener');
       }}
       aria-label={alt || basename(p) || 'Open link'}
-      className="my-1 h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700">
+      className="my-1 h-auto sm:h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700">
       <ImageOff size={15} color={dark ? '#aaa' : '#777'} />
       <UIText numberOfLines={1} className="flex-1 text-left text-[13px] text-neutral-600 dark:text-neutral-300">
         {alt || basename(p) || 'image'}
@@ -444,7 +444,7 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
                 else if (preview.kind === 'text') void navigator.share?.({ text: preview.text });
               }}
               aria-label="Share"
-              className="absolute left-3 h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
+              className="absolute left-3 h-auto sm:h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
               style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
               <Share2 size={16} color="#fff" />
               <UIText className="text-[12px] font-semibold text-white">Share</UIText>

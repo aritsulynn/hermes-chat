@@ -186,7 +186,7 @@ export function UsageScreen() {
                 aria-pressed={days === opt.days}
                 aria-label={opt.label}
                 onClick={() => setDays(opt.days)}
-                className={`h-auto rounded-lg border px-3 py-1.5 ${
+                className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
                   days === opt.days
                     ? 'border-[#1a73e8] bg-[#1a73e8]'
                     : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'

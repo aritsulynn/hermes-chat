@@ -482,7 +482,7 @@ export function UpdatePanel() {
               }}
               variant="ghost"
               size="icon"
-              className="h-auto w-auto p-1.5">
+              className="h-auto sm:h-auto w-auto p-1.5">
               <X size={14} color="#9aa0a6" />
             </Button>
           </div>

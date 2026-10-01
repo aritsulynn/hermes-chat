@@ -241,7 +241,7 @@ export function SkillsScreen() {
                 variant="ghost"
                 onClick={() => void writeClipboard(content).catch(() => {})}
                 aria-label="Copy skill file"
-                className="h-auto px-2 py-1.5"
+                className="h-auto sm:h-auto px-2 py-1.5"
 >
                 <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</UIText>
               </Button>

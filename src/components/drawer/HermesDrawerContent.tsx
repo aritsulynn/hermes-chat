@@ -84,7 +84,7 @@ const SessionRow = memo(function SessionRow({
       aria-description={live ? liveHint(live) : undefined}
       onClick={() => onOpen(session)}
       {...longPress}
-      className={`h-auto w-full items-start justify-start gap-2 px-3 py-2.5 text-left ${
+      className={`h-auto sm:h-auto w-full items-start justify-start gap-2 px-3 py-2.5 text-left ${
         active ? 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]' : ''
       }`}>
       {live ? (
@@ -92,7 +92,13 @@ const SessionRow = memo(function SessionRow({
           <Spinner size={13} color={liveColor(live, dark)} />
         </span>
       ) : null}
-      <span className="min-w-0 flex-1">
+      {/* `flex flex-col`, and this is the whole row's layout. It was a
+          `<View className="flex-1 min-w-0">`, and on native a `<View>` *is* a flex
+          column — that is what put the title on one line and the
+          time/tag/preview on the next. A `<span>` is `display: inline`, so the
+          three ran together on one line and every row collapsed to a single line
+          of text. */}
+      <span className="flex min-w-0 flex-1 flex-col">
         <UIText
           numberOfLines={1}
           className={`text-left text-[16px] ${
@@ -312,7 +318,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                     variant="ghost"
                     data-testid="profile-selector"
                     aria-label={`Switch profile. Active profile: ${activeProfile}`}
-                    className="h-auto min-w-0 flex-1 shrink items-center justify-start gap-2 px-1 py-1">
+                    className="h-auto sm:h-auto min-w-0 flex-1 shrink items-center justify-start gap-2 px-1 py-1">
                     <UIText className="text-[26px] font-extrabold text-neutral-950 dark:text-neutral-100">
                       Hermes
                     </UIText>
@@ -353,7 +359,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                               close();
                               void switchProfile(profile.name);
                             }}
-                            className={`h-auto w-full items-center justify-start gap-3 px-3 py-3 ${
+                            className={`h-auto sm:h-auto w-full items-center justify-start gap-3 px-3 py-3 ${
                               selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
                             } ${busy && !selected ? 'opacity-50' : ''}`}>
                             <span
@@ -421,7 +427,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
               close();
               void newSession();
             }}
-            className={`h-auto items-center justify-start gap-3 px-3 py-3 ${isNewChat ? activeItemClass : ''} ${
+            className={`h-auto sm:h-auto items-center justify-start gap-3 px-3 py-3 ${isNewChat ? activeItemClass : ''} ${
               busy ? 'opacity-50' : ''
             }`}>
             <SquarePen size={20} color={isNewChat ? brand : dimColor} />
@@ -444,7 +450,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                 key={item.name}
                 variant="ghost"
                 onClick={() => go(item.name)}
-                className={`h-auto items-center justify-start gap-3 px-3 py-3 ${active ? activeItemClass : ''}`}>
+                className={`h-auto sm:h-auto items-center justify-start gap-3 px-3 py-3 ${active ? activeItemClass : ''}`}>
                 <Icon size={20} color={active ? brand : dimColor} />
                 <UIText
                   numberOfLines={1}
@@ -463,7 +469,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
           <Button
             variant="ghost"
             onClick={() => setShowMoreMenu((v) => !v)}
-            className={`h-auto items-center justify-start gap-3 px-3 py-3 ${
+            className={`h-auto sm:h-auto items-center justify-start gap-3 px-3 py-3 ${
               showMoreMenu || isMoreActive ? activeItemClass : ''
             }`}>
             <Ellipsis size={20} color={showMoreMenu || isMoreActive ? brand : dimColor} />
@@ -496,7 +502,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                     key={item.name}
                     variant="ghost"
                     onClick={() => go(item.name)}
-                    className={`h-auto items-center justify-start gap-3 px-3 py-2.5 ${active ? activeItemClass : ''}`}>
+                    className={`h-auto sm:h-auto items-center justify-start gap-3 px-3 py-2.5 ${active ? activeItemClass : ''}`}>
                     <Icon size={18} color={active ? brand : dimColor} />
                     <UIText
                       numberOfLines={1}
@@ -513,7 +519,18 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
             </div>
           )}
         </div>
-        <div className="px-3 pt-3">
+        {/* `flex flex-col` so the `gap-1` means anything — this is a block box,
+            and a vertical gap is inert on one. `gap-1` matches the two other
+            lists in this drawer.
+
+            Native had no gap here and did not need one: a `Pressable` row with no
+            background of its own, held off the next by 10px of padding above and
+            below, reads fine at 0. A web `<button>` can carry a background — this
+            row paints one when it is the active session, and the ghost variant
+            paints one on hover — so at 0 two adjacent buttons share an edge and
+            read as one another. Measured before this change: 50 rows, every gap
+            between them exactly 0. */}
+        <div className="flex flex-col gap-1 px-3 pt-3">
           <UIText className="px-3 pb-1 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
             {ql ? `Results (${visible.length})` : 'Recents'}
           </UIText>
@@ -564,7 +581,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
         }}>
         <Popover open={showUserMenu} onOpenChange={setShowUserMenu}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" className="h-auto w-full items-center justify-start gap-3 px-4 py-4">
+            <Button variant="ghost" className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-4 py-4">
               <Avatar className="size-11">
                 <AvatarFallback className="bg-[#1a73e8]">
                   <UIText className="text-lg font-bold text-white">
@@ -572,7 +589,12 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                   </UIText>
                 </AvatarFallback>
               </Avatar>
-              <span className="flex-1 text-left">
+              {/* Column for the same reason as SessionRow's wrapper: on native
+                  this was a `<View>`, so the username and the host were two lines.
+                  It stacks today only because `ui/Text` renders a `<div>` and a
+                  block box inside an inline one happens to force a break — an
+                  accident, not a layout. */}
+              <span className="flex flex-1 flex-col text-left">
                 <UIText
                   numberOfLines={1}
                   className="min-w-0 text-left text-[16px] font-semibold text-neutral-950 dark:text-neutral-100">
@@ -597,7 +619,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                   <Button
                     variant="ghost"
                     onClick={() => go(item.name)}
-                    className={`h-auto w-full items-center justify-start gap-3 px-3.5 py-3 ${
+                    className={`h-auto sm:h-auto w-full items-center justify-start gap-3 px-3.5 py-3 ${
                       active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                     }`}>
                     <Icon size={19} color={active ? brand : dark ? '#ccc' : '#444'} />
@@ -619,7 +641,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
               <Button
                 variant="ghost"
                 onClick={() => go('settings')}
-                className="h-auto w-full items-center justify-start gap-3 px-3.5 py-3">
+                className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-3.5 py-3">
                 <Settings size={19} color={dark ? '#ccc' : '#444'} />
                 <UIText
                   numberOfLines={1}
