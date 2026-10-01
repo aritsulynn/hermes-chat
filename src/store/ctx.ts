@@ -56,7 +56,8 @@ export type LatestRef = MutableRefObject<{
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
 export interface StoreCtx
-  extends StoreRuntime,
+  extends
+    StoreRuntime,
     // ── published by the slices ──
     AskInboxSlice,
     AskRepliesSlice,
@@ -140,10 +141,5 @@ export interface StoreCtx
   noteHistoryWindow: (limit: number, exhausted: boolean) => void;
   resetHistoryWindow: () => void;
   /** Validate a stored cookie or trade the password for a fresh session cookie. */
-  ensureCookie: (
-    host: string,
-    username: string,
-    password: string,
-    isCurrent?: () => boolean,
-  ) => Promise<string>;
+  ensureCookie: (host: string, username: string, password: string, isCurrent?: () => boolean) => Promise<string>;
 }

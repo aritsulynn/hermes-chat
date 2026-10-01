@@ -9,7 +9,6 @@ import { connectionScope, forgetAll, saveCookie, saveModel } from '../../service
 import { clearMediaCaches } from '../../services/media-cache';
 import { DEFAULT_PROFILE } from '../../services/constants';
 import { pushNotification } from '../../services/notifications';
-import { upsertAsk } from '../../services/ask-inbox';
 import type { AskOwner } from '../../services/ask-inbox';
 import { changedFilesFromDiff } from '../../utils/diff';
 import { formatToolCommand, formatToolResult } from '../../utils/toolResult';
@@ -270,7 +269,11 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
       // resolves, so every session-scoped event is ignored during that gap.
       const isCurrentSession = (sid: string) =>
         isCurrentSessionEvent(sid, sessionIdRef.current, latest.current.sessionKey);
+      // `let` on purpose: the GatewayWs options below close over `ws`, and a
+      // const would put it in the temporal dead zone if the constructor ever
+      // fired a callback synchronously.
       let ws: GatewayWs;
+      // eslint-disable-next-line prefer-const
       ws = new GatewayWs({
         wsUrl: toWsUrl(h, ticket),
         refreshUrl: async () => {
@@ -546,10 +549,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
                 // A surviving notice is Hermes speaking about the turn, not the
                 // model answering, so it lands as a system notice — the same
                 // role the desktop assigns to a failed-turn boundary row.
-                next = [
-                  ...next,
-                  { id: nid(), role: keepNotice ? 'notice' : 'assistant', text: settled },
-                ];
+                next = [...next, { id: nid(), role: keepNotice ? 'notice' : 'assistant', text: settled }];
               }
               messagesRef.current = next;
               setMessages(next);
@@ -608,9 +608,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
           onSessionInfo: (sid, info) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
             const infoRec =
-              info && typeof info === 'object' && !Array.isArray(info)
-                ? (info as Record<string, unknown>)
-                : null;
+              info && typeof info === 'object' && !Array.isArray(info) ? (info as Record<string, unknown>) : null;
             setSessionInfo(infoRec);
             if (infoRec?.usage) setUsageInfo((prev) => mergeUsageState(prev, infoRec.usage));
             if (contextPendingSidRef.current === sid && gw.current) {
@@ -717,17 +715,6 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
                   }
                 : entry;
             });
-            for (const before of askInboxRef.current) {
-              const after = next.find(
-                (entry) => entry.rpcId === before.rpcId && entry.owner.connectionId === before.owner.connectionId,
-              );
-              if (
-                after &&
-                (after.status === 'cancelled' || after.status === 'stale') &&
-                before.status !== after.status
-              ) {
-              }
-            }
             askInboxRef.current = next;
             setAskInbox(next);
             if (askRef.current?.sessionId === sid && !open.has(askRef.current.rpcId)) setAsk(null);

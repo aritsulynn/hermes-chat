@@ -15,8 +15,7 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { BUILD_ID } from '../../build';
 
 export function LoginScreen() {
-  const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login } =
-    useApp();
+  const { booting, authed, host, setHost, username, setUsername, password, setPassword, busy, error, login } = useApp();
 
   // Mobile browsers do not resize the layout for the virtual keyboard, so the
   // form would sit under it. Pad by the visual-viewport gap and let the page

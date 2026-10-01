@@ -19,13 +19,7 @@
 // The list is bounded by the store, not here: CHAT_WINDOW_TRIM_KEEP trims the
 // transcript to ~600 rows, so every row is mounted and that is the intended
 // cost, not an oversight.
-import {
-  forwardRef,
-  useImperativeHandle,
-  useRef,
-  type CSSProperties,
-  type ReactNode,
-} from 'react';
+import { forwardRef, useImperativeHandle, useRef, type CSSProperties, type ReactNode } from 'react';
 
 export interface TranscriptHandle {
   /** Absolute scroll, in px. */

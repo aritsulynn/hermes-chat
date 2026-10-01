@@ -244,11 +244,7 @@ export interface WsDebug {
  * An empty sid is connection-scoped (gateway.ready style) — fail open.
  * With no current runtime (profile-switch gap) fail closed on everything.
  */
-export function isCurrentSessionEvent(
-  eventSid: string,
-  runtimeId: string | null,
-  storedKey: string | null,
-): boolean {
+export function isCurrentSessionEvent(eventSid: string, runtimeId: string | null, storedKey: string | null): boolean {
   if (!eventSid) return true;
   if (!runtimeId) return false;
   if (eventSid === runtimeId) return true;
@@ -283,7 +279,6 @@ export class GatewayWs {
       generation: number;
     }
   >();
-  private state: ConnState = 'idle';
   private closed = false;
   private backoff = WS_INITIAL_BACKOFF_MS;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -331,7 +326,6 @@ export class GatewayWs {
   }
 
   private setState(s: ConnState) {
-    this.state = s;
     this.events.onState?.(s);
   }
 
@@ -677,9 +671,7 @@ export class GatewayWs {
   }
 
   private deliverOpenRequests(result: unknown): void {
-    const rows = Array.isArray(asResult(result).open_requests)
-      ? (asResult(result).open_requests as unknown[])
-      : [];
+    const rows = Array.isArray(asResult(result).open_requests) ? (asResult(result).open_requests as unknown[]) : [];
     for (const req of rows) {
       const rec = asResult(req);
       const id = String(rec.id ?? '');
@@ -824,9 +816,7 @@ export class GatewayWs {
         content: text,
         ...(typeof row.row_id === 'number' ? { rowId: row.row_id } : {}),
         ...(typeof row.timestamp === 'number' ? { ts: row.timestamp } : {}),
-        ...(typeof row.display_kind === 'string' && row.display_kind
-          ? { displayKind: row.display_kind }
-          : {}),
+        ...(typeof row.display_kind === 'string' && row.display_kind ? { displayKind: row.display_kind } : {}),
         ...(reasoning ? { reasoning } : {}),
       };
     });
@@ -1140,11 +1130,7 @@ export class GatewayWs {
         const lastSeen = this.lastSeq.get(sid) ?? 0;
         let r: RpcResult | null = null;
         try {
-          r = await this.call(
-            'session.events.since',
-            { session_id: sid, last_seen: lastSeen },
-            WS_REPLAY_TIMEOUT_MS,
-          );
+          r = await this.call('session.events.since', { session_id: sid, last_seen: lastSeen }, WS_REPLAY_TIMEOUT_MS);
         } catch {
           replayFailed = true;
           break;
@@ -1171,12 +1157,16 @@ export class GatewayWs {
         // requests by connection + rpc id.
       }
     } finally {
+      // Early bail from the finally block is how this replay flush skips its
+      // tail; the method returns void, so no value is swallowed.
+      // eslint-disable-next-line no-unsafe-finally
       if (this.replayGeneration !== generation) return;
       const held = this.replayHold ?? [];
       this.replayHold = null;
       this.replaying = false;
       if (replayFailed || this.replayOverflow) {
         for (const sid of named) this.events.onReplayTruncated?.(sid);
+        // eslint-disable-next-line no-unsafe-finally
         return;
       }
       for (const h of held) {

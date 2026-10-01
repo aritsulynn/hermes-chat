@@ -3,18 +3,17 @@
 // agent can use (terminal, web, browser, vision, media generation, and more).
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
-import { AlertCircle, Boxes, RefreshCw, Search } from 'lucide-react';
+import { Boxes, RefreshCw, Search } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
-import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/bits';
 import { errMsg } from '../../utils/messages';
-import { brandColor, placeholderColor, screenStyle } from '../../theme';
+import { brandColor, screenStyle } from '../../theme';
 import { getToolsets, setToolsetEnabled } from '../../services/toolsets';
 import type { ToolsetInfo } from '../../services/toolsets';
 
@@ -56,22 +55,19 @@ const ToolsetRow = memo(function ToolsetRow({
         enabled
           ? 'border-neutral-300 bg-neutral-50/70 dark:border-neutral-700 dark:bg-neutral-900/60'
           : 'border-neutral-200 bg-white/70 dark:border-neutral-800 dark:bg-neutral-950/60'
-      }`}
->
+      }`}>
       <div className="flex items-center gap-3">
         <div
           className={`flex flex-col h-9 w-9 items-center justify-center rounded-xl ${
             enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-neutral-100 dark:bg-neutral-900'
-          }`}
->
+          }`}>
           <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
         </div>
         <div className="min-w-0 flex-1">
           <div
             className={`text-sm font-semibold ${
               enabled ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
-            } truncate`}
->
+            } truncate`}>
             {label}
           </div>
           {!!description && (
@@ -84,14 +80,11 @@ const ToolsetRow = memo(function ToolsetRow({
               {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
             </div>
             <Badge variant={toolset.configured ? 'outline' : 'secondary'}>
-              <div
-                className={`h-1.5 w-1.5 rounded-full ${toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'}`}
-              />
+              <div className={`h-1.5 w-1.5 rounded-full ${toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
               <span
                 className={`text-[11px] font-medium ${
                   toolset.configured ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
-                }`}
->
+                }`}>
                 {toolset.configured ? 'Ready' : 'Needs setup'}
               </span>
             </Badge>
@@ -214,8 +207,6 @@ export function ToolsetsScreen() {
   return (
     <div style={screenStyle(dark)}>
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        
-
         <ScreenHeader
           title="Toolsets"
 
@@ -226,74 +217,75 @@ export function ToolsetsScreen() {
               size="icon"
               aria-label="Refresh toolsets"
               onClick={() => void load(true)}
-              className="h-9 w-9 rounded-lg"
->
+              className="h-9 w-9 rounded-lg">
               <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
             </Button>
           }
         />
 
-        <div className="overflow-y-auto flex-1 px-4 py-4"><div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
-          <Card className="mb-3">
-            <div className="flex items-start gap-2.5">
-              <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
-              <div className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
-                Toolsets group the tools Hermes can use. Changes apply to new chats.
-              </div>
-            </div>
-          </Card>
-
-          {!loading && !unsupported && !error && (
-            <div className="frame-focus mb-3 flex items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
-              <Search size={16} color={dark ? '#888' : '#777'} />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search toolsets…"
-                autoCapitalize="none"
-                aria-label="Search toolsets"
-                // The wrapper draws the field; the base border + background
-                // inside it would read as a frame within a frame. dark: is
-                // needed too — the base sets dark:bg-input/30, which a plain
-                // bg-transparent does not cancel in dark mode.
-                className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
-              />
-            </div>
-          )}
-
-          {loading && !refreshing ? (
-            <div className="flex flex-col items-center py-16">
-              <Spinner size={24} color={brandColor(dark)} />
-            </div>
-          ) : unsupported ? (
-            <Card>
-              <div className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-                Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability toolsets
-                here.
+        <div className="overflow-y-auto flex-1 px-4 py-4">
+          <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
+            <Card className="mb-3">
+              <div className="flex items-start gap-2.5">
+                <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
+                <div className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
+                  Toolsets group the tools Hermes can use. Changes apply to new chats.
+                </div>
               </div>
             </Card>
-          ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
-          ) : filtered.length === 0 ? (
-            <Card>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                {query ? `No toolsets match “${query.trim()}”.` : 'No configurable toolsets were returned.'}
-              </div>
-            </Card>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {filtered.map((toolset) => (
-                <ToolsetRow
-                  key={String(toolset.name ?? '')}
-                  toolset={toolset}
-                  dark={dark}
-                  toggling={toggling === String(toolset.name ?? '')}
-                  onToggle={toggle}
+
+            {!loading && !unsupported && !error && (
+              <div className="frame-focus mb-3 flex items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
+                <Search size={16} color={dark ? '#888' : '#777'} />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search toolsets…"
+                  autoCapitalize="none"
+                  aria-label="Search toolsets"
+                  // The wrapper draws the field; the base border + background
+                  // inside it would read as a frame within a frame. dark: is
+                  // needed too — the base sets dark:bg-input/30, which a plain
+                  // bg-transparent does not cancel in dark mode.
+                  className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
                 />
-              ))}
-            </div>
-          )}
-        </div></div>
+              </div>
+            )}
+
+            {loading && !refreshing ? (
+              <div className="flex flex-col items-center py-16">
+                <Spinner size={24} color={brandColor(dark)} />
+              </div>
+            ) : unsupported ? (
+              <Card>
+                <div className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+                  Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability
+                  toolsets here.
+                </div>
+              </Card>
+            ) : error ? (
+              <ErrorRetry error={error} onRetry={() => void load()} />
+            ) : filtered.length === 0 ? (
+              <Card>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {query ? `No toolsets match “${query.trim()}”.` : 'No configurable toolsets were returned.'}
+                </div>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {filtered.map((toolset) => (
+                  <ToolsetRow
+                    key={String(toolset.name ?? '')}
+                    toolset={toolset}
+                    dark={dark}
+                    toggling={toggling === String(toolset.name ?? '')}
+                    onToggle={toggle}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

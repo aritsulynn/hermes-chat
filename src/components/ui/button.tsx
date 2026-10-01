@@ -27,7 +27,7 @@ const buttonVariants = cva(
       variant: 'default',
       size: 'default',
     },
-  }
+  },
 );
 
 // The button's text colour, merged into the button's own className so it

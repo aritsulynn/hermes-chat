@@ -25,10 +25,7 @@ export const FileRow = memo(function FileRow({
   // Stable handlers + memoized style: inline arrows/objects here would defeat
   // memo() and re-render every row on each parent render.
   const handlePress = useCallback(() => onOpen(entry), [onOpen, entry]);
-  const handleLongPress = useCallback(
-    () => onDelete(entry.path, entry.is_directory, entry.name),
-    [onDelete, entry],
-  );
+  const handleLongPress = useCallback(() => onDelete(entry.path, entry.is_directory, entry.name), [onDelete, entry]);
   const longPress = useLongPress(handleLongPress);
   const iconStyle = useMemo(() => ({ backgroundColor: iconBg }), [iconBg]);
   return (

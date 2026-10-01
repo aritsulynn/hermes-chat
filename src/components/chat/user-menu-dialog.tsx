@@ -39,9 +39,7 @@ export function UserMenuDialog({
   children: ReactNode;
 }) {
   // Clamp to the viewport so the card never hangs off the right edge.
-  const left = anchor
-    ? Math.max(EDGE, Math.min(anchor.x + anchor.w - MENU_W, viewportWidth - MENU_W - EDGE))
-    : EDGE;
+  const left = anchor ? Math.max(EDGE, Math.min(anchor.x + anchor.w - MENU_W, viewportWidth - MENU_W - EDGE)) : EDGE;
   // Open upward when there is room above, downward otherwise.
   //
   // The `anchor` check has to come first and separately. This used to be

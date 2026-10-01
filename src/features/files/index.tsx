@@ -1,17 +1,15 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowUp,
   Check,
-  Code2,
   Copy,
   File,
   Folder,
   FolderPlus,
   HardDrive,
-  Image as ImageIcon,
   Plus,
   RefreshCw,
   Search,
@@ -22,7 +20,7 @@ import {
 import { pickFile } from '../../services/file-picker';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
-import { placeholderColor, screenStyle } from '../../theme';
+import { screenStyle } from '../../theme';
 import { ScreenHeader } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
@@ -54,7 +52,6 @@ export function FilesScreen() {
   // Resolved once per scheme: the list re-renders on every search keystroke
   // and each value below feeds several rows of the (virtualized) tree.
   const screen = useMemo(() => screenStyle(dark), [dark]);
-  const placeholder = useMemo(() => placeholderColor(dark, 'file'), [dark]);
 
   const [currentPath, setCurrentPath] = useState<string>('~');
   const [listing, setListing] = useState<ManagedFilesResponse | null>(null);
@@ -150,9 +147,12 @@ export function FilesScreen() {
         if (seq !== loadSeq.current || getAuthScope() !== scope) return;
         setError(errMsg(e));
       } finally {
-        if (seq !== loadSeq.current || getAuthScope() !== scope) return;
-        setLoading(false);
-        setRefreshing(false);
+        // No `return` in a finally: it would swallow the try's outcome. Guard
+        // the two writes instead.
+        if (seq === loadSeq.current && getAuthScope() === scope) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [getAuthScope, opsGet],
@@ -207,7 +207,8 @@ export function FilesScreen() {
             }
             await load(activeDirectory);
           } catch (e) {
-            if (getAuthScope() === scope) toast({ title: 'Delete Failed', description: errMsg(e), variant: 'destructive' });
+            if (getAuthScope() === scope)
+              toast({ title: 'Delete Failed', description: errMsg(e), variant: 'destructive' });
           }
         },
       });
@@ -237,7 +238,8 @@ export function FilesScreen() {
           }
           setPreviewModalOpen(true);
         } catch (e) {
-          if (getAuthScope() === scope) toast({ title: 'Cannot Open File', description: errMsg(e), variant: 'destructive' });
+          if (getAuthScope() === scope)
+            toast({ title: 'Cannot Open File', description: errMsg(e), variant: 'destructive' });
         } finally {
           if (getAuthScope() === scope) setReadingFile(false);
         }
@@ -277,7 +279,8 @@ export function FilesScreen() {
       setNewFolderModalOpen(false);
       await load(activeDirectory);
     } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Create Folder Failed', description: errMsg(e), variant: 'destructive' });
+      if (getAuthScope() === scope)
+        toast({ title: 'Create Folder Failed', description: errMsg(e), variant: 'destructive' });
     } finally {
       if (getAuthScope() === scope) setCreatingFolder(false);
     }
@@ -303,7 +306,8 @@ export function FilesScreen() {
       setNewFileModalOpen(false);
       await load(activeDirectory);
     } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Create File Failed', description: errMsg(e), variant: 'destructive' });
+      if (getAuthScope() === scope)
+        toast({ title: 'Create File Failed', description: errMsg(e), variant: 'destructive' });
     } finally {
       if (getAuthScope() === scope) setCreatingFile(false);
     }
@@ -340,7 +344,6 @@ export function FilesScreen() {
       if (asset) {
         setUploading(true);
         const filename = asset.name || `photo_${Date.now()}.jpg`;
-        const mime = asset.mime || 'image/jpeg';
         const target = joinPath(activeDirectory, filename);
         const dataUrl = asset.dataUrl;
 
@@ -407,8 +410,7 @@ export function FilesScreen() {
 
   // The scroller is its own box now, so the content is just padding. The
   // bottom pad clears the home indicator, which the browser reports via env().
-  const fileListContentClass =
-    'pb-[calc(env(safe-area-inset-bottom,0px)+24px)] grow';
+  const fileListContentClass = 'pb-[calc(env(safe-area-inset-bottom,0px)+24px)] grow';
   const fileListHeader = useMemo(
     () =>
       listing?.parent ? (
@@ -416,8 +418,7 @@ export function FilesScreen() {
           variant="ghost"
           onClick={handleGoUp}
           aria-label="Parent directory"
-          className="h-auto sm:h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900"
->
+          className="h-auto sm:h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900">
           <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
             <ArrowUp size={18} color="#f59e0b" />
           </div>
@@ -460,8 +461,6 @@ export function FilesScreen() {
     <div style={screen}>
       {/* No 'bottom' edge: file list content pads insets.bottom + 24 itself. */}
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        
-
         {/* Header Bar */}
         <ScreenHeader
           title="Files"
@@ -474,8 +473,7 @@ export function FilesScreen() {
                 size="icon"
                 aria-label="New folder"
                 onClick={() => setNewFolderModalOpen(true)}
-                className="h-9 w-9 rounded-lg"
->
+                className="h-9 w-9 rounded-lg">
                 <FolderPlus size={19} color={dark ? '#e5e5e5' : '#333'} />
               </Button>
 
@@ -484,8 +482,7 @@ export function FilesScreen() {
                 size="icon"
                 aria-label="New file"
                 onClick={() => setNewFileModalOpen(true)}
-                className="h-9 w-9 rounded-lg"
->
+                className="h-9 w-9 rounded-lg">
                 <Plus size={19} color={dark ? '#e5e5e5' : '#333'} />
               </Button>
 
@@ -495,8 +492,7 @@ export function FilesScreen() {
                 aria-label="Upload image"
                 onClick={handlePickAndUploadImage}
                 disabled={uploading}
-                className="h-9 w-9 rounded-lg"
->
+                className="h-9 w-9 rounded-lg">
                 {uploading ? (
                   <Spinner size={14} color="#1a73e8" />
                 ) : (
@@ -509,13 +505,8 @@ export function FilesScreen() {
                 size="icon"
                 aria-label="Refresh"
                 onClick={() => void load(activeDirectory, true)}
-                className="h-9 w-9 rounded-lg"
->
-                <RefreshCw
-                  size={18}
-                  color={dark ? '#e5e5e5' : '#333'}
-                  className={refreshing ? 'animate-spin' : ''}
-                />
+                className="h-9 w-9 rounded-lg">
+                <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
               </Button>
             </div>
           }
@@ -523,43 +514,43 @@ export function FilesScreen() {
 
         {/* Path Bar & Breadcrumbs */}
         <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
-          <div className="overflow-x-auto flex-1 mr-2"><div className="items-center">
-            <div className="flex items-center gap-1">
-              <HardDrive size={14} color="#1a73e8" />
-              {breadcrumbs.map((crumb, idx) => {
-                const isLast = idx === breadcrumbs.length - 1;
-                return (
-                  <div key={crumb.path} className="flex items-center">
-                    <Button
-                      variant="ghost"
-                      disabled={isLast}
-                      aria-label={isLast ? crumb.label : `Go to ${crumb.label}`}
-                      onClick={() => {
-                        setSearchQuery('');
-                        void load(crumb.path);
-                      }}
-                      className={`h-auto sm:h-auto rounded px-1.5 py-0.5 ${
-                        isLast
-                          ? 'bg-neutral-200/60 dark:bg-neutral-800'
-                          : 'active:bg-neutral-200 dark:active:bg-neutral-800'
-                      }`}
->
-                      <span
-                        className={`font-mono text-xs ${
+          <div className="overflow-x-auto flex-1 mr-2">
+            <div className="items-center">
+              <div className="flex items-center gap-1">
+                <HardDrive size={14} color="#1a73e8" />
+                {breadcrumbs.map((crumb, idx) => {
+                  const isLast = idx === breadcrumbs.length - 1;
+                  return (
+                    <div key={crumb.path} className="flex items-center">
+                      <Button
+                        variant="ghost"
+                        disabled={isLast}
+                        aria-label={isLast ? crumb.label : `Go to ${crumb.label}`}
+                        onClick={() => {
+                          setSearchQuery('');
+                          void load(crumb.path);
+                        }}
+                        className={`h-auto sm:h-auto rounded px-1.5 py-0.5 ${
                           isLast
-                            ? 'font-bold text-neutral-900 dark:text-neutral-100'
-                            : 'text-[#1a73e8] dark:text-blue-400'
-                        } truncate`}
->
-                        {crumb.label}
-                      </span>
-                    </Button>
-                    {!isLast && <div className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</div>}
-                  </div>
-                );
-              })}
+                            ? 'bg-neutral-200/60 dark:bg-neutral-800'
+                            : 'active:bg-neutral-200 dark:active:bg-neutral-800'
+                        }`}>
+                        <span
+                          className={`font-mono text-xs ${
+                            isLast
+                              ? 'font-bold text-neutral-900 dark:text-neutral-100'
+                              : 'text-[#1a73e8] dark:text-blue-400'
+                          } truncate`}>
+                          {crumb.label}
+                        </span>
+                      </Button>
+                      {!isLast && <div className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</div>}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div></div>
+          </div>
 
           <Button
             variant="ghost"
@@ -568,8 +559,7 @@ export function FilesScreen() {
               setPathModalOpen(true);
             }}
             aria-label="Change directory"
-            className="h-auto sm:h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
->
+            className="h-auto sm:h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70">
             <span className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</span>
           </Button>
         </div>
@@ -595,8 +585,7 @@ export function FilesScreen() {
                 size="icon"
                 onClick={() => setSearchQuery('')}
                 aria-label="Clear search"
-                className="h-6 w-6 rounded-md"
->
+                className="h-6 w-6 rounded-md">
                 <X size={14} color={dark ? '#888' : '#9ca3af'} />
               </Button>
             ) : null}
@@ -612,8 +601,7 @@ export function FilesScreen() {
                 variant="destructive"
                 size="sm"
                 onClick={() => void load(activeDirectory)}
-                className="ml-6 mt-1 self-start"
->
+                className="ml-6 mt-1 self-start">
                 <span className="text-xs font-semibold">Retry</span>
               </Button>
             </UIAlert>
@@ -655,132 +643,126 @@ export function FilesScreen() {
             <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
               <DialogPrimitive.Title className="sr-only">File preview</DialogPrimitive.Title>
               <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <div className="flex-1 pr-3">
-                <div className="font-mono text-base font-bold text-neutral-900 dark:text-white truncate">
-                  {selectedFile?.name}
-                </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {formatBytes(selectedFile?.size)} · {selectedFile?.mime_type || 'Unknown type'}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {fileTextContent && !isEditingFile ? (
-                  <Button
-                    variant="ghost"
-                    onClick={handleCopyText}
-                    aria-label="Copy file contents"
-                    className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
->
-                    {copied ? (
-                      <>
-                        <Check size={14} color="#10b981" />
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={14} color={dark ? '#ccc' : '#444'} />
-                        <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Copy</span>
-                      </>
-                    )}
-                  </Button>
-                ) : null}
-
-                {/* Edit Toggle for Text Files */}
-                {fileTextContent && !selectedFile?.mime_type?.startsWith('image/') ? (
-                  isEditingFile ? (
-                    <Button
-                      variant="ghost"
-                      onClick={handleSaveEditedFile}
-                      disabled={savingFile}
-                      aria-label="Save file"
-                      className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80"
->
-                      {savingFile ? (
-                        <Spinner size={14} color="#fff" />
-                      ) : (
-                        <span className="text-xs font-bold text-white">Save</span>
-                      )}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      onClick={() => setIsEditingFile(true)}
-                      aria-label="Edit file"
-                      className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
->
-                      <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</span>
-                    </Button>
-                  )
-                ) : null}
-
-                {selectedFile && !isEditingFile ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDeleteEntry(selectedFile.path, false, selectedFile.name)}
-                    aria-label="Delete file"
-                    className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800"
->
-                    <Trash2 size={18} color="#ef4444" />
-                  </Button>
-                ) : null}
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={closePreview}
-                  aria-label="Close preview"
-                  className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800"
->
-                  <X size={20} color={dark ? '#eee' : '#333'} />
-                </Button>
-              </div>
-            </div>
-
-            {/* Preview Content */}
-            <div className="flex-1 bg-neutral-50 dark:bg-black">
-              {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
-                <div className="flex flex-col flex-1 items-center justify-center p-4">
-                  <img
-                    src={selectedFile.data_url}
-                    alt={selectedFile.name}
-                    className="size-full object-contain"
-                  />
-                </div>
-              ) : isEditingFile ? (
-                <div className="flex-1">
-                  <Textarea
-                    value={fileTextContent}
-                    onChange={(e) => setFileTextContent(e.target.value)}
-
-
-                    autoCapitalize="none"
-                    className="flex-1 p-4 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
-                  />
-                </div>
-              ) : fileTextContent ? (
-                <div className="overflow-y-auto flex-1"><div className="p-4">
-                  <div className="overflow-x-auto"><div>
-                    <div className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
-                      {fileTextContent}
+                <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                  <div className="flex-1 pr-3">
+                    <div className="font-mono text-base font-bold text-neutral-900 dark:text-white truncate">
+                      {selectedFile?.name}
                     </div>
-                  </div></div>
-                </div></div>
-              ) : (
-                <div className="flex flex-col flex-1 items-center justify-center p-8">
-                  <File size={48} color={dark ? '#555' : '#aaa'} />
-                  <div className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-                    Binary or Unsupported File Preview
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {formatBytes(selectedFile?.size)} · {selectedFile?.mime_type || 'Unknown type'}
+                    </div>
                   </div>
-                  <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-                    This file cannot be rendered as text or an image.
+
+                  <div className="flex items-center gap-2">
+                    {fileTextContent && !isEditingFile ? (
+                      <Button
+                        variant="ghost"
+                        onClick={handleCopyText}
+                        aria-label="Copy file contents"
+                        className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700">
+                        {copied ? (
+                          <>
+                            <Check size={14} color="#10b981" />
+                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={14} color={dark ? '#ccc' : '#444'} />
+                            <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Copy</span>
+                          </>
+                        )}
+                      </Button>
+                    ) : null}
+
+                    {/* Edit Toggle for Text Files */}
+                    {fileTextContent && !selectedFile?.mime_type?.startsWith('image/') ? (
+                      isEditingFile ? (
+                        <Button
+                          variant="ghost"
+                          onClick={handleSaveEditedFile}
+                          disabled={savingFile}
+                          aria-label="Save file"
+                          className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80">
+                          {savingFile ? (
+                            <Spinner size={14} color="#fff" />
+                          ) : (
+                            <span className="text-xs font-bold text-white">Save</span>
+                          )}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          onClick={() => setIsEditingFile(true)}
+                          aria-label="Edit file"
+                          className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700">
+                          <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</span>
+                        </Button>
+                      )
+                    ) : null}
+
+                    {selectedFile && !isEditingFile ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteEntry(selectedFile.path, false, selectedFile.name)}
+                        aria-label="Delete file"
+                        className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800">
+                        <Trash2 size={18} color="#ef4444" />
+                      </Button>
+                    ) : null}
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={closePreview}
+                      aria-label="Close preview"
+                      className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800">
+                      <X size={20} color={dark ? '#eee' : '#333'} />
+                    </Button>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
+
+                {/* Preview Content */}
+                <div className="flex-1 bg-neutral-50 dark:bg-black">
+                  {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
+                    <div className="flex flex-col flex-1 items-center justify-center p-4">
+                      <img src={selectedFile.data_url} alt={selectedFile.name} className="size-full object-contain" />
+                    </div>
+                  ) : isEditingFile ? (
+                    <div className="flex-1">
+                      <Textarea
+                        value={fileTextContent}
+                        onChange={(e) => setFileTextContent(e.target.value)}
+
+                        autoCapitalize="none"
+                        className="flex-1 p-4 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
+                      />
+                    </div>
+                  ) : fileTextContent ? (
+                    <div className="overflow-y-auto flex-1">
+                      <div className="p-4">
+                        <div className="overflow-x-auto">
+                          <div>
+                            <div className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
+                              {fileTextContent}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col flex-1 items-center justify-center p-8">
+                      <File size={48} color={dark ? '#555' : '#aaa'} />
+                      <div className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                        Binary or Unsupported File Preview
+                      </div>
+                      <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                        This file cannot be rendered as text or an image.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
@@ -788,10 +770,7 @@ export function FilesScreen() {
         {/* Change / Jump to Path Modal */}
         <Dialog open={pathModalOpen} onOpenChange={setPathModalOpen}>
           <DialogPortal>
-            <div
-
-              className="w-full"
->
+            <div className="w-full">
               <DialogContent className="max-w-sm p-5">
                 <DialogTitle className="text-base font-bold text-neutral-900 dark:text-white">
                   Navigate to Directory
@@ -814,15 +793,10 @@ export function FilesScreen() {
                     variant="outline"
                     size="sm"
                     className="h-10 rounded-xl px-4"
-                    onClick={() => setPathModalOpen(false)}
->
+                    onClick={() => setPathModalOpen(false)}>
                     <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</span>
                   </Button>
-                  <Button
-                    size="sm"
-                    className="h-10 rounded-xl bg-[#1a73e8] px-5"
-                    onClick={handleJumpToPath}
->
+                  <Button size="sm" className="h-10 rounded-xl bg-[#1a73e8] px-5" onClick={handleJumpToPath}>
                     <span className="text-sm font-bold text-white">Go</span>
                   </Button>
                 </DialogFooter>
@@ -834,10 +808,7 @@ export function FilesScreen() {
         {/* Create Folder Modal */}
         <Dialog open={newFolderModalOpen} onOpenChange={setNewFolderModalOpen}>
           <DialogPortal>
-            <div
-
-              className="w-full"
->
+            <div className="w-full">
               <DialogContent className="max-w-sm p-5">
                 <DialogTitle className="text-base font-bold text-neutral-900 dark:text-white">New Folder</DialogTitle>
                 <DialogDescription className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -862,16 +833,14 @@ export function FilesScreen() {
                     onClick={() => {
                       setNewFolderName('');
                       setNewFolderModalOpen(false);
-                    }}
->
+                    }}>
                     <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</span>
                   </Button>
                   <Button
                     size="sm"
                     className="h-10 rounded-xl bg-[#1a73e8] px-5"
                     disabled={creatingFolder || !newFolderName.trim()}
-                    onClick={handleCreateFolder}
->
+                    onClick={handleCreateFolder}>
                     {creatingFolder ? (
                       <Spinner size={14} color="#fff" />
                     ) : (
@@ -891,65 +860,65 @@ export function FilesScreen() {
             <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
               <DialogPrimitive.Title className="sr-only">New file</DialogPrimitive.Title>
               <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <div>
-                <div className="text-base font-bold text-neutral-900 dark:text-white">Create New File</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</div>
-              </div>
+                <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                  <div>
+                    <div className="text-base font-bold text-neutral-900 dark:text-white">Create New File</div>
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</div>
+                  </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setNewFileModalOpen(false)}
-                  aria-label="Cancel"
-                  className="h-auto sm:h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
->
-                  <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</span>
-                </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setNewFileModalOpen(false)}
+                      aria-label="Cancel"
+                      className="h-auto sm:h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800">
+                      <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</span>
+                    </Button>
 
-                <Button
-                  variant="ghost"
-                  onClick={handleCreateFile}
-                  disabled={creatingFile || !newFileName.trim()}
-                  aria-label="Create file"
-                  className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80"
->
-                  {creatingFile ? (
-                    <Spinner size={14} color="#fff" />
-                  ) : (
-                    <span className="text-xs font-bold text-white">Save File</span>
-                  )}
-                </Button>
-              </div>
-            </div>
+                    <Button
+                      variant="ghost"
+                      onClick={handleCreateFile}
+                      disabled={creatingFile || !newFileName.trim()}
+                      aria-label="Create file"
+                      className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80">
+                      {creatingFile ? (
+                        <Spinner size={14} color="#fff" />
+                      ) : (
+                        <span className="text-xs font-bold text-white">Save File</span>
+                      )}
+                    </Button>
+                  </div>
+                </div>
 
-            <div className="p-3 border-b border-neutral-200 dark:border-neutral-800">
-              <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
-                File Name (e.g. notes.txt, script.py, config.json)
-              </Label>
-              <Input
-                value={newFileName}
-                onChange={(e) => setNewFileName(e.target.value)}
-                autoCapitalize="none"
-                autoFocus
-                placeholder="filename.txt"
-                aria-label="File name"
-                className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
-              />
-            </div>
+                <div className="p-3 border-b border-neutral-200 dark:border-neutral-800">
+                  <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+                    File Name (e.g. notes.txt, script.py, config.json)
+                  </Label>
+                  <Input
+                    value={newFileName}
+                    onChange={(e) => setNewFileName(e.target.value)}
+                    autoCapitalize="none"
+                    autoFocus
+                    placeholder="filename.txt"
+                    aria-label="File name"
+                    className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
+                  />
+                </div>
 
-            <div className="flex-1 p-3">
-              <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">File Content</Label>
-              <Textarea
-                value={newFileContent}
-                onChange={(e) => setNewFileContent(e.target.value)}
-                aria-label="File content"
+                <div className="flex-1 p-3">
+                  <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+                    File Content
+                  </Label>
+                  <Textarea
+                    value={newFileContent}
+                    onChange={(e) => setNewFileContent(e.target.value)}
+                    aria-label="File content"
 
-                autoCapitalize="none"
-                placeholder="Enter text or code here..."
-                className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
-              />
-              </div>
+                    autoCapitalize="none"
+                    placeholder="Enter text or code here..."
+                    className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
+                  />
+                </div>
               </div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>

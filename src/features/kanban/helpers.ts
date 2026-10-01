@@ -28,10 +28,7 @@ export function asTask(r: any): KanbanTask {
       r?.progress && typeof r.progress === 'object'
         ? { done: Number(r.progress.done ?? 0), total: Number(r.progress.total ?? 0) }
         : null,
-    warnings:
-      r?.warnings && typeof r.warnings === 'object'
-        ? { count: Number(r.warnings.count ?? 0) }
-        : null,
+    warnings: r?.warnings && typeof r.warnings === 'object' ? { count: Number(r.warnings.count ?? 0) } : null,
     comment_count: typeof r?.comment_count === 'number' ? r.comment_count : null,
   };
 }

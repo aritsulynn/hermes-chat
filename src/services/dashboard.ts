@@ -56,11 +56,7 @@ export function normalizeBase(baseUrl: string): string {
  *  unreachable host (wrong WiFi / changed LAN IP / dashboard down).
  *  `credentials: include` lets the session cookie flow once the dashboard
  *  CORS-allows our origin (a no-op for same-origin). */
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit = {},
-  ms = HTTP_TIMEOUT_MS,
-): Promise<Response> {
+async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = HTTP_TIMEOUT_MS): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
@@ -120,7 +116,7 @@ export function getSetCookies(res: Response): string[] {
     if (typeof hdrs?.getSetCookie === 'function') {
       for (const c of asList(hdrs.getSetCookie())) out.push(String(c));
     } else if (typeof hdrs?.raw === 'function') {
-      for (const c of (hdrs.raw()['set-cookie'] ?? [])) out.push(String(c));
+      for (const c of hdrs.raw()['set-cookie'] ?? []) out.push(String(c));
     } else {
       const single = hdrs?.get?.('set-cookie');
       if (single) out.push(...String(single).split(/,(?=[^;,]+=[^;,]*)/));
@@ -148,7 +144,7 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
       );
       if (asRecord(probe).type === 'opaque') {
         throw new Error(
-          'Dashboard reachable but the browser blocked the request (CORS) — this client\'s origin has to be allowed on the dashboard',
+          "Dashboard reachable but the browser blocked the request (CORS) — this client's origin has to be allowed on the dashboard",
         );
       }
     } catch (e2) {
@@ -563,8 +559,7 @@ export async function getSessionMessages(
 ): Promise<RestHistoryItem[]> {
   // The numeric fourth argument remains accepted for older callers.
   const selectedProfile =
-    (typeof profileOrLimit === 'number' ? DEFAULT_PROFILE : String(profileOrLimit ?? '')).trim() ||
-    DEFAULT_PROFILE;
+    (typeof profileOrLimit === 'number' ? DEFAULT_PROFILE : String(profileOrLimit ?? '')).trim() || DEFAULT_PROFILE;
   const selectedLimit = typeof profileOrLimit === 'number' ? profileOrLimit : limit;
   // Short in-memory TTL — toolRefresh + stampRowIds + resync often fire
   // back-to-back for the same session and each refetches 200 rows.

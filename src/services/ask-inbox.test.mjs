@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  askKey,
-  findAskByRpc,
-  pendingAsks,
-  setAskStatus,
-  setAskStatusByRpc,
-  upsertAsk,
-} from './ask-inbox.ts';
+import { askKey, findAskByRpc, pendingAsks, setAskStatus, setAskStatusByRpc, upsertAsk } from './ask-inbox.ts';
 
 const owner = (overrides = {}) => ({
   connectionId: 'host-a',
@@ -20,14 +13,8 @@ const owner = (overrides = {}) => ({
 });
 
 test('ask keys include the owner namespace', () => {
-  assert.notEqual(
-    askKey(owner(), 'srq-1'),
-    askKey(owner({ profile: 'personal' }), 'srq-1'),
-  );
-  assert.notEqual(
-    askKey(owner({ connectionId: 'host-b' }), 'srq-1'),
-    askKey(owner(), 'srq-1'),
-  );
+  assert.notEqual(askKey(owner(), 'srq-1'), askKey(owner({ profile: 'personal' }), 'srq-1'));
+  assert.notEqual(askKey(owner({ connectionId: 'host-b' }), 'srq-1'), askKey(owner(), 'srq-1'));
   assert.notEqual(
     askKey(owner({ connectionId: 'host-a::account-b' }), 'srq-1'),
     askKey(owner({ connectionId: 'host-a::account-a' }), 'srq-1'),
@@ -103,18 +90,10 @@ test('status updates can target a request by connection and rpc id', () => {
     method: 'clarify',
     owner: owner(),
   });
-  const cancelled = setAskStatusByRpc(
-    first.entries,
-    'host-a',
-    'srq-1',
-    'cancelled',
-  );
+  const cancelled = setAskStatusByRpc(first.entries, 'host-a', 'srq-1', 'cancelled');
 
   assert.equal(cancelled[0].status, 'cancelled');
   assert.equal(pendingAsks(cancelled).length, 0);
   assert.equal(findAskByRpc(cancelled, 'host-a', 'srq-1').status, 'cancelled');
-  assert.equal(
-    setAskStatus(cancelled, 'missing', 'answered')[0].status,
-    'cancelled',
-  );
+  assert.equal(setAskStatus(cancelled, 'missing', 'answered')[0].status, 'cancelled');
 });

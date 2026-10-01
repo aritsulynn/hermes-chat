@@ -28,7 +28,12 @@ export interface LiveSessionsSlice {
   refreshLiveSessions: () => Promise<void>;
 }
 
-export function useLiveSessionsSlice({ gw, runtimeOwners, activeProfileRef, profileEpochRef }: StoreCtx): LiveSessionsSlice {
+export function useLiveSessionsSlice({
+  gw,
+  runtimeOwners,
+  activeProfileRef,
+  profileEpochRef,
+}: StoreCtx): LiveSessionsSlice {
   const [liveSessions, setLiveSessions] = useState<LiveSessionMap>({});
   const [liveSessionsKnown, setLiveSessionsKnown] = useState(false);
   // A ref, not state: the poll loop reads it on every tick, and a state write

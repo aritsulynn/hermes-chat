@@ -92,8 +92,5 @@ export function useThemeSlice(): ThemeSlice {
   // Memoised: this object is the ThemeContext value, so a fresh literal every
   // render would re-render all ~18 theme consumers on EVERY store update
   // (each keystroke, each session change) instead of only on a theme change.
-  return useMemo(
-    () => ({ themeMode, theme, setTheme, hydrateTheme }),
-    [themeMode, theme, setTheme, hydrateTheme],
-  );
+  return useMemo(() => ({ themeMode, theme, setTheme, hydrateTheme }), [themeMode, theme, setTheme, hydrateTheme]);
 }

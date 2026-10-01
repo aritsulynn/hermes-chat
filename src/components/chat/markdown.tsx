@@ -47,8 +47,7 @@ const C = {
     list: 'my-1 pl-5',
     li: 'my-0.5',
     link: 'text-[#1a73e8] underline underline-offset-2 dark:text-[#7aa7ff]',
-    quote:
-      'my-1 border-l-[3px] border-l-[#1a73e8] bg-[#e8eef7] px-2 py-1 dark:border-l-[#7aa7ff] dark:bg-[#232a3a]',
+    quote: 'my-1 border-l-[3px] border-l-[#1a73e8] bg-[#e8eef7] px-2 py-1 dark:border-l-[#7aa7ff] dark:bg-[#232a3a]',
     code: 'rounded bg-[#e4e4e8] px-1 py-0.5 text-[13px] dark:bg-[#2b2b31]',
     fence: 'my-1 overflow-hidden rounded-lg',
     fenceHead: 'flex items-center justify-between px-2 pb-0.5 pt-1.5',
@@ -132,8 +131,7 @@ export function mdComponents(theme: MdTheme, dark: boolean): Components {
     td: ({ children }) => <td className={c.td}>{children}</td>,
 
     // Inline code. Block code never reaches here — it is intercepted in `pre`.
-    code: ({ children, className: codeClass }) =>
-      codeClass ? null : <code className={c.code}>{children}</code>,
+    code: ({ children, className: codeClass }) => (codeClass ? null : <code className={c.code}>{children}</code>),
 
     pre: ({ children }) => {
       // react-markdown hands `pre` the <code> element; the language lives in its
@@ -143,7 +141,9 @@ export function mdComponents(theme: MdTheme, dark: boolean): Components {
       const lang = String(codeEl?.props?.className ?? '')
         .replace(/^language-/, '')
         .trim();
-      return <CodeBlock theme={theme} lang={lang || 'code'} code={textOf(codeEl?.props?.children).replace(/\n$/, '')} />;
+      return (
+        <CodeBlock theme={theme} lang={lang || 'code'} code={textOf(codeEl?.props?.children).replace(/\n$/, '')} />
+      );
     },
 
     // The library default renders a plain <img>, which cannot carry the

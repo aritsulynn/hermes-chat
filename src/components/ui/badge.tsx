@@ -17,7 +17,7 @@ const badgeVariants = cva(
     defaultVariants: {
       variant: 'default',
     },
-  }
+  },
 );
 
 // The text colour used to be a second cva fed through `TextClassContext`.

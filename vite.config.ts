@@ -12,7 +12,10 @@ import path from 'node:path';
  */
 function buildId(): string {
   try {
-    const sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const sha = execSync('git rev-parse --short HEAD', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
     const dirty = execSync('git status --porcelain', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     return sha ? `${sha}${dirty ? '-dirty' : ''}` : 'unknown';
   } catch {

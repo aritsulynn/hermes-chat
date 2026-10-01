@@ -1,8 +1,18 @@
 // Chat route — transcript + composer.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pickFiles } from '../../services/file-picker';
 import { Navigate as Redirect } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil, Search } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Check,
+  ChevronRight,
+  Clock,
+  Copy,
+  FileText,
+  Image as ImageIcon,
+  Pencil,
+} from 'lucide-react';
 import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
 import { Transcript } from '../../components/chat/transcript';
 import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
@@ -24,14 +34,14 @@ import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '..
 import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
 import { contextTone, mergeUsage } from '../../utils/usage';
 import { isSlashSuggestion, skillUsage } from '../../utils/slash-commands';
-import { placeholderColor, screenBg, screenStyle } from '../../theme';
+import { screenBg, screenStyle } from '../../theme';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../services/gateway-ws';
 import { Composer } from '../../components/chat/composer';
 import type { AnchorMeasure, AnchorRect } from '../../components/chat/composer';
 import { MessageBubble, formatBubbleTime } from '../../components/chat/message-bubble';
 import { AskSheet, InfoSheet } from '../../components/ui/sheets';
-import { CtxRing, HamburgerBtn } from '../../components/ui/bits';
+import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Spinner } from '../../components/ui/bits';
@@ -66,7 +76,7 @@ export function ChatScreen() {
     copiedId,
     infoOpen,
     setInfoOpen,
-    infoSeq,
+
     sessionInfo,
     usageInfo,
     usageLoading,
@@ -138,8 +148,7 @@ export function ChatScreen() {
   // gateway publishes these under session.info.usage (and session.usage answers
   // the same numbers); tap opens the full Session info sheet.
   const usage = mergeUsage(sessionInfo?.usage, usageInfo);
-  const ctxPct =
-    usage?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(usage.contextPercent))) : null;
+  const ctxPct = usage?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(usage.contextPercent))) : null;
   const ctxTone = ctxPct == null ? 'ok' : contextTone(ctxPct);
 
   const { width: winW, height: winH } = useViewportSize();
@@ -158,16 +167,19 @@ export function ChatScreen() {
     }),
     [dark],
   );
-  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
 
   // Screen-level anchored popovers ("+" attach, model picker, thinking effort),
   // anchored to the composer controls that opened them. Rendered here, not in
   // the composer, so they can float above the list and still receive taps — on
   // Android touches outside a parent's bounds are dropped, so a popover inside
   // the composer wouldn't work.
-  const [popover, setPopover] = useState<
-    { kind: 'effort' | 'attach' | 'model'; x: number; y: number; w: number; h: number } | null
->(null);
+  const [popover, setPopover] = useState<{
+    kind: 'effort' | 'attach' | 'model';
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
   const popoverMeasure = useRef<AnchorMeasure | null>(null);
   const [modelQuery, setModelQuery] = useState('');
   const [modelExpanded, setModelExpanded] = useState<Record<string, boolean>>({});
@@ -272,10 +284,8 @@ export function ChatScreen() {
       i,
       usage: it.kind === 'skill' ? (skillUsage(it.text) ?? -1) : -1,
     }));
-    if (!withUsage.some((r) => r.usage>= 0)) return filtered;
-    return withUsage
-      .sort((a, b) => b.usage - a.usage || a.i - b.i)
-      .map((r) => r.it);
+    if (!withUsage.some((r) => r.usage >= 0)) return filtered;
+    return withUsage.sort((a, b) => b.usage - a.usage || a.i - b.i).map((r) => r.it);
   }, [completionKind, completions]);
 
   const applyCompletion = useCallback(
@@ -359,7 +369,7 @@ export function ChatScreen() {
   const [kbH, setKbH] = useState(0);
   // Gap between the lifted dock and the keyboard so the composer doesn't sit
   // flush on it. Only while the keyboard is open.
-  const kbGap = kbH> 0 ? 8 : 0;
+  const kbGap = kbH > 0 ? 8 : 0;
   const contentH = useRef(0);
   const layoutH = useRef(0);
   const endPad = useRef(0);
@@ -405,10 +415,7 @@ export function ChatScreen() {
   }, [messages, streamingTexts]);
   // Regenerate targets the last assistant bubble; the rewind target is the last
   // user row that carries a durable id.
-  const lastAssistantId = useMemo(
-    () => [...messages].reverse().find((m) => m.role === 'assistant')?.id,
-    [messages],
-  );
+  const lastAssistantId = useMemo(() => [...messages].reverse().find((m) => m.role === 'assistant')?.id, [messages]);
   const hasRegenTarget = useMemo(
     () => messages.some((m) => m.role === 'user' && m.rowId != null && m.text.trim()),
     [messages],
@@ -457,10 +464,7 @@ export function ChatScreen() {
   const onRegenerate = useCallback(() => regenerate(), [regenerate]);
   // Long-press menu on our own messages (Copy / Edit) — same popover pattern.
   const [userMenu, setUserMenu] = useState<{ anchor: AnchorRect; id: string } | null>(null);
-  const openUserMenu = useCallback(
-    (m: AnchorMeasure, id: string) => m((a) => setUserMenu({ anchor: a, id })),
-    [],
-  );
+  const openUserMenu = useCallback((m: AnchorMeasure, id: string) => m((a) => setUserMenu({ anchor: a, id })), []);
   const closeUserMenu = useCallback(() => setUserMenu(null), []);
   // Icon tooltips (bubble footer buttons) — a floating label that never
   // captures touches, auto-dismissed. No Modal: a modal would eat the release
@@ -510,9 +514,12 @@ export function ChatScreen() {
         // bottom indefinitely. The scrollbar still worked, which is what made it
         // look like a pointer problem rather than a follow problem.
         if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
-        scrollEndTimer.current = setTimeout(() => {
-          flying.current = false;
-        }, anim ? 600 : 120);
+        scrollEndTimer.current = setTimeout(
+          () => {
+            flying.current = false;
+          },
+          anim ? 600 : 120,
+        );
         listRef.current?.scrollToOffset({ offset: end, animated: anim });
       });
     });
@@ -564,11 +571,14 @@ export function ChatScreen() {
   // The scroller's own height. This is the number the distance-to-the-end
   // arithmetic needs, and it is genuinely separate from the content height: a
   // keyboard opening shrinks the scroller and leaves the content untouched.
-  const handleViewportResize = useCallback((viewportH: number) => {
-    layoutH.current = viewportH;
-    setCanScroll(contentH.current > viewportH + 40);
-    if (stickEnd.current) scrollEnd(false);
-  }, [scrollEnd]);
+  const handleViewportResize = useCallback(
+    (viewportH: number) => {
+      layoutH.current = viewportH;
+      setCanScroll(contentH.current > viewportH + 40);
+      if (stickEnd.current) scrollEnd(false);
+    },
+    [scrollEnd],
+  );
 
   // When the keyboard slides up the list height shrinks but content offset
   // stays — explicitly scroll so the latest message sits above the keyboard,
@@ -577,20 +587,13 @@ export function ChatScreen() {
   // keyboard (matters for the model search field).
   useEffect(() => {
     let t1: ReturnType<typeof setTimeout> | null = null;
-    let t2: ReturnType<typeof setTimeout> | null = null;
+    const t2: ReturnType<typeof setTimeout> | null = null;
     // `winH` is the layout viewport; the visual viewport is what shrinks when
     // the keyboard opens, and the difference between them is its height.
     const vv = window.visualViewport;
     const onKeyboard = () => {
       setKbH(vv ? Math.max(0, Math.round(window.innerHeight - vv.height - (vv.offsetTop ?? 0))) : 0);
       t1 = setTimeout(() => {
-        scrollEnd(true);
-        remeasurePopover();
-      }, 50);
-    };
-    const onKeyboardHide = () => {
-      setKbH(0);
-      t2 = setTimeout(() => {
         scrollEnd(true);
         remeasurePopover();
       }, 50);
@@ -620,8 +623,7 @@ export function ChatScreen() {
     const first = messages.length ? messages[0].id : null;
     pinTrack.current = { sid: sessionId, first, len: messages.length };
     if (!sessionId || messages.length === 0) return;
-    const reloaded =
-      sessionId !== prev.sid || first !== prev.first || prev.len === 0;
+    const reloaded = sessionId !== prev.sid || first !== prev.first || prev.len === 0;
     if (!reloaded) return;
     // Declare intent immediately; the actual pin rides the content-size
     // follow (correct measurements post-layout), NOT a direct scrollEnd here:
@@ -681,10 +683,7 @@ export function ChatScreen() {
     setPopover(null);
     const picked = await pickFiles({ multiple: true });
     if (picked.length) {
-      setAttachments([
-        ...attachments,
-        ...picked.map((f) => ({ uri: f.uri, name: f.name || 'file', mime: f.mime })),
-      ]);
+      setAttachments([...attachments, ...picked.map((f) => ({ uri: f.uri, name: f.name || 'file', mime: f.mime }))]);
     }
   }, [attachments, setAttachments]);
 
@@ -721,9 +720,7 @@ export function ChatScreen() {
       }
       if (idx < 0) return;
       try {
-        void listRef.current
-          ?.scrollToIndex({ index: idx, viewPosition: 0.5, animated: true })
-          ?.catch(() => {});
+        void listRef.current?.scrollToIndex({ index: idx, viewPosition: 0.5, animated: true })?.catch(() => {});
       } catch {}
     },
     [findHitIndex, historyExhausted, loadOlderMessages],
@@ -774,7 +771,7 @@ export function ChatScreen() {
           .map((x) => x.mm);
         return { ...p, models };
       })
-      .filter((p) => (q ? (p.models?.length ?? 0)> 0 : true));
+      .filter((p) => (q ? (p.models?.length ?? 0) > 0 : true));
   }, [modelProviders, mq]);
   // Search highlight: precompute matched ids once instead of toLowerCase per bubble per render.
   // Includes buffered streaming text for searchable conversation messages.
@@ -803,14 +800,14 @@ export function ChatScreen() {
     (h: number) => {
       const prevH = contentH.current;
       contentH.current = h;
-      setCanScroll(h> layoutH.current + 40);
+      setCanScroll(h > layoutH.current + 40);
       // Prepended an older page above the viewport: shift the offset down by
       // the growth so the row under the finger stays put (no yank to top).
       if (prependAdj.current) {
         const { prevY, prevContentH } = prependAdj.current;
         prependAdj.current = null;
         const dh = h - (prevContentH ?? prevH);
-        if (dh> 8) {
+        if (dh > 8) {
           flying.current = true;
           if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
           scrollEndTimer.current = setTimeout(() => {
@@ -873,7 +870,7 @@ export function ChatScreen() {
       // viewport mid-list with no further follow queued) — require it to
       // persist across frames. pinWanted deliberately survives this branch.
       missEnd.current += 1;
-      if (missEnd.current>= 3) {
+      if (missEnd.current >= 3) {
         stickEnd.current = false;
       }
     }
@@ -905,7 +902,21 @@ export function ChatScreen() {
         />
       );
     },
-    [dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, onBranchChat, openUserMenu, showTip],
+    [
+      dark,
+      expanded,
+      highlightIds,
+      onToggleExpand,
+      copiedId,
+      onCopy,
+      generating,
+      lastAssistantId,
+      hasRegenTarget,
+      onRegenerate,
+      onBranchChat,
+      openUserMenu,
+      showTip,
+    ],
   );
 
   const closeSearch = useCallback(() => {
@@ -935,7 +946,7 @@ export function ChatScreen() {
   // not paging — reading history up top is never yanked. Trimmed rows stay
   // server-side and come back through onLoadOlder.
   useEffect(() => {
-    if (messages.length> CHAT_WINDOW_SOFT_CAP && !generating && atBottom && !historyLoadingMore) {
+    if (messages.length > CHAT_WINDOW_SOFT_CAP && !generating && atBottom && !historyLoadingMore) {
       trimHead();
     }
   }, [messages.length, generating, atBottom, historyLoadingMore, trimHead]);
@@ -948,13 +959,11 @@ export function ChatScreen() {
         </div>
       );
     }
-    if (trimmedOlder> 0 || !historyExhausted) {
+    if (trimmedOlder > 0 || !historyExhausted) {
       return (
         <div className="flex flex-col items-center py-1.5">
           <Button variant="ghost" onClick={onLoadOlder} className="px-3 py-1.5">
-            <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
-              ↑ Load older messages
-            </span>
+            <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">↑ Load older messages</span>
           </Button>
         </div>
       );
@@ -968,7 +977,6 @@ export function ChatScreen() {
     return (
       <div style={screen}>
         <div className="flex flex-col flex-1 bg-white items-center justify-center gap-3 dark:bg-black">
-          
           <Spinner size={24} color="currentColor" />
           <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</div>
         </div>
@@ -988,10 +996,14 @@ export function ChatScreen() {
           </div>
         </div>
         <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-          
           <div className="flex flex-col flex-1 items-center justify-center p-6">
-            <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</div>
-            <Button variant="default" onClick={() => void newSession()} className="mt-2 items-center px-[18px] py-[11px]">
+            <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+              No active session — start a new one.
+            </div>
+            <Button
+              variant="default"
+              onClick={() => void newSession()}
+              className="mt-2 items-center px-[18px] py-[11px]">
               <span className="text-[15px] font-semibold">+ New chat</span>
             </Button>
           </div>
@@ -1014,9 +1026,9 @@ export function ChatScreen() {
   const popBottom = popover ? Math.max(8, popRootH - popRelY + 6) : 0;
   const popLeft = popover
     ? popover.kind === 'model'
-      // Wide panel: dock to the left screen margin instead of the mid-screen
-      // anchor chip, so it never floats mid-air or clips past the right edge.
-      ? 12
+      ? // Wide panel: dock to the left screen margin instead of the mid-screen
+        // anchor chip, so it never floats mid-air or clips past the right edge.
+        12
       : Math.max(8, Math.min(popover.x, winW - popW - 8))
     : 0;
   // Height budget = the space between the anchor and the top of the screen
@@ -1026,9 +1038,7 @@ export function ChatScreen() {
   // the header and hides the search field being typed into.
   const popSpaceAbove = popover ? Math.max(0, popRelY - 14) : 0;
   const popMaxH =
-    popover?.kind === 'model'
-      ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove))
-      : undefined;
+    popover?.kind === 'model' ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove)) : undefined;
 
   return (
     <div
@@ -1041,11 +1051,9 @@ export function ChatScreen() {
         // Keyboard resize moves the composer; keep the popover glued to it.
         remeasurePopover();
       }}
-      style={screen}
->
+      style={screen}>
       {searchVisible ? (
         <ChatSearchHeader
-
           dark={dark}
           iconColor={headerIcon}
           query={searchQuery}
@@ -1058,7 +1066,6 @@ export function ChatScreen() {
         />
       ) : (
         <ChatNormalHeader
-
           dark={dark}
           iconColor={headerIcon}
           title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
@@ -1077,17 +1084,14 @@ export function ChatScreen() {
           it when open. Keeping 'bottom' would double the gap above the
           gesture bar (and float the composer above the keyboard). */}
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        
-
-      {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
-      <UserMenuDialog
-        open={!!userMenu}
-        onOpenChange={(o) => !o && closeUserMenu()}
-        anchor={userMenu?.anchor}
-        viewportWidth={winW}
-      >
-        {userMenu &&
-          (() => {
+        {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
+        <UserMenuDialog
+          open={!!userMenu}
+          onOpenChange={(o) => !o && closeUserMenu()}
+          anchor={userMenu?.anchor}
+          viewportWidth={winW}>
+          {userMenu &&
+            (() => {
               const target = messages.find((m) => m.id === userMenu.id);
               const delta = target ? streamingTexts[target.id] : undefined;
               const fullText = target ? target.text + (delta ?? '') : '';
@@ -1096,7 +1100,7 @@ export function ChatScreen() {
               if (!target || (!showCopy && !showEdit)) return null;
               const menuW = 192;
               const left = Math.max(8, Math.min(userMenu.anchor.x + userMenu.anchor.w - menuW, winW - menuW - 8));
-              const above = userMenu.anchor.y> 128;
+              const above = userMenu.anchor.y > 128;
               return (
                 <div
                   className="absolute w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
@@ -1104,8 +1108,7 @@ export function ChatScreen() {
                     above
                       ? { bottom: winH - userMenu.anchor.y + 8, left }
                       : { top: userMenu.anchor.y + userMenu.anchor.h + 8, left }
-                  }
->
+                  }>
                   {!!target.ts && (
                     <div className="flex items-center gap-2.5 px-3 py-2">
                       <Clock size={17} color={dark ? '#888' : '#999'} />
@@ -1121,8 +1124,7 @@ export function ChatScreen() {
                         closeUserMenu();
                         void copyText(target.id, fullText);
                       }}
-                      className="flex items-center gap-2.5 px-3 py-2.5"
->
+                      className="flex items-center gap-2.5 px-3 py-2.5">
                       <Copy size={17} color={headerIcon} />
                       <span className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</span>
                     </Button>
@@ -1134,8 +1136,7 @@ export function ChatScreen() {
                         closeUserMenu();
                         editMessage(target.id);
                       }}
-                      className="flex items-center gap-2.5 px-3 py-2.5"
->
+                      className="flex items-center gap-2.5 px-3 py-2.5">
                       <Pencil size={17} color={headerIcon} />
                       <span className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</span>
                     </Button>
@@ -1143,634 +1144,610 @@ export function ChatScreen() {
                 </div>
               );
             })()}
-      </UserMenuDialog>
+        </UserMenuDialog>
 
-      {/* Plain View, not KeyboardAvoidingView: the composer is an absolute
+        {/* Plain View, not KeyboardAvoidingView: the composer is an absolute
           overlay at the bottom of the transcript container with a transparent
           background, so scrolled messages show through around the card — an
           absolute child ignores the view's padding, and the keyboard is
           handled explicitly via kbH (footer padding lifts the card). */}
-      {/* `min-h-0` and `flex flex-col` for the same reason as every other level
+        {/* `min-h-0` and `flex flex-col` for the same reason as every other level
           of this chain: it is a column flex item, and `min-height: auto` would
           let it grow to the transcript's full height instead of letting the
           scroller inside it scroll. */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        {/* A plain scroll container, not a virtualizer — see
+        <div className="flex min-h-0 flex-1 flex-col">
+          {/* A plain scroll container, not a virtualizer — see
             components/chat/transcript.tsx for why this list is the exception.
             `onScroll` is the only scroll signal; stick-to-bottom and the
             prepend correction are driven from here. */}
-        <Transcript
-          ref={listRef}
-          scrollerRef={scrollerRef}
-          contentClassName={listContentClass}
-          contentStyle={listContentStyle}
-          onStartReached={handleStartReached}
-          onContentSizeChange={handleContentSizeChange}
-          onViewportResize={handleViewportResize}
-          onInteractStart={handleInteractStart}
-          onInteractEnd={snapToEnd}
-          onScroll={handleScroll}
-        >
-          {ListHeader()}
-          {messages.map((item) => (
-            // `contents` so the bubble itself is the flex item of the content
-            // column and its self-* alignment applies. See the note in
-            // components/chat/transcript.tsx.
-            <div key={listKeyExtractor(item)} className="contents">
-              {renderMessage({ item })}
-            </div>
-          ))}
-        </Transcript>
-        {/* Overlay footer: absolute + transparent, so the transcript scrolls
+          <Transcript
+            ref={listRef}
+            scrollerRef={scrollerRef}
+            contentClassName={listContentClass}
+            contentStyle={listContentStyle}
+            onStartReached={handleStartReached}
+            onContentSizeChange={handleContentSizeChange}
+            onViewportResize={handleViewportResize}
+            onInteractStart={handleInteractStart}
+            onInteractEnd={snapToEnd}
+            onScroll={handleScroll}>
+            {ListHeader()}
+            {messages.map((item) => (
+              // `contents` so the bubble itself is the flex item of the content
+              // column and its self-* alignment applies. See the note in
+              // components/chat/transcript.tsx.
+              <div key={listKeyExtractor(item)} className="contents">
+                {renderMessage({ item })}
+              </div>
+            ))}
+          </Transcript>
+          {/* Overlay footer: absolute + transparent, so the transcript scrolls
             underneath and shows through around the composer card. The list
             keeps the last bubble reachable via bottom content padding
             (= dockH). Same JSX position as before, so the focused input
             never remounts. box-none: taps on the transparent margins fall
             through to the list (which dismisses the keyboard); the card and
             panels stay fully tappable. */}
-        <div
-          ref={observeDock}
-          className="pointer-events-none"
-          // `right: gutter` keeps the composer, the status strip and the panels
-          // out of the scrollbar's reserved lane. Measured rather than assumed:
-          // it is 0 on macOS overlay scrollbars and ~15px on a classic one.
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: gutter,
-            bottom: 0,
-            paddingBottom: kbH + kbGap,
-            backgroundColor: 'transparent',
-          }}
-        >
-        <div className="mx-auto w-full max-w-3xl">
-        {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
+          <div
+            ref={observeDock}
+            className="pointer-events-none"
+            // `right: gutter` keeps the composer, the status strip and the panels
+            // out of the scrollbar's reserved lane. Measured rather than assumed:
+            // it is 0 on macOS overlay scrollbars and ~15px on a classic one.
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: gutter,
+              bottom: 0,
+              paddingBottom: kbH + kbGap,
+              backgroundColor: 'transparent',
+            }}>
+            <div className="mx-auto w-full max-w-3xl">
+              {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
-        {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling
+              {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling
             that appears/disappears next to a focused input is one more chance
             for the browser to drop the caret out of the composer. */}
-        <div
-          className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400 truncate"
-          style={toolLine ? undefined : { display: 'none' }}
->
-          {toolLine ?? ''}
-        </div>
-        {/* Agent todo checklist (`todo.updated`) — one collapsed summary line,
+              <div
+                className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400 truncate"
+                style={toolLine ? undefined : { display: 'none' }}>
+                {toolLine ?? ''}
+              </div>
+              {/* Agent todo checklist (`todo.updated`) — one collapsed summary line,
             tap to expand the full list. */}
-        {todos.length> 0 &&
-          (() => {
-            const done = todos.filter(todoDone).length;
-            const active = todos.find(todoActive);
-            return (
-              <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Button
-                  variant="ghost"
-                  onClick={() => setTodosOpen((v) => !v)}
-                  className="flex items-center gap-2 px-3 py-2"
->
-                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Tasks
-                  </span>
-                  <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
-                    {done}/{todos.length}
-                  </span>
-                  {!todosOpen && active && (
-                    <span
-                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate"
->
-                      · {todoLabel(active)}
-                    </span>
-                  )}
-                  {todosOpen && <div className="flex-1" />}
-                  {todosOpen ? (
-                    <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  ) : (
-                    <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  )}
-                </Button>
-                {todosOpen && (
-                  <div className="overflow-y-auto max-h-[200px]"><div>
-                    {todos.map((t, i) => {
-                      const d = todoDone(t);
-                      const a = todoActive(t);
-                      return (
-                        <div key={`${i}-${todoLabel(t)}`} className="flex items-start gap-2 px-3 py-1">
-                          <div
-                            className={`shrink-0 text-[13px] leading-[18px] ${
-                              d
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : a
-                                  ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
-                                  : 'text-neutral-400 dark:text-neutral-500'
-                            }`}
->
-                            {d ? '✓' : a ? '◐' : '○'}
-                          </div>
-                          <div
-                            className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
-                              d
-                                ? 'text-neutral-400 line-through dark:text-neutral-500'
-                                : 'text-neutral-800 dark:text-neutral-200'
-                            }`}
->
-                            {todoLabel(t)}
+              {todos.length > 0 &&
+                (() => {
+                  const done = todos.filter(todoDone).length;
+                  const active = todos.find(todoActive);
+                  return (
+                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                      <Button
+                        variant="ghost"
+                        onClick={() => setTodosOpen((v) => !v)}
+                        className="flex items-center gap-2 px-3 py-2">
+                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                          Tasks
+                        </span>
+                        <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                          {done}/{todos.length}
+                        </span>
+                        {!todosOpen && active && (
+                          <span className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate">
+                            · {todoLabel(active)}
+                          </span>
+                        )}
+                        {todosOpen && <div className="flex-1" />}
+                        {todosOpen ? (
+                          <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        ) : (
+                          <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        )}
+                      </Button>
+                      {todosOpen && (
+                        <div className="overflow-y-auto max-h-[200px]">
+                          <div>
+                            {todos.map((t, i) => {
+                              const d = todoDone(t);
+                              const a = todoActive(t);
+                              return (
+                                <div key={`${i}-${todoLabel(t)}`} className="flex items-start gap-2 px-3 py-1">
+                                  <div
+                                    className={`shrink-0 text-[13px] leading-[18px] ${
+                                      d
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : a
+                                          ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                                          : 'text-neutral-400 dark:text-neutral-500'
+                                    }`}>
+                                    {d ? '✓' : a ? '◐' : '○'}
+                                  </div>
+                                  <div
+                                    className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
+                                      d
+                                        ? 'text-neutral-400 line-through dark:text-neutral-500'
+                                        : 'text-neutral-800 dark:text-neutral-200'
+                                    }`}>
+                                    {todoLabel(t)}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div></div>
-                )}
-              </div>
-            );
-          })()}
-        {/* Live subagents (polled from subagent.list while a turn runs). */}
-        {subagents.length> 0 &&
-          (() => {
-            const running = subagents.filter((s) => !subagentDone(s)).length;
-            const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
-            return (
-              <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Button
-                  variant="ghost"
-                  onClick={() => setSubagentsOpen((v) => !v)}
-                  className="flex items-center gap-2 px-3 py-2"
->
-                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Subagents
-                  </span>
-                  <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
-                    {running}/{subagents.length}
-                  </span>
-                  {!subagentsOpen && first && (
-                    <span
-                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate"
->
-                      · {first.goal || first.last_tool || first.subagent_id}
-                    </span>
-                  )}
-                  {subagentsOpen && <div className="flex-1" />}
-                  {subagentsOpen ? (
-                    <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  ) : (
-                    <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  )}
-                </Button>
-                {subagentsOpen && (
-                  <div className="overflow-y-auto max-h-[160px]"><div>
-                    {subagents.map((s) => {
-                      const done = subagentDone(s);
-                      return (
-                        <div key={s.subagent_id} className="flex items-center gap-2 px-3 py-1">
-                          <div
-                            className={`shrink-0 text-[13px] leading-[18px] ${
-                              done ? 'text-neutral-400 dark:text-neutral-500' : 'text-[#1a73e8] dark:text-[#7aa7ff]'
-                            }`}
->
-                            {done ? '✓' : '◐'}
+                      )}
+                    </div>
+                  );
+                })()}
+              {/* Live subagents (polled from subagent.list while a turn runs). */}
+              {subagents.length > 0 &&
+                (() => {
+                  const running = subagents.filter((s) => !subagentDone(s)).length;
+                  const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
+                  return (
+                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                      <Button
+                        variant="ghost"
+                        onClick={() => setSubagentsOpen((v) => !v)}
+                        className="flex items-center gap-2 px-3 py-2">
+                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                          Subagents
+                        </span>
+                        <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                          {running}/{subagents.length}
+                        </span>
+                        {!subagentsOpen && first && (
+                          <span className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate">
+                            · {first.goal || first.last_tool || first.subagent_id}
+                          </span>
+                        )}
+                        {subagentsOpen && <div className="flex-1" />}
+                        {subagentsOpen ? (
+                          <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        ) : (
+                          <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        )}
+                      </Button>
+                      {subagentsOpen && (
+                        <div className="overflow-y-auto max-h-[160px]">
+                          <div>
+                            {subagents.map((s) => {
+                              const done = subagentDone(s);
+                              return (
+                                <div key={s.subagent_id} className="flex items-center gap-2 px-3 py-1">
+                                  <div
+                                    className={`shrink-0 text-[13px] leading-[18px] ${
+                                      done
+                                        ? 'text-neutral-400 dark:text-neutral-500'
+                                        : 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                                    }`}>
+                                    {done ? '✓' : '◐'}
+                                  </div>
+                                  <div
+                                    className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
+                                      done
+                                        ? 'text-neutral-400 dark:text-neutral-500'
+                                        : 'text-neutral-800 dark:text-neutral-200'
+                                    } truncate`}>
+                                    {s.goal || s.last_tool || s.subagent_id}
+                                  </div>
+                                  {s.tool_count != null && (
+                                    <div className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
+                                      {s.tool_count} calls
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                          <div
-                            className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
-                              done ? 'text-neutral-400 dark:text-neutral-500' : 'text-neutral-800 dark:text-neutral-200'
-                            } truncate`}
->
-                            {s.goal || s.last_tool || s.subagent_id}
-                          </div>
-                          {s.tool_count != null && (
-                            <div className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
-                              {s.tool_count} calls
-                            </div>
-                          )}
                         </div>
-                      );
-                    })}
-                  </div></div>
-                )}
-              </div>
-            );
-          })()}
-        {/* Prompt queue — drafts held while a turn runs, drained one per turn
+                      )}
+                    </div>
+                  );
+                })()}
+              {/* Prompt queue — drafts held while a turn runs, drained one per turn
             end. Sits above the completion panel so completions stay nearest the
             input. */}
-        {queued.length> 0 && (
-          <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-            <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
-              </div>
-              {queueParked ? (
-                <Button variant="link" onClick={resumeQueue} className="px-1.5 py-0.5">
-                  <span className="text-[11px] font-semibold">Resume</span>
-                </Button>
-              ) : (
-                <Button variant="link" onClick={clearQueue} className="px-1.5 py-0.5">
-                  <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</span>
-                </Button>
-              )}
-            </div>
-            <div className="overflow-y-auto max-h-[160px]"><div>
-              {queued.map((q) => (
-                <div key={q.id} className="flex items-center gap-2 px-3 py-1.5">
-                  <div
-                    className="min-w-0 flex-1 text-[13px] text-neutral-800 dark:text-neutral-200 truncate"
->
-                    {q.text}
+              {queued.length > 0 && (
+                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                  <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
+                    </div>
+                    {queueParked ? (
+                      <Button variant="link" onClick={resumeQueue} className="px-1.5 py-0.5">
+                        <span className="text-[11px] font-semibold">Resume</span>
+                      </Button>
+                    ) : (
+                      <Button variant="link" onClick={clearQueue} className="px-1.5 py-0.5">
+                        <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</span>
+                      </Button>
+                    )}
                   </div>
-                  <Button
-                    variant="outline"
-                    onClick={() => sendQueuedNow(q.id)}
-                    className="shrink-0 px-1.5 py-0.5"
->
-                    <span className="text-[11px] font-semibold">Send</span>
-                  </Button>
-                  <Button variant="link" onClick={() => removeQueued(q.id)} className="shrink-0 px-1.5 py-0.5">
-                    <span className="text-[15px] leading-[15px] text-neutral-400">×</span>
-                  </Button>
+                  <div className="overflow-y-auto max-h-[160px]">
+                    <div>
+                      {queued.map((q) => (
+                        <div key={q.id} className="flex items-center gap-2 px-3 py-1.5">
+                          <div className="min-w-0 flex-1 text-[13px] text-neutral-800 dark:text-neutral-200 truncate">
+                            {q.text}
+                          </div>
+                          <Button
+                            variant="outline"
+                            onClick={() => sendQueuedNow(q.id)}
+                            className="shrink-0 px-1.5 py-0.5">
+                            <span className="text-[11px] font-semibold">Send</span>
+                          </Button>
+                          <Button variant="link" onClick={() => removeQueued(q.id)} className="shrink-0 px-1.5 py-0.5">
+                            <span className="text-[15px] leading-[15px] text-neutral-400">×</span>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div></div>
-          </div>
-        )}
-        {/* Composer completion panel (slash commands / @ references) — floats
+              )}
+              {/* Composer completion panel (slash commands / @ references) — floats
             above the composer as a normal flex child (not an absolute overlay),
             so its rows stay tappable on Android and the input keeps focus while
             the user keeps typing. */}
-        {visibleCompletions.length> 0 && (
-          <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-            <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                {completionKind === 'slash' ? 'Commands' : 'References'}
-              </div>
-              <div className="text-[11px] text-neutral-400 dark:text-neutral-500">{visibleCompletions.length}</div>
-            </div>
-            <div className="overflow-y-auto max-h-[248px]"><div>
-              {visibleCompletions.slice(0, 40).map((item, i) => {
-                const label = item.display || item.text;
-                return (
-                  <Button
-                    variant="ghost"
-                    key={`${item.text}-${i}`}
-                    data-testid={`completion-option-${i}`}
-                    onClick={() => applyCompletion(item)}
-                    className="flex items-center gap-2 px-3 py-2"
->
-                    <span
-                      className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff] truncate"
->
-                      {label}
-                    </span>
-                    {item.meta ? (
-                      <span
-                        className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate"
->
-                        {item.meta}
-                      </span>
-                    ) : (
-                      <div className="flex-1" />
-                    )}
-                    {item.kind === 'skill' && (
-                      <span className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                        skill
-                      </span>
-                    )}
+              {visibleCompletions.length > 0 && (
+                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                  <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      {completionKind === 'slash' ? 'Commands' : 'References'}
+                    </div>
+                    <div className="text-[11px] text-neutral-400 dark:text-neutral-500">
+                      {visibleCompletions.length}
+                    </div>
+                  </div>
+                  <div className="overflow-y-auto max-h-[248px]">
+                    <div>
+                      {visibleCompletions.slice(0, 40).map((item, i) => {
+                        const label = item.display || item.text;
+                        return (
+                          <Button
+                            variant="ghost"
+                            key={`${item.text}-${i}`}
+                            data-testid={`completion-option-${i}`}
+                            onClick={() => applyCompletion(item)}
+                            className="flex items-center gap-2 px-3 py-2">
+                            <span className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff] truncate">
+                              {label}
+                            </span>
+                            {item.meta ? (
+                              <span className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate">
+                                {item.meta}
+                              </span>
+                            ) : (
+                              <div className="flex-1" />
+                            )}
+                            {item.kind === 'skill' && (
+                              <span className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                                skill
+                              </span>
+                            )}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {editingRowId != null && (
+                <div className="mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
+                  <div className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
+                    Editing — resend to rewind and rerun from here
+                  </div>
+                  <Button variant="link" onClick={cancelEdit} className="shrink-0 px-1.5 py-0.5">
+                    <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</span>
                   </Button>
-                );
-              })}
-            </div></div>
-          </div>
-        )}
-        {editingRowId != null && (
-          <div className="mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
-            <div className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
-              Editing — resend to rewind and rerun from here
+                </div>
+              )}
+              <Composer
+                input={input}
+                setInput={setInput}
+                send={onSend}
+                stop={stop}
+                onRedirect={onRedirect}
+                onQueue={onQueue}
+                onPasteLarge={pasteLarge}
+                generating={generating}
+                model={model}
+                modelProvider={modelProvider}
+                onOpenModelPicker={openModelPicker}
+                effort={effort}
+                effortWire={effortWire}
+                showEffort={showEffort}
+                onOpenEffortPicker={openEffortPicker}
+                onOpenAttachPicker={openAttachPicker}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                dark={dark}
+              />
             </div>
-            <Button variant="link" onClick={cancelEdit} className="shrink-0 px-1.5 py-0.5">
-              <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</span>
-            </Button>
           </div>
-        )}
-        <Composer
-          input={input}
-          setInput={setInput}
-          send={onSend}
-          stop={stop}
-          onRedirect={onRedirect}
-          onQueue={onQueue}
-          onPasteLarge={pasteLarge}
-          generating={generating}
-          model={model}
-          modelProvider={modelProvider}
-          onOpenModelPicker={openModelPicker}
-          effort={effort}
-          effortWire={effortWire}
-          showEffort={showEffort}
-          onOpenEffortPicker={openEffortPicker}
-          onOpenAttachPicker={openAttachPicker}
-          attachments={attachments}
-          setAttachments={setAttachments}
-          dark={dark}
-        />
         </div>
-        </div>
-      </div>
-      {/* Jump to the newest message — shown only when the transcript
+        {/* Jump to the newest message — shown only when the transcript
           overflows and the user has scrolled up. */}
-      {canScroll && !atBottom && (
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="scroll-to-bottom"
-          onClick={() => {
-            stickEnd.current = true;
-            // Far away: jump instantly (smooth-scrolling ~10k px is the sludge);
-            // nearby: keep the short smooth glide.
-            const dist = contentH.current - (scrollY.current + layoutH.current);
-            scrollEnd(dist < 3000);
-          }}
-          className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
-          // Floats just above the footer, whose measured height already
-          // includes the keyboard lift.
-          style={{ bottom: dockH + 12, boxShadow: '0 2px 6px rgb(0 0 0 / 0.18)' }}
->
-          <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
-        </Button>
-      )}
-      <AskSheet
-        open={!!ask}
-        ask={ask}
-        onValue={answerValue}
-        onApproval={answerApproval}
-        onAskResult={answerAsk}
-        onOpenChange={(o) => !o && onAskSheetDismiss()}
-        gw={getGw()}
-        contextLabel={sessionTitle || undefined}
-      />
-      <InfoSheet
-        open={infoOpen}
-        onOpenChange={(o) => !o && setInfoOpen(false)}
-        title={sessionTitle}
-        model={model}
-        provider={modelProvider}
-        info={sessionInfo}
-        usage={usageInfo}
-        usageLoading={usageLoading}
-        tokenEstimate={tokenEstimate}
-        onRename={(t) => void renameSession(t)}
-      />
+        {canScroll && !atBottom && (
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="scroll-to-bottom"
+            onClick={() => {
+              stickEnd.current = true;
+              // Far away: jump instantly (smooth-scrolling ~10k px is the sludge);
+              // nearby: keep the short smooth glide.
+              const dist = contentH.current - (scrollY.current + layoutH.current);
+              scrollEnd(dist < 3000);
+            }}
+            className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
+            // Floats just above the footer, whose measured height already
+            // includes the keyboard lift.
+            style={{ bottom: dockH + 12, boxShadow: '0 2px 6px rgb(0 0 0 / 0.18)' }}>
+            <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
+          </Button>
+        )}
+        <AskSheet
+          open={!!ask}
+          ask={ask}
+          onValue={answerValue}
+          onApproval={answerApproval}
+          onAskResult={answerAsk}
+          onOpenChange={(o) => !o && onAskSheetDismiss()}
+          gw={getGw()}
+          contextLabel={sessionTitle || undefined}
+        />
+        <InfoSheet
+          open={infoOpen}
+          onOpenChange={(o) => !o && setInfoOpen(false)}
+          title={sessionTitle}
+          model={model}
+          provider={modelProvider}
+          info={sessionInfo}
+          usage={usageInfo}
+          usageLoading={usageLoading}
+          tokenEstimate={tokenEstimate}
+          onRename={(t) => void renameSession(t)}
+        />
 
-      {/* Screen-level anchored popovers: "+" attach, model picker, thinking
+        {/* Screen-level anchored popovers: "+" attach, model picker, thinking
           effort. Rendered here (not in the composer) so they float above the
           list and still receive taps — Android drops touches outside a
           parent's bounds. */}
-      {popover && (
-        <>
-          <button type="button"
-            data-testid="popover-backdrop"
-            style={{ position: 'absolute', inset: 0, zIndex: 60 }}
-            onClick={closePopover}
-          />
-          <div
-            data-testid="anchor-popover"
-            className="absolute z-[70] rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
-            style={{
-              width: popW,
-              left: popLeft,
-              bottom: popBottom,
-              maxHeight: popMaxH,
-            }}
->
-            {popover.kind === 'effort' && showEffort && (
-              <>
-                <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Thinking effort
-                </div>
-                {effortOptions.map((e) => {
-                  const on = e === effort.trim().toLowerCase();
-                  return (
-                    <Button
-                      variant="ghost"
-                      key={e}
-                      data-testid={`effort-option-${e}`}
-                      onClick={() => {
-                        void applyEffort(e);
-                        closePopover();
-                      }}
-                      className={`flex items-center gap-2 px-2.5 py-2 ${
-                        on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                      }`}
->
-                      <span
-                        className={`min-w-0 flex-1 text-[14px] ${
-                          on
-                            ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                            : 'text-neutral-900 dark:text-neutral-100'
-                        }`}
->
-                        {reasoningLabel(e)}
-                      </span>
-                      {on && <Check size={15} color="#1a73e8" />}
-                    </Button>
-                  );
-                })}
-                {/* Fast mode — separate from reasoning (`config.set fast`). */}
-                <div className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
-                <Button
-                  variant="ghost"
-                  data-testid="fast-toggle"
-                  onClick={() => {
-                    void applyFast(!(sessionInfo?.fast === true));
-                    closePopover();
-                  }}
-                  className="flex items-center gap-2 px-2.5 py-2"
->
-                  <span
-                    className={`min-w-0 flex-1 text-[14px] ${
-                      sessionInfo?.fast === true
-                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                        : 'text-neutral-900 dark:text-neutral-100'
-                    }`}
->
-                    Fast mode
-                  </span>
-                  {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
-                </Button>
-                {/* Reasoning display — the switch behind live tool + reasoning
+        {popover && (
+          <>
+            <button
+              type="button"
+              data-testid="popover-backdrop"
+              style={{ position: 'absolute', inset: 0, zIndex: 60 }}
+              onClick={closePopover}
+            />
+            <div
+              data-testid="anchor-popover"
+              className="absolute z-[70] rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
+              style={{
+                width: popW,
+                left: popLeft,
+                bottom: popBottom,
+                maxHeight: popMaxH,
+              }}>
+              {popover.kind === 'effort' && showEffort && (
+                <>
+                  <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                    Thinking effort
+                  </div>
+                  {effortOptions.map((e) => {
+                    const on = e === effort.trim().toLowerCase();
+                    return (
+                      <Button
+                        variant="ghost"
+                        key={e}
+                        data-testid={`effort-option-${e}`}
+                        onClick={() => {
+                          void applyEffort(e);
+                          closePopover();
+                        }}
+                        className={`flex items-center gap-2 px-2.5 py-2 ${
+                          on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
+                        }`}>
+                        <span
+                          className={`min-w-0 flex-1 text-[14px] ${
+                            on
+                              ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                              : 'text-neutral-900 dark:text-neutral-100'
+                          }`}>
+                          {reasoningLabel(e)}
+                        </span>
+                        {on && <Check size={15} color="#1a73e8" />}
+                      </Button>
+                    );
+                  })}
+                  {/* Fast mode — separate from reasoning (`config.set fast`). */}
+                  <div className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+                  <Button
+                    variant="ghost"
+                    data-testid="fast-toggle"
+                    onClick={() => {
+                      void applyFast(!(sessionInfo?.fast === true));
+                      closePopover();
+                    }}
+                    className="flex items-center gap-2 px-2.5 py-2">
+                    <span
+                      className={`min-w-0 flex-1 text-[14px] ${
+                        sessionInfo?.fast === true
+                          ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                          : 'text-neutral-900 dark:text-neutral-100'
+                      }`}>
+                      Fast mode
+                    </span>
+                    {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
+                  </Button>
+                  {/* Reasoning display — the switch behind live tool + reasoning
                     streaming (`config.set reasoning show|hide`). `hide` persists
                     tool calls to history without live events; `show` streams
                     everything. Shared display setting (desktop included).
                     Never disabled: with an unknown value a tap turns live
                     streaming ON (the useful direction — this is the switch that
                     fixes "bubbles only appear after the turn ends"). */}
-                <Button
-                  variant="ghost"
-                  data-testid="show-reasoning-toggle"
-                  onClick={() => void applyShowReasoning(showReasoning !== true)}
-                  className="flex items-center gap-2 px-2.5 py-2"
->
-                  <span
-                    className={`min-w-0 flex-1 text-[14px] ${
-                      showReasoning === true
-                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                        : 'text-neutral-900 dark:text-neutral-100'
-                    }`}
->
-                    Show reasoning
-                  </span>
-                  {showReasoning === true && <Check size={15} color="#1a73e8" />}
-                </Button>
-                <div className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
-                  {showReasoning === null
-                    ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
-                    : 'Streams tool calls + reasoning live (shared display setting).'}
-                </div>
-              </>
-            )}
-
-            {popover.kind === 'attach' && (
-              <>
-                <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Attach
-                </div>
-                <Button
-                  variant="ghost"
-                  data-testid="attach-photo"
-                  onClick={() => void pickImage()}
-                  className="flex items-center gap-2.5 px-2.5 py-2"
->
-                  <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
-                  <span className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  data-testid="attach-file"
-                  onClick={() => void pickFile()}
-                  className="flex items-center gap-2.5 px-2.5 py-2"
->
-                  <FileText size={17} color={dark ? '#ccc' : '#444'} />
-                  <span className="text-[14px] text-neutral-900 dark:text-neutral-100">File</span>
-                </Button>
-              </>
-            )}
-
-            {popover.kind === 'model' && (
-              <>
-                <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Switch model (this chat)
-                </div>
-                <div className="px-1.5 pb-1.5">
-                  <Input
-                    className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                    value={modelQuery}
-                    onChange={(e) => setModelQuery(e.target.value)}
-                    placeholder="Search models…"
-                    autoCapitalize="none"
-                  />
-                </div>
-                {providersLoading && (
-                  <div className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</div>
-                )}
-                {!!providersError && (
-                  <div
-                    role="alert"
-                    className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]"
->
-                    {providersError}
+                  <Button
+                    variant="ghost"
+                    data-testid="show-reasoning-toggle"
+                    onClick={() => void applyShowReasoning(showReasoning !== true)}
+                    className="flex items-center gap-2 px-2.5 py-2">
+                    <span
+                      className={`min-w-0 flex-1 text-[14px] ${
+                        showReasoning === true
+                          ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                          : 'text-neutral-900 dark:text-neutral-100'
+                      }`}>
+                      Show reasoning
+                    </span>
+                    {showReasoning === true && <Check size={15} color="#1a73e8" />}
+                  </Button>
+                  <div className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
+                    {showReasoning === null
+                      ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
+                      : 'Streams tool calls + reasoning live (shared display setting).'}
                   </div>
-                )}
-                <div className="overflow-y-auto min-h-0 flex-1"><div>
-                  {modelVisibleProviders.map((p) => {
-                    const count = p.models?.length ?? p.totalModels;
-                    const open = mq ? true : (modelExpanded[p.slug] ?? false);
-                    return (
-                      <div key={p.slug || p.name}>
-                        <Button
-                          variant="ghost"
-                          onClick={() =>
-                            setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))
-                          }
-                          className="flex items-center gap-2 px-2.5 py-2"
->
-                          <span
-                            className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100 truncate"
->
-                            {p.name}
-                          </span>
-                          <span className="text-[12px] text-neutral-500 dark:text-neutral-400">
-                            {count} model{count === 1 ? '' : 's'}
-                          </span>
-                          {open ? (
-                            <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
-                          ) : (
-                            <ChevronRight size={15} color={dark ? '#a3a3a3' : '#666'} />
-                          )}
-                        </Button>
-                        {open &&
-                          (p.models ?? []).map((mm) => {
-                            const on = mm === model && p.slug === modelProvider;
-                            return (
-                              <div
-                                key={mm}
-                                className={`flex items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
-                                  on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                                }`}
->                                <Button
-                                  variant="ghost"
+                </>
+              )}
 
-                                  aria-pressed={on}
-                                  aria-label={mm}
-                                  onClick={() => {
-                                    void pickModel(p.slug, mm);
-                                    closePopover();
-                                  }}
-                                  // The button base centres its content, which
-                                  // reads as a floating label in a full-width row.
-                                  // Left-align here and let the label take the
-                                  // slack so a long model id ellipsizes against
-                                  // the Global button instead of pushing it out.
-                                  className="h-auto sm:h-auto min-w-0 flex-1 justify-start"
->
-                                  <span
-                                    className={`min-w-0 flex-1 text-left text-[14px] ${
-                                      on
-                                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                                        : 'text-neutral-950 dark:text-neutral-100'
-                                    } truncate`}
->
-                                    {on ? '● ' : '○ '}
-                                    {mm}
-                                  </span>
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  aria-label={`Set ${mm} as the global default`}
-                                  onClick={() => {
-                                    void setGlobalModel(p.slug, mm);
-                                    closePopover();
-                                  }}
-                                  className="h-auto sm:h-auto shrink-0 px-2 py-1"
->
-                                  <span className="text-[13px]">Global</span>
-                                </Button>
-                              </div>
-                            );
-                          })}
-                        {open && !p.models && (
-                          <div className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
-                            list unavailable — pull to refresh on server
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {modelVisibleProviders.length === 0 && !providersLoading && (
-                    <div className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</div>
+              {popover.kind === 'attach' && (
+                <>
+                  <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                    Attach
+                  </div>
+                  <Button
+                    variant="ghost"
+                    data-testid="attach-photo"
+                    onClick={() => void pickImage()}
+                    className="flex items-center gap-2.5 px-2.5 py-2">
+                    <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
+                    <span className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    data-testid="attach-file"
+                    onClick={() => void pickFile()}
+                    className="flex items-center gap-2.5 px-2.5 py-2">
+                    <FileText size={17} color={dark ? '#ccc' : '#444'} />
+                    <span className="text-[14px] text-neutral-900 dark:text-neutral-100">File</span>
+                  </Button>
+                </>
+              )}
+
+              {popover.kind === 'model' && (
+                <>
+                  <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                    Switch model (this chat)
+                  </div>
+                  <div className="px-1.5 pb-1.5">
+                    <Input
+                      className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                      value={modelQuery}
+                      onChange={(e) => setModelQuery(e.target.value)}
+                      placeholder="Search models…"
+                      autoCapitalize="none"
+                    />
+                  </div>
+                  {providersLoading && (
+                    <div className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</div>
                   )}
-                </div></div>
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </div>
+                  {!!providersError && (
+                    <div role="alert" className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]">
+                      {providersError}
+                    </div>
+                  )}
+                  <div className="overflow-y-auto min-h-0 flex-1">
+                    <div>
+                      {modelVisibleProviders.map((p) => {
+                        const count = p.models?.length ?? p.totalModels;
+                        const open = mq ? true : (modelExpanded[p.slug] ?? false);
+                        return (
+                          <div key={p.slug || p.name}>
+                            <Button
+                              variant="ghost"
+                              onClick={() => setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))}
+                              className="flex items-center gap-2 px-2.5 py-2">
+                              <span className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100 truncate">
+                                {p.name}
+                              </span>
+                              <span className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                                {count} model{count === 1 ? '' : 's'}
+                              </span>
+                              {open ? (
+                                <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
+                              ) : (
+                                <ChevronRight size={15} color={dark ? '#a3a3a3' : '#666'} />
+                              )}
+                            </Button>
+                            {open &&
+                              (p.models ?? []).map((mm) => {
+                                const on = mm === model && p.slug === modelProvider;
+                                return (
+                                  <div
+                                    key={mm}
+                                    className={`flex items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
+                                      on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
+                                    }`}>
+                                    {' '}
+                                    <Button
+                                      variant="ghost"
+
+                                      aria-pressed={on}
+                                      aria-label={mm}
+                                      onClick={() => {
+                                        void pickModel(p.slug, mm);
+                                        closePopover();
+                                      }}
+                                      // The button base centres its content, which
+                                      // reads as a floating label in a full-width row.
+                                      // Left-align here and let the label take the
+                                      // slack so a long model id ellipsizes against
+                                      // the Global button instead of pushing it out.
+                                      className="h-auto sm:h-auto min-w-0 flex-1 justify-start">
+                                      <span
+                                        className={`min-w-0 flex-1 text-left text-[14px] ${
+                                          on
+                                            ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                                            : 'text-neutral-950 dark:text-neutral-100'
+                                        } truncate`}>
+                                        {on ? '● ' : '○ '}
+                                        {mm}
+                                      </span>
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      aria-label={`Set ${mm} as the global default`}
+                                      onClick={() => {
+                                        void setGlobalModel(p.slug, mm);
+                                        closePopover();
+                                      }}
+                                      className="h-auto sm:h-auto shrink-0 px-2 py-1">
+                                      <span className="text-[13px]">Global</span>
+                                    </Button>
+                                  </div>
+                                );
+                              })}
+                            {open && !p.models && (
+                              <div className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                                list unavailable — pull to refresh on server
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {modelVisibleProviders.length === 0 && !providersLoading && (
+                        <div className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
       {/* Icon tooltip — so it never steals taps. */}
       {!!tip &&
         (() => {
@@ -1779,10 +1756,8 @@ export function ChatScreen() {
           const left = Math.max(8, Math.min(tip.anchor.x + tip.anchor.w / 2 - 48, winW - 104));
           return (
             <div
-
               className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-white/90"
-              style={{ bottom: Math.max(8, rootH - relY + 8), left }}
->
+              style={{ bottom: Math.max(8, rootH - relY + 8), left }}>
               <div className="text-[12px] text-white dark:text-black">{tip.label}</div>
             </div>
           );

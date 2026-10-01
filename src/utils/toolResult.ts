@@ -11,8 +11,7 @@
  *  (terminal `command`, file `path`, search `query`, …), then a compact JSON
  *  fallback so an arbitrary tool still shows something. */
 export function formatToolCommand(args: unknown): string {
-  const a =
-    args && typeof args === 'object' && !Array.isArray(args) ? (args as Record<string, unknown>) : null;
+  const a = args && typeof args === 'object' && !Array.isArray(args) ? (args as Record<string, unknown>) : null;
   if (!a) return typeof args === 'string' ? args.trim() : '';
   for (const k of [
     'command',

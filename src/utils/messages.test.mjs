@@ -20,10 +20,7 @@ test('strips the failed-turn boundary copy the gateway appends', () => {
   // Trailing whitespace/newlines from the append must not defeat the match.
   assert.equal(stripFailedTurnNotice(`${FAILED_TURN_NOTICE}\n\n`), '');
   // Real reply text before the boundary survives — only the notice is removed.
-  assert.equal(
-    stripFailedTurnNotice(`Here is what I found.\n\n${FAILED_TURN_NOTICE}`),
-    'Here is what I found.',
-  );
+  assert.equal(stripFailedTurnNotice(`Here is what I found.\n\n${FAILED_TURN_NOTICE}`), 'Here is what I found.');
   // Both notices in one payload: the append only ever adds one, but stripping
   // must not loop or leave the first behind.
   assert.equal(stripFailedTurnNotice(`${PARTIAL_FAILED_TURN_NOTICE}\n\n${FAILED_TURN_NOTICE}`), '');
@@ -98,11 +95,7 @@ test('sliceOlderThan aborts when the anchor is gone (rewritten history)', () => 
 });
 
 test('sliceOlderThan skips non-durable bubbles to find the anchor', () => {
-  const fetched = [
-    bubble('user', 'one', 1),
-    { id: 't1', role: 'thinking', text: 'hmm' },
-    bubble('user', 'two', 2),
-  ];
+  const fetched = [bubble('user', 'one', 1), { id: 't1', role: 'thinking', text: 'hmm' }, bubble('user', 'two', 2)];
   const current = [{ id: 't9', role: 'thinking', text: 'hmm' }, bubble('user', 'two', 2)];
   const head = sliceOlderThan(fetched, current);
   assert.equal(head.length, 2);
@@ -114,13 +107,19 @@ test('missingHistoryTools returns only trailing history tool rows without a live
   const user = (id) => ({ id, role: 'user', text: 'hi' });
   const ai = (id) => ({ id, role: 'assistant', text: 'done' });
   // Steady state: every history tool has a live bubble → nothing to insert.
-  assert.deepEqual(missingHistoryTools([user('u'), tool('h1', 'terminal'), ai('a')], [user('u'), tool('l1', 'terminal'), ai('a')]), []);
+  assert.deepEqual(
+    missingHistoryTools([user('u'), tool('h1', 'terminal'), ai('a')], [user('u'), tool('l1', 'terminal'), ai('a')]),
+    [],
+  );
   // A new turn appended a second terminal call server-side; live lacks it.
   const missing = missingHistoryTools(
     [user('u'), tool('h1', 'terminal'), ai('a'), user('u2'), tool('h2', 'terminal'), ai('a2')],
     [user('u'), tool('l1', 'terminal'), ai('a'), user('u2'), ai('a2')],
   );
-  assert.deepEqual(missing.map((m) => m.id), ['h2']);
+  assert.deepEqual(
+    missing.map((m) => m.id),
+    ['h2'],
+  );
   // Leading unpaired history rows (trimmed window) are old — never re-inserted.
   assert.deepEqual(missingHistoryTools([tool('h0', 'old'), tool('h1', 'terminal')], [tool('l1', 'terminal')]), []);
   // No pairs at all (nothing live to anchor against) → insert nothing…
@@ -131,7 +130,14 @@ test('missingHistoryTools returns only trailing history tool rows without a live
     missingHistoryTools([tool('h1', 'terminal')], [], true).map((m) => m.id),
     ['h1'],
   );
-  assert.deepEqual(missingHistoryTools(Array.from({ length: 25 }, (_, i) => tool(`h${i}`, 't')), [], true), []);
+  assert.deepEqual(
+    missingHistoryTools(
+      Array.from({ length: 25 }, (_, i) => tool(`h${i}`, 't')),
+      [],
+      true,
+    ),
+    [],
+  );
   // A surplus beyond the cap is structural mismatch, not a turn → skip.
   const many = Array.from({ length: 25 }, (_, i) => tool(`h${i}`, 'terminal'));
   assert.deepEqual(missingHistoryTools([...many, tool('base', 'other')], [tool('l0', 'other')]), []);

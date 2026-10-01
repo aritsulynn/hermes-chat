@@ -20,7 +20,7 @@ import {
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { asRecord } from '../../utils/ops';
-import { placeholderColor, screenStyle } from '../../theme';
+import { screenStyle } from '../../theme';
 import { ScreenHeader } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
@@ -34,7 +34,6 @@ export function LogsScreen() {
   // Resolved once per scheme: auto-refresh re-renders this screen every 3.5s
   // and each value feeds the header/filter chrome plus the list surface.
   const screen = useMemo(() => screenStyle(dark), [dark]);
-  const placeholder = useMemo(() => placeholderColor(dark, 'log'), [dark]);
   const listRef = useRef<HTMLDivElement>(null);
 
   const [file, setFile] = useState<LogFile>('agent');
@@ -79,9 +78,7 @@ export function LogsScreen() {
         );
         if (getAuthScope() !== scope) return;
         const raw = asRecord(res).lines;
-        const rawLines: string[] = Array.isArray(raw)
-          ? raw.filter((l): l is string => typeof l === 'string')
-          : [];
+        const rawLines: string[] = Array.isArray(raw) ? raw.filter((l): l is string => typeof l === 'string') : [];
         setLines(rawLines);
       } catch (e) {
         if (getAuthScope() === scope) setError(errMsg(e));
@@ -152,7 +149,7 @@ export function LogsScreen() {
   }, [rows]);
 
   const scrollToBottom = useCallback(() => {
-    if (rows.length> 0) {
+    if (rows.length > 0) {
       try {
         listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
       } catch (e) {
@@ -162,7 +159,7 @@ export function LogsScreen() {
   }, [rows.length]);
 
   const scrollToTop = useCallback(() => {
-    if (rows.length> 0) {
+    if (rows.length > 0) {
       try {
         listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) {
@@ -171,8 +168,7 @@ export function LogsScreen() {
     }
   }, [rows.length]);
   // Padding only; the scroller below supplies the flex column.
-  const logListContentClass =
-    'p-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+48px)]';
+  const logListContentClass = 'p-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+48px)]';
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -180,8 +176,6 @@ export function LogsScreen() {
     <div style={screen}>
       {/* No 'bottom' edge: the list content already pads insets.bottom + 48. */}
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        
-
         {/* Header */}
         <ScreenHeader
           title="Logs"
@@ -199,8 +193,7 @@ export function LogsScreen() {
                   autoRefresh
                     ? 'border-emerald-500/40 bg-emerald-500/10'
                     : 'border-neutral-200 bg-neutral-100/70 dark:border-neutral-800 dark:bg-neutral-900'
-                }`}
->
+                }`}>
                 <div
                   className={`h-2 w-2 rounded-full ${
                     autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
@@ -209,8 +202,7 @@ export function LogsScreen() {
                 <span
                   className={`text-xs font-semibold ${
                     autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
-                  }`}
->
+                  }`}>
                   {autoRefresh ? 'Live' : 'Paused'}
                 </span>
               </Button>
@@ -223,20 +215,14 @@ export function LogsScreen() {
                   copied
                     ? 'border-emerald-500/40 bg-emerald-500/10'
                     : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
-                }`}
->
-                {copied ? (
-                  <Check size={14} color="#10b981" />
-                ) : (
-                  <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />
-                )}
+                }`}>
+                {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />}
                 <span
                   className={`text-xs font-medium ${
                     copied
                       ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
                       : 'text-neutral-700 dark:text-neutral-300'
-                  }`}
->
+                  }`}>
                   {copied ? 'Copied' : 'Copy'}
                 </span>
               </Button>
@@ -248,8 +234,7 @@ export function LogsScreen() {
                 disabled={loading || refreshing}
                 onClick={() => void fetchLogs()}
                 aria-label="Refresh logs"
-                className="h-9 w-9 rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
->
+                className="h-9 w-9 rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
                 <RefreshCw
                   size={15}
                   color={dark ? '#9ca3af' : '#6b7280'}
@@ -264,35 +249,35 @@ export function LogsScreen() {
         <div className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
           {/* Top line: Log File Tabs & Filter Toggle */}
           <div className="flex items-center justify-between" style={{ gap: 10 }}>
-            <div className="overflow-x-auto flex-1"><div className="gap-2 pr-1 items-center">
-              {LOG_FILES.map((f) => {
-                const isSelected = file === f;
-                return (
-                  <Button
-                    key={f}
-                    variant="ghost"
+            <div className="overflow-x-auto flex-1">
+              <div className="gap-2 pr-1 items-center">
+                {LOG_FILES.map((f) => {
+                  const isSelected = file === f;
+                  return (
+                    <Button
+                      key={f}
+                      variant="ghost"
 
-                    aria-pressed={isSelected}
-                    aria-label={`${f} log`}
-                    onClick={() => setFile(f)}
-                    className={`h-auto sm:h-auto rounded-xl border px-3.5 py-2 ${
-                      isSelected
-                        ? 'border-[#1a73e8] bg-[#1a73e8]'
-                        : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
-                    }`}
->
-                    <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
-                    <span
-                      className={`text-xs font-semibold ${
-                        isSelected ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
-                      }`}
->
-                      {f}
-                    </span>
-                  </Button>
-                );
-              })}
-            </div></div>
+                      aria-pressed={isSelected}
+                      aria-label={`${f} log`}
+                      onClick={() => setFile(f)}
+                      className={`h-auto sm:h-auto rounded-xl border px-3.5 py-2 ${
+                        isSelected
+                          ? 'border-[#1a73e8] bg-[#1a73e8]'
+                          : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
+                      }`}>
+                      <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
+                      <span
+                        className={`text-xs font-semibold ${
+                          isSelected ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
+                        }`}>
+                        {f}
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
 
             <Button
               variant="ghost"
@@ -303,14 +288,12 @@ export function LogsScreen() {
                 showFilters
                   ? 'border-[#1a73e8]/40 bg-[#1a73e8]/10'
                   : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
-              }`}
->
+              }`}>
               <SlidersHorizontal size={13} color={showFilters ? '#1a73e8' : dark ? '#9ca3af' : '#6b7280'} />
               <span
                 className={`text-xs font-medium ${
                   showFilters ? 'font-semibold text-[#1a73e8]' : 'text-neutral-600 dark:text-neutral-400'
-                }`}
->
+                }`}>
                 Filter
               </span>
             </Button>
@@ -327,7 +310,12 @@ export function LogsScreen() {
                   placeholder="Filter logs (substring)..."
                   autoCapitalize="none"
                   className="flex-1 text-xs text-neutral-950 dark:text-neutral-100 py-0.5"
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void fetchLogs() } }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void fetchLogs();
+                    }
+                  }}
                 />
                 {Boolean(search) && (
                   <Button
@@ -337,8 +325,7 @@ export function LogsScreen() {
                       setSearch('');
                     }}
                     aria-label="Clear filter"
-                    className="h-6 w-6 rounded-md"
->
+                    className="h-6 w-6 rounded-md">
                     <X size={15} color={dark ? '#888' : '#999'} />
                   </Button>
                 )}
@@ -351,36 +338,36 @@ export function LogsScreen() {
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
                     Severity Level
                   </div>
-                  <div className="overflow-x-auto"><div className="gap-2 pr-1">
-                    {LOG_LEVELS.map((lvl) => {
-                      const isSelected = level === lvl;
-                      const color = LEVEL_COLORS[lvl];
+                  <div className="overflow-x-auto">
+                    <div className="gap-2 pr-1">
+                      {LOG_LEVELS.map((lvl) => {
+                        const isSelected = level === lvl;
+                        const color = LEVEL_COLORS[lvl];
 
-                      return (
-                        <Button
-                          key={lvl}
-                          variant="ghost"
+                        return (
+                          <Button
+                            key={lvl}
+                            variant="ghost"
 
-                          aria-pressed={isSelected}
-                          aria-label={`${lvl} level`}
-                          onClick={() => setLevel(lvl)}
-                          className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
-                            isSelected
-                              ? `${color.activeBg} ${color.activeBorder}`
-                              : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
-                          }`}
->
-                          <span
-                            className={`text-xs font-semibold ${
-                              isSelected ? color.activeText : 'text-neutral-600 dark:text-neutral-400'
-                            }`}
->
-                            {lvl}
-                          </span>
-                        </Button>
-                      );
-                    })}
-                  </div></div>
+                            aria-pressed={isSelected}
+                            aria-label={`${lvl} level`}
+                            onClick={() => setLevel(lvl)}
+                            className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
+                              isSelected
+                                ? `${color.activeBg} ${color.activeBorder}`
+                                : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
+                            }`}>
+                            <span
+                              className={`text-xs font-semibold ${
+                                isSelected ? color.activeText : 'text-neutral-600 dark:text-neutral-400'
+                              }`}>
+                              {lvl}
+                            </span>
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Line Count Chips */}
@@ -403,13 +390,11 @@ export function LogsScreen() {
                             isSelected
                               ? 'border-neutral-900 bg-neutral-900 dark:border-neutral-100 dark:bg-neutral-100'
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
-                          }`}
->
+                          }`}>
                           <span
                             className={`text-xs font-semibold ${
                               isSelected ? 'text-white dark:text-neutral-950' : 'text-neutral-600 dark:text-neutral-400'
-                            }`}
->
+                            }`}>
                             {cnt}
                           </span>
                         </Button>
@@ -428,7 +413,7 @@ export function LogsScreen() {
               Showing <span className="font-semibold text-neutral-700 dark:text-neutral-200">{stats.total}</span> lines
             </div>
             <div className="flex items-center" style={{ gap: 8 }}>
-              {stats.errorCount> 0 && (
+              {stats.errorCount > 0 && (
                 <Button
                   variant="ghost"
                   onClick={() => setLevel((prev) => (prev === 'ERROR' ? 'ALL' : 'ERROR'))}
@@ -439,15 +424,14 @@ export function LogsScreen() {
                     level === 'ERROR'
                       ? 'border-rose-500 bg-rose-500/20'
                       : 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40'
-                  }`}
->
+                  }`}>
                   <AlertTriangle size={12} color="#e11d48" />
                   <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">
-                    {stats.errorCount} Error{stats.errorCount> 1 ? 's' : ''}
+                    {stats.errorCount} Error{stats.errorCount > 1 ? 's' : ''}
                   </span>
                 </Button>
               )}
-              {stats.warnCount> 0 && (
+              {stats.warnCount > 0 && (
                 <Button
                   variant="ghost"
                   onClick={() => setLevel((prev) => (prev === 'WARNING' ? 'ALL' : 'WARNING'))}
@@ -458,10 +442,9 @@ export function LogsScreen() {
                     level === 'WARNING'
                       ? 'border-amber-500 bg-amber-500/20'
                       : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40'
-                  }`}
->
+                  }`}>
                   <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                    {stats.warnCount} Warn{stats.warnCount> 1 ? 's' : ''}
+                    {stats.warnCount} Warn{stats.warnCount > 1 ? 's' : ''}
                   </span>
                 </Button>
               )}
@@ -532,8 +515,7 @@ export function LogsScreen() {
                 size="icon"
                 onClick={scrollToTop}
                 aria-label="Scroll to top"
-                className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800"
->
+                className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800">
                 <ArrowUp size={18} color="#fff" />
               </Button>
               <Button
@@ -541,8 +523,7 @@ export function LogsScreen() {
                 size="icon"
                 onClick={scrollToBottom}
                 aria-label="Scroll to bottom"
-                className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600"
->
+                className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600">
                 <ArrowDown size={18} color="#fff" />
               </Button>
             </div>

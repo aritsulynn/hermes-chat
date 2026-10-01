@@ -5,7 +5,6 @@
 // NOTE: the import below carries an explicit `.ts` extension. This module is
 // loaded directly by node's test runner (--experimental-strip-types), and node
 // ESM does not do extensionless resolution. Keep it that way here.
-import { DEFAULT_PROFILE } from './constants.ts';
 import { toolsetToggle, toolsets as toolsetsPath } from './api.ts';
 
 export interface ToolsetInfo {
@@ -50,10 +49,7 @@ function rowsOf(payload: unknown): ToolsetInfo[] {
     })) as ToolsetInfo[];
 }
 
-export async function getToolsets(
-  opsGet: (path: string) => Promise<unknown>,
-  profile: string,
-): Promise<ToolsetInfo[]> {
+export async function getToolsets(opsGet: (path: string) => Promise<unknown>, profile: string): Promise<ToolsetInfo[]> {
   return rowsOf(await opsGet(toolsetsPath(profile)));
 }
 
@@ -64,7 +60,5 @@ export async function setToolsetEnabled(
   profile: string,
 ): Promise<ToolsetToggleResult> {
   const result = await opsMut(toolsetToggle(name, profile), 'PUT', { enabled });
-  return result && typeof result === 'object' && !Array.isArray(result)
-    ? (result as ToolsetToggleResult)
-    : {};
+  return result && typeof result === 'object' && !Array.isArray(result) ? (result as ToolsetToggleResult) : {};
 }

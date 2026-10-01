@@ -76,8 +76,7 @@ export const modelOptions = (
 
 /** POST /api/model/set — the global ("main") default. Session-scoped switching
  *  goes through the WS `slash.exec` /model path instead. */
-export const modelSet = (profile?: string): string =>
-  withProfile('/api/model/set', String(profile ?? '').trim());
+export const modelSet = (profile?: string): string => withProfile('/api/model/set', String(profile ?? '').trim());
 
 // ── Sessions ────────────────────────────────────────────────────────────────
 
@@ -95,15 +94,8 @@ export const sessionMessages = (
 
 /** Transcript for one cron run. Run ids are opaque, so the whole id is encoded
  *  (unlike stored session ids above, which keep their slashes). */
-export const cronRunMessages = (
-  runId: string,
-  profile?: string | null,
-  limit = 100,
-): string =>
-  withProfile(
-    `/api/sessions/${encodeURIComponent(runId)}/messages${query({ order: 'oldest', limit })}`,
-    profile,
-  );
+export const cronRunMessages = (runId: string, profile?: string | null, limit = 100): string =>
+  withProfile(`/api/sessions/${encodeURIComponent(runId)}/messages${query({ order: 'oldest', limit })}`, profile);
 
 // ── Cron ────────────────────────────────────────────────────────────────────
 
@@ -152,22 +144,15 @@ export const filesUpload = (): string => '/api/files/upload';
 /** Preferred inline-media route. Returns {data_url}. */
 export const media = (path: string): string => `/api/media?path=${encodeURIComponent(path)}`;
 /** Fallback #1 — older gateways. Returns {dataUrl}. */
-export const mediaReadDataUrl = (path: string): string =>
-  `/api/fs/read-data-url?path=${encodeURIComponent(path)}`;
+export const mediaReadDataUrl = (path: string): string => `/api/fs/read-data-url?path=${encodeURIComponent(path)}`;
 /** Fallback #2. Returns {data_url}, like `media` but via the files router. */
-export const mediaViaFiles = (path: string): string =>
-  `/api/files/read?path=${encodeURIComponent(path)}`;
+export const mediaViaFiles = (path: string): string => `/api/files/read?path=${encodeURIComponent(path)}`;
 
 // ── Logs ────────────────────────────────────────────────────────────────────
 
 /** Caller decides whether `level` is sent at all — the logs screen omits it
  *  for its "ALL" sentinel while the ops screen always sends a real level. */
-export const logs = (params: {
-  file: string;
-  lines: number | string;
-  level?: string;
-  search?: string;
-}): string => {
+export const logs = (params: { file: string; lines: number | string; level?: string; search?: string }): string => {
   const search = new URLSearchParams({ file: params.file, lines: String(params.lines) });
   if (params.level) search.set('level', params.level);
   if (params.search) search.set('search', params.search);
@@ -185,8 +170,7 @@ export const portal = (): string => '/api/portal';
 // ── Skills ──────────────────────────────────────────────────────────────────
 
 export const skills = (): string => '/api/skills';
-export const skillContent = (name: string): string =>
-  `/api/skills/content?name=${encodeURIComponent(name)}`;
+export const skillContent = (name: string): string => `/api/skills/content?name=${encodeURIComponent(name)}`;
 export const skillToggle = (): string => '/api/skills/toggle';
 
 // ── Toolsets ────────────────────────────────────────────────────────────────
@@ -196,8 +180,7 @@ export const skillToggle = (): string => '/api/skills/toggle';
 function profileParam(profile?: string | null): string {
   return encodeURIComponent(String(profile ?? '').trim() || DEFAULT_PROFILE);
 }
-export const toolsets = (profile?: string | null): string =>
-  `/api/tools/toolsets?profile=${profileParam(profile)}`;
+export const toolsets = (profile?: string | null): string => `/api/tools/toolsets?profile=${profileParam(profile)}`;
 export const toolsetToggle = (name: string, profile?: string | null): string =>
   `/api/tools/toolsets/${encodeURIComponent(name)}?profile=${profileParam(profile)}`;
 

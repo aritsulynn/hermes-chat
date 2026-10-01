@@ -33,12 +33,12 @@ export function useAskRepliesSlice({
   activeProfileRef,
   runtimeOwners,
 }: StoreCtx): AskRepliesSlice {
-
   const respondToInbox = useCallback(
     (key: string, result: Record<string, unknown>) => {
       const entry = findAsk(askInboxRef.current, key);
       const g = gw.current;
-      if (!entry || !g || entry.owner.connectionId !== connectionScope(latest.current.host, latest.current.username)) return false;
+      if (!entry || !g || entry.owner.connectionId !== connectionScope(latest.current.host, latest.current.username))
+        return false;
       if (entry.owner.profile !== normalizeProfileName(activeProfileRef.current)) return false;
       if (entry.status !== 'pending' && entry.status !== 'answering') return false;
       if (!g.replyToAsk(entry.rpcId, result)) return false;
@@ -103,7 +103,9 @@ export function useAskRepliesSlice({
         setError('Could not open the owning session; the request remains in Ask Inbox.');
         return;
       }
-      const refreshed = findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId) ?? entry;
+      const refreshed =
+        findAskByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), entry.rpcId) ??
+        entry;
       setAsk(serverAskFromInbox(refreshed));
       navigate('/chat');
     } catch (e) {

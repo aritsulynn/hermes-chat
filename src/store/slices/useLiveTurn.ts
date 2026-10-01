@@ -26,12 +26,7 @@ export interface LiveTurnSlice {
   reanchorLiveTurn: (items: UiMessage[]) => UiMessage[];
 }
 
-export function useLiveTurnSlice({
-  latest,
-  sessionIdRef,
-  generatingRef,
-  runtimeOwners,
-}: StoreCtx): LiveTurnSlice {
+export function useLiveTurnSlice({ latest, sessionIdRef, generatingRef, runtimeOwners }: StoreCtx): LiveTurnSlice {
   const [streamingTexts, setStreamingTexts] = useState<Record<string, string>>({});
   const streamingRef = useRef<Record<string, string>>({});
   streamingRef.current = streamingTexts;

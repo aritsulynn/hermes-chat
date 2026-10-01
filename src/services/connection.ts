@@ -1,4 +1,4 @@
-import { connectionScope, normalizeConnectionBase } from './connection-scope';
+import { connectionScope } from './connection-scope';
 import { DEFAULT_PROFILE } from './constants';
 
 export { connectionScope, normalizeConnectionBase } from './connection-scope';
@@ -188,7 +188,7 @@ function ls(): Storage | null {
 async function get(key: string): Promise<string | null> {
   const cached = memCache.get(key);
   if (cached !== undefined) return cached;
-  let v: string | null = null;
+  let v: string | null;
   try {
     v = ls()?.getItem(key) ?? null;
   } catch {

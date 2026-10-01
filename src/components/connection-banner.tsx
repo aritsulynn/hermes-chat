@@ -44,10 +44,7 @@ export function ConnectionBanner() {
         ) : (
           <Spinner size={14} color={dark ? '#fcd34d' : '#b45309'} />
         )}
-        <div
-          className="flex-1 text-xs font-medium text-amber-900 dark:text-amber-100 line-clamp-2">
-          {message}
-        </div>
+        <div className="flex-1 text-xs font-medium text-amber-900 dark:text-amber-100 line-clamp-2">{message}</div>
         {dropped && (
           <Button
             variant="ghost"

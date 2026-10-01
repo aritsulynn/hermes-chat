@@ -3,7 +3,9 @@
 import { Activity, BellRing, Boxes, Clock, Folder, Kanban, ScrollText, Wrench } from 'lucide-react';
 
 // Module-level icon helper — used by the route table and the drawer content.
-export const drawerIcon = (C: any) => ({ color, size }: any) => <C size={size} color={color} />;
+export const drawerIcon =
+  (C: any) =>
+  ({ color, size }: any) => <C size={size} color={color} />;
 
 export const NAV_ITEMS = [
   { name: 'cron', label: 'Cron Jobs', icon: Clock },

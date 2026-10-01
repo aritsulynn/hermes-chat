@@ -47,9 +47,7 @@ function SheetChrome({
           style={{ background: screenBg(theme === 'dark') }}>
           {handle && (
             <div className="flex justify-center pt-2.5 pb-1" aria-hidden>
-              <div
-                className={cn('h-1 w-9 rounded-full', theme === 'dark' ? 'bg-[#525252]' : 'bg-[#d4d4d4]')}
-              />
+              <div className={cn('h-1 w-9 rounded-full', theme === 'dark' ? 'bg-[#525252]' : 'bg-[#d4d4d4]')} />
             </div>
           )}
           {/*
@@ -71,9 +69,7 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
   return (
     <div className="flex gap-2 py-1">
-      <div className="w-[88px] shrink-0 text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400">
-        {label}
-      </div>
+      <div className="w-[88px] shrink-0 text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400">{label}</div>
       <div className="min-w-0 flex-1 select-text text-sm leading-[18px] text-neutral-950 dark:text-neutral-100">
         {value}
       </div>
@@ -87,9 +83,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
       <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
         {label}
       </div>
-      <div className="text-[16px] font-bold text-neutral-950 dark:text-neutral-100 truncate">
-        {value}
-      </div>
+      <div className="text-[16px] font-bold text-neutral-950 dark:text-neutral-100 truncate">{value}</div>
     </div>
   );
 }
@@ -120,8 +114,7 @@ function InfoSheetContent({
   // Usage arrives in two shapes (nested under session.info or flat from
   // session.usage) — one reader covers both, same as the composer strip.
   const snap = mergeUsage(info?.usage, usage);
-  const ctxPct =
-    snap?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(snap.contextPercent))) : null;
+  const ctxPct = snap?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(snap.contextPercent))) : null;
   const tone = ctxPct == null ? 'ok' : contextTone(ctxPct);
   // Stat grid, chunked into pairs so every row fills evenly.
   const stats: [string, string][] = [];
@@ -183,9 +176,7 @@ function InfoSheetContent({
           {ctxPct != null && (
             <div className="flex flex-col gap-1.5 rounded-2xl bg-[#f4f4f6] p-3.5 dark:bg-[#212121]">
               <div className="flex items-center justify-between">
-                <div className="text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">
-                  Context window
-                </div>
+                <div className="text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">Context window</div>
                 <div
                   className={cn(
                     'text-[13px] font-bold',
@@ -202,9 +193,7 @@ function InfoSheetContent({
               <Progress
                 value={ctxPct}
                 className="bg-neutral-200 dark:bg-neutral-800"
-                indicatorClassName={
-                  tone === 'hot' ? 'bg-[#c5221f]' : tone === 'warn' ? 'bg-[#d97706]' : 'bg-[#1a7f37]'
-                }
+                indicatorClassName={tone === 'hot' ? 'bg-[#c5221f]' : tone === 'warn' ? 'bg-[#d97706]' : 'bg-[#1a7f37]'}
               />
               {snap.contextUsed != null && snap.contextMax != null && (
                 <div className="text-[12px] text-neutral-500 dark:text-neutral-400">
@@ -326,11 +315,7 @@ export function AskSheet({
       const toggle = (qid: string, choice: string, multi: boolean) => {
         setPicked((prev) => {
           const cur = prev[qid] ?? [];
-          const next = multi
-            ? cur.includes(choice)
-              ? cur.filter((c) => c !== choice)
-              : [...cur, choice]
-            : [choice];
+          const next = multi ? (cur.includes(choice) ? cur.filter((c) => c !== choice) : [...cur, choice]) : [choice];
           const nextAll = { ...prev, [qid]: next };
           const rpcId = ask.rpcId;
           if (lockTimers.current[qid]) clearTimeout(lockTimers.current[qid]);
@@ -363,9 +348,7 @@ export function AskSheet({
           </div>
           {questions.map((q) => (
             <div key={q.qid} className="flex flex-col gap-1.5">
-              {!!q.question && (
-                <div className="text-sm text-neutral-700 dark:text-neutral-200">{q.question}</div>
-              )}
+              {!!q.question && <div className="text-sm text-neutral-700 dark:text-neutral-200">{q.question}</div>}
               <div className="flex flex-wrap gap-2">
                 {q.choices.map((c) => {
                   const on = (picked[q.qid] ?? []).includes(c);
@@ -447,9 +430,7 @@ export function AskSheet({
             </div>
           </div>
           {!!contextLabel && (
-            <div className="text-[13px] text-neutral-500 dark:text-neutral-400 truncate">
-              in {contextLabel}
-            </div>
+            <div className="text-[13px] text-neutral-500 dark:text-neutral-400 truncate">in {contextLabel}</div>
           )}
           {!!description && <div className="text-sm text-neutral-700 dark:text-neutral-200">{description}</div>}
           {!!cmd && (

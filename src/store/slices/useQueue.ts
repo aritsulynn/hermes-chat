@@ -31,11 +31,7 @@ export interface QueueSlice {
   sendQueuedNow: (id: string) => void;
 }
 
-export function useQueueSlice({
-  generatingRef,
-  sendRef,
-  drainRef,
-}: StoreCtx): QueueSlice {
+export function useQueueSlice({ generatingRef, sendRef, drainRef }: StoreCtx): QueueSlice {
   const [queued, setQueued] = useState<QueuedPrompt[]>([]);
   const [queueParked, setQueueParked] = useState(false);
   const queueParkedRef = useRef(false);

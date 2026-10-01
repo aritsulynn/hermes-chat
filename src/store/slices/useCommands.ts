@@ -12,10 +12,7 @@ export interface CommandsSlice {
   loadCommandsCatalog: () => Promise<void>;
 }
 
-export function useCommandsSlice({
-  sessionId,
-  gw,
-}: StoreCtx): CommandsSlice {
+export function useCommandsSlice({ sessionId, gw }: StoreCtx): CommandsSlice {
   // `commands.catalog` dispositions live in ./slash-commands (module cache); this
   // counter only forces a re-render once the live table lands so the wheel re-filters.
   const [, setCatalogVersion] = useState(0);

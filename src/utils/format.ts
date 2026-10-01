@@ -75,10 +75,7 @@ export function formatSessionSource(source: string | null | undefined): string |
  * bare "14d". Returns '' for missing/unusable values so callers can render the
  * row without a placeholder.
  */
-export function formatRelative(
-  epochSeconds: number | null | undefined,
-  nowMs: number = Date.now(),
-): string {
+export function formatRelative(epochSeconds: number | null | undefined, nowMs: number = Date.now()): string {
   if (epochSeconds === null || epochSeconds === undefined) return '';
   // Accept millis too — a caller that already normalised shouldn't have to care.
   const ms = epochSeconds < 1e11 ? epochSeconds * 1000 : epochSeconds;
@@ -140,10 +137,7 @@ export function formatRunTime(ts?: number | string | null): string {
 }
 
 /** Elapsed time between two timestamps: "12s", "3m", "3m 20s". */
-export function formatRunDuration(
-  started?: number | string | null,
-  ended?: number | string | null,
-): string | null {
+export function formatRunDuration(started?: number | string | null, ended?: number | string | null): string | null {
   if (!started || !ended) return null;
   const s = toEpochMs(started);
   const e = toEpochMs(ended);

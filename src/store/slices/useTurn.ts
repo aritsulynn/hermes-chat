@@ -54,7 +54,7 @@ export function useTurnSlice(ctx: StoreCtx): TurnSlice {
     liveTurnTools,
     liveTurnDiffs,
     turnOwnerRef,
-    parkedLiveRef,
+
     lastTurnEventAt,
     gw,
     activeProfileRef,
@@ -318,7 +318,7 @@ export function useTurnSlice(ctx: StoreCtx): TurnSlice {
 
       const { name } = parseSlashCommand(full);
       setToolLine(`running /${name || 'command'}…`);
-      let d: any = null;
+      let d: any;
       try {
         d = await exec(full);
       } catch (e: any) {

@@ -19,11 +19,13 @@ export type AnchorMeasure = (cb: (a: AnchorRect) => void) => void;
  * picker, the effort picker, the attach picker, the long-press menus — keeps
  * working without knowing which platform it is on.
  */
-const measurer = (el: HTMLElement | null): AnchorMeasure => (cb) => {
-  if (!el) return;
-  const r = el.getBoundingClientRect();
-  cb({ x: r.x, y: r.y, w: r.width, h: r.height });
-};
+const measurer =
+  (el: HTMLElement | null): AnchorMeasure =>
+  (cb) => {
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    cb({ x: r.x, y: r.y, w: r.width, h: r.height });
+  };
 
 // memo(): every streamed token re-renders the chat screen. Without this the
 // focused textarea re-renders ~30x/s, which drops focus and caret position
@@ -131,8 +133,7 @@ export const Composer = memo(function Composer({
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.map((a) => {
-              const isImg =
-                (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(a.name);
+              const isImg = (a.mime ?? '').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(a.name);
               return (
                 <Button
                   key={a.uri + a.name}
@@ -141,16 +142,11 @@ export const Composer = memo(function Composer({
                   onClick={() => setAttachments(attachments.filter((x) => x.uri !== a.uri))}
                   className="max-w-[220px] gap-1 px-2 py-1 shadow-none">
                   {isImg ? (
-                    <img
-                      src={a.uri}
-                      alt={a.name}
-                      className="h-7 w-7 rounded-md bg-[#d7e3f7] object-cover"
-                    />
+                    <img src={a.uri} alt={a.name} className="h-7 w-7 rounded-md bg-[#d7e3f7] object-cover" />
                   ) : (
                     <Paperclip size={12} color="#1a73e8" />
                   )}
-                  <span
-                    className="min-w-0 shrink text-left text-xs text-[#1a73e8] dark:text-[#7aa7ff] truncate">
+                  <span className="min-w-0 shrink text-left text-xs text-[#1a73e8] dark:text-[#7aa7ff] truncate">
                     {a.name}
                   </span>
                   <X size={12} color="#1a73e8" />
@@ -177,9 +173,7 @@ export const Composer = memo(function Composer({
             }
             setInput(t);
           }}
-          placeholder={
-            generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…'
-          }
+          placeholder={generating ? 'Type to steer the running turn' : 'Ask anything, / for commands, @ for context…'}
           style={{ colorScheme: dark ? 'dark' : 'light' }}
           onBlur={handleBlur}
         />
@@ -205,8 +199,7 @@ export const Composer = memo(function Composer({
             onClick={() => onOpenModelPicker(measurer(modelRef.current))}
             className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none">
             <span className="flex min-w-0 shrink items-center gap-0.5">
-              <span
-                className="min-w-0 shrink text-left text-[13px] font-semibold text-neutral-700 dark:text-neutral-200 truncate">
+              <span className="min-w-0 shrink text-left text-[13px] font-semibold text-neutral-700 dark:text-neutral-200 truncate">
                 {modelLabel}
               </span>
               <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
@@ -233,9 +226,7 @@ export const Composer = memo(function Composer({
                   size="sm"
                   onClick={() => onQueue(input)}
                   className="shrink-0 rounded-lg px-2.5 py-1.5 shadow-none">
-                  <span className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">
-                    Queue
-                  </span>
+                  <span className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</span>
                 </Button>
               )}
               {hasText && (

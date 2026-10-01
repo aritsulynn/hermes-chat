@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { CircleCheck, TriangleAlert, X } from 'lucide-react';
 
@@ -51,12 +50,7 @@ function useToasts() {
   return list;
 }
 
-function ToastItem({
-  title,
-  description,
-  variant,
-  onDismiss,
-}: Omit<ToastData, 'id'> & { onDismiss: () => void }) {
+function ToastItem({ title, description, variant, onDismiss }: Omit<ToastData, 'id'> & { onDismiss: () => void }) {
   const Icon = variant === 'destructive' ? TriangleAlert : CircleCheck;
   const iconColor = variant === 'destructive' ? '#ef4444' : variant === 'success' ? '#10b981' : '#888888';
   return (
@@ -75,15 +69,12 @@ function ToastItem({
       <span className="flex min-w-0 flex-1 flex-col">
         <span
           className={`text-[14px] font-semibold ${
-            variant === 'destructive'
-              ? 'text-red-600 dark:text-red-400'
-              : 'text-neutral-950 dark:text-neutral-100'
+            variant === 'destructive' ? 'text-red-600 dark:text-red-400' : 'text-neutral-950 dark:text-neutral-100'
           } line-clamp-2`}>
           {title}
         </span>
         {!!description && (
-          <span
-            className="mt-0.5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300 line-clamp-3">
+          <span className="mt-0.5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300 line-clamp-3">
             {description}
           </span>
         )}

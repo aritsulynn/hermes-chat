@@ -45,7 +45,10 @@ test('deliveryOptions always offers local first and gates origin on a known orig
 
   // Fetch failed / gateway reports nothing: local is the one option that always
   // works, and the caller keys its "no targets" message off that length.
-  assert.deepEqual(deliveryOptions([]).map((o) => o.id), ['local']);
+  assert.deepEqual(
+    deliveryOptions([]).map((o) => o.id),
+    ['local'],
+  );
 });
 
 test('normaliseDelivery keeps a known target, opens a broadcast on its first entry', () => {

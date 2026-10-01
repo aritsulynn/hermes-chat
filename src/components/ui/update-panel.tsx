@@ -338,9 +338,7 @@ export function UpdatePanel() {
     <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-            Hermes Update
-          </div>
+          <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Hermes Update</div>
           <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
             {info?.currentVersion ? `Version ${info.currentVersion}` : 'Check for a new server version'}
             {info && info.installMethod && info.installMethod !== 'unknown' ? ` · ${info.installMethod}` : ''}
@@ -425,9 +423,7 @@ export function UpdatePanel() {
             variant="outline"
             className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2">
             {checking ? <Spinner size={14} color="#1a73e8" /> : <RefreshCw size={14} color="#1a73e8" />}
-            <span className="shrink text-[13px] font-semibold truncate">
-              Check for updates
-            </span>
+            <span className="shrink text-[13px] font-semibold truncate">Check for updates</span>
           </Button>
 
           {canApply && (
@@ -441,9 +437,7 @@ export function UpdatePanel() {
               ) : (
                 <Download size={14} color={dark ? '#111' : '#fff'} />
               )}
-              <span className="shrink text-[13px] font-semibold truncate">
-                Update now
-              </span>
+              <span className="shrink text-[13px] font-semibold truncate">Update now</span>
             </Button>
           )}
         </div>
@@ -455,9 +449,7 @@ export function UpdatePanel() {
           variant="outline"
           className="self-stretch gap-1.5 rounded-xl px-3 py-2">
           <RotateCw size={14} color="#666" />
-          <span className="shrink text-[13px] font-semibold truncate">
-            Restart gateway
-          </span>
+          <span className="shrink text-[13px] font-semibold truncate">Restart gateway</span>
         </Button>
       </div>
 
@@ -466,9 +458,7 @@ export function UpdatePanel() {
           <div className="flex items-center justify-between border-b border-neutral-700/60 px-3 py-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <Terminal size={13} color="#9aa0a6" />
-              <div className="font-mono text-[11px] text-neutral-200 truncate">
-                {activeAction}
-              </div>
+              <div className="font-mono text-[11px] text-neutral-200 truncate">{activeAction}</div>
               <Chip tone={actionOutcomeTone(running, exitCode)} label={actionOutcomeLabel(running, exitCode)} />
             </div>
             <Button

@@ -64,10 +64,7 @@ export const LOCAL_DELIVERY = 'local';
  * (scheduler_delivery._resolve_single_delivery_target), so it is always safe to
  * offer.
  */
-export function deliveryOptions(
-  targets: DeliveryTarget[],
-  opts: { hasOrigin?: boolean } = {},
-): DeliveryTarget[] {
+export function deliveryOptions(targets: DeliveryTarget[], opts: { hasOrigin?: boolean } = {}): DeliveryTarget[] {
   const local: DeliveryTarget = {
     id: LOCAL_DELIVERY,
     name: 'Save only (no notification)',
@@ -90,10 +87,7 @@ export function deliveryOptions(
  * downgrade a job the user still wants delivered, so the row is shown as-is
  * and the form starts from the closest offered option.
  */
-export function normaliseDelivery(
-  raw: string | null | undefined,
-  options: DeliveryTarget[],
-): string {
+export function normaliseDelivery(raw: string | null | undefined, options: DeliveryTarget[]): string {
   const value = String(raw ?? '').trim();
   if (!value) return LOCAL_DELIVERY;
   // A comma-joined list is a broadcast to several targets; the form edits one

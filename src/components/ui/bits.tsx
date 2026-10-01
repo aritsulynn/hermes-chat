@@ -125,14 +125,8 @@ export function ScreenHeader({
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <HamburgerBtn />
         <div className="min-w-0 flex-1">
-          <div className="text-xl font-bold text-neutral-950 dark:text-neutral-100 truncate">
-            {title}
-          </div>
-          {!!subtitle && (
-            <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
-              {subtitle}
-            </div>
-          )}
+          <div className="text-xl font-bold text-neutral-950 dark:text-neutral-100 truncate">{title}</div>
+          {!!subtitle && <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{subtitle}</div>}
         </div>
       </div>
       {actions}
@@ -181,12 +175,7 @@ export function ErrorRetry({
       variant="destructive"
       className={cn(compact ? 'rounded-xl px-4 pt-3' : 'rounded-2xl', className)}>
       <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{error}</AlertDescription>
-      <Button
-        variant="destructive"
-        size="sm"
-        onClick={onRetry}
-        className="mt-1 self-start"
-        aria-label={retryLabel}>
+      <Button variant="destructive" size="sm" onClick={onRetry} className="mt-1 self-start" aria-label={retryLabel}>
         <span className="text-xs font-semibold">{retryLabel}</span>
       </Button>
     </UIAlert>

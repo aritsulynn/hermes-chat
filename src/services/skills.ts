@@ -35,8 +35,7 @@ export async function getSkillContent(
   name: string,
 ): Promise<{ content: string; name: string; path: string }> {
   const res = await opsGet(skillContent(name));
-  const rec =
-    res && typeof res === 'object' && !Array.isArray(res) ? (res as Record<string, unknown>) : {};
+  const rec = res && typeof res === 'object' && !Array.isArray(res) ? (res as Record<string, unknown>) : {};
   return {
     content: String(rec.content ?? ''),
     name: String(rec.name ?? name),

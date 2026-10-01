@@ -67,9 +67,7 @@ export async function discoverAgentProfiles(
     currentPayload && typeof currentPayload === 'object' && !Array.isArray(currentPayload)
       ? (currentPayload as Record<string, unknown>)
       : {};
-  const current = normalizeProfileName(
-    typeof currentRec.current === 'string' ? currentRec.current : rows[0]?.name,
-  );
+  const current = normalizeProfileName(typeof currentRec.current === 'string' ? currentRec.current : rows[0]?.name);
   return { profiles: rows, current };
 }
 

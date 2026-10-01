@@ -102,8 +102,7 @@ const SessionRow = memo(function SessionRow({
           {session.title || '(untitled)'}
         </span>
         {live === 'waiting' ? (
-          <span
-            className={`mt-0.5 text-[10px] font-medium ${dark ? 'text-amber-300' : 'text-amber-700'} truncate`}>
+          <span className={`mt-0.5 text-[10px] font-medium ${dark ? 'text-amber-300' : 'text-amber-700'} truncate`}>
             Waiting for your answer
           </span>
         ) : null}
@@ -123,8 +122,7 @@ const SessionRow = memo(function SessionRow({
               </Badge>
             ) : null}
             {preview ? (
-              <span
-                className="min-w-0 flex-1 text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
+              <span className="min-w-0 flex-1 text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
                 {preview}
               </span>
             ) : null}
@@ -225,8 +223,7 @@ export function HermesDrawerContent({
     () =>
       ql
         ? sessions.filter(
-            (s) =>
-              (s.title || '').toLowerCase().includes(ql) || (s.preview || '').toLowerCase().includes(ql),
+            (s) => (s.title || '').toLowerCase().includes(ql) || (s.preview || '').toLowerCase().includes(ql),
           )
         : sessions,
     [sessions, ql],
@@ -336,18 +333,14 @@ export function HermesDrawerContent({
                     data-testid="profile-selector"
                     aria-label={`Switch profile. Active profile: ${activeProfile}`}
                     className="h-auto sm:h-auto min-w-0 flex-1 shrink items-center justify-start gap-2 px-1 py-1">
-                    <span className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">
-                      Hermes
-                    </span>
+                    <span className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</span>
                     <ChevronDown size={17} color={dimColor} />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent side="bottom" align="start" className="w-72 p-2">
                   <div className="flex items-center justify-between px-3 py-2.5">
                     <div>
-                      <div className="text-[14px] font-bold text-neutral-950 dark:text-neutral-100">
-                        Switch profile
-                      </div>
+                      <div className="text-[14px] font-bold text-neutral-950 dark:text-neutral-100">Switch profile</div>
                       <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
                         Chat and toolsets use this profile
                       </div>
@@ -383,10 +376,7 @@ export function HermesDrawerContent({
                               className={`flex h-9 w-9 items-center justify-center rounded-xl ${
                                 selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-neutral-100 dark:bg-neutral-900'
                               }`}>
-                              <CircleUserRound
-                                size={17}
-                                color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor}
-                              />
+                              <CircleUserRound size={17} color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor} />
                             </span>
                             <span className="flex min-w-0 flex-1 flex-col text-left">
                               <span
@@ -396,16 +386,13 @@ export function HermesDrawerContent({
                                 {profile.display_name || profile.name}
                               </span>
                               {!!profile.description && (
-                                <span
-                                  className="min-w-0 text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                                <span className="min-w-0 text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
                                   {profile.description}
                                 </span>
                               )}
                             </span>
                             {selected && (
-                              <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">
-                                Active
-                              </span>
+                              <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</span>
                             )}
                           </Button>
                         );
@@ -592,16 +579,13 @@ export function HermesDrawerContent({
             <Button variant="ghost" className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-4 py-4">
               <Avatar className="size-11">
                 <AvatarFallback className="bg-[#1a73e8]">
-                  <span className="text-base font-bold text-white">
-                    {(username || 'H').slice(0, 1).toUpperCase()}
-                  </span>
+                  <span className="text-base font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</span>
                 </AvatarFallback>
               </Avatar>
               {/* Stacks the username over the host (`flex flex-col`); a plain
                   inline span would run them together on one line. */}
               <span className="flex flex-1 flex-col text-left">
-                <span
-                  className="min-w-0 text-left text-[14px] font-semibold text-neutral-950 dark:text-neutral-100 truncate">
+                <span className="min-w-0 text-left text-[14px] font-semibold text-neutral-950 dark:text-neutral-100 truncate">
                   {username || 'Hermes'}
                 </span>
                 <span className="min-w-0 text-[13px] text-neutral-500 dark:text-neutral-400">{host || ''}</span>
@@ -646,8 +630,7 @@ export function HermesDrawerContent({
                 onClick={() => go('settings')}
                 className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-3.5 py-3">
                 <Settings size={19} color={dark ? '#ccc' : '#444'} />
-                <span
-                  className="min-w-0 flex-1 text-left text-[13px] font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                <span className="min-w-0 flex-1 text-left text-[13px] font-medium text-neutral-900 dark:text-neutral-100 truncate">
                   Settings
                 </span>
               </Button>

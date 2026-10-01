@@ -119,4 +119,3 @@ export function placeholderColor(dark: boolean, kind: PlaceholderKind = 'standar
 export const MARKDOWN_INK = '#111';
 /** Code-block surface, shared by every markdown theme (light and dark). */
 export const CODE_SURFACE = '#1e1e24';
-

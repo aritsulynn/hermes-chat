@@ -48,7 +48,11 @@ export function JobPromptPreview({
         {prompt}
       </div>
       {canExpand && (
-        <button type="button" onClick={onToggleExpand} aria-expanded={isExpanded} className="mt-1.5 flex w-full items-center justify-end gap-1">
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={isExpanded}
+          className="mt-1.5 flex w-full items-center justify-end gap-1">
           <span className="text-[10px] font-medium text-[#1a73e8] dark:text-[#7aa7ff]">
             {isExpanded ? 'Collapse' : 'Show more'}
           </span>

@@ -91,7 +91,6 @@ export function useSessionMiscSlice(ctx: StoreCtx): SessionMiscSlice {
       const g = gw.current;
       const profile = activeProfileRef.current;
       const epoch = profileEpochRef.current;
-      const connectionEpoch = connectionEpochRef.current;
       if (!g) return;
       try {
         await g.deleteSession(storedId, profile);

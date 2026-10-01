@@ -63,8 +63,7 @@ export function pickFiles(options: { accept?: string; multiple?: boolean } = {})
           (file) =>
             new Promise<PickedFile>((done) => {
               const reader = new FileReader();
-              reader.onerror = () =>
-                done({ name: file.name, mime: file.type, uri: '', size: file.size, dataUrl: '' });
+              reader.onerror = () => done({ name: file.name, mime: file.type, uri: '', size: file.size, dataUrl: '' });
               reader.onload = () => {
                 const dataUrl = String(reader.result ?? '');
                 done({

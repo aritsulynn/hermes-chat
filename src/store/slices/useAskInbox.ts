@@ -123,14 +123,14 @@ export function useAskInboxSlice({
   }, []);
 
   const markAskByRpc = useCallback((rpcId: string, status: AskInboxStatus) => {
-    const next = setAskStatusByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), rpcId, status);
+    const next = setAskStatusByRpc(
+      askInboxRef.current,
+      connectionScope(latest.current.host, latest.current.username),
+      rpcId,
+      status,
+    );
     askInboxRef.current = next;
     setAskInbox(next);
-    if (status === 'cancelled' || status === 'answered' || status === 'stale') {
-      const entry = next.find(
-        (item) => item.owner.connectionId === connectionScope(latest.current.host, latest.current.username) && item.rpcId === rpcId,
-      );
-    }
     if (status !== 'pending' && status !== 'answering' && askRef.current?.rpcId === rpcId) {
       setAsk(null);
     }

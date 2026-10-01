@@ -21,11 +21,7 @@ export interface ComposerSlice {
   copyText: (id: string, text: string) => Promise<void>;
 }
 
-export function useComposerSlice({
-  activeProfile,
-  sessionKey,
-  sessionId,
-}: StoreCtx): ComposerSlice {
+export function useComposerSlice({ activeProfile, sessionKey, sessionId }: StoreCtx): ComposerSlice {
   const [inputRaw, setInputRaw] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);

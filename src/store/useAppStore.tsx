@@ -27,14 +27,17 @@ import {
   saveCookie,
 } from '../services/connection';
 import { DEFAULT_PROFILE } from '../services/constants';
-import { CHAT_HISTORY_MAX_ROWS, CHAT_HISTORY_PAGE, CHAT_WINDOW_SOFT_CAP, CHAT_WINDOW_TRIM_KEEP } from '../services/constants';
+import {
+  CHAT_HISTORY_MAX_ROWS,
+  CHAT_HISTORY_PAGE,
+  CHAT_WINDOW_SOFT_CAP,
+  CHAT_WINDOW_TRIM_KEEP,
+} from '../services/constants';
 import { pendingAsks } from '../services/ask-inbox';
-import type { AskInboxEntry, AskOwner } from '../services/ask-inbox';
 import { GatewayWs } from '../services/gateway-ws';
-import type { ConnState, HistoryMessage } from '../services/gateway-ws';
+import type { ConnState } from '../services/gateway-ws';
 import { errMsg, nid, sliceOlderThan } from '../utils/messages';
-import type { Attachment, UiMessage } from '../utils/messages';
-import type { Role } from '../utils/messages';
+import type { UiMessage } from '../utils/messages';
 import {
   discoverAgentProfiles,
   historyToItems,
@@ -98,7 +101,6 @@ export function useThemeValue(): ThemeSlice {
   return v;
 }
 
-
 export function useApp(): AppStore {
   const v = useContext(AppContext);
   if (!v) throw new Error('useApp must be used inside AppProvider');
@@ -150,7 +152,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
   // Local notifications (turn complete / server asks while backgrounded).
   const notificationsSlice = useNotificationsSlice();
-  const { notifyEnabled, notifyRef, setNotifications, loadNotifications } = notificationsSlice;
+  const { notifyEnabled, setNotifications, loadNotifications } = notificationsSlice;
 
   // Shared runtime refs (also consumed by store slices).
   const runtime = useStoreRuntime();
@@ -162,31 +164,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activeProfilePreferenceRef,
     profileEpochRef,
     connectionEpochRef,
-    connectRequestRef,
-    logoutCleanupRef,
-    sessionOpenEpochRef,
+
     runtimeOwners,
-    runtimeAskOwners,
+
     generatingRef,
-    sendRef,
-    drainRef,
+
     messagesRef,
     historyLimitRef,
     historyLoadingRef,
     historyExhaustedRef,
     profilesRef,
     sessionIdRef,
-    editingRowRef: editRowRef,
-    uploadingRef: uploading,
+
     contextHydrateCancelRef,
     contextPendingSidRef,
     stampRowIdsRef,
     resyncRef,
     connectRef,
-    openSessionRef,
-    newSessionRef,
+
     stopRef,
-    renameSessionRef,
+
     releaseLocalTurnRef,
   } = runtime;
   activeProfileRef.current = activeProfile;
@@ -320,24 +317,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // it, so the next slice in dependency order can read it. One line per slice.
   const add = <T extends object>(slice: T): T => Object.assign(ctx, slice);
 
-  const { themeMode, theme, setTheme, hydrateTheme } = themeSlice;
-  const { todos, setTodos, subagents, setSubagents } = add(useLiveRosterSlice(ctx));
+  const { hydrateTheme } = themeSlice;
+  const { todos, subagents } = add(useLiveRosterSlice(ctx));
   const { liveSessions, liveSessionsKnown, refreshLiveSessions } = add(useLiveSessionsSlice(ctx));
-  const { catalogAtRef, loadCommandsCatalog } = add(useCommandsSlice(ctx));
+  const { loadCommandsCatalog } = add(useCommandsSlice(ctx));
   const {
     sessions,
-    setSessions,
-    sessionsLimit,
-    setSessionsLimit,
+
     sessionsHasMore,
-    setSessionsHasMore,
+
     sessionsLoadingMore,
-    setSessionsLoadingMore,
-    sessionsLimitRef,
-    sessionsHasMoreRef,
-    sessionsLoadingMoreRef,
-    sessionsFetchRef,
-    sessionsFetchProfileRef,
+
     refreshSessions,
     loadMoreSessions,
   } = add(useSessionsSlice(ctx));
@@ -347,24 +337,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     infoOpen,
     setInfoOpen,
     infoSeq,
-    setInfoSeq,
+
     sessionInfo,
-    setSessionInfo,
+
     usageInfo,
     setUsageInfo,
     usageLoading,
-    setUsageLoading,
-    usageRefreshRef,
+
     openInfo,
   } = add(useSessionInfoSlice(ctx));
   const {
     queued,
     queueParked,
-    queuedRef,
-    queueParkedRef,
-    setQueued,
-    setQueueParked,
-    setQueue,
+
     enqueueQueued,
     removeQueued,
     clearQueue,
@@ -375,19 +360,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   messagesRef.current = messages;
   const {
     streamingTexts,
-    setStreamingTexts,
-    streamingRef,
-    liveAid,
-    liveThinkAid,
-    liveTools,
-    liveToolAid,
-    liveTurnTools,
-    liveTurnDiffs,
-    turnOwnerRef,
+
     parkedLiveRef,
     lastTurnEventAt,
     clearStreaming,
-    parkLiveTurn,
+
     reanchorLiveTurn,
   } = add(useLiveTurnSlice(ctx));
 
@@ -400,13 +377,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     providersError,
     setModel,
     setModelProvider,
-    setEffort,
-    setProviders,
-    setProvidersLoading,
-    setProvidersError,
-    providersRef,
-    providersLoadingRef,
-    providersAtRef,
+
     loadProviders,
     loadReasoningDisplay,
     pickModel,
@@ -418,19 +389,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = add(useModelsSlice(ctx));
   const {
     ask,
-    setAsk,
-    askRef,
+
     askInbox,
-    setAskInbox,
-    askInboxRef,
-    resolveAskOwner,
-    applyAskInbox,
-    markAskStatus,
-    markAskByRpc,
-    bindAskOwner,
   } = add(useAskInboxSlice(ctx));
 
-  const { toolRefreshRef, scheduleToolRefresh, refreshToolResults } = add(useToolRefreshSlice(ctx));
+  const { refreshToolResults } = add(useToolRefreshSlice(ctx));
 
   // Drop the head past the soft cap. Never the live tail, never while a turn
   // runs, and the screen only calls this while pinned at the bottom — reading
@@ -683,14 +646,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // (setUsageInfo). Every slice that reads it is called below this line.
   ctx.hydrateSessionContext = hydrateSessionContext;
 
-
   const {
     input,
-    inputRaw,
+
     setInput,
-    setInputRaw,
-    draftsRef,
-    draftKeyRef,
+
     attachments,
     setAttachments,
     copiedId,
@@ -698,7 +658,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = add(useComposerSlice(ctx));
   const {
     respondToInbox,
-    answerInboxValue,
+
     answerInboxApproval,
     openAskEntry,
     answerAsk,
@@ -828,8 +788,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // below. Same one-line publish as hydrateSessionContext.
   ctx.ensureCookie = ensureCookie;
 
-
-  const { openWs, probeWorkingSessions } = add(useGatewaySlice(ctx));
+  const { probeWorkingSessions } = add(useGatewaySlice(ctx));
 
   const { connect, login, logout } = add(useConnectionSlice(ctx));
   connectRef.current = connect;
@@ -837,7 +796,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Sessions ─────────────────────────────────────────────────────────────
 
   const { openSession, newSession } = add(useSessionOpsSlice(ctx));
-
 
   const { switchProfile, branchSession } = add(useProfileOpsSlice(ctx));
 
@@ -848,18 +806,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // useCallback so Composer's memo() holds between streamed tokens (the deps
   // only move when the user actually types, attaches or a turn starts/ends).
 
-
-  const {
-    beginTurn,
-    runSlash,
-    editMessage,
-    cancelEdit,
-    regenerate,
-    pasteLarge,
-    send,
-    releaseLocalTurn,
-    stop,
-  } = add(useTurnSlice(ctx));
+  const { editMessage, cancelEdit, regenerate, pasteLarge, send, releaseLocalTurn, stop } = add(useTurnSlice(ctx));
 
   // Watchdog: a missed turn-end (dropped complete, truncated replay, an error
   // notice instead of complete) must never strand the Stop button forever.
@@ -905,7 +852,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   stopRef.current = stop;
 
   // ── Ask replies ──────────────────────────────────────────────────────────
-
 
   // ── Session management / steering / model defaults ─────────────────────
 

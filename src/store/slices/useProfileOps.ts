@@ -194,7 +194,17 @@ export function useProfileOpsSlice(ctx: StoreCtx): ProfileOpsSlice {
         }
       }
     },
-    [inputRaw, parkLiveTurn, clearStreaming, profiles, refreshProfiles, refreshSessions, host, username, resetHistoryWindow],
+    [
+      inputRaw,
+      parkLiveTurn,
+      clearStreaming,
+      profiles,
+      refreshProfiles,
+      refreshSessions,
+      host,
+      username,
+      resetHistoryWindow,
+    ],
   );
 
   // Fork the current chat into an independent copy (session.branch) and open it.

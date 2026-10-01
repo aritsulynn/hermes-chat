@@ -47,10 +47,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   return <DialogPrimitive.Title className={cn('text-[17px] font-semibold', className)} {...props} />;
 }
 
-function DialogDescription({
-  className,
-  ...props
-}: React.ComponentProps<typeof DialogPrimitive.Description>) {
+function DialogDescription({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
       className={cn('text-[15px] leading-relaxed text-muted-foreground', className)}

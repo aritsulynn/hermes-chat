@@ -3,7 +3,13 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Brain, Check, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react';
 import { cleanThinking, flattenLists, renderMediaTags } from '../../utils/messages';
 import type { UiMessage } from '../../utils/messages';
-import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../../utils/diff';
+import {
+  countDiffLineStats,
+  diffLineKind,
+  inlineDiffFromDetail,
+  looksLikeDiff,
+  stripInlineDiffChrome,
+} from '../../utils/diff';
 import { TypingDots } from '../ui/bits';
 import { Button } from '../ui/button';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
@@ -129,9 +135,7 @@ const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: bo
         return (
           <div key={i} style={bgOf(kind) ? { backgroundColor: bgOf(kind) } : undefined}>
             <div
-              className={`px-1.5 text-[11px] leading-[15px] ${
-                hasThai(line) ? '' : 'font-mono'
-              }`}
+              className={`px-1.5 text-[11px] leading-[15px] ${hasThai(line) ? '' : 'font-mono'}`}
               style={{ color: colorOf(kind) }}>
               {line || ' '}
             </div>
@@ -250,16 +254,11 @@ export const MessageBubble = memo(function MessageBubble({
   // are cheap; markdown is parsed once when the turn settles. Same 15px/21px
   // metrics, so no size jump. Exception: replies carrying MEDIA: tags keep the
   // markdown path so attachments render as images instead of raw tags mid-stream.
-  const streamPlain =
-    item.role === 'assistant' && !!item.pending && !liveText.includes('MEDIA:');
+  const streamPlain = item.role === 'assistant' && !!item.pending && !liveText.includes('MEDIA:');
   const think = item.role === 'thinking';
   const typing = !think && item.pending && !mergedText;
   const markdown =
-    !think &&
-    item.role !== 'notice' &&
-    item.role !== 'interim' &&
-    item.role !== 'tool' &&
-    item.role !== 'summary';
+    !think && item.role !== 'notice' && item.role !== 'interim' && item.role !== 'tool' && item.role !== 'summary';
   const copyable = (item.role === 'user' || item.role === 'assistant') && !!mergedText && !item.pending;
   // A file-editing tool: the gateway renders the diff onto the live bubble, or
   // it rides inside the REST tool result JSON (history). Render either inline.
@@ -303,10 +302,7 @@ export const MessageBubble = memo(function MessageBubble({
     }
     onRegenerate();
   }, [onRegenerate]);
-  const handleCopyTip = useCallback(
-    () => fireTip(copyAnchor.current, copied ? 'Copied!' : 'Copy'),
-    [fireTip, copied],
-  );
+  const handleCopyTip = useCallback(() => fireTip(copyAnchor.current, copied ? 'Copied!' : 'Copy'), [fireTip, copied]);
   const handleRegenTip = useCallback(() => fireTip(regenAnchor.current, 'Regenerate'), [fireTip]);
   // Whole-bubble anchor for the long-press menu on our own messages.
   const bubbleRef = useRef<HTMLDivElement | null>(null);
@@ -428,9 +424,7 @@ export const MessageBubble = memo(function MessageBubble({
                 </div>
               )}
               {!item.output && !toolDiff && !item.command && !item.detail && !item.pending && (
-                <div className="mt-1 text-[11px] italic text-neutral-400 dark:text-neutral-500">
-                  no result captured
-                </div>
+                <div className="mt-1 text-[11px] italic text-neutral-400 dark:text-neutral-500">no result captured</div>
               )}
             </>
           )}
@@ -465,18 +459,14 @@ export const MessageBubble = memo(function MessageBubble({
             )}
             {!!liveText &&
               (streamPlain ? (
-                <div className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
-                  {liveText}
-                </div>
+                <div className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">{liveText}</div>
               ) : (
                 <ChatMarkdown body={body} theme="ai" dark={dark} />
               ))}
           </>
         )
       ) : (
-        <div className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
-          {mergedText}
-        </div>
+        <div className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">{mergedText}</div>
       )}
       {/* Footer: bot time lives in its ⋯ menu, ours in the long-press menu —
           copy icon stays on bot bubbles only. */}

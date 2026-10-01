@@ -2,7 +2,7 @@
 // board switcher, collapsible columns, cards, create/move/edit/delete tasks.
 // Talks to the plugin's own REST router (see hermes-agent
 // plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
@@ -18,7 +18,7 @@ import { ConfirmDialog } from '../../components/ui/dialog';
 import { FormSheet } from '../../components/ui/sheets';
 import { Spinner } from '../../components/ui/bits';
 import { CardChips } from './components/CardChips';
-import { placeholderColor, screenStyle } from '../../theme';
+import { screenStyle } from '../../theme';
 import { asTask, dotOf } from './helpers';
 import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';
 
@@ -38,17 +38,12 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
     <Button
       onClick={() => onOpen(task)}
       variant="outline"
-      className="h-auto sm:h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
->
-      <span
-        className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100 line-clamp-2"
->
+      className="h-auto sm:h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]">
+      <span className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100 line-clamp-2">
         {task.title}
       </span>
       {!!task.body && (
-        <span
-          className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400 line-clamp-2"
->
+        <span className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400 line-clamp-2">
           {task.body}
         </span>
       )}
@@ -61,9 +56,6 @@ export function KanbanScreen() {
   const { booting, authed, host, username, opsGet, opsMut, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
-  // One placeholder colour per scheme — the create/edit sheets pass it to
-  // four inputs, so it must not be recomputed on every render.
-  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
 
   const [boards, setBoards] = useState<BoardMeta[]>([]);
   const [slug, setSlug] = useState('');
@@ -211,13 +203,9 @@ export function KanbanScreen() {
     [host, username],
   );
 
-  const isCollapsed = (name: string, count: number) =>
-    collapsed[name] ?? (name === 'archived' || count === 0);
+  const isCollapsed = (name: string, count: number) => collapsed[name] ?? (name === 'archived' || count === 0);
 
-  const totalTasks = useMemo(
-    () => (board?.columns ?? []).reduce((n, c) => n + c.tasks.length, 0),
-    [board],
-  );
+  const totalTasks = useMemo(() => (board?.columns ?? []).reduce((n, c) => n + c.tasks.length, 0), [board]);
   const activeBoard = boards.find((b) => b.slug === slug);
 
   const openDetail = useCallback((t: KanbanTask) => {
@@ -287,7 +275,13 @@ export function KanbanScreen() {
     const title = newTitle.trim();
     if (!title) return;
     const cols = board?.columns.map((c) => c.name) ?? [];
-    const status = (newStatus || cols.find((c) => c === 'todo') || cols.find((c) => c !== 'archived') || cols[0] || '').trim();
+    const status = (
+      newStatus ||
+      cols.find((c) => c === 'todo') ||
+      cols.find((c) => c !== 'archived') ||
+      cols[0] ||
+      ''
+    ).trim();
     void mutate(
       () =>
         opsMut(api.kanbanTasks(boardQuery()), 'POST', {
@@ -307,7 +301,6 @@ export function KanbanScreen() {
   if (booting) {
     return (
       <div className="flex flex-col flex-1 bg-white dark:bg-black items-center justify-center gap-3">
-        
         <Spinner size={24} color="currentColor" />
       </div>
     );
@@ -321,43 +314,42 @@ export function KanbanScreen() {
   return (
     <div style={screenStyle(dark)}>
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        
         {/* Board switcher + new-task button */}
         <div className="flex items-center gap-2 px-3 pt-2">
-          <div className="overflow-x-auto"><div className="gap-2 grow">
-            {boards.map((b) => {
-              const active = b.slug === slug || (!slug && b.is_current);
-              return (
-                <Button
-                  key={b.slug}
+          <div className="overflow-x-auto">
+            <div className="gap-2 grow">
+              {boards.map((b) => {
+                const active = b.slug === slug || (!slug && b.is_current);
+                return (
+                  <Button
+                    key={b.slug}
 
-                  aria-pressed={active}
-                  aria-label={b.name || b.slug}
-                  onClick={() => pickSlug(b.slug)}
-                  variant={active ? 'default' : 'outline'}
-                  size="sm"
-                  className="rounded-full px-3 py-1.5"
->
-                  <span className="text-[13px] font-semibold">
-                    {b.name || b.slug}
-                    {typeof b.total === 'number' ? ` · ${b.total}` : ''}
-                  </span>
-                </Button>
-              );
-            })}
-            {boards.length === 0 && !loading && (
-              <div className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
-                {activeBoard?.name || 'default board'}
-              </div>
-            )}
-          </div></div>
+                    aria-pressed={active}
+                    aria-label={b.name || b.slug}
+                    onClick={() => pickSlug(b.slug)}
+                    variant={active ? 'default' : 'outline'}
+                    size="sm"
+                    className="rounded-full px-3 py-1.5">
+                    <span className="text-[13px] font-semibold">
+                      {b.name || b.slug}
+                      {typeof b.total === 'number' ? ` · ${b.total}` : ''}
+                    </span>
+                  </Button>
+                );
+              })}
+              {boards.length === 0 && !loading && (
+                <div className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                  {activeBoard?.name || 'default board'}
+                </div>
+              )}
+            </div>
+          </div>
           <Button
             variant="ghost"
             size="icon"
             aria-label="Refresh board"
             onClick={() => void reload(true)}
-            className="h-9 w-9 shrink-0"
-          >
+            className="h-9 w-9 shrink-0">
             <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
           </Button>
           <Button
@@ -366,8 +358,7 @@ export function KanbanScreen() {
             aria-label="New task"
             variant="default"
             size="icon"
-            className="h-9 w-9 rounded-full"
-          >
+            className="h-9 w-9 rounded-full">
             <span className="text-[20px] leading-[20px]">+</span>
           </Button>
         </div>
@@ -378,57 +369,52 @@ export function KanbanScreen() {
             </UIAlert>
           </div>
         )}
-        <div className="overflow-y-auto"><div className="mx-auto w-full max-w-4xl p-3 gap-2.5 pb-6">
-          {loading && <Spinner size={14} color="currentColor" />}
-          {!loading && !board && !error && (
-            <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
-          )}
-          {!loading && board && totalTasks === 0 && (
-            <div className="text-sm text-neutral-500 dark:text-neutral-400">
-              No tasks yet — tap + to create one.
-            </div>
-          )}
-          {(board?.columns ?? []).map((col) => {
-            const shut = isCollapsed(col.name, col.tasks.length);
-            return (
-              <div
-                key={col.name}
-                className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800"
->
-                <Button
-                  onClick={() => toggleColumn(col.name, !shut)}
-                  variant="ghost"
-                  className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
->
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
-                  <span className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
-                    {col.name}
-                  </span>
-                  <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
-                    {col.tasks.length}
-                  </span>
-                  <span className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</span>
-                </Button>
-                {!shut && (
-                  <div className="flex flex-col gap-2 p-2.5">
-                    {col.tasks.length === 0 && (
-                      <div className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</div>
-                    )}
-                    {col.tasks.map((t) => (
-                      <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div></div>
+        <div className="overflow-y-auto">
+          <div className="mx-auto w-full max-w-4xl p-3 gap-2.5 pb-6">
+            {loading && <Spinner size={14} color="currentColor" />}
+            {!loading && !board && !error && (
+              <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
+            )}
+            {!loading && board && totalTasks === 0 && (
+              <div className="text-sm text-neutral-500 dark:text-neutral-400">No tasks yet — tap + to create one.</div>
+            )}
+            {(board?.columns ?? []).map((col) => {
+              const shut = isCollapsed(col.name, col.tasks.length);
+              return (
+                <div
+                  key={col.name}
+                  className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
+                  <Button
+                    onClick={() => toggleColumn(col.name, !shut)}
+                    variant="ghost"
+                    className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
+                    <span className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
+                      {col.name}
+                    </span>
+                    <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+                      {col.tasks.length}
+                    </span>
+                    <span className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</span>
+                  </Button>
+                  {!shut && (
+                    <div className="flex flex-col gap-2 p-2.5">
+                      {col.tasks.length === 0 && (
+                        <div className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</div>
+                      )}
+                      {col.tasks.map((t) => (
+                        <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Task detail sheet. */}
-        <FormSheet
-          open={!!detail}
-          onOpenChange={(o) => !o && setDetail(null)}
->
+        <FormSheet open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
           {detail && (
             <>
               <Input
@@ -440,31 +426,29 @@ export function KanbanScreen() {
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 placeholder="Title"
-
               />
               <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Move to
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                  const on = detail?.status === s;
-                  return (
-                    <Button
-                      key={s}
+                {statusOptions
+                  .filter((s) => s !== 'archived')
+                  .map((s) => {
+                    const on = detail?.status === s;
+                    return (
+                      <Button
+                        key={s}
 
-                      aria-pressed={on}
-                      aria-label={`Move to ${s}`}
-                      onClick={() => detail && moveTask(detail, s)}
-                      variant={on ? 'default' : 'outline'}
-                      size="sm"
-                      className="rounded-full px-3 py-1.5"
->
-                      <span className="text-[13px] font-medium capitalize">
-                        {s}
-                      </span>
-                    </Button>
-                  );
-                })}
+                        aria-pressed={on}
+                        aria-label={`Move to ${s}`}
+                        onClick={() => detail && moveTask(detail, s)}
+                        variant={on ? 'default' : 'outline'}
+                        size="sm"
+                        className="rounded-full px-3 py-1.5">
+                        <span className="text-[13px] font-medium capitalize">{s}</span>
+                      </Button>
+                    );
+                  })}
               </div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Notes
@@ -475,7 +459,6 @@ export function KanbanScreen() {
                 value={editBody}
                 onChange={(e) => setEditBody(e.target.value)}
                 placeholder="Details…"
-
               />
               <CardChips t={detail} dark={dark} />
               <div className="flex gap-2 pt-1">
@@ -483,16 +466,10 @@ export function KanbanScreen() {
                   onClick={saveDetail}
                   variant="default"
                   className="flex-1 rounded-xl px-4 py-3"
-                  disabled={saving}
->
+                  disabled={saving}>
                   <span className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</span>
                 </Button>
-                <Button
-                  onClick={deleteDetail}
-                  variant="destructive"
-                  className="rounded-xl px-4 py-3"
-                  disabled={saving}
->
+                <Button onClick={deleteDetail} variant="destructive" className="rounded-xl px-4 py-3" disabled={saving}>
                   <span className="text-[15px] font-semibold">Delete</span>
                 </Button>
               </div>
@@ -501,10 +478,7 @@ export function KanbanScreen() {
         </FormSheet>
 
         {/* New task sheet */}
-        <FormSheet
-          open={showCreate}
-          onOpenChange={setShowCreate}
->
+        <FormSheet open={showCreate} onOpenChange={setShowCreate}>
           <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</div>
           <Input
             aria-label="Title"
@@ -519,35 +493,32 @@ export function KanbanScreen() {
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
             placeholder="Details (optional)"
-
           />
           <div className="flex flex-wrap gap-1.5">
-            {statusOptions.filter((s) => s !== 'archived').map((s) => {
-              const on = createStatus === s;
-              return (
-                <Button
-                  key={s}
+            {statusOptions
+              .filter((s) => s !== 'archived')
+              .map((s) => {
+                const on = createStatus === s;
+                return (
+                  <Button
+                    key={s}
 
-                  aria-pressed={on}
-                  aria-label={`Create in ${s}`}
-                  onClick={() => setNewStatus(s)}
-                  variant={on ? 'default' : 'outline'}
-                  size="sm"
-                  className="px-3 py-1.5"
->
-                  <span className="text-[13px] font-medium capitalize">
-                    {s}
-                  </span>
-                </Button>
-              );
-            })}
+                    aria-pressed={on}
+                    aria-label={`Create in ${s}`}
+                    onClick={() => setNewStatus(s)}
+                    variant={on ? 'default' : 'outline'}
+                    size="sm"
+                    className="px-3 py-1.5">
+                    <span className="text-[13px] font-medium capitalize">{s}</span>
+                  </Button>
+                );
+              })}
           </div>
           <Button
             onClick={createTask}
             variant="default"
             className="rounded-xl px-4 py-3"
-            disabled={!newTitle.trim() || saving}
->
+            disabled={!newTitle.trim() || saving}>
             <span className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</span>
           </Button>
         </FormSheet>

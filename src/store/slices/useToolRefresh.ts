@@ -57,8 +57,7 @@ export function useToolRefreshSlice({
     // next turn before the fetch returns. Same for the intact-window flag:
     // with zero live tool bubbles, history tools are only safely "missing"
     // when nothing was ever trimmed or paged out.
-    const anchorId =
-      [...messagesRef.current].reverse().find((m) => m.role === 'assistant')?.id ?? null;
+    const anchorId = [...messagesRef.current].reverse().find((m) => m.role === 'assistant')?.id ?? null;
     const intactWindow = trimmedOlder === 0 && historyExhausted;
     void (async () => {
       try {
@@ -116,18 +115,14 @@ export function useToolRefreshSlice({
         // they land inside their own turn even if the next one already started.
         // Without an anchor the placement is unknowable — fill only.
         const missing =
-          anchorId != null
-            ? missingHistoryTools(historyToItems(items), messagesRef.current, intactWindow)
-            : [];
+          anchorId != null ? missingHistoryTools(historyToItems(items), messagesRef.current, intactWindow) : [];
         // Settle thinking bubbles to the persisted reasoning sidecar (the live
         // delta stream carries status quips; the durable reasoning only lands
         // in history). Only while no turn is running — mid-turn the current
         // bubble is still filling and history has nothing newer for it.
         const histItems = anchorId != null ? historyToItems(items) : [];
         const thinkSync =
-          !generatingRef.current && histItems.length > 0
-            ? pairThinkingText(histItems, messagesRef.current)
-            : [];
+          !generatingRef.current && histItems.length > 0 ? pairThinkingText(histItems, messagesRef.current) : [];
         if (fill.size === 0 && missing.length === 0 && thinkSync.length === 0) return;
         const thinkById = new Map(thinkSync.map((t) => [t.id, t.text] as const));
         setMessages((prev) => {

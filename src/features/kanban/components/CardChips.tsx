@@ -3,7 +3,7 @@ import { memo } from 'react';
 import { Badge } from '../../../components/ui/badge';
 import type { KanbanTask } from '../types';
 
-export const CardChips = memo(function CardChips({ t, dark }: { t: KanbanTask; dark: boolean }) {
+export const CardChips = memo(function CardChips({ t }: { t: KanbanTask; dark: boolean }) {
   const chips: string[] = [];
   if (t.assignee) chips.push(`@${t.assignee}`);
   if (t.priority != null) chips.push(`P${t.priority}`);

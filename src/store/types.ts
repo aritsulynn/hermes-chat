@@ -2,7 +2,6 @@
 // Extracted from hooks/app-store.tsx so the context contract is readable in
 // one place instead of buried above a 4k-line provider.
 import type { AskInboxEntry } from '../services/ask-inbox';
-import type { ResolvedTheme, Theme } from '../services/connection';
 import type { ModelProviderOption } from '../services/dashboard';
 import type { ConnState, GatewayWs, ServerAsk, SessionSummary } from '../services/gateway-ws';
 import type { LiveSessionMap } from './live-sessions';
@@ -32,11 +31,7 @@ export type OpsResult = unknown;
 /** Cookie-authed GET against the dashboard (`services/dashboard`). */
 export type OpsGet = (path: string) => Promise<OpsResult>;
 /** Cookie-authed mutation against the dashboard (`services/dashboard`). */
-export type OpsMut = (
-  path: string,
-  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-  body?: unknown,
-) => Promise<OpsResult>;
+export type OpsMut = (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<OpsResult>;
 /** One row of the full-history search index (plain data, not a live bubble). */
 export interface TranscriptHit {
   role: string;

@@ -4,13 +4,12 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
-import { AlertCircle, RefreshCw, X } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
-import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/bits';
 import { brandColor, screenStyle } from '../../theme';
@@ -41,9 +40,7 @@ const SkillRow = memo(function SkillRow({
     <Card>
       <div className="flex items-center gap-2">
         <button type="button" className="flex min-w-0 flex-1 flex-col" onClick={() => void onOpen(name)}>
-          <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
-            {name}
-          </span>
+          <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">{name}</span>
           {!!skill.description && (
             <span className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
               {String(skill.description)}
@@ -167,8 +164,6 @@ export function SkillsScreen() {
   return (
     <div style={screenStyle(dark)}>
       <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
-        
-
         {/* Header */}
         <ScreenHeader
           title="Skills"
@@ -180,45 +175,46 @@ export function SkillsScreen() {
               size="icon"
               aria-label="Refresh skills"
               onClick={() => void load(true)}
-              className="h-9 w-9 rounded-lg"
->
+              className="h-9 w-9 rounded-lg">
               <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
             </Button>
           }
         />
 
-        <div className="overflow-y-auto flex-1 px-4 py-4"><div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
-          {loading && !refreshing ? (
-            <div className="flex flex-col items-center py-16">
-              <Spinner size={24} color={brand} />
-            </div>
-          ) : unsupported ? (
-            <Card>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                Skills aren&apos;t available on this backend — run skills from the chat with /name instead.
+        <div className="overflow-y-auto flex-1 px-4 py-4">
+          <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
+            {loading && !refreshing ? (
+              <div className="flex flex-col items-center py-16">
+                <Spinner size={24} color={brand} />
               </div>
-            </Card>
-          ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
-          ) : !skills?.length ? (
-            <Card>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</div>
-            </Card>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {skills.map((s) => (
-                <SkillRow
-                  key={String(s.name ?? '(unnamed)')}
-                  skill={s}
-                  dark={dark}
-                  toggling={toggling === String(s.name)}
-                  onToggle={toggle}
-                  onOpen={openContent}
-                />
-              ))}
-            </div>
-          )}
-        </div></div>
+            ) : unsupported ? (
+              <Card>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Skills aren&apos;t available on this backend — run skills from the chat with /name instead.
+                </div>
+              </Card>
+            ) : error ? (
+              <ErrorRetry error={error} onRetry={() => void load()} />
+            ) : !skills?.length ? (
+              <Card>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</div>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {skills.map((s) => (
+                  <SkillRow
+                    key={String(s.name ?? '(unnamed)')}
+                    skill={s}
+                    dark={dark}
+                    toggling={toggling === String(s.name)}
+                    onToggle={toggle}
+                    onOpen={openContent}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* SKILL.md viewer */}
         <DialogPrimitive.Root open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
@@ -227,37 +223,37 @@ export function SkillsScreen() {
             <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
               <DialogPrimitive.Title className="sr-only">Skill file</DialogPrimitive.Title>
               <div className="flex-1" style={{ paddingTop: 48 }}>
-            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <div className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white truncate">
-                {viewing ?? ''}
-              </div>
-              <Button
-                variant="ghost"
-                onClick={() => void writeClipboard(content).catch(() => {})}
-                aria-label="Copy skill file"
-                className="h-auto sm:h-auto px-2 py-1.5"
->
-                <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setViewing(null)}
-                aria-label="Close skill file"
-                className="h-8 w-8 rounded-md"
->
-                <X size={20} color={dark ? '#eee' : '#333'} />
-              </Button>
-            </div>
-            <div className="overflow-y-auto flex-1"><div className="p-4">
-              {contentLoading ? (
-                <Spinner size={14} color={brand} />
-              ) : (
-                <div className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
-                  {content}
+                <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                  <div className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white truncate">
+                    {viewing ?? ''}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => void writeClipboard(content).catch(() => {})}
+                    aria-label="Copy skill file"
+                    className="h-auto sm:h-auto px-2 py-1.5">
+                    <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setViewing(null)}
+                    aria-label="Close skill file"
+                    className="h-8 w-8 rounded-md">
+                    <X size={20} color={dark ? '#eee' : '#333'} />
+                  </Button>
                 </div>
-              )}
-            </div></div>
+                <div className="overflow-y-auto flex-1">
+                  <div className="p-4">
+                    {contentLoading ? (
+                      <Spinner size={14} color={brand} />
+                    ) : (
+                      <div className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
+                        {content}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>

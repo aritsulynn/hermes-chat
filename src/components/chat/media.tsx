@@ -55,8 +55,10 @@ const basename = (s: string) => s.split(/[\\/]/).pop()?.split('?')[0] || s;
 /** True when `url` points at a different origin than the page. */
 const isCrossOrigin = (url: string) => {
   try {
-    return new URL(url, globalThis.location?.href ?? 'http://localhost/').origin !==
-      (globalThis.location?.origin ?? 'http://localhost');
+    return (
+      new URL(url, globalThis.location?.href ?? 'http://localhost/').origin !==
+      (globalThis.location?.origin ?? 'http://localhost')
+    );
   } catch {
     return false;
   }
@@ -383,14 +385,16 @@ export function FilePreviewHost() {
 function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClose: () => void }) {
   const { host, getCookie } = useApp();
   const previewCookie = preview?.kind === 'image' && shouldAttachDashboardCookie(preview.uri, host) ? getCookie() : '';
-  const inset = { top: 'env(safe-area-inset-top, 0px)', bottom: 'env(safe-area-inset-bottom, 0px)' };
   return (
     <DialogPrimitive.Root open={!!preview} onOpenChange={(o) => !o && onClose()}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/95" />
         <DialogPrimitive.Content
           className="fixed inset-0 z-50 flex flex-col outline-none"
-          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 44px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}>
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 44px)',
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+          }}>
           <DialogPrimitive.Title className="sr-only">File preview</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
             Preview of the selected file. Click outside the content to close.
@@ -405,9 +409,7 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
                 />
               </button>
               {!!preview.caption && (
-                <div className="px-4 pb-1 text-center text-xs text-white/70 line-clamp-3">
-                  {preview.caption}
-                </div>
+                <div className="px-4 pb-1 text-center text-xs text-white/70 line-clamp-3">{preview.caption}</div>
               )}
             </>
           ) : preview?.kind === 'text' ? (

@@ -22,12 +22,7 @@
 
 import { slashName } from './messages';
 
-export type SlashUnavailableReason =
-  | 'advanced'
-  | 'composer-voice'
-  | 'messaging'
-  | 'settings'
-  | 'terminal';
+export type SlashUnavailableReason = 'advanced' | 'composer-voice' | 'messaging' | 'settings' | 'terminal';
 
 export type SlashDisposition = SlashUnavailableReason | 'hidden' | null;
 
@@ -298,7 +293,7 @@ const MOBILE_UI_HINT: Record<string, string> = {
   // The worker only acknowledges /btw; the answer arrives as a btw.complete event
   // this app doesn't render, so it would look like it silently did nothing.
   '/btw': "Side questions (/btw) aren't supported in the mobile app yet — send it as a normal message.",
-  '/wake': "The wake-word listener is desktop/terminal-only — not available in the mobile app.",
+  '/wake': 'The wake-word listener is desktop/terminal-only — not available in the mobile app.',
 };
 
 export function slashMobileHint(name: string): string | null {

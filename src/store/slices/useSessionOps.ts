@@ -6,7 +6,13 @@ import { getSessionMessages } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
-import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey, serverAskFromInbox } from '../helpers';
+import {
+  historyToItems,
+  mergeUsageState,
+  normalizeProfileName,
+  profileSessionKey,
+  serverAskFromInbox,
+} from '../helpers';
 import type { ScopedSessionSummary } from '../types';
 import type { StoreCtx } from '../ctx';
 
