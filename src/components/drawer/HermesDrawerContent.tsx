@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CircleUserRound,
   Ellipsis,
+  PanelLeft,
   Search,
   Settings,
   SquarePen,
@@ -413,7 +414,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                 <Search size={20} color={dimColor} />
               </Button>
               <Button variant="ghost" size="icon" aria-label="Close menu" onClick={close}>
-                <X size={20} color={dimColor} />
+                <PanelLeft size={20} color={dimColor} />
               </Button>
             </div>
           )
