@@ -1,28 +1,36 @@
-import { Platform } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { connectionScope, normalizeConnectionBase } from './connection-scope';
 import { DEFAULT_PROFILE } from './constants';
 
 export { connectionScope, normalizeConnectionBase } from './connection-scope';
 export { DEFAULT_PROFILE } from './constants';
 
-// Connection + credential vault. Secrets (password, session cookie) live in
-// SecureStore (encrypted at rest). Non-secrets (host, username) live in
-// AsyncStorage-equivalent plain storage — here also SecureStore for simplicity,
-// keyed separately so a "forget password" can wipe just the secret.
+// Connection + credential vault. Web storage is NOT encrypted: the password and
+// session cookie sit in plain `localStorage`, readable by any script on this
+// origin. The native build kept secrets in the OS keychain, which had no web
+// equivalent — this is a deliberate downgrade, not an oversight.
 //
-// Web has no SecureStore — fall back to AsyncStorage (localStorage).
-// Note: web storage is NOT encrypted; native stays in the OS keychain.
-const useWebStore = Platform.OS === 'web';
+// It is mitigated by scoping every secret key to host+username (see
+// `scopedSecretKey`), so logging into a second dashboard cannot leak across
+// accounts, and by `forgetAll`/`clearPassword` wiping both the scoped and the
+// legacy unscoped key. Treat the "remember password" toggle as opt-in storage
+// of a shared secret, and prefer the cookie flow when a gateway offers it.
 
-// In-memory read-through cache: SecureStore = keychain I/O, slow. Boot reads
-// host/user/pw/cookie/theme/model back-to-back — cache so repeats are free.
-// Writes update the cache synchronously; deletes evict it.
+// In-memory read-through cache. It is no longer a speed optimisation — the
+// native build needed it because keychain I/O is slow, and `localStorage` is
+// not. It exists because `localStorage.setItem` *throws* in some conditions
+// (Safari private browsing, blocked third-party storage, quota). The promise
+// this file makes is "storage is best-effort, never fail login over it", and
+// that promise is only keepable if a value that failed to persist can still be
+// read back for the rest of the session. Writes update the cache synchronously
+// before the physical write is attempted; deletes evict it.
 const memCache = new Map<string, string | null>();
-// Serialize physical writes per key. A late cookie rotation must not win over
-// the clear that follows logout, even when SecureStore calls resolve out of order.
-const storageTails = new Map<string, Promise<void>>();
+
+// The native build also had to serialize writes per key, because SecureStore
+// calls were async and a late cookie rotation could resolve *after* the clear
+// that follows logout, resurrecting a credential. `localStorage` is
+// synchronous, so writes cannot interleave and no queue is needed. The async
+// signatures below stay anyway: they are the module's public contract and
+// unwinding them would touch every call site for no behavioural gain.
 
 const K_HOST = 'hermes.conn.host';
 const K_USERNAME = 'hermes.conn.username';
@@ -39,12 +47,15 @@ const K_MODEL_PROVIDER = 'hermes.ui.modelProvider';
 const K_MODEL_PROVIDER_PREFIX = 'hermes.ui.modelProvider.profile';
 
 /**
- * SecureStore (Android) only accepts `[A-Za-z0-9._-]` in keys and throws on
- * anything else (expo-secure-store build/SecureStore.js — "Invalid key").
- * `encodeURIComponent` emits `%XX`, which is invalid, so every scoped write
- * (cookie, password, profile, model, session, board) silently failed on
- * Android and the app asked for login again after each reload.
- * Hex is a strict subset of the allowed charset on every platform.
+ * `encodeURIComponent` is the obvious choice here and is wrong: it emits `%XX`,
+ * and the Android SecureStore build (the native client this module grew up in)
+ * accepts only `[A-Za-z0-9._-]` in keys and throws on anything else — so every
+ * scoped write silently failed and the app asked for login after each reload.
+ * Hex is a strict subset of the allowed charset everywhere.
+ *
+ * `localStorage` would accept `encodeURIComponent` output, so this could be
+ * "simplified" — don't. The web build has always written hex keys, and existing
+ * users' scoped cookies/models/profiles are stored under them.
  */
 function hexEncode(value: string): string {
   let out = '';
@@ -162,64 +173,56 @@ export interface Connection {
   hasCookie: boolean;
 }
 
-async function get(key: string): Promise<string | null> {
+/** Reading the `localStorage` property can itself throw — a sandboxed iframe or
+ *  a browser with site data disabled raises SecurityError on access, not on
+ *  use — so it is never touched outside a try/catch. */
+function ls(): Storage | null {
   try {
-    const cached = memCache.get(key);
-    if (cached !== undefined) return cached;
-    const pending = storageTails.get(key);
-    if (pending) await pending;
-    const afterWrite = memCache.get(key);
-    if (afterWrite !== undefined) return afterWrite;
-    const v = useWebStore ? await AsyncStorage.getItem(key) : await SecureStore.getItemAsync(key);
-    // Cache hits AND misses (null) so repeat boot reads don't hit keychain again.
-    // Miss cache is short-lived to avoid stale first-run writes.
-    memCache.set(key, v);
-    return v;
+    return globalThis.localStorage ?? null;
   } catch {
-    return memCache.get(key) ?? null;
+    return null;
   }
 }
 
-function queueStorageWrite(key: string, write: () => Promise<void>): Promise<void> {
-  const previous = storageTails.get(key) ?? Promise.resolve();
-  const current = previous
-    .catch(() => {})
-    .then(async () => {
-      try {
-        await write();
-      } catch (e) {
-        // Storage is best-effort (e.g. private mode) — never fail login over it.
-        // But stay loud in dev: a silently-failing write is how the invalid
-        // SecureStore key went unnoticed and forced a login on every reload.
-        if (__DEV__) console.warn(`[storage] write failed for "${key}"`, e);
-      }
-    });
-  storageTails.set(key, current);
-  void current.finally(() => {
-    if (storageTails.get(key) === current) storageTails.delete(key);
-  });
-  return current;
+async function get(key: string): Promise<string | null> {
+  const cached = memCache.get(key);
+  if (cached !== undefined) return cached;
+  let v: string | null = null;
+  try {
+    v = ls()?.getItem(key) ?? null;
+  } catch {
+    v = null;
+  }
+  // Hits AND misses (null) are cached: a boot sequence probes for a password,
+  // a cookie and a profile in a row, and a cached miss is what keeps that from
+  // re-reading storage for keys that were never set.
+  memCache.set(key, v);
+  return v;
 }
 
 async function set(key: string, value: string): Promise<void> {
+  // Cache first and unconditionally: if the physical write below throws, this
+  // session must still behave as though it landed, which is the whole point of
+  // keeping `memCache` around now that `localStorage` is fast.
   memCache.set(key, value);
-  await queueStorageWrite(key, async () => {
-    if (useWebStore) {
-      await AsyncStorage.setItem(key, value);
-    } else {
-      await SecureStore.setItemAsync(key, value, {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-    }
-  });
+  try {
+    ls()?.setItem(key, value);
+  } catch (e) {
+    // Storage is best-effort (private mode, quota, blocked site data) — never
+    // fail a login over it. But stay loud in dev: a silently-failing write is
+    // exactly how the invalid SecureStore key went unnoticed on Android and
+    // forced a login prompt on every single reload.
+    if (import.meta.env.DEV) console.warn(`[storage] write failed for "${key}"`, e);
+  }
 }
 
 async function del(key: string): Promise<void> {
   memCache.delete(key);
-  await queueStorageWrite(key, async () => {
-    if (useWebStore) await AsyncStorage.removeItem(key);
-    else await SecureStore.deleteItemAsync(key);
-  });
+  try {
+    ls()?.removeItem(key);
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn(`[storage] delete failed for "${key}"`, e);
+  }
 }
 
 async function resolveScope(host?: string, username?: string): Promise<{ host: string; username: string } | null> {
@@ -295,12 +298,12 @@ export async function getPassword(host?: string, username?: string): Promise<str
 }
 
 export async function saveCookie(cookie: string, host?: string, username?: string): Promise<void> {
-  // Web keeps the real cookie in the browser jar (JS can't see it) and the
-  // login flow yields an empty string — persist a marker so boot knows a
+  // The browser keeps the real cookie in its own jar and JS cannot read it, so
+  // the login flow yields an empty string — persist a marker so boot knows a
   // session may exist and attempts the silent reconnect (validated via me).
   const scope = await resolveScope(host, username);
   if (!scope) return;
-  const value = useWebStore ? cookie || 'web-jar' : cookie;
+  const value = cookie || 'web-jar';
   const key = scopedSecretKey('cookie', scope.host, scope.username);
   if (value) await set(key, value);
   else await del(key);

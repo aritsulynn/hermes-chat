@@ -10,9 +10,13 @@
 //   2. POST /api/auth/ws-ticket {} (cookie-attached) → {ticket, ttl_seconds}
 //   3. WS upgrade /api/ws?ticket=<ticket> — mint fresh per (re)connect, never reuse.
 //
-// RN fetch/XHR has no shared cookie jar on all platforms the way OkHttp does,
-// so this module keeps `Cookie` headers explicitly and passes them per request.
-import { Platform } from 'react-native';
+// The browser does have a real cookie jar, but a `Set-Cookie` from a plain-HTTP
+// host on a LAN address is only kept if the request asked for it — hence the
+// `credentials: 'include'` on every call below. The explicit `Cookie` header
+// path is retained because `getSetCookies` is still the only way to observe
+// what the gateway handed back, and because `SameSite`/`Domain` mismatches
+// between an `http://192.168.x.x` host and the app's own origin are easier to
+// debug when the header is visible in the request.
 import { normalizeConnectionBase } from './connection-scope';
 import { formatToolCommand } from '../utils/toolResult';
 import { asList, asRecord } from '../utils/ops';
@@ -134,33 +138,27 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
   try {
     res = await fetchWithTimeout(`${base}${api.status()}`, {}, HTTP_PROBE_TIMEOUT_MS);
   } catch (e) {
-    // Browsers hide the reason (CORS vs TCP) behind TypeError. A no-cors
-    // probe distinguishes them: opaque response = reachable but CORS-blocked.
-    if (Platform.OS === 'web') {
-      try {
-        const probe = await fetchWithTimeout(
-          `${base}${api.status()}`,
-          { mode: 'no-cors' } as RequestInit,
-          HTTP_PROBE_TIMEOUT_MS,
-        );
-        if (asRecord(probe).type === 'opaque') {
-          throw new Error(
-            'Dashboard reachable but the browser blocked the request (CORS) — allow this origin on the dashboard, or use the Expo Go native app instead',
-          );
-        }
-      } catch (e2) {
-        if (e2 instanceof Error && /CORS/.test(e2.message)) throw e2;
-      }
-    }
-    const raw = e instanceof Error ? e.message : String(e);
-    // Stale native shell (built before the cleartext config) surfaces as a
-    // CLEARTEXT policy rejection — tell the user it's the app build, not the
-    // server, and that only a fresh native build fixes it (OTA can't).
-    if (/CLEARTEXT/i.test(raw)) {
-      throw new Error(
-        `Android blocked plain-HTTP to this host (CLEARTEXT policy). This build is too old — rebuild the native APK after the network-security fix and reinstall, then retry. Detail: ${raw}`,
+    // The browser hides the reason (CORS vs TCP) behind a bare TypeError. A
+    // no-cors probe tells them apart: an opaque response means the host is
+    // reachable and it is the dashboard's CORS policy that refused us.
+    try {
+      const probe = await fetchWithTimeout(
+        `${base}${api.status()}`,
+        { mode: 'no-cors' } as RequestInit,
+        HTTP_PROBE_TIMEOUT_MS,
       );
+      if (asRecord(probe).type === 'opaque') {
+        throw new Error(
+          'Dashboard reachable but the browser blocked the request (CORS) — this client\'s origin has to be allowed on the dashboard',
+        );
+      }
+    } catch (e2) {
+      if (e2 instanceof Error && /CORS/.test(e2.message)) throw e2;
     }
+    // No CLEARTEXT branch any more: that was Android's network-security policy
+    // rejecting plain HTTP, and a browser has no equivalent. A plain-HTTP
+    // gateway on a LAN address is reachable from here as-is.
+    const raw = e instanceof Error ? e.message : String(e);
     throw new Error(`Unreachable: ${raw}`);
   }
   if (!res.ok) throw new Error(`Dashboard probe failed: HTTP ${res.status}`);
@@ -199,12 +197,12 @@ export async function passwordLogin(baseUrl: string, username: string, password:
     if (res.status === 404) throw new Error('Password provider not enabled on this dashboard (404)');
     throw new Error(`Login failed: HTTP ${res.status}`);
   }
-  const cookies = mergeCookies('', getSetCookies(res));
-  // Web browsers hide Set-Cookie from JS (forbidden header) but store it in
-  // the built-in jar — subsequent credentials:include requests carry it
-  // automatically. Only native needs the explicit cookie string.
-  if (!cookies && Platform.OS !== 'web') throw new Error('Login ok but no session cookie was set');
-  return cookies;
+  // The browser hides Set-Cookie from JS (it is a forbidden header) but stores
+  // it in the built-in jar, and subsequent `credentials: 'include'` requests
+  // carry it automatically. So an empty string here is the *expected* web
+  // result, not a failure — `saveCookie` turns it into a 'web-jar' marker and
+  // boot validates the session against `me`.
+  return mergeCookies('', getSetCookies(res));
 }
 
 /** Step 2: mint a single-use WS ticket (must be consumed within ~30s). */
