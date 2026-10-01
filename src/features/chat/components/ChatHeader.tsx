@@ -142,8 +142,12 @@ export function ChatSearchHeader({
               placeholder="Search conversation…"
               autoCapitalize="none"
               autoFocus
-
-              onKeyDownEnter={onNext}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onNext();
+                }
+              }}
             />
             {hasQuery && (
               <UIText className="ml-1.5 text-xs text-neutral-500 dark:text-neutral-400">

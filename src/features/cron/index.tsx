@@ -5,7 +5,7 @@ import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
 import { Button } from '../../components/ui/button';
 import { ConfirmDialog } from '../../components/ui/dialog';
-import { Sheet, useSheet } from '../../components/ui/sheets';
+import { Sheet } from '../../components/ui/sheets';
 import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
 import { Textarea } from '../../components/ui/textarea';
@@ -54,6 +54,7 @@ import type { DeliveryTarget } from './helpers';
 import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
 import { ScrollArea } from '../../components/ui/scroll';
 import { WindowedList } from '../../components/ui/windowed-list';
+import { navigate } from '../../store/nav';
 
 // Vertical gap between virtualized cards (FlashList v2 ignores `gap` in
 // contentContainerStyle, so the separator carries the spacing).
@@ -475,7 +476,6 @@ const RunCard = memo(function RunCard({
 });
 
 export function CronScreen() {
-  const router = useRouter();
   const { authed, activeProfile, opsGet, opsMut, openSession, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
@@ -524,8 +524,7 @@ export function CronScreen() {
   const [runMessagesLoading, setRunMessagesLoading] = useState(false);
 
   // Bottom sheets: Sheet drives present/dismiss from these two booleans.
-  const formSheet = useSheet(modalOpen);
-  const runsSheet = useSheet(runsModalOpen);
+
 
   useEffect(() => {
     if (authed) return;
@@ -745,12 +744,12 @@ export function CronScreen() {
         if (getAuthScope() !== scope) return;
         setRunsModalOpen(false);
         await openSession(summary);
-        if (getAuthScope() === scope) router.push('/chat');
+        if (getAuthScope() === scope) navigate('/chat');
       } catch (e) {
         if (getAuthScope() === scope) toast({ title: 'Open Chat Failed', description: errMsg(e), variant: 'destructive' });
       }
     },
-    [activeProfile, getAuthScope, openSession, router, selectedJobForRuns],
+    [activeProfile, getAuthScope, openSession, selectedJobForRuns],
   );
 
   // Run Now (Trigger)
@@ -1062,7 +1061,6 @@ export function CronScreen() {
           data={jobs}
           keyExtractor={jobKeyExtractor}
           renderItem={renderJobItem}
-          extraData={jobsExtra}
           ListEmptyComponent={jobsEmpty}
           ItemSeparatorComponent={ListGap12}
           contentClassName={jobsContentClass}
@@ -1071,10 +1069,9 @@ export function CronScreen() {
 
         {/* Create / Edit sheet */}
         <Sheet
-          ref={formSheet.ref}
-          onDismiss={formSheet.onDismiss}
+          open={modalOpen}
+          onOpenChange={setModalOpen}
           snapPoints={['90%']}
-          onClose={() => setModalOpen(false)}
 >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
@@ -1094,7 +1091,7 @@ export function CronScreen() {
           </div>
 
           {/* Body form */}
-          <BottomSheetScrollView
+          <ScrollArea
             className="bg-white dark:bg-black"
             contentClassName="p-[object Object] gap-[object Object] pb-[object Object]"
 >
@@ -1273,16 +1270,11 @@ export function CronScreen() {
                 )}
               </Button>
             </div>
-          </BottomSheetScrollView>
+          </ScrollArea>
         </Sheet>
 
         {/* Runs History sheet */}
-        <Sheet
-          ref={runsSheet.ref}
-          onDismiss={runsSheet.onDismiss}
-          snapPoints={['85%']}
-          onClose={() => setRunsModalOpen(false)}
->
+        <Sheet open={runsModalOpen} onOpenChange={setRunsModalOpen} snapPoints={['85%']}>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
                 <div className="flex-1 pr-2">
@@ -1327,7 +1319,6 @@ export function CronScreen() {
                 data={runsList}
                 keyExtractor={runKeyExtractor}
                 renderItem={renderRunItem}
-          extraData={runsExtra}
                 ListHeaderComponent={runsHeader}
                 ListEmptyComponent={runsEmpty}
                 ItemSeparatorComponent={ListGap12}
