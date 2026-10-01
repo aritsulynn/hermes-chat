@@ -68,15 +68,22 @@ export function useMediaQuery(query: string): boolean {
 }
 
 /**
- * Drop focus from whatever has it. This is what `Keyboard.dismiss()` did: on
- * the web, "dismiss the keyboard" is "blur the focused element".
+ * The sidebar's breakpoint, as a boolean: is the viewport phone-shaped?
  *
- * It is exported rather than inlined because a few call sites need it inside a
- * `useCallback` that must not capture a changing element, and `document` is the
- * one thing that is always the same.
+ * The sidebar renders two different *things* either side of this line — an
+ * in-flow panel above it and a modal sheet below it, not two styles of the same
+ * panel. So it needs a boolean, not a width, and it needs it on the first paint:
+ * `useMediaQuery` reads during render, which is what keeps a reload from
+ * flashing the wrong one.
+ *
+ * The number is the same 768 the shell used before the sidebar arrived
+ * (`SIDEBAR_MIN_WIDTH` in AppShell) — at that width the chat still gets a real
+ * column beside a 300px panel.
  */
-export function blurActiveElement(): void {
-  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+export const MOBILE_BREAKPOINT = 768;
+
+export function useIsMobile(): boolean {
+  return useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
 }
 
 /**
