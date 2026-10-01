@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -27,8 +28,13 @@ function buildId(): string {
 // is the `@/` alias, which is still worth having because `src/components/ui/*`
 // was authored against it (see components.json) and the reusables registry
 // expects it to keep resolving.
+//
+// Tailwind v4 runs as a Vite plugin rather than a PostCSS one. That is the
+// path v4 recommends for Vite, and it is what lets postcss.config.js go away
+// entirely: v4 does its own imports and vendor prefixing, so the autoprefixer
+// and postcss-import pair that v3 needed has nothing left to do.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   define: {
     __BUILD_ID__: JSON.stringify(buildId()),
   },

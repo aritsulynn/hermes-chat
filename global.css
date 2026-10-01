@@ -1,14 +1,94 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4. There is no tailwind.config.js any more: the theme is declared
+   here, in CSS, which is where v4 wants it and what the shadcn CLI expects to
+   find. `@import` replaces the old `@tailwind base/components/utilities`.
+
+   `tw-animate-css` is the v4 successor to `tailwindcss-animate` — it is where
+   the `animate-in` / `fade-out-0` / `slide-in-from-left` utilities the sheets
+   and the drawer overlay use now come from. The class names are unchanged, so
+   the call sites did not have to move. */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* v4 has no `darkMode: 'class'` config key. This registers `dark:` as "inside
+   an element carrying `.dark`", which is what the store toggles on <html>.
+   The `:is(.dark *)` form is deliberate — plain `.dark &` would also match
+   when the class is on the element itself, and <html> *is* an element the
+   utilities could land on. */
+@custom-variant dark (&:is(.dark *));
 
 /* Reusables (shadcn-style) colour tokens. Tailwind classes such as
    `bg-background` / `text-muted-foreground` resolve to these via
-   `hsl(var(--token))` in tailwind.config.js.
+   `hsl(var(--token))`.
 
    The dark palette lives under `.dark` on <html>. Keep this file and
    src/theme.ts in sync — theme.ts mirrors these values as `hsl()` strings for
-   inline styles. */
+   inline styles.
+
+   `inline` is the load-bearing word. Without it v4 compiles `bg-background` to
+   `background-color: var(--color-background)` and then writes a *fixed*
+   `--color-background` into `:root` — one value, decided at build time, which
+   would silently freeze the palette and make the `.dark` override below dead
+   CSS. `inline` puts `hsl(var(--background))` into the utility itself, so the
+   utility is a one-line indirection and swapping the variable on <html> at
+   runtime repaints everything that reads it. That indirection is the whole
+   reason the v3 config wrapped every token in `hsl()` in the first place, and
+   it is what the store's theme toggle is built on.
+
+   The `--chart-*` values below are deliberately NOT listed here. v3 never
+   mapped them to a colour, so no `chart-1` utility was ever generated for
+   them; declaring them in the theme would be a behaviour change, so they stay
+   plain custom properties. */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  /* Sidebar palette. shadcn's sidebar component reads `--sidebar*`, but the
+     registry ships no values for them (the sidebar and the style manifest both
+     declare an empty cssVars), so they are ours to define — which is the
+     outcome to want: the panel keeps this app's palette instead of inheriting
+     shadcn's default greys.
+
+     `--sidebar` is deliberately `--background`, i.e. pure white/black, because
+     that is exactly what the drawer it replaces painted (see `screenBg` in
+     src/theme.ts). `--sidebar-accent` is the active/hover fill the drawer used,
+     and `--sidebar-accent-foreground` is the brand blue active text — note that
+     shadcn spends that one token on both hover *and* active, so hover text is
+     blue too. That is the one visible deviation from the old drawer; see the
+     note in the handoff. */
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+
+  /* Same three overrides the v3 config had. `xl`/`2xl`/`full` are left alone
+     so they keep the v4 defaults, which happen to be the same numbers v3
+     used (0.75rem / 1rem). */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -30,6 +110,17 @@
     --input: 0 0% 89.8%;
     --ring: 0 0% 63%;
     --radius: 0.625rem;
+    /* Sidebar — mirrors the drawer this replaces. `--sidebar` matches
+       `screenBg(false)` (#fff) and `--sidebar-accent-foreground` is
+       `brandColor(false)` (#1a73e8). */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 0 0% 3.9%;
+    --sidebar-accent: 240 10% 92%;
+    --sidebar-accent-foreground: 214 82% 51%;
+    --sidebar-border: 0 0% 89.8%;
+    --sidebar-ring: 0 0% 63%;
+    --sidebar-primary: 0 0% 9%;
+    --sidebar-primary-foreground: 0 0% 98%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -42,7 +133,14 @@
     --foreground: 0 0% 98%;
     --card: 0 0% 3.9%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
+    /* Not `--background`. A floating surface — a menu, a popover, a dialog —
+       has to read as raised against the black page, and at 3.9% it did not:
+       menus were #0a0a0a on #0a0a0a and looked like holes. 13% is #212121,
+       which is the surface this app's own components already used in 14 places
+       (the sheets, the composer, the message bubbles). The shadcn reusables
+       were the only ones on the darker value, and the two conventions meeting
+       here means `bg-popover` and a literal `dark:bg-[#212121]` now agree. */
+    --popover: 0 0% 13%;
     --popover-foreground: 0 0% 98%;
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
@@ -56,6 +154,15 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 300 0% 45%;
+    /* Sidebar dark — `screenBg(true)` is #000 and `brandColor(true)` is #7aa7ff. */
+    --sidebar: 0 0% 0%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 220 100% 74%;
+    --sidebar-border: 0 0% 14.9%;
+    --sidebar-ring: 300 0% 45%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 0 0% 9%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
@@ -78,6 +185,48 @@
        rubber-band scroll chaining from dragging the page behind a sheet. */
     -webkit-text-size-adjust: 100%;
     overscroll-behavior: none;
+  }
+
+  /* ── Two v3 defaults worth keeping ───────────────────────────────────────
+     v4 changed both of these outright, and neither change is an improvement
+     for this app, so they are pinned back here rather than left to drift.
+
+     1. Border colour. v3 Preflight defaulted it to gray-200; v4 uses
+        `currentColor`. That is a real change here, because 62 `border`
+        utilities in this codebase name no colour at all — they rely on the
+        preflight default and are written on the assumption that the line is a
+        faint neutral. Under `currentColor` they would inherit the text colour,
+        so a hairline would come out as a solid dark line and a muted one would
+        come out as invisible.
+
+        The fallback is this app's `--border` token rather than the literal
+        gray-200 that v3 used. Both are #e5e5e5-ish in light mode (the token is
+        exactly #e5e5e5), so light mode is unchanged — but gray-200 is a *fixed*
+        light grey, so under v3 those 62 borders drew a bright line in dark mode
+        too. That was a latent bug the migration carried over, and it is the one
+        users notice first: it is what drew a white seam down the right edge of
+        the sidebar. Pointing at the token makes the default follow the scheme,
+        which is what every one of those call sites actually meant.
+
+        A component that wants its own line colour still says so explicitly —
+        `border-sidebar-border`, `border-neutral-800` and the rest all sit in
+        the utilities layer and win over this base rule.
+
+     2. Button cursor. v4 Preflight hands buttons `cursor: default`. This app
+        is touch-first, so it is nearly a no-op on a phone — but it has a real
+        wide-screen sidebar mode, and there the pointer cursor is the only
+        affordance saying a row is clickable. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: hsl(var(--border));
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
   }
 }
 

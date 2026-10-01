@@ -220,7 +220,7 @@ export function SkillsScreen() {
         <DialogPrimitive.Root open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
-            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-hidden dark:bg-neutral-950">
               <DialogPrimitive.Title className="sr-only">Skill file</DialogPrimitive.Title>
               <div className="flex-1" style={{ paddingTop: 48 }}>
                 <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">

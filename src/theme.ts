@@ -38,7 +38,7 @@ export const THEME = {
     foreground: 'hsl(0 0% 98%)',
     card: 'hsl(0 0% 3.9%)',
     cardForeground: 'hsl(0 0% 98%)',
-    popover: 'hsl(0 0% 3.9%)',
+    popover: 'hsl(0 0% 13%)',
     popoverForeground: 'hsl(0 0% 98%)',
     primary: 'hsl(0 0% 98%)',
     primaryForeground: 'hsl(0 0% 9%)',

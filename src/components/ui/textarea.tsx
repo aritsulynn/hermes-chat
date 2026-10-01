@@ -23,7 +23,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textare
       // by `max-height` in className, so the composer does not need a
       // scrollHeight measurement on every keystroke.
       className={cn(
-        'text-foreground border-input dark:bg-input/30 placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive flex min-h-16 w-full resize-y rounded-md border bg-transparent px-3 py-2 text-base shadow-sm shadow-black/5 outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 field-sizing-content md:text-sm',
+        'text-foreground border-input dark:bg-input/30 placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive flex min-h-16 w-full resize-y rounded-md border bg-transparent px-3 py-2 text-base shadow-xs shadow-black/5 outline-hidden transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 field-sizing-content md:text-sm',
         placeholderClassName,
         className,
       )}

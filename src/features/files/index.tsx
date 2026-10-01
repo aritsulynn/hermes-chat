@@ -640,7 +640,7 @@ export function FilesScreen() {
         <DialogPrimitive.Root open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
-            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-hidden dark:bg-neutral-950">
               <DialogPrimitive.Title className="sr-only">File preview</DialogPrimitive.Title>
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
@@ -857,7 +857,7 @@ export function FilesScreen() {
         <DialogPrimitive.Root open={newFileModalOpen} onOpenChange={setNewFileModalOpen}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
-            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-hidden dark:bg-neutral-950">
               <DialogPrimitive.Title className="sr-only">New file</DialogPrimitive.Title>
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">

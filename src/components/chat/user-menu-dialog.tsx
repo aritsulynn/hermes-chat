@@ -63,7 +63,7 @@ export function UserMenuDialog({
         <DialogPrimitive.Overlay className="fixed inset-0 z-50" />
         <DialogPrimitive.Content
           onEscapeKeyDown={(e) => e.preventDefault()}
-          className="bg-popover border-border fixed z-50 w-[192px] rounded-xl border p-1.5 shadow-lg outline-none"
+          className="bg-popover border-border fixed z-50 w-[192px] rounded-xl border p-1.5 shadow-lg outline-hidden"
           style={{ left, ...position }}>
           <DialogPrimitive.Title className="sr-only">Message actions</DialogPrimitive.Title>
           {children}

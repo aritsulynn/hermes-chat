@@ -390,7 +390,7 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/95" />
         <DialogPrimitive.Content
-          className="fixed inset-0 z-50 flex flex-col outline-none"
+          className="fixed inset-0 z-50 flex flex-col outline-hidden"
           style={{
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 44px)',
             paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
