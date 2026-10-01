@@ -1,3 +1,4 @@
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import {
@@ -18,7 +19,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import * as ImagePicker from 'expo-image-picker';
+import { pickFile } from '../../services/file-picker';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { placeholderColor, screenStyle } from '../../theme';
@@ -338,19 +339,13 @@ export function FilesScreen() {
   const handlePickAndUploadImage = async () => {
     const scope = getAuthScope();
     try {
-      const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        base64: true,
-        quality: 0.8,
-      });
-
-      if (!res.canceled && res.assets && res.assets[0] && res.assets[0].base64) {
+      const asset = await pickFile('image/*');
+      if (asset) {
         setUploading(true);
-        const asset = res.assets[0];
-        const filename = asset.fileName || `photo_${Date.now()}.jpg`;
-        const mime = asset.mimeType || 'image/jpeg';
+        const filename = asset.name || `photo_${Date.now()}.jpg`;
+        const mime = asset.mime || 'image/jpeg';
         const target = joinPath(activeDirectory, filename);
-        const dataUrl = `data:${mime};base64,${asset.base64}`;
+        const dataUrl = asset.dataUrl;
 
         await opsMut(api.filesUpload(), 'POST', {
           path: target,
@@ -424,10 +419,6 @@ export function FilesScreen() {
   // bottom pad clears the home indicator, which the browser reports via env().
   const fileListContentClass =
     'px-4 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] grow';
-  const fileListRefreshControl = useMemo(
-    () => <RefreshControl refreshing={refreshing} onRefresh={() => void load(activeDirectory, true)} />,
-    [refreshing, load, activeDirectory],
-  );
   const fileListHeader = useMemo(
     () =>
       listing?.parent ? (
@@ -652,7 +643,6 @@ export function FilesScreen() {
           keyExtractor={fileKeyExtractor}
           renderItem={renderFileRow}
           contentClassName={fileListContentClass}
-          refreshControl={fileListRefreshControl}
           ListHeaderComponent={fileListHeader}
           ListEmptyComponent={fileListEmpty}
         />
@@ -668,13 +658,12 @@ export function FilesScreen() {
         )}
 
         {/* File Preview Modal */}
-        <Modal
-          visible={previewModalOpen}
-
-
-
->
-          <div className="flex-1 bg-white dark:bg-neutral-950">
+        <DialogPrimitive.Root open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
+              <DialogPrimitive.Title className="sr-only">File preview</DialogPrimitive.Title>
+              <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
               <div className="flex-1 pr-3">
                 <UIText numberOfLines={1} className="font-mono text-base font-bold text-neutral-900 dark:text-white">
@@ -763,7 +752,11 @@ export function FilesScreen() {
             <div className="flex-1 bg-neutral-50 dark:bg-black">
               {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
                 <div className="flex-1 items-center justify-center p-4">
-                  <Image source={{ uri: selectedFile.data_url }} resizeMode="contain" className="h-full w-full" />
+                  <img
+                    src={selectedFile.data_url}
+                    alt={selectedFile.name}
+                    className="size-full object-contain"
+                  />
                 </div>
               ) : isEditingFile ? (
                 <div className="flex-1">
@@ -797,7 +790,9 @@ export function FilesScreen() {
               )}
             </div>
           </div>
-        </Modal>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
 
         {/* Change / Jump to Path Modal */}
         <Dialog open={pathModalOpen} onOpenChange={setPathModalOpen}>
@@ -899,13 +894,12 @@ export function FilesScreen() {
         </Dialog>
 
         {/* Create New File Modal */}
-        <Modal
-          visible={newFileModalOpen}
-
-
-
->
-          <div className="flex-1 bg-white dark:bg-neutral-950">
+        <DialogPrimitive.Root open={newFileModalOpen} onOpenChange={setNewFileModalOpen}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-none dark:bg-neutral-950">
+              <DialogPrimitive.Title className="sr-only">New file</DialogPrimitive.Title>
+              <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
               <div>
                 <UIText className="text-base font-bold text-neutral-900 dark:text-white">Create New File</UIText>
@@ -964,9 +958,11 @@ export function FilesScreen() {
                 placeholder="Enter text or code here..."
                 className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
               />
-            </div>
-          </div>
-        </Modal>
+              </div>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
       </div>
 
       <ConfirmDialog
