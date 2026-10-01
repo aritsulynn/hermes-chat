@@ -144,7 +144,30 @@ const SessionRow = memo(function SessionRow({
   );
 });
 
-export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function HermesDrawerContent({
+  open,
+  onOpenChange,
+  persistent = false,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /**
+   * True when this is the wide-screen sidebar rather than the narrow-screen
+   * overlay. The two want opposite things from the same actions, and the panel
+   * is the only place that can tell them apart, because every call site below
+   * looks identical either way.
+   *
+   * An overlay is a menu: every action inside it — open a session, pick a
+   * profile, start a chat, change screen — has to get it out of the way, which
+   * is why they all dismiss it. A sidebar is furniture: it stays where it is and
+   * moving between screens is the thing it is for. Dismissing it on every tap
+   * would turn it into a menu that happens to be drawn on the left.
+   *
+   * Only those action-triggered dismissals are suppressed. The header button is
+   * still a real close, because on a sidebar it is the collapse toggle.
+   */
+  persistent?: boolean;
+}) {
   const { pathname } = useLocation();
   const {
     authed,
@@ -245,12 +268,16 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
     [filtered.length, loadMoreSessions, ql, sessionsHasMore, sessionsLoadingMore, visibleCount],
   );
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  // Same thing, except it keeps its hands off a sidebar — see `persistent`.
+  const closeAfterAction = useCallback(() => {
+    if (!persistent) onOpenChange(false);
+  }, [persistent, onOpenChange]);
   const handleOpenRecent = useCallback(
     (s: ScopedSessionSummary) => {
-      close();
+      closeAfterAction();
       void openSession(s);
     },
-    [close, openSession],
+    [closeAfterAction, openSession],
   );
   const handleDeleteRecent = useCallback(
     (s: ScopedSessionSummary) => {
@@ -283,7 +310,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
   const isNewChat = onChat && !hasActiveRecent && messages.length === 0;
   const isMoreActive = MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`);
   const go = (name: string) => {
-    close();
+    closeAfterAction();
     navigate(`/${name}`);
   };
   return (
@@ -357,7 +384,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
                             aria-pressed={selected}
                             disabled={busy || selected}
                             onClick={() => {
-                              close();
+                              closeAfterAction();
                               void switchProfile(profile.name);
                             }}
                             className={`h-auto sm:h-auto w-full items-center justify-start gap-3 px-3 py-3 ${
@@ -425,7 +452,7 @@ export function HermesDrawerContent({ open, onOpenChange }: { open: boolean; onO
             disabled={busy}
             onClick={() => {
               if (busy) return;
-              close();
+              closeAfterAction();
               void newSession();
             }}
             className={`h-auto sm:h-auto items-center justify-start gap-3 px-3 py-3 ${isNewChat ? activeItemClass : ''} ${

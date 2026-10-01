@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { AlertCircle, LoaderCircle, Menu as MenuIcon } from 'lucide-react';
+import { useSyncExternalStore, useState } from 'react';
+import { AlertCircle, LoaderCircle, PanelLeft } from 'lucide-react';
 import { useThemeValue } from '../../hooks/app-store';
 import { cn } from '../../utils/cn';
-import { openNavDrawer } from '../../store/nav';
+import { getSidebarShown, openNavDrawer, subscribeSidebarShown } from '../../store/nav';
 import { Alert as UIAlert, AlertDescription } from './alert';
 import { Button } from './button';
 import { Input } from './input';
@@ -72,9 +72,18 @@ export function CtxRing({
   );
 }
 
-// One shared drawer hamburger so every screen looks and behaves the same.
+// One shared drawer toggle so every screen looks and behaves the same.
+//
+// It steps aside while the wide-screen sidebar is showing. The sidebar has its
+// own PanelLeft for collapsing, and two of the same glyph on one screen — one in
+// the sidebar header, one in the screen header — read as a bug rather than as a
+// control. So this button exists exactly when there is no sidebar on screen to
+// carry the toggle, which on a narrow screen is always, and on a wide screen is
+// whenever the sidebar has been collapsed.
 export function HamburgerBtn() {
   const { theme } = useThemeValue();
+  const sidebarShown = useSyncExternalStore(subscribeSidebarShown, getSidebarShown, () => false);
+  if (sidebarShown) return null;
   return (
     <Button
       variant="ghost"
@@ -89,7 +98,7 @@ export function HamburgerBtn() {
         openNavDrawer();
       }}
       className="justify-center px-2 py-2">
-      <MenuIcon size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
+      <PanelLeft size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
     </Button>
   );
 }

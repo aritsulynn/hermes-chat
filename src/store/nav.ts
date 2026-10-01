@@ -58,3 +58,37 @@ export function openNavDrawer(): void {
 export function setDrawerOpener(fn: () => void): void {
   openDrawer = fn;
 }
+
+/**
+ * Whether the shell is showing its persistent sidebar.
+ *
+ * The shell owns this — it is the only component that knows the breakpoint and
+ * the open state. But the hamburger that has to get out of the way while the
+ * sidebar is up lives in every screen's header, far below the shell, which is
+ * the same distance problem `openNavDrawer` solves. So it gets the same answer:
+ * a module singleton the shell writes and the headers subscribe to.
+ *
+ * This is deliberately *not* `openDrawer` above. That is a command; this is a
+ * state, and the overlay drawer on a narrow screen must not hide the hamburger
+ * (the hamburger is underneath the overlay anyway, and closing it is the
+ * overlay's own job).
+ */
+let sidebarShown = false;
+const sidebarListeners = new Set<() => void>();
+
+export function setSidebarShown(shown: boolean): void {
+  if (sidebarShown === shown) return;
+  sidebarShown = shown;
+  for (const listener of sidebarListeners) listener();
+}
+
+export function subscribeSidebarShown(listener: () => void): () => void {
+  sidebarListeners.add(listener);
+  return () => {
+    sidebarListeners.delete(listener);
+  };
+}
+
+export function getSidebarShown(): boolean {
+  return sidebarShown;
+}

@@ -4,7 +4,7 @@
 // of the window and its composer listens to the visual viewport, so both have
 // to react to a resize, a rotation, or a mobile browser's address bar
 // collapsing.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 export interface ViewportSize {
   width: number;
@@ -35,6 +35,36 @@ export function useViewportSize(): ViewportSize {
     };
   }, []);
   return size;
+}
+
+/**
+ * Does the viewport match a media query, tracked live.
+ *
+ * Separate from `useViewportSize` on purpose. That one re-renders on every
+ * pixel of a resize, which is right for a bubble width that is a percentage of
+ * the window but wrong for a layout that changes at a breakpoint: a sidebar
+ * only cares about which side of 768px it is on, and re-rendering the whole
+ * shell — and the screen inside it — on every drag of a window edge is work
+ * with nothing to show for it. `matchMedia` fires once per crossing.
+ *
+ * The value is read during render, not in an effect, so the first paint already
+ * has the right answer and the layout never flashes the wrong mode.
+ */
+export function useMediaQuery(query: string): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const mql = globalThis.matchMedia(query);
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    },
+    [query],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => globalThis.matchMedia(query).matches,
+    // No SSR in this build; the third argument only has to exist.
+    () => false,
+  );
 }
 
 /**
