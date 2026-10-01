@@ -1,5 +1,5 @@
 // Drawer navigation config + icon helper, shared by the drawer content and the
-// route table in app/routes.tsx.
+// route table in routes.tsx.
 import { Activity, BellRing, Boxes, Clock, Folder, Kanban, ScrollText, Wrench } from 'lucide-react';
 
 // Module-level icon helper — used by the route table and the drawer content.

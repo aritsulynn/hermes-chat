@@ -1,18 +1,16 @@
 // Login route — connect to the dashboard.
 //
-// The biometric unlock is gone. It needed `expo-local-authentication` to gate a
-// *stored* password, and there is no stored password: the connect pipeline
-// never writes one and boot clears any left by an older build. The browser
-// equivalent would be a passkey (WebAuthn) against the gateway, which is a
-// different mechanism with a server-side challenge — it belongs to the same
-// Web Auth backlog item as the notification reply flow.
+// There is no biometric unlock: it would need a *stored* password to gate, and
+// no password is stored. The browser equivalent would be a passkey (WebAuthn)
+// against the gateway, which is a different mechanism with a server-side
+// challenge — it belongs to the same Web Auth backlog item as the notification
+// reply flow.
 import { useEffect, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useApp } from '../../hooks/app-store';
 import { Field, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
-import { Text as UIText } from '../../components/ui/text';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { BUILD_ID } from '../../build';
 
@@ -41,7 +39,7 @@ export function LoginScreen() {
 
   if (booting) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-white dark:bg-black">
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-white dark:bg-black">
         <Spinner size={24} color="#1a73e8" />
         <span className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</span>
       </div>
@@ -51,12 +49,14 @@ export function LoginScreen() {
 
   return (
     <div
-      className="flex flex-1 flex-col overflow-y-auto bg-white dark:bg-black"
+      className="flex h-full flex-col overflow-y-auto bg-white dark:bg-black"
       style={{
         paddingTop: 'env(safe-area-inset-top, 0px)',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}>
-      <div className="flex flex-1 flex-col justify-center px-6" style={{ paddingBottom: 24 + kbH }}>
+      <div
+        className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6"
+        style={{ paddingBottom: 24 + kbH }}>
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[#1a73e8] shadow-lg">
@@ -91,7 +91,7 @@ export function LoginScreen() {
           {busy ? (
             <Spinner size={16} color="#fff" />
           ) : (
-            <UIText className="text-[16px] font-bold text-white">Connect</UIText>
+            <span className="text-[16px] font-bold text-white">Connect</span>
           )}
         </Button>
         <p className="mt-5 text-center text-xs text-neutral-400">build {BUILD_ID}</p>

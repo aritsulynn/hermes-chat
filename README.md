@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/icon.png" width="112" alt="Hermes Mobile" />
+  <img src="assets/icon.png" width="112" alt="Hermes" />
 </p>
 
-<h1 align="center">Hermes Mobile</h1>
+<h1 align="center">Hermes Web</h1>
 
 <p align="center">
-  A native iOS / Android client for the <strong>Hermes agent gateway</strong> — streaming chat, tool calls, approvals, and session operations in your pocket.
+  A browser client for the <strong>Hermes agent gateway</strong> — streaming chat, tool calls, approvals, and session operations.
 </p>
 
 <p align="center">
-  Expo SDK 57 · React Native 0.86 · React 19.2 · TypeScript
+  React 19 · Vite · TypeScript · React Router · Tailwind CSS · Radix UI
 </p>
 
 ---
@@ -24,7 +24,7 @@
 **Chat**
 - Token-by-token streaming with collapsible reasoning / "thinking" blocks
 - Tool call cards with live progress and inline diffs
-- Markdown rendering with tappable file links
+- Markdown rendering with clickable file links
 - Edit, resend, regenerate, and branch a conversation from any message
 - Queue messages and steer a turn already in flight, or stop it
 - Live todo list, context gauge, and per-session model / provider picker
@@ -32,7 +32,6 @@
 
 **Sessions & access**
 - Profile-aware sessions with server-side pagination and live status in the drawer
-- Biometric unlock (Face ID / Touch ID / device credential) before sending a reply from a notification
 - Dangerous-command approvals in three modes: `manual`, `smart`, or `off`
 - Approvals and clarifying questions raised by *background* sessions are routed to an **Ask Inbox** instead of hijacking the open chat
 
@@ -44,15 +43,11 @@
 - In-app panel for available server updates
 - Light / dark / system theme
 
-**Notifications**
-- Background alerts when a turn finishes or the agent needs input
-- Approve or reject from the notification, deferred and retried if the gateway is unreachable
-
 ## Screens
 
 | Route | Screen | What it does |
 | --- | --- | --- |
-| `/login` | Login | Gateway host, credentials, biometric unlock |
+| `/login` | Login | Gateway host and credentials |
 | `/chat` | Chat | Streaming conversation, tools, todos, composer |
 | `/asks` | Ask Inbox | Pending approvals from background sessions |
 | `/cron` | Cron Jobs | Scheduled job CRUD, run history |
@@ -62,90 +57,53 @@
 | `/toolsets` | Toolsets | Enable or disable tool groups |
 | `/logs` | Logs | Gateway log stream |
 | `/usage` | Usage | Token and cost usage by day |
-| `/settings` | Settings | Theme, approvals, notifications, profiles, diagnostics |
+| `/settings` | Settings | Theme, approvals, profiles, diagnostics |
 
 `/` simply redirects to `/login`; auth gating lives in the screens themselves.
 
 ## Requirements
 
-- **Node.js** `^20.19.4 || ^22.13.0 || ^24.3.0 || >=25` (required by React Native 0.86)
+- **Node.js** `^20.19.4 || ^22.13.0 || ^24.3.0 || >=25`
 - **npm**
 - **A Hermes gateway** you can reach over HTTP — e.g. `http://your-server:9119`
-- **Xcode** (iOS, macOS only) and/or **Android Studio** for native builds
-- **Expo account** if you want EAS builds or a cloud development build
-
-> This project targets **development builds**, not Expo Go. The custom config
-> plugins (cleartext HTTP for local development, splash screen, release signing) and
-> the `eas.json` `development` profile only apply once the native project is
-> generated, so run at least one native build before expecting the app to work
-> end-to-end.
 
 ## Getting started
 
 ```bash
-git clone https://github.com/aritsulynn/hermes-mobile.git
-cd hermes-mobile
+git clone <this-repo>
+cd hermes-mobile-react-migration
 npm install
+npm run dev
 ```
 
-Then build and run for your platform — this compiles the native project the first
-time and starts Metro:
+Then open the printed URL and enter your gateway host (for example
+`http://your-server:9119`) and your dashboard credentials. They are persisted in
+the browser, so you only do this once.
 
-```bash
-npm run ios        # expo run:ios
-npm run android    # expo run:android
-npm run web        # expo start --web — browser, handy for quick UI work
-```
-
-On first launch, enter your gateway host (for example `http://your-server:9119`) and
-your dashboard credentials. They are persisted on the device, so you only do this once.
-
-Metro on its own, without a build, is available via `npm start` — useful when you just
-want to reload or clear the cache.
-
-For a shareable build that updates over the air, use the EAS development profile:
-
-```bash
-eas build --profile development --platform ios
-```
+The dev server binds all interfaces (`host: true`) because the gateway is usually
+a plain-HTTP host on a LAN address.
 
 ## Configuration
 
-There is **no `.env` file**, and no `EXPO_PUBLIC_*` variables. Everything is
-configured in-app or in `app.json`:
-
-| What | Where |
-| --- | --- |
-| Gateway host, credentials, theme | Entered on the Login screen, persisted on device |
-| App name, icon, scheme, bundle IDs | `app.json` |
-| Cleartext HTTP for local dev | `plugins/allow-cleartext.js` |
-| Android release signing | `plugins/secure-release-signing.js` |
-
-Release builds take their keystore from `HERMES_KEYSTORE_PATH`,
-`HERMES_KEYSTORE_PASSWORD`, `HERMES_KEY_ALIAS`, and `HERMES_KEY_PASSWORD`
-(`MYAPP_UPLOAD_*` is accepted as a fallback). The plugin deliberately throws
-rather than falling back to the public debug keystore.
-
-Bump `BUILD_ID` in `src/build.ts` on every shipped change. It is displayed on the
-login and settings screens so a device can report exactly which bundle it is
-running.
+There is no `.env` file. The gateway host and credentials are entered on the
+Login screen and stored in the browser. The build id shown on Login and Settings
+is read from git at config time (`vite.config.ts`), not hand-bumped.
 
 ## Project structure
 
 ```
 src/
-  app/          expo-router routes — thin re-exports, one per screen
-  features/     screen implementations: index.tsx + helpers.ts + types.ts + components/
+  main.tsx      entry — mounts <App/>
+  App.tsx       router: BrowserRouter + AppProvider + routes
+  AppShell.tsx  chrome around every screen: drawer/sidebar, toasts, connection banner
+  routes.tsx    URL -> screen table
+  features/     screens: index.tsx + helpers.ts + types.ts + components/
   store/        AppStore: orchestrator + slices/ + shared runtime refs
   services/     transport only — dashboard REST, gateway WebSocket, storage
   components/   ui/ (reusables), chat/, drawer/
+  hooks/        app-store.tsx (React context over the store), generic hooks
   utils/        pure helpers and types
-plugins/        Expo config plugins
-docs/           local working notes (not tracked in git)
 ```
-
-Routes stay deliberately thin: `src/app/chat.tsx` renders `<ChatScreen />` from
-`src/features/chat`. Screen logic belongs in the feature folder.
 
 ## Architecture
 
@@ -153,13 +111,16 @@ Routes stay deliberately thin: `src/app/chat.tsx` renders `<ChatScreen />` from
   and owns the cross-cutting orchestration: connection and auth, session management,
   the turn engine, and the gateway WebSocket wiring (`openWs`). Slices own their own
   state and refs; shared cross-cutting refs live in `src/store/runtime.ts` to break
-  ordering cycles.
+  ordering cycles. `src/hooks/app-store.tsx` exposes it through React context.
 - **Services vs utils.** `src/services/` is transport only; `src/utils/` is pure logic
   and types. Shared protocol constants live in the import-free leaf
   `src/services/constants.ts`.
-- **Theming.** shadcn-style colour tokens are declared in `global.css` and mirrored in
-  `src/theme.ts` for inline styles — change both. NativeWind v4 is configured with
-  `darkMode: 'class'` and `inlineRem: 16`.
+- **Navigation.** `src/routes.tsx` maps URLs to screens. The store slices route
+  themselves from WebSocket callbacks, where no hook is available, through the
+  module-level bridge in `src/store/nav.ts`.
+- **Theming.** Colour tokens are declared in `global.css` and mirrored in
+  `src/theme.ts` for inline styles — change both. Tailwind is configured with
+  `darkMode: 'class'` and the store toggles `.dark` on `<html>`.
 
 ### Session routing is the sharp edge
 
@@ -193,12 +154,14 @@ is fine; ids that never match mean the id spaces differ.
 ## Development
 
 ```bash
+npm run dev         # vite dev server
 npm run typecheck   # tsc --noEmit
 npm test            # node --experimental-strip-types --test
+npm run build       # vite build
 ```
 
-Both must be green before a change is considered done. There is no linter or
-formatter configured.
+Typecheck and tests must be green before a change is considered done. There is no
+linter or formatter configured.
 
 ### Tests
 
@@ -224,24 +187,14 @@ Run one file with:
 node --experimental-strip-types --test src/utils/usage.test.mjs
 ```
 
-### Native folders
+## Deployment
 
-`ios/` and `android/` are generated by Expo's continuous native generation and are
-gitignored. Never hand-edit them — change `app.json` or a config plugin and rebuild.
+`npm run build` emits a static bundle in `dist/`. Because the router uses history
+mode, the host must rewrite unknown paths to `index.html` (a deep link like
+`/chat` has to survive a reload):
 
-## Releases
-
-EAS build profiles are defined in `eas.json`:
-
-| Profile | Purpose | Android artifact |
-| --- | --- | --- |
-| `development` | Dev client with live reload, internal distribution | — |
-| `preview` | Internal test builds | `apk` |
-| `production` | Store builds | `app-bundle` |
-
-```bash
-eas build --profile preview    --platform android
-eas build --profile production --platform android
+```
+/*  ->  /index.html  200
 ```
 
 ## Contributing

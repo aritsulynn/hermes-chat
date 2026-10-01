@@ -87,7 +87,7 @@ export function useStreaming(): Record<string, string> {
 // The theme triple, isolated from AppContext for the same reason as streaming.
 // A theme toggle changes `theme`, so leaving it in the shared value gave every
 // useApp() consumer a new context object and re-rendered all of them — the
-// three themed hosts in app/_layout.tsx, the drawer's already-mounted screens,
+// three themed hosts in AppShell.tsx, the drawer's already-mounted screens,
 // the file-preview host — for a colour change. Only 18 sites read the theme, so
 // it gets its own context and the rest of the app never hears about it.
 const ThemeContext = createContext<ThemeSlice | null>(null);
