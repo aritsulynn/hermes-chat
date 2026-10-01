@@ -31,7 +31,6 @@ import { buildImageSource, shouldAttachDashboardCookie } from '../../services/me
 import { cn } from '../../utils/cn';
 import { Button } from '../ui/button';
 import { Spinner } from '../ui/bits';
-import { Text as UIText } from '../ui/text';
 import * as api from '../../services/api';
 import { MEDIA_FETCH_TIMEOUT_MS, PREVIEW_MAX_CHARS } from '../../services/constants';
 
@@ -152,11 +151,9 @@ async function shareUri(uri: string, name?: string): Promise<void> {
 /**
  * Resolve a markdown image src into something `<img>` can load.
  *
- * The native build attached the dashboard session cookie as a `Cookie` *header*
- * on the image request, because React Native's image loader does not share the
- * app's fetch jar. A browser `<img>` has no header channel at all — the only
- * credential it can send is the cookie jar, and only if the request is
- * same-origin or explicitly opted into credentials.
+ * A browser `<img>` has no header channel at all — the only credential it can
+ * send is the cookie jar, and only if the request is same-origin or explicitly
+ * opted into credentials.
  *
  * So: same-origin URLs are handed straight to `<img>` and the browser's own
  * cookie handling applies. Cross-origin ones are fetched with
@@ -247,15 +244,15 @@ function BrokenImage({ src, alt, dark }: { src: string; alt?: string; dark: bool
       aria-label={alt || basename(p) || 'Open link'}
       className="my-1 h-auto sm:h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700">
       <ImageOff size={15} color={dark ? '#aaa' : '#777'} />
-      <UIText numberOfLines={1} className="flex-1 text-left text-[13px] text-neutral-600 dark:text-neutral-300">
+      <span className="flex-1 text-left text-[13px] text-neutral-600 dark:text-neutral-300 truncate">
         {alt || basename(p) || 'image'}
-      </UIText>
+      </span>
       {openable && <ChevronRight size={14} color={dark ? '#aaa' : '#777'} />}
     </Button>
   );
 }
 
-/** Viewport width, tracked live. Replaces RN's useWindowDimensions. */
+/** Viewport width, tracked live. */
 function useViewportWidth(): number {
   const [width, setWidth] = useState(() => globalThis.innerWidth || 1024);
   useEffect(() => {
@@ -281,9 +278,8 @@ export function ChatImage({ src, alt, dark }: { src: string; alt?: string; dark:
     boxH = 340;
     if (ratio) boxW = Math.round(boxH * ratio);
   }
-  // The native build handed expo-image a `{uri, headers}` source. A DOM <img>
-  // takes a plain URL; the cookie is delivered by the browser's jar (see
-  // useResolvedImage), so this only reads `uri`.
+  // A DOM <img> takes a plain URL; the cookie is delivered by the browser's jar
+  // (see useResolvedImage), so this only reads `uri`.
   const imgUri = useMemo(() => buildImageSource(uri ?? '', host, cookie).uri, [uri, host, cookie]);
   const boxStyle = useMemo(
     () => ({
@@ -409,22 +405,22 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
                 />
               </button>
               {!!preview.caption && (
-                <UIText numberOfLines={3} className="px-4 pb-1 text-center text-xs text-white/70">
+                <div className="px-4 pb-1 text-center text-xs text-white/70 line-clamp-3">
                   {preview.caption}
-                </UIText>
+                </div>
               )}
             </>
           ) : preview?.kind === 'text' ? (
             <div className="mx-3 overflow-y-auto rounded-xl bg-white/5 p-3">
-              <UIText className="select-text whitespace-pre-wrap text-[13px] leading-[19px] text-white/90">
+              <div className="select-text whitespace-pre-wrap text-[13px] leading-[19px] text-white/90">
                 {preview.text || '(empty file)'}
-              </UIText>
+              </div>
             </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6">
               <ImageOff size={28} color="#888" />
-              <UIText className="text-center text-sm text-white/70">Can’t preview this file type in the app.</UIText>
-              <UIText className="text-center text-xs text-white/40">Open it from the Files tab instead.</UIText>
+              <div className="text-center text-sm text-white/70">Can’t preview this file type in the app.</div>
+              <div className="text-center text-xs text-white/40">Open it from the Files tab instead.</div>
             </div>
           )}
           <Button
@@ -447,10 +443,10 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
               className="absolute left-3 h-auto sm:h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
               style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
               <Share2 size={16} color="#fff" />
-              <UIText className="text-[12px] font-semibold text-white">Share</UIText>
+              <span className="text-[12px] font-semibold text-white">Share</span>
             </Button>
           )}
-          <UIText className="pt-2 text-center text-[11px] text-white/30">tap to close</UIText>
+          <div className="pt-2 text-center text-[11px] text-white/30">tap to close</div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

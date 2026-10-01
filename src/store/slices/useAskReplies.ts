@@ -140,9 +140,8 @@ export function useAskRepliesSlice({
   // of answering an ask from a notification. Its only caller was the
   // notification-reply flow, so it went with it. The browser's equivalent is
   // WebAuthn (`navigator.credentials.get` against a passkey), which is a
-  // different mechanism with a server-side challenge and an origin-bound RP id
-  // — not a port of `expo-local-authentication`. It belongs to the same
-  // Web Push backlog item as the reply flow it guarded.
+  // different mechanism with a server-side challenge and an origin-bound RP id.
+  // It belongs to the same Web Push backlog item as the reply flow it guarded.
 
   return {
     respondToInbox,

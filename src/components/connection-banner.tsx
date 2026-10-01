@@ -14,7 +14,6 @@ import { CloudOff, RefreshCw } from 'lucide-react';
 import { useApp, useThemeValue } from '../hooks/app-store';
 import { Button } from './ui/button';
 import { Spinner } from './ui/bits';
-import { Text as UIText } from './ui/text';
 
 export function ConnectionBanner() {
   const { conn, authed, login } = useApp();
@@ -45,11 +44,10 @@ export function ConnectionBanner() {
         ) : (
           <Spinner size={14} color={dark ? '#fcd34d' : '#b45309'} />
         )}
-        <UIText
-          numberOfLines={2}
-          className="flex-1 text-xs font-medium text-amber-900 dark:text-amber-100">
+        <div
+          className="flex-1 text-xs font-medium text-amber-900 dark:text-amber-100 line-clamp-2">
           {message}
-        </UIText>
+        </div>
         {dropped && (
           <Button
             variant="ghost"
@@ -58,7 +56,7 @@ export function ConnectionBanner() {
             onClick={() => void login()}
             className="h-auto sm:h-auto shrink-0 rounded-lg px-2 py-1">
             <RefreshCw size={13} color={dark ? '#fcd34d' : '#b45309'} />
-            <UIText className="text-xs font-semibold text-amber-800 dark:text-amber-200">Retry</UIText>
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">Retry</span>
           </Button>
         )}
       </div>

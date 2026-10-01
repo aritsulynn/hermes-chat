@@ -1,5 +1,4 @@
-// Chat route — transcript + composer (was the 'chat' screen in App.tsx).
-// Header back opens the drawer; the native Drawer replaces NavDrawer/EdgeSwipe.
+// Chat route — transcript + composer.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { pickFiles } from '../../services/file-picker';
 import { Navigate as Redirect } from 'react-router-dom';
@@ -35,16 +34,11 @@ import { AskSheet, InfoSheet } from '../../components/ui/sheets';
 import { CtxRing, HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
 import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
 import { FALLBACK_SLASH, messageMatchesSearch } from './helpers';
 import { CHAT_WINDOW_SOFT_CAP } from '../../services/constants';
 import type { TranscriptHit } from '../../store/types';
-import { ScrollArea } from '../../components/ui/scroll';
-
-// FlashList v2 sizes rows itself (no estimatedItemSize / getItemLayout).
-// Heterogeneous bubbles recycle per role via getItemType below.
 
 export function ChatScreen() {
   const {
@@ -148,16 +142,11 @@ export function ChatScreen() {
     usage?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(usage.contextPercent))) : null;
   const ctxTone = ctxPct == null ? 'ok' : contextTone(ctxPct);
 
-  // Numeric bubble cap. A percentage max-width is not enough here: markdown
-  // nests lists inside the bubble, and a percentage only resolves against a
-  // parent that has already been laid out. A pixel value constrains the
-  // measurement itself.
   const { width: winW, height: winH } = useViewportSize();
-  const bubbleMax = Math.round(winW * 0.85);
 
   // Theme tokens resolved once per scheme: this screen re-renders on every
-  // streamed token, and a fresh style object per render would re-push the
-  // surface colours to native each time.
+  // streamed token, and a fresh style object per render would rebuild the
+  // surface colours each time.
   const screen = useMemo(() => screenStyle(dark), [dark]);
   // The 52px bar plus the OS inset. `env()` in a class would be tidier, but this
   // one also reports a height the layout below reads, so it stays a value.
@@ -344,12 +333,8 @@ export function ChatScreen() {
   // via content padding (see listContentStyle) instead of flex space.
   const [dockH, setDockH] = useState(0);
   // The overlay footer's own box, measured. This is the composer clearance the
-  // transcript's bottom padding is built from, and it was silently zero: the
-  // native build measured it with `onLayout`, the port dropped that prop, and
-  // nothing was left to write the state. Symptom was the last bubble rendering
-  // underneath the composer card.
-  //
-  // A ResizeObserver rather than a layout callback, and it watches the footer
+  // transcript's bottom padding is built from. A ResizeObserver rather than a
+  // layout callback, and it watches the footer
   // rather than the composer card, because the footer's box is what the
   // transcript has to clear: it includes the `paddingBottom: kbH + kbGap` that
   // lifts the card above the keyboard, so one number covers both cases.
@@ -454,7 +439,7 @@ export function ChatScreen() {
   );
 
   // Stable handlers — MessageBubble and Composer are memo()'d, so inline arrows
-  // here would re-render every bubble (markdown re-parse + native tree rebuild)
+  // here would re-render every bubble (markdown re-parse + DOM rebuild)
   // and the focused TextInput on each streamed token.
   const openModelPicker = useCallback((m: AnchorMeasure) => openPopover('model', m), [openPopover]);
   const openEffortPicker = useCallback((m: AnchorMeasure) => openPopover('effort', m), [openPopover]);
@@ -498,8 +483,8 @@ export function ChatScreen() {
 
   const scrollEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Trailing throttle for the per-token auto-follow (see
-  // handleContentSizeChange): without it every streamed token fires a native
-  // scroll command (~30/s) — layout thrash and a viewport that fights back.
+  // handleContentSizeChange): without it every streamed token fires a scroll
+  // command (~30/s) — layout thrash and a viewport that fights back.
   const followTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Backstop for the fresh-load pin below (cleared + reset per reload).
   const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -515,11 +500,9 @@ export function ChatScreen() {
         flying.current = true;
         // `flying` means "the next scroll events are mine, not the user's".
         //
-        // On a native list that had to cover a momentum animation, so it was held
-        // for 1200ms as a backstop. A DOM scroll is not like that:
         // `behavior: 'auto'` is applied synchronously and emits exactly one
         // scroll event, so a short window is correct; `'smooth'` genuinely does
-        // animate and needs longer. The two are now separated because the
+        // animate and needs longer. The two are separate because the
         // over-long window on the instant path was a livelock, not just waste —
         // `handleScroll` ignores the user's own scroll while `flying` is set, so
         // a follow re-arming it every 250ms meant the counter that disengages
@@ -546,11 +529,10 @@ export function ChatScreen() {
   // Small snap-through near the end on downward releases only — an upward
   // release is the user reading back, and must never be stolen.
   //
-  // Fired from the scroller's pointerup rather than from a scroll event: the
-  // native list had a drag-end event, and a scroll tick is not the same thing.
-  // On the web a fling can come to rest before its last scroll event is
-  // delivered, so a screen that only heard `onScroll` would settle the follow
-  // state late or not at all.
+  // Fired from the scroller's pointerup rather than from a scroll event: a
+  // fling can come to rest before its last scroll event is delivered, so a
+  // screen that only heard `onScroll` would settle the follow state late or not
+  // at all.
   const snapToEnd = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
@@ -680,11 +662,10 @@ export function ChatScreen() {
   // Attach actions live here (not in the composer) because their UI — the "+"
   // popover — is rendered at screen level. See pickImage/pickFile callers below.
   // Images go through the same <input type="file"> as everything else, with an
-  // `accept` filter standing in for the native picker's `mediaTypes`. Note what
-  // is *not* here: the native path asked the picker to downscale to quality
-  // 0.8. A browser cannot re-encode an image it did not decode, and the
-  // upload has a size ceiling that rejects anything too large anyway, so the
-  // original file goes up as-is.
+  // `accept` filter. Note what is *not* here: there is no downscale-to-quality
+  // step. A browser cannot re-encode an image it did not decode, and the upload
+  // has a size ceiling that rejects anything too large anyway, so the original
+  // file goes up as-is.
   const pickImage = useCallback(async () => {
     setPopover(null);
     const picked = await pickFiles({ accept: 'image/*', multiple: true });
@@ -709,12 +690,6 @@ export function ChatScreen() {
 
   // The ask and info sheets are controlled Radix dialogs: `open` is the store
   // state, full stop.
-  //
-  // The 60 lines this replaces were a state machine for two gorhom bugs. Its
-  // dismiss() on a never-presented sheet flipped the internal status to
-  // DISMISSING, after which the portal refused to render anything — silently,
-  // forever — and presenting mid-dismiss stranded the backdrop as a stuck dark
-  // screen. Both needed a flag to avoid the call. Neither has a DOM equivalent:
   // React re-renders from `open`, so "presenting again" and "staying open" are
   // the same statement.
   //
@@ -812,24 +787,18 @@ export function ChatScreen() {
     return s;
   }, [searchOpen, sq, messages, streamingTexts]);
   // `paddingBottom: dockH` keeps the last bubble scrollable above the overlaid
-  // composer; the gap between rows is `gap-2` on this box, which is what
-  // FlashList's explicit separator existed to work around (its cells are
-  // absolutely positioned, so `gap` on the container was ignored).
+  // composer; the gap between rows is `gap-2` on this box.
   // Static classes only. The composer clearance is a style, not a class: a
   // Tailwind utility built from a template literal is never emitted by the
   // scanner, so `pb-[${dockH}px]` produced no rule at all and the transcript had
   // no bottom padding — the last bubble sat under the composer.
-  const listContentClass = 'flex flex-col gap-2 px-3 pt-3';
+  const listContentClass = 'mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pt-3';
   const listContentStyle = useMemo(() => ({ paddingBottom: Math.round(dockH) }), [dockH]);
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
-  // (was: FlashList recycled per bubble role, and
   // Armed while an older page loads: offset + content height captured after
   // the fetch resolves, consumed by the next content-size growth (see
   // handleContentSizeChange). Without it a prepend yanks the viewport upward.
   const prependAdj = useRef<{ prevY: number; prevContentH: number } | null>(null);
-  // held the viewport steady across a prepend. Both are gone: the scroller is
-  // plain DOM, so `renderItem` re-runs on any prop change and the position is
-  // corrected by handleContentSizeChange.)
   const handleContentSizeChange = useCallback(
     (h: number) => {
       const prevH = contentH.current;
@@ -861,7 +830,7 @@ export function ChatScreen() {
         followTimer.current = null;
         if ((!stickEnd.current && !pinWanted.current) || touching.current) return;
         // Skip micro-gaps: the bottom is already on screen, and firing a
-        // native scroll per tick for a few pixels is what made following look
+        // scroll per tick for a few pixels is what made following look
         // steppy. Glide (animated) for short hops, jump (instant) for long
         // hauls — same rule as the scroll-to-bottom button (a full-transcript
         // animated glide reads as a slow descent).
@@ -873,9 +842,8 @@ export function ChatScreen() {
     },
     [scrollEnd],
   );
-  // The same stick-to-bottom heuristic as before, reading position off the
-  // element instead of a native scroll event. `AT_END_PX` and every ref below
-  // are unchanged — only the source of the numbers moved.
+  // The stick-to-bottom heuristic, reading position off the element.
+  // `AT_END_PX` and every ref below are unchanged.
   const handleScroll = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
@@ -895,11 +863,7 @@ export function ChatScreen() {
     } else if (touching.current) {
       // Genuine user driving (finger down, wheel, or trackpad): disengage
       // immediately and retire load intent — the user positioned deliberately.
-      //
-      // This used to read `touching.current || momentum.current`, and the
-      // momentum half was dead on arrival: its only setter was FlashList's
-      // onMomentumScrollBegin, which went when FlashList did. On the web a
-      // trackpad fling is a wheel gesture, so `touching` now covers it.
+      // A trackpad fling is a wheel gesture, so `touching` covers it.
       missEnd.current = 0;
       stickEnd.current = false;
       pinWanted.current = false;
@@ -925,7 +889,6 @@ export function ChatScreen() {
       return (
         <MessageBubble
           item={item}
-          bubbleMax={bubbleMax}
           dark={dark}
           expanded={!!expanded[item.id]}
           highlight={highlightIds?.has(item.id) ?? false}
@@ -942,7 +905,7 @@ export function ChatScreen() {
         />
       );
     },
-    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, onBranchChat, openUserMenu, showTip],
+    [dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, onBranchChat, openUserMenu, showTip],
   );
 
   const closeSearch = useCallback(() => {
@@ -981,7 +944,7 @@ export function ChatScreen() {
       return (
         <div className="flex flex-col items-center py-3">
           <Spinner size={14} color="currentColor" />
-          <UIText className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</UIText>
+          <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</div>
         </div>
       );
     }
@@ -989,9 +952,9 @@ export function ChatScreen() {
       return (
         <div className="flex flex-col items-center py-1.5">
           <Button variant="ghost" onClick={onLoadOlder} className="px-3 py-1.5">
-            <UIText className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+            <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
               ↑ Load older messages
-            </UIText>
+            </span>
           </Button>
         </div>
       );
@@ -1007,7 +970,7 @@ export function ChatScreen() {
         <div className="flex flex-col flex-1 bg-white items-center justify-center gap-3 dark:bg-black">
           
           <Spinner size={24} color="currentColor" />
-          <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</UIText>
+          <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</div>
         </div>
       </div>
     );
@@ -1027,9 +990,9 @@ export function ChatScreen() {
         <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
           
           <div className="flex flex-col flex-1 items-center justify-center p-6">
-            <UIText className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</UIText>
+            <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</div>
             <Button variant="default" onClick={() => void newSession()} className="mt-2 items-center px-[18px] py-[11px]">
-              <UIText className="text-[15px] font-semibold">+ New chat</UIText>
+              <span className="text-[15px] font-semibold">+ New chat</span>
             </Button>
           </div>
         </div>
@@ -1060,7 +1023,7 @@ export function ChatScreen() {
   // content, minus the 6px anchor gap and an 8px top margin. The popover grows
   // upward from the composer, so without this the model list (which gets long
   // as soon as a search auto-expands every matching provider) slides up under
-  // the native header and hides the search field being typed into.
+  // the header and hides the search field being typed into.
   const popSpaceAbove = popover ? Math.max(0, popRelY - 14) : 0;
   const popMaxH =
     popover?.kind === 'model'
@@ -1146,9 +1109,9 @@ export function ChatScreen() {
                   {!!target.ts && (
                     <div className="flex items-center gap-2.5 px-3 py-2">
                       <Clock size={17} color={dark ? '#888' : '#999'} />
-                      <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                      <div className="text-[13px] text-neutral-500 dark:text-neutral-400">
                         {formatBubbleTime(target.ts)}
-                      </UIText>
+                      </div>
                     </div>
                   )}
                   {showCopy && (
@@ -1161,7 +1124,7 @@ export function ChatScreen() {
                       className="flex items-center gap-2.5 px-3 py-2.5"
 >
                       <Copy size={17} color={headerIcon} />
-                      <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</UIText>
+                      <span className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</span>
                     </Button>
                   )}
                   {showEdit && (
@@ -1174,7 +1137,7 @@ export function ChatScreen() {
                       className="flex items-center gap-2.5 px-3 py-2.5"
 >
                       <Pencil size={17} color={headerIcon} />
-                      <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</UIText>
+                      <span className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</span>
                     </Button>
                   )}
                 </div>
@@ -1194,10 +1157,8 @@ export function ChatScreen() {
       <div className="flex min-h-0 flex-1 flex-col">
         {/* A plain scroll container, not a virtualizer — see
             components/chat/transcript.tsx for why this list is the exception.
-            `onScroll` is the only scroll signal: a DOM scroller fires it
-            continuously, where the native list needed momentum/drag-end events
-            as a backstop and had to distinguish them. Stick-to-bottom and the
-            prepend correction are unchanged and still driven from here. */}
+            `onScroll` is the only scroll signal; stick-to-bottom and the
+            prepend correction are driven from here. */}
         <Transcript
           ref={listRef}
           scrollerRef={scrollerRef}
@@ -1242,18 +1203,18 @@ export function ChatScreen() {
             backgroundColor: 'transparent',
           }}
         >
+        <div className="mx-auto w-full max-w-3xl">
         {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
         {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling
             that appears/disappears next to a focused input is one more chance
             for the browser to drop the caret out of the composer. */}
-        <UIText
-          className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400"
-          numberOfLines={1}
+        <div
+          className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400 truncate"
           style={toolLine ? undefined : { display: 'none' }}
 >
           {toolLine ?? ''}
-        </UIText>
+        </div>
         {/* Agent todo checklist (`todo.updated`) — one collapsed summary line,
             tap to expand the full list. */}
         {todos.length> 0 &&
@@ -1267,19 +1228,18 @@ export function ChatScreen() {
                   onClick={() => setTodosOpen((v) => !v)}
                   className="flex items-center gap-2 px-3 py-2"
 >
-                  <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     Tasks
-                  </UIText>
-                  <UIText className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                  </span>
+                  <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
                     {done}/{todos.length}
-                  </UIText>
+                  </span>
                   {!todosOpen && active && (
-                    <UIText
-                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
-                      numberOfLines={1}
+                    <span
+                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate"
 >
                       · {todoLabel(active)}
-                    </UIText>
+                    </span>
                   )}
                   {todosOpen && <div className="flex-1" />}
                   {todosOpen ? (
@@ -1289,13 +1249,13 @@ export function ChatScreen() {
                   )}
                 </Button>
                 {todosOpen && (
-                  <ScrollArea className="max-h-[200px]">
+                  <div className="overflow-y-auto max-h-[200px]"><div>
                     {todos.map((t, i) => {
                       const d = todoDone(t);
                       const a = todoActive(t);
                       return (
                         <div key={`${i}-${todoLabel(t)}`} className="flex items-start gap-2 px-3 py-1">
-                          <UIText
+                          <div
                             className={`shrink-0 text-[13px] leading-[18px] ${
                               d
                                 ? 'text-emerald-600 dark:text-emerald-400'
@@ -1305,8 +1265,8 @@ export function ChatScreen() {
                             }`}
 >
                             {d ? '✓' : a ? '◐' : '○'}
-                          </UIText>
-                          <UIText
+                          </div>
+                          <div
                             className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
                               d
                                 ? 'text-neutral-400 line-through dark:text-neutral-500'
@@ -1314,11 +1274,11 @@ export function ChatScreen() {
                             }`}
 >
                             {todoLabel(t)}
-                          </UIText>
+                          </div>
                         </div>
                       );
                     })}
-                  </ScrollArea>
+                  </div></div>
                 )}
               </div>
             );
@@ -1335,19 +1295,18 @@ export function ChatScreen() {
                   onClick={() => setSubagentsOpen((v) => !v)}
                   className="flex items-center gap-2 px-3 py-2"
 >
-                  <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     Subagents
-                  </UIText>
-                  <UIText className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                  </span>
+                  <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
                     {running}/{subagents.length}
-                  </UIText>
+                  </span>
                   {!subagentsOpen && first && (
-                    <UIText
-                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
-                      numberOfLines={1}
+                    <span
+                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate"
 >
                       · {first.goal || first.last_tool || first.subagent_id}
-                    </UIText>
+                    </span>
                   )}
                   {subagentsOpen && <div className="flex-1" />}
                   {subagentsOpen ? (
@@ -1357,35 +1316,34 @@ export function ChatScreen() {
                   )}
                 </Button>
                 {subagentsOpen && (
-                  <ScrollArea className="max-h-[160px]">
+                  <div className="overflow-y-auto max-h-[160px]"><div>
                     {subagents.map((s) => {
                       const done = subagentDone(s);
                       return (
                         <div key={s.subagent_id} className="flex items-center gap-2 px-3 py-1">
-                          <UIText
+                          <div
                             className={`shrink-0 text-[13px] leading-[18px] ${
                               done ? 'text-neutral-400 dark:text-neutral-500' : 'text-[#1a73e8] dark:text-[#7aa7ff]'
                             }`}
 >
                             {done ? '✓' : '◐'}
-                          </UIText>
-                          <UIText
+                          </div>
+                          <div
                             className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
                               done ? 'text-neutral-400 dark:text-neutral-500' : 'text-neutral-800 dark:text-neutral-200'
-                            }`}
-                            numberOfLines={1}
+                            } truncate`}
 >
                             {s.goal || s.last_tool || s.subagent_id}
-                          </UIText>
+                          </div>
                           {s.tool_count != null && (
-                            <UIText className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
+                            <div className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
                               {s.tool_count} calls
-                            </UIText>
+                            </div>
                           )}
                         </div>
                       );
                     })}
-                  </ScrollArea>
+                  </div></div>
                 )}
               </div>
             );
@@ -1396,41 +1354,40 @@ export function ChatScreen() {
         {queued.length> 0 && (
           <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
             <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
-              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
-              </UIText>
+              </div>
               {queueParked ? (
                 <Button variant="link" onClick={resumeQueue} className="px-1.5 py-0.5">
-                  <UIText className="text-[11px] font-semibold">Resume</UIText>
+                  <span className="text-[11px] font-semibold">Resume</span>
                 </Button>
               ) : (
                 <Button variant="link" onClick={clearQueue} className="px-1.5 py-0.5">
-                  <UIText className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</UIText>
+                  <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</span>
                 </Button>
               )}
             </div>
-            <ScrollArea className="max-h-[160px]">
+            <div className="overflow-y-auto max-h-[160px]"><div>
               {queued.map((q) => (
                 <div key={q.id} className="flex items-center gap-2 px-3 py-1.5">
-                  <UIText
-                    className="min-w-0 flex-1 text-[13px] text-neutral-800 dark:text-neutral-200"
-                    numberOfLines={1}
+                  <div
+                    className="min-w-0 flex-1 text-[13px] text-neutral-800 dark:text-neutral-200 truncate"
 >
                     {q.text}
-                  </UIText>
+                  </div>
                   <Button
                     variant="outline"
                     onClick={() => sendQueuedNow(q.id)}
                     className="shrink-0 px-1.5 py-0.5"
 >
-                    <UIText className="text-[11px] font-semibold">Send</UIText>
+                    <span className="text-[11px] font-semibold">Send</span>
                   </Button>
                   <Button variant="link" onClick={() => removeQueued(q.id)} className="shrink-0 px-1.5 py-0.5">
-                    <UIText className="text-[15px] leading-[15px] text-neutral-400">×</UIText>
+                    <span className="text-[15px] leading-[15px] text-neutral-400">×</span>
                   </Button>
                 </div>
               ))}
-            </ScrollArea>
+            </div></div>
           </div>
         )}
         {/* Composer completion panel (slash commands / @ references) — floats
@@ -1440,12 +1397,12 @@ export function ChatScreen() {
         {visibleCompletions.length> 0 && (
           <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
             <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
-              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 {completionKind === 'slash' ? 'Commands' : 'References'}
-              </UIText>
-              <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">{visibleCompletions.length}</UIText>
+              </div>
+              <div className="text-[11px] text-neutral-400 dark:text-neutral-500">{visibleCompletions.length}</div>
             </div>
-            <ScrollArea className="max-h-[248px]">
+            <div className="overflow-y-auto max-h-[248px]"><div>
               {visibleCompletions.slice(0, 40).map((item, i) => {
                 const label = item.display || item.text;
                 return (
@@ -1456,40 +1413,38 @@ export function ChatScreen() {
                     onClick={() => applyCompletion(item)}
                     className="flex items-center gap-2 px-3 py-2"
 >
-                    <UIText
-                      className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]"
-                      numberOfLines={1}
+                    <span
+                      className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff] truncate"
 >
                       {label}
-                    </UIText>
+                    </span>
                     {item.meta ? (
-                      <UIText
-                        className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
-                        numberOfLines={1}
+                      <span
+                        className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate"
 >
                         {item.meta}
-                      </UIText>
+                      </span>
                     ) : (
                       <div className="flex-1" />
                     )}
                     {item.kind === 'skill' && (
-                      <UIText className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                      <span className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
                         skill
-                      </UIText>
+                      </span>
                     )}
                   </Button>
                 );
               })}
-            </ScrollArea>
+            </div></div>
           </div>
         )}
         {editingRowId != null && (
           <div className="mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
-            <UIText className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
+            <div className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
               Editing — resend to rewind and rerun from here
-            </UIText>
+            </div>
             <Button variant="link" onClick={cancelEdit} className="shrink-0 px-1.5 py-0.5">
-              <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</UIText>
+              <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</span>
             </Button>
           </div>
         )}
@@ -1514,6 +1469,7 @@ export function ChatScreen() {
           setAttachments={setAttachments}
           dark={dark}
         />
+        </div>
         </div>
       </div>
       {/* Jump to the newest message — shown only when the transcript
@@ -1584,9 +1540,9 @@ export function ChatScreen() {
 >
             {popover.kind === 'effort' && showEffort && (
               <>
-                <UIText className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Thinking effort
-                </UIText>
+                </div>
                 {effortOptions.map((e) => {
                   const on = e === effort.trim().toLowerCase();
                   return (
@@ -1602,7 +1558,7 @@ export function ChatScreen() {
                         on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                       }`}
 >
-                      <UIText
+                      <span
                         className={`min-w-0 flex-1 text-[14px] ${
                           on
                             ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
@@ -1610,7 +1566,7 @@ export function ChatScreen() {
                         }`}
 >
                         {reasoningLabel(e)}
-                      </UIText>
+                      </span>
                       {on && <Check size={15} color="#1a73e8" />}
                     </Button>
                   );
@@ -1626,7 +1582,7 @@ export function ChatScreen() {
                   }}
                   className="flex items-center gap-2 px-2.5 py-2"
 >
-                  <UIText
+                  <span
                     className={`min-w-0 flex-1 text-[14px] ${
                       sessionInfo?.fast === true
                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
@@ -1634,7 +1590,7 @@ export function ChatScreen() {
                     }`}
 >
                     Fast mode
-                  </UIText>
+                  </span>
                   {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
                 </Button>
                 {/* Reasoning display — the switch behind live tool + reasoning
@@ -1650,7 +1606,7 @@ export function ChatScreen() {
                   onClick={() => void applyShowReasoning(showReasoning !== true)}
                   className="flex items-center gap-2 px-2.5 py-2"
 >
-                  <UIText
+                  <span
                     className={`min-w-0 flex-1 text-[14px] ${
                       showReasoning === true
                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
@@ -1658,22 +1614,22 @@ export function ChatScreen() {
                     }`}
 >
                     Show reasoning
-                  </UIText>
+                  </span>
                   {showReasoning === true && <Check size={15} color="#1a73e8" />}
                 </Button>
-                <UIText className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
+                <div className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
                   {showReasoning === null
                     ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
                     : 'Streams tool calls + reasoning live (shared display setting).'}
-                </UIText>
+                </div>
               </>
             )}
 
             {popover.kind === 'attach' && (
               <>
-                <UIText className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Attach
-                </UIText>
+                </div>
                 <Button
                   variant="ghost"
                   data-testid="attach-photo"
@@ -1681,7 +1637,7 @@ export function ChatScreen() {
                   className="flex items-center gap-2.5 px-2.5 py-2"
 >
                   <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
-                  <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</UIText>
+                  <span className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</span>
                 </Button>
                 <Button
                   variant="ghost"
@@ -1690,16 +1646,16 @@ export function ChatScreen() {
                   className="flex items-center gap-2.5 px-2.5 py-2"
 >
                   <FileText size={17} color={dark ? '#ccc' : '#444'} />
-                  <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">File</UIText>
+                  <span className="text-[14px] text-neutral-900 dark:text-neutral-100">File</span>
                 </Button>
               </>
             )}
 
             {popover.kind === 'model' && (
               <>
-                <UIText className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Switch model (this chat)
-                </UIText>
+                </div>
                 <div className="px-1.5 pb-1.5">
                   <Input
                     className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
@@ -1710,17 +1666,17 @@ export function ChatScreen() {
                   />
                 </div>
                 {providersLoading && (
-                  <UIText className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</UIText>
+                  <div className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</div>
                 )}
                 {!!providersError && (
-                  <UIText
+                  <div
                     role="alert"
                     className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]"
 >
                     {providersError}
-                  </UIText>
+                  </div>
                 )}
-                <ScrollArea className="min-h-0 flex-1">
+                <div className="overflow-y-auto min-h-0 flex-1"><div>
                   {modelVisibleProviders.map((p) => {
                     const count = p.models?.length ?? p.totalModels;
                     const open = mq ? true : (modelExpanded[p.slug] ?? false);
@@ -1733,15 +1689,14 @@ export function ChatScreen() {
                           }
                           className="flex items-center gap-2 px-2.5 py-2"
 >
-                          <UIText
-                            className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100"
-                            numberOfLines={1}
+                          <span
+                            className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100 truncate"
 >
                             {p.name}
-                          </UIText>
-                          <UIText className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                          </span>
+                          <span className="text-[12px] text-neutral-500 dark:text-neutral-400">
                             {count} model{count === 1 ? '' : 's'}
-                          </UIText>
+                          </span>
                           {open ? (
                             <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
                           ) : (
@@ -1773,17 +1728,16 @@ export function ChatScreen() {
                                   // the Global button instead of pushing it out.
                                   className="h-auto sm:h-auto min-w-0 flex-1 justify-start"
 >
-                                  <UIText
-                                    numberOfLines={1}
+                                  <span
                                     className={`min-w-0 flex-1 text-left text-[14px] ${
                                       on
                                         ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                                         : 'text-neutral-950 dark:text-neutral-100'
-                                    }`}
+                                    } truncate`}
 >
                                     {on ? '● ' : '○ '}
                                     {mm}
-                                  </UIText>
+                                  </span>
                                 </Button>
                                 <Button
                                   variant="outline"
@@ -1794,23 +1748,23 @@ export function ChatScreen() {
                                   }}
                                   className="h-auto sm:h-auto shrink-0 px-2 py-1"
 >
-                                  <UIText className="text-[13px]">Global</UIText>
+                                  <span className="text-[13px]">Global</span>
                                 </Button>
                               </div>
                             );
                           })}
                         {open && !p.models && (
-                          <UIText className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                          <div className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
                             list unavailable — pull to refresh on server
-                          </UIText>
+                          </div>
                         )}
                       </div>
                     );
                   })}
                   {modelVisibleProviders.length === 0 && !providersLoading && (
-                    <UIText className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</UIText>
+                    <div className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</div>
                   )}
-                </ScrollArea>
+                </div></div>
               </>
             )}
           </div>
@@ -1829,7 +1783,7 @@ export function ChatScreen() {
               className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-white/90"
               style={{ bottom: Math.max(8, rootH - relY + 8), left }}
 >
-              <UIText className="text-[12px] text-white dark:text-black">{tip.label}</UIText>
+              <div className="text-[12px] text-white dark:text-black">{tip.label}</div>
             </div>
           );
         })()}

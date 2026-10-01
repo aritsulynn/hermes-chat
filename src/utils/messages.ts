@@ -1,6 +1,5 @@
 // Shared chat models + pure helpers (no React imports).
-// Split out of the old monolithic App.tsx so the expo-router screens,
-// the global store and the shared UI components all use one definition.
+// One definition shared by the screens, the store and the UI components.
 import type { ModelProviderOption } from '../services/dashboard';
 
 export type Role = 'user' | 'assistant' | 'notice' | 'interim' | 'thinking' | 'tool' | 'summary';
@@ -525,7 +524,7 @@ export function cleanThinking(text: string): string {
   const lines = text.split('\n');
   while (lines.length > 1 && /^\([^)\n]{0,12}\)\s*\S.*\.\.\.\s*$/.test(lines[0])) lines.shift();
   // Collapse runs of invisible-only lines: streaming deltas and some models
-  // pad with blank / zero-width-space lines, and an RN Text renders every
+  // pad with blank / zero-width-space lines, and a block element renders every
   // one at full line height — a tall empty void under the real content.
   // A line carrying only invisible chars shows nothing, so keep at most one
   // blank separator (paragraph breaks survive) and strip the rest, including
@@ -545,10 +544,10 @@ export function cleanThinking(text: string): string {
   return out.join('\n').replace(/[\s\u200B\u200C\u200D\u2060\uFEFF]+$/, '');
 }
 
-// react-native-markdown-display renders lists as flex rows whose width Yoga
-// measures as unbounded inside an auto-width bubble — the text never wraps
-// and spills out of the bubble. Flatten list markers to plain-text bullets so
-// every line is a normal wrapping paragraph.
+// Markdown list markers are flattened to plain-text bullets so every line is a
+// normal wrapping paragraph. A list rendered as a marker + text flex row can
+// measure as unbounded inside an auto-width bubble, so the text never wraps and
+// spills out of the bubble.
 export function flattenLists(text: string): string {
   return text
     .split('\n')

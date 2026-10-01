@@ -19,8 +19,7 @@ function Progress({
       {/* Full-width bar slid out of view, rather than a bar whose width is a
           percentage — the slide transitions on a compositor thread, so a
           progress value ticking every few hundred ms does not relayout the
-          whole page the way animating `width` would. The native build animated
-          width with a spring; this is the web equivalent of the same effect. */}
+          whole page the way animating `width` would. */}
       <ProgressPrimitive.Indicator
         className={cn('bg-primary h-full w-full flex-1 transition-transform duration-300', indicatorClassName)}
         style={{ transform: `translateX(-${100 - clamped}%)` }}

@@ -54,9 +54,8 @@ export function normalizeBase(baseUrl: string): string {
 
 /** fetch with a hard timeout so the UI never hangs forever on an
  *  unreachable host (wrong WiFi / changed LAN IP / dashboard down).
- *  RN supports AbortController. `credentials: include` lets the session
- *  cookie flow on web once the dashboard CORS-allows our origin
- *  (no-op for same-origin and native). */
+ *  `credentials: include` lets the session cookie flow once the dashboard
+ *  CORS-allows our origin (a no-op for same-origin). */
 async function fetchWithTimeout(
   url: string,
   init: RequestInit = {},
@@ -107,7 +106,7 @@ export function mergeCookies(prev: string, setCookieHeaders: string[]): string {
   return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-/** Collect every Set-Cookie value from a fetch Response (RN/undici/web shapes). */
+/** Collect every Set-Cookie value from a fetch Response (covers the runtime shapes browsers expose). */
 export function getSetCookies(res: Response): string[] {
   const out: string[] = [];
   try {
@@ -480,7 +479,7 @@ export const opsMut = apiMut;
 // ── Full transcript ──────────────────────────────────────────────────────
 // GET /api/sessions/{id}/messages → full rows incl. tool RESULT content +
 // reasoning sidecars. WS session.history is only a compact projection —
-// this is what the native app renders (Tool cards with full JSON).
+// this is the full payload the UI renders (tool cards with full JSON).
 // Slashes in stored ids stay literal (backend mints ids containing '/').
 
 export interface RestHistoryItem {

@@ -12,12 +12,10 @@ import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
-import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
 import { brandColor, screenStyle } from '../../theme';
 import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
-import { ScrollArea } from '../../components/ui/scroll';
 import { writeClipboard } from '../../services/clipboard';
 
 // Memoized row: the installed-skills list is small and bounded, so no
@@ -42,20 +40,20 @@ const SkillRow = memo(function SkillRow({
   return (
     <Card>
       <div className="flex items-center gap-2">
-        <button type="button" className="min-w-0 flex-1" onClick={() => void onOpen(name)}>
-          <UIText className="text-sm font-semibold text-neutral-900 dark:text-neutral-100" numberOfLines={1}>
+        <button type="button" className="flex min-w-0 flex-1 flex-col" onClick={() => void onOpen(name)}>
+          <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
             {name}
-          </UIText>
+          </span>
           {!!skill.description && (
-            <UIText className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={2}>
+            <span className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
               {String(skill.description)}
-            </UIText>
+            </span>
           )}
-          <UIText className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
+          <span className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
             {[skill.origin ? String(skill.origin) : '', typeof skill.usage === 'number' ? `${skill.usage} uses` : '']
               .filter(Boolean)
               .join(' · ') || 'Tap to view SKILL.md'}
-          </UIText>
+          </span>
         </button>
         {canToggle &&
           (toggling ? (
@@ -189,26 +187,22 @@ export function SkillsScreen() {
           }
         />
 
-        <ScrollArea
-          className="flex-1 px-4 py-4"
-          contentClassName="pb-[calc(env(safe-area-inset-bottom,0px)+24px)]"
-
->
+        <div className="overflow-y-auto flex-1 px-4 py-4"><div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
           {loading && !refreshing ? (
             <div className="flex flex-col items-center py-16">
               <Spinner size={24} color={brand} />
             </div>
           ) : unsupported ? (
             <Card>
-              <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">
                 Skills aren&apos;t available on this backend — run skills from the chat with /name instead.
-              </UIText>
+              </div>
             </Card>
           ) : error ? (
             <ErrorRetry error={error} onRetry={() => void load()} />
           ) : !skills?.length ? (
             <Card>
-              <UIText className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</UIText>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</div>
             </Card>
           ) : (
             <div className="flex flex-col gap-2">
@@ -224,7 +218,7 @@ export function SkillsScreen() {
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div></div>
 
         {/* SKILL.md viewer */}
         <DialogPrimitive.Root open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
@@ -234,16 +228,16 @@ export function SkillsScreen() {
               <DialogPrimitive.Title className="sr-only">Skill file</DialogPrimitive.Title>
               <div className="flex-1" style={{ paddingTop: 48 }}>
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <UIText className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white" numberOfLines={1}>
+              <div className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white truncate">
                 {viewing ?? ''}
-              </UIText>
+              </div>
               <Button
                 variant="ghost"
                 onClick={() => void writeClipboard(content).catch(() => {})}
                 aria-label="Copy skill file"
                 className="h-auto sm:h-auto px-2 py-1.5"
 >
-                <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</UIText>
+                <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</span>
               </Button>
               <Button
                 variant="ghost"
@@ -255,15 +249,15 @@ export function SkillsScreen() {
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
             </div>
-            <ScrollArea className="flex-1" contentClassName="p-4">
+            <div className="overflow-y-auto flex-1"><div className="p-4">
               {contentLoading ? (
                 <Spinner size={14} color={brand} />
               ) : (
-                <UIText className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
+                <div className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
                   {content}
-                </UIText>
+                </div>
               )}
-            </ScrollArea>
+            </div></div>
               </div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>

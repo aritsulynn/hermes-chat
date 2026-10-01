@@ -14,12 +14,10 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
 import { toast } from '../../components/ui/toast';
-import { Text as UIText } from '../../components/ui/text';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import type { AskInboxEntry } from '../../services/ask-inbox';
 import { errMsg, parseClarify } from '../../utils/messages';
 import { placeholderColor, screenStyle } from '../../theme';
-import { ScrollArea } from '../../components/ui/scroll';
 
 function methodLabel(method: string): string {
   if (method === 'approval') return 'Command approval';
@@ -141,43 +139,41 @@ const AskCard = memo(function AskCard({
           <Icon size={18} color={iconColor} />
         </div>
         <div className="min-w-0 flex-1">
-          <UIText className="text-[15px] font-bold text-neutral-950 dark:text-neutral-100">
+          <div className="text-[15px] font-bold text-neutral-950 dark:text-neutral-100">
             {methodLabel(entry.method)}
-          </UIText>
-          <UIText
-            className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400"
-            numberOfLines={1}
+          </div>
+          <div
+            className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate"
 >
             {ownerLabel}
-          </UIText>
+          </div>
         </div>
         {waiting ? (
           <Badge variant="secondary" className="border-transparent py-1">
-            <UIText className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
+            <span className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
               {entry.status === 'sent' ? 'Sent' : 'Waiting'}
-            </UIText>
+            </span>
           </Badge>
         ) : (
           <Badge variant="secondary" className="border-transparent py-1">
-            <UIText className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">
+            <span className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">
               {entry.status}
-            </UIText>
+            </span>
           </Badge>
         )}
       </div>
 
-      <UIText className="mt-3 text-sm leading-5 text-neutral-700 dark:text-neutral-200">
+      <div className="mt-3 text-sm leading-5 text-neutral-700 dark:text-neutral-200">
         {requestSummary(entry)}
-      </UIText>
+      </div>
 
       {entry.method === 'approval' && !!entry.params.command && (
         <div className="mt-2 rounded-xl bg-neutral-100 p-2.5 dark:bg-neutral-900">
-          <UIText
-            numberOfLines={3}
-            className="font-mono text-xs text-neutral-800 dark:text-neutral-200"
+          <div
+            className="font-mono text-xs text-neutral-800 dark:text-neutral-200 line-clamp-3"
 >
             {String(entry.params.command)}
-          </UIText>
+          </div>
         </div>
       )}
 
@@ -191,9 +187,9 @@ const AskCard = memo(function AskCard({
                   aria-label="Allow once"
                   className="h-auto sm:h-auto flex-1 rounded-xl bg-[#1a73e8] px-3 py-2.5"
 >
-                  <UIText className="text-sm font-semibold text-white">
+                  <span className="text-sm font-semibold text-white">
                     Allow once
-                  </UIText>
+                  </span>
                 </Button>
               )}
               {canDeny && (
@@ -203,9 +199,9 @@ const AskCard = memo(function AskCard({
                   aria-label="Reject request"
                   className="h-auto sm:h-auto flex-1 rounded-xl border-red-200 px-3 py-2.5 dark:border-red-950"
 >
-                  <UIText className="text-sm font-semibold text-red-600 dark:text-red-400">
+                  <span className="text-sm font-semibold text-red-600 dark:text-red-400">
                     Reject
-                  </UIText>
+                  </span>
                 </Button>
               )}
             </div>
@@ -217,9 +213,9 @@ const AskCard = memo(function AskCard({
                 return (
                   <div key={q.qid} className="flex flex-col gap-1.5">
                     {!!q.question && (
-                      <UIText className="text-sm text-neutral-700 dark:text-neutral-200">
+                      <div className="text-sm text-neutral-700 dark:text-neutral-200">
                         {q.question}
-                      </UIText>
+                      </div>
                     )}
                     {q.choices.length> 0 ? (
                       <div className="flex flex-wrap gap-1.5">
@@ -246,7 +242,7 @@ const AskCard = memo(function AskCard({
                               }
                               className="h-auto sm:h-auto rounded-full px-3 py-1.5"
 >
-                              <UIText className="text-[13px]">{c}</UIText>
+                              <span className="text-[13px]">{c}</span>
                             </Button>
                           );
                         })}
@@ -272,9 +268,9 @@ const AskCard = memo(function AskCard({
                   size="sm"
                   className="h-auto sm:h-auto rounded-lg px-2.5 py-1.5"
 >
-                  <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                  <span className="text-[13px] text-neutral-500 dark:text-neutral-400">
                     Open in chat
-                  </UIText>
+                  </span>
                 </Button>
                 <Button
                   onClick={submit}
@@ -282,7 +278,7 @@ const AskCard = memo(function AskCard({
                   aria-label="Send answer"
                   className="h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
 >
-                  <UIText className="text-sm font-semibold text-white">Send</UIText>
+                  <span className="text-sm font-semibold text-white">Send</span>
                 </Button>
               </div>
             </div>
@@ -306,16 +302,16 @@ const AskCard = memo(function AskCard({
                   size="sm"
                   className="h-auto sm:h-auto rounded-lg px-2.5 py-1.5"
 >
-                  <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                  <span className="text-[13px] text-neutral-500 dark:text-neutral-400">
                     Open in chat
-                  </UIText>
+                  </span>
                 </Button>
                 <Button
                   onClick={submit}
                   aria-label="Send answer"
                   className="h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2"
 >
-                  <UIText className="text-sm font-semibold text-white">Send</UIText>
+                  <span className="text-sm font-semibold text-white">Send</span>
                 </Button>
               </div>
             </div>
@@ -397,9 +393,9 @@ export function AskInboxScreen() {
   if (!authed) {
     return (
       <div className="flex flex-col flex-1 items-center justify-center bg-white dark:bg-black">
-        <UIText className="text-neutral-500 dark:text-neutral-400">
+        <div className="text-neutral-500 dark:text-neutral-400 text-base">
           Sign in to view asks.
-        </UIText>
+        </div>
       </div>
     );
   }
@@ -412,25 +408,23 @@ export function AskInboxScreen() {
 >
         <div className="flex items-center gap-3 border-b border-neutral-200 px-4 py-4 dark:border-neutral-800">
           <HamburgerBtn />
-          <UIText className="text-xl font-bold text-neutral-950 dark:text-neutral-100">
+          <div className="text-xl font-bold text-neutral-950 dark:text-neutral-100">
             Ask Inbox
-          </UIText>
+          </div>
         </div>
-        <ScrollArea
-          contentClassName="p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] gap-3"
->
+        <div className="overflow-y-auto"><div className="mx-auto w-full max-w-4xl p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] gap-3">
           <div className="mb-1 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
             <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
             <div className="flex-1">
-              <UIText className="text-sm font-bold text-neutral-950 dark:text-neutral-100">
+              <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">
                 {pendingAskCount
                   ? `${pendingAskCount} request${pendingAskCount === 1 ? '' : 's'} waiting`
                   : 'No pending requests'}
-              </UIText>
-              <UIText className="mt-0.5 text-xs leading-4 text-neutral-600 dark:text-neutral-300">
+              </div>
+              <div className="mt-0.5 text-xs leading-4 text-neutral-600 dark:text-neutral-300">
                 Answer here and it goes straight to the waiting session — no need
                 to open its chat.
-              </UIText>
+              </div>
             </div>
           </div>
 
@@ -441,21 +435,21 @@ export function AskInboxScreen() {
           {pending.length === 0 && (
             <div className="flex flex-col items-center rounded-2xl border border-dashed border-neutral-300 px-6 py-12 dark:border-neutral-700">
               <Check size={28} color={dark ? '#86efac' : '#16a34a'} />
-              <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">
+              <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">
                 You are all caught up
-              </UIText>
-              <UIText className="mt-1 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              </div>
+              <div className="mt-1 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 Approval and clarification requests from background sessions
                 will appear here.
-              </UIText>
+              </div>
             </div>
           )}
 
           {settled.length> 0 && (
             <div className="flex flex-col mt-4 gap-2">
-              <UIText className="px-1 text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              <div className="px-1 text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 Recent
-              </UIText>
+              </div>
               {settled.slice(0, 10).map((entry) => (
                 <div
                   key={entry.key}
@@ -466,15 +460,14 @@ export function AskInboxScreen() {
                   ) : (
                     <X size={15} color="#94a3b8" />
                   )}
-                  <UIText
-                    className="flex-1 text-sm text-neutral-700 dark:text-neutral-300"
-                    numberOfLines={1}
+                  <div
+                    className="flex-1 text-sm text-neutral-700 dark:text-neutral-300 truncate"
 >
                     {methodLabel(entry.method)}
-                  </UIText>
-                  <UIText className="text-[11px] text-neutral-400">
+                  </div>
+                  <div className="text-[11px] text-neutral-400">
                     {entry.status}
-                  </UIText>
+                  </div>
                 </div>
               ))}
             </div>
@@ -482,12 +475,12 @@ export function AskInboxScreen() {
 
           <div className="mt-2 flex items-center gap-2 px-1 text-xs text-neutral-400 dark:text-neutral-500">
             <Clock3 size={13} />
-            <UIText>
+            <div>
               Requests are kept until answered, cancelled, or the session is
               closed.
-            </UIText>
+            </div>
           </div>
-        </ScrollArea>
+        </div></div>
       </div>
     </div>
   );

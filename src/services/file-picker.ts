@@ -1,13 +1,11 @@
 // File picking.
 //
-// expo-document-picker and expo-image-picker both open a native chooser and
-// hand back a URI. The browser's equivalent is an <input type="file">.
+// The browser's file chooser is an `<input type="file">`.
 //
 // What it hands back matters: the attachment pipeline identifies an attachment
 // by its `uri`, and that uri also becomes a cache key (see
 // services/media-cache). A `data:` URL would be megabytes in a Map key and in
-// every React key derived from it, so this returns `blob:` URLs instead. That
-// is the same shape the old web build already produced via the picker.
+// every React key derived from it, so this returns `blob:` URLs instead.
 //
 // Two things worth knowing about the blob URLs:
 //   - They are revoked by the browser when the document unloads, not before, so

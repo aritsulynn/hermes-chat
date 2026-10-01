@@ -2,9 +2,7 @@
 //
 // `canExpand` is measured, not guessed: the element's own scrollHeight against
 // its clientHeight is the only thing that knows whether the clamp is actually
-// hiding text. The native build had a second path counting rendered lines via
-// onTextLayout; there is no such event on the web and the measurement already
-// covered it.
+// hiding text.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 

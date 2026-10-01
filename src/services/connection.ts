@@ -21,22 +21,19 @@ export { DEFAULT_PROFILE } from './constants';
 // `scopedSecretKey`) so switching dashboards cannot leak one account's model
 // choice or last-opened session into another.
 
-// In-memory read-through cache. It is no longer a speed optimisation — the
-// native build needed it because keychain I/O is slow, and `localStorage` is
-// not. It exists because `localStorage.setItem` *throws* in some conditions
-// (Safari private browsing, blocked site data, quota). The promise this file
-// makes is "storage is best-effort, never fail the app over it", and that
-// promise is only keepable if a value that failed to persist can still be read
-// back for the rest of the session. Writes update the cache synchronously
-// before the physical write is attempted; deletes evict it.
+// In-memory read-through cache. It is not a speed optimisation — `localStorage`
+// is already synchronous. It exists because `localStorage.setItem` *throws* in
+// some conditions (Safari private browsing, blocked site data, quota). The
+// promise this file makes is "storage is best-effort, never fail the app over
+// it", and that promise is only keepable if a value that failed to persist can
+// still be read back for the rest of the session. Writes update the cache
+// synchronously before the physical write is attempted; deletes evict it.
 const memCache = new Map<string, string | null>();
 
-// The native build also had to serialize writes per key, because SecureStore
-// calls were async and a late cookie rotation could resolve *after* the clear
-// that follows logout, resurrecting a credential. `localStorage` is
-// synchronous, so writes cannot interleave and no queue is needed. The async
-// signatures below stay anyway: they are the module's public contract and
-// unwinding them would touch every call site for no behavioural gain.
+// `localStorage` is synchronous, so writes can never interleave and no write
+// queue is needed. The async signatures below stay anyway: they are the
+// module's public contract and unwinding them would touch every call site for
+// no behavioural gain.
 
 const K_HOST = 'hermes.conn.host';
 const K_USERNAME = 'hermes.conn.username';
@@ -53,15 +50,13 @@ const K_MODEL_PROVIDER = 'hermes.ui.modelProvider';
 const K_MODEL_PROVIDER_PREFIX = 'hermes.ui.modelProvider.profile';
 
 /**
- * `encodeURIComponent` is the obvious choice here and is wrong: it emits `%XX`,
- * and the Android SecureStore build (the native client this module grew up in)
- * accepts only `[A-Za-z0-9._-]` in keys and throws on anything else — so every
- * scoped write silently failed and the app asked for login after each reload.
- * Hex is a strict subset of the allowed charset everywhere.
+ * Scoped keys are hex-encoded rather than percent-encoded: `encodeURIComponent`
+ * emits `%XX`, while hex stays within `[A-Za-z0-9]` and avoids encoding
+ * entirely.
  *
  * `localStorage` would accept `encodeURIComponent` output, so this could be
- * "simplified" — don't. The web build has always written hex keys, and existing
- * users' scoped cookies/models/profiles are stored under them.
+ * "simplified" — don't. Existing users' scoped cookies/models/profiles are
+ * stored under hex keys.
  */
 function hexEncode(value: string): string {
   let out = '';
@@ -215,9 +210,8 @@ async function set(key: string, value: string): Promise<void> {
     ls()?.setItem(key, value);
   } catch (e) {
     // Storage is best-effort (private mode, quota, blocked site data) — never
-    // fail a login over it. But stay loud in dev: a silently-failing write is
-    // exactly how the invalid SecureStore key went unnoticed on Android and
-    // forced a login prompt on every single reload.
+    // fail a login over it. But stay loud in dev: a silently-failing write
+    // hides the bug until the app asks for login on every reload.
     if (import.meta.env.DEV) console.warn(`[storage] write failed for "${key}"`, e);
   }
 }

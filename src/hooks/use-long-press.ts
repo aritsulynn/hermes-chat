@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 
 type LongPressOptions = {
-  /** How long the press has to last. Matches the native feel (~500ms). */
+  /** How long the press has to last before it counts. */
   delay?: number;
   /** How far a pointer may drift before it stops counting as a press. */
   moveTolerance?: number;

@@ -1,9 +1,8 @@
 // The long-press Copy/Edit menu on your own messages.
 //
-// The native build was a full-screen transparent RN `Modal` whose only jobs
-// were to own a full-bleed backdrop and to place a small card at an anchor
-// rect. That is two things Radix does for free, so this is a transparent
-// dialog with a content box positioned from the anchor.
+// A transparent Radix dialog: the library owns the full-bleed backdrop and
+// stops clicks on the content reaching it, and the card is positioned from a
+// measured anchor rect.
 //
 // The positioning is deliberately the same arithmetic as before, not Radix
 // anchoring: the menu has to open *above* the message when there is room and

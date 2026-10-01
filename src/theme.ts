@@ -65,9 +65,9 @@ export type ThemeColors = (typeof THEME)['light'];
 
 // ── Shared runtime colours ─────────────────────────────────────────────────
 // Central tokens for the hex values previously copy-pasted across screens.
-// NOTE: Tailwind `className` strings (e.g. `text-[#1a73e8]`) must stay literal
-// — NativeWind extracts them statically — so these tokens cover only runtime
-// values: `color`/`placeholderTextColor` props and `style` objects.
+// NOTE: Tailwind `className` strings (e.g. `text-[#1a7f37]`) must stay literal
+// so the scanner extracts them, so these tokens cover only runtime values:
+// `color`/`placeholderTextColor` props and `style` objects.
 
 /** Primary brand blue (light) / its dark-mode counterpart. */
 export const BRAND_BLUE = '#1a73e8';
@@ -80,18 +80,16 @@ export const screenBg = (dark: boolean): string => (dark ? '#000' : '#fff');
 /**
  * Style object for a full-screen surface (`style={screenStyle(dark)}`).
  *
- * `display: flex; flex-direction: column` is not decoration — it is what a
- * React Native `<View>` / `<SafeAreaView>` *is*, and every screen in this app is
- * built on that assumption: its root holds a header, a scrolling body and
- * (for chat) an overlaid composer, and every level below says `flex-1`. The port
- * turned the root into a plain `<div>`, which is `display: block`, so `flex-1`
- * on all of them became inert and the body grew to its full content height
- * instead of scrolling. Chat was the visible symptom — the transcript's scroller
- * measured clientHeight === scrollHeight, so there was nothing to scroll.
+ * `display: flex; flex-direction: column` matters: every screen's root holds
+ * a header, a scrolling body and (for chat) an overlaid composer, and every
+ * level below says `flex-1`. A plain `<div>` is `display: block`, so `flex-1`
+ * would be inert and the body would grow to its full content height instead of
+ * scrolling. Chat is the visible symptom — the transcript's scroller measures
+ * clientHeight === scrollHeight, so there is nothing to scroll.
  *
  * `minHeight: 0` is the other half. A flex item defaults to `min-height: auto`,
  * which means it refuses to shrink below its content; without this the root
- * still outgrew the shell no matter which display it had. Yoga has no such rule.
+ * still outgrows the shell no matter which display it has.
  */
 export const screenStyle = (
   dark: boolean,

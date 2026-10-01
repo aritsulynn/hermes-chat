@@ -12,13 +12,11 @@ import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
-import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
 import { errMsg } from '../../utils/messages';
 import { brandColor, placeholderColor, screenStyle } from '../../theme';
 import { getToolsets, setToolsetEnabled } from '../../services/toolsets';
 import type { ToolsetInfo } from '../../services/toolsets';
-import { ScrollArea } from '../../components/ui/scroll';
 
 // Same presentation-only curation as Hermes Desktop's Toolsets tab.
 const HIDDEN_TOOLSETS = new Set(['discord', 'discord_admin', 'yuanbao', 'context_engine', 'moa']);
@@ -69,34 +67,33 @@ const ToolsetRow = memo(function ToolsetRow({
           <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
         </div>
         <div className="min-w-0 flex-1">
-          <UIText
-            numberOfLines={1}
+          <div
             className={`text-sm font-semibold ${
               enabled ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
-            }`}
+            } truncate`}
 >
             {label}
-          </UIText>
+          </div>
           {!!description && (
-            <UIText numberOfLines={2} className="mt-0.5 text-xs leading-[17px] text-neutral-500 dark:text-neutral-400">
+            <div className="mt-0.5 text-xs leading-[17px] text-neutral-500 dark:text-neutral-400 line-clamp-2">
               {description}
-            </UIText>
+            </div>
           )}
           <div className="mt-1 flex items-center gap-2">
-            <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">
+            <div className="text-[11px] text-neutral-400 dark:text-neutral-500">
               {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
-            </UIText>
+            </div>
             <Badge variant={toolset.configured ? 'outline' : 'secondary'}>
               <div
                 className={`h-1.5 w-1.5 rounded-full ${toolset.configured ? 'bg-emerald-500' : 'bg-amber-500'}`}
               />
-              <UIText
+              <span
                 className={`text-[11px] font-medium ${
                   toolset.configured ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
                 }`}
 >
                 {toolset.configured ? 'Ready' : 'Needs setup'}
-              </UIText>
+              </span>
             </Badge>
           </div>
         </div>
@@ -236,17 +233,13 @@ export function ToolsetsScreen() {
           }
         />
 
-        <ScrollArea
-          className="flex-1 px-4 py-4"
-          contentClassName="pb-[calc(env(safe-area-inset-bottom,0px)+24px)]"
-
->
+        <div className="overflow-y-auto flex-1 px-4 py-4"><div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
           <Card className="mb-3">
             <div className="flex items-start gap-2.5">
               <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
-              <UIText className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
+              <div className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
                 Toolsets group the tools Hermes can use. Changes apply to new chats.
-              </UIText>
+              </div>
             </div>
           </Card>
 
@@ -274,18 +267,18 @@ export function ToolsetsScreen() {
             </div>
           ) : unsupported ? (
             <Card>
-              <UIText className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+              <div className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
                 Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability toolsets
                 here.
-              </UIText>
+              </div>
             </Card>
           ) : error ? (
             <ErrorRetry error={error} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
             <Card>
-              <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">
                 {query ? `No toolsets match “${query.trim()}”.` : 'No configurable toolsets were returned.'}
-              </UIText>
+              </div>
             </Card>
           ) : (
             <div className="flex flex-col gap-2">
@@ -300,7 +293,7 @@ export function ToolsetsScreen() {
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div></div>
       </div>
     </div>
   );

@@ -5,7 +5,6 @@
 // keeping as its own component: it is the single place a destructive action is
 // confirmed, and every one of them routes through it.
 import { Button } from '@/components/ui/button';
-import { Text as UIText } from '@/components/ui/text';
 import { cn } from '@/utils/cn';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as React from 'react';
@@ -22,8 +21,7 @@ function DialogPortal({ children }: { children?: React.ReactNode }) {
       {/*
         The Overlay is the full-screen backdrop that dismisses on outside click.
         Radix handles the outside-press itself and stops clicks on the content
-        from reaching it, which is what the native version had to do by hand
-        with onStartShouldSetResponder.
+        from reaching it.
       */}
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
         {children}
@@ -111,7 +109,7 @@ function ConfirmDialog({
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline" size="sm" className="h-10 rounded-xl px-4">
-                <UIText className="text-[15px]">{cancelLabel}</UIText>
+                <span className="text-[15px]">{cancelLabel}</span>
               </Button>
             </DialogClose>
             <Button
@@ -124,7 +122,7 @@ function ConfirmDialog({
                 onOpenChange(false);
                 onConfirm();
               }}>
-              <UIText className="text-[15px] font-semibold">{confirmLabel}</UIText>
+              <span className="text-[15px] font-semibold">{confirmLabel}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

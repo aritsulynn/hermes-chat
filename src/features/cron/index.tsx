@@ -4,11 +4,10 @@ import { Label } from '../../components/ui/label';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
 import { Button } from '../../components/ui/button';
+import { Textarea } from '../../components/ui/textarea';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import { Sheet } from '../../components/ui/sheets';
-import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
-import { Textarea } from '../../components/ui/textarea';
 import { Navigate as Redirect } from 'react-router-dom';
 import {
   AlertCircle,
@@ -52,18 +51,7 @@ import {
 } from './helpers';
 import type { DeliveryTarget } from './helpers';
 import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
-import { ScrollArea } from '../../components/ui/scroll';
-import { WindowedList } from '../../components/ui/windowed-list';
 import { navigate } from '../../store/nav';
-
-// Vertical gap between virtualized cards (FlashList v2 ignores `gap` in
-// contentContainerStyle, so the separator carries the spacing).
-function ListGap12() {
-  return <div style={{ height: 12 }} />;
-}
-
-const jobKeyExtractor = (job: CronJobItem) => job.id;
-const runKeyExtractor = (run: CronRunItem) => run.id;
 
 type JobCardProps = {
   job: CronJobItem;
@@ -102,10 +90,10 @@ const JobCard = memo(function JobCard({
       {/* Header: Title + Status Badge */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
-          <UIText className="text-base font-bold text-neutral-950 dark:text-neutral-100" numberOfLines={1}>
+          <div className="text-base font-bold text-neutral-950 dark:text-neutral-100 truncate">
             {job.name || job.id}
-          </UIText>
-          <UIText className="text-[11px] font-mono text-neutral-400 dark:text-neutral-500">ID: {job.id}</UIText>
+          </div>
+          <div className="text-[11px] font-mono text-neutral-400 dark:text-neutral-500">ID: {job.id}</div>
         </div>
 
         <div
@@ -117,7 +105,7 @@ const JobCard = memo(function JobCard({
                 : 'border-emerald-300 bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60'
           }`}
 >
-          <UIText
+          <div
             className={`text-[11px] font-semibold capitalize ${
               isError
                 ? 'text-red-700 dark:text-red-300'
@@ -127,7 +115,7 @@ const JobCard = memo(function JobCard({
             }`}
 >
             {isError ? 'Error' : isPaused ? 'Paused' : 'Active'}
-          </UIText>
+          </div>
         </div>
       </div>
 
@@ -135,19 +123,19 @@ const JobCard = memo(function JobCard({
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1 rounded-md bg-neutral-200/80 px-2 py-1 dark:bg-neutral-800">
           <Clock size={12} color={dark ? '#ccc' : '#444'} />
-          <UIText className="font-mono text-xs font-medium text-neutral-800 dark:text-neutral-200">
+          <div className="font-mono text-xs font-medium text-neutral-800 dark:text-neutral-200">
             {scheduleExpr || '(no schedule)'}
-          </UIText>
+          </div>
         </div>
         {job.next_run_at && (
-          <UIText className="text-[11px] text-neutral-500 dark:text-neutral-400">
+          <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
             Next: {formatDateTime(job.next_run_at)}
-          </UIText>
+          </div>
         )}
         {job.last_run_at && (
-          <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">
+          <div className="text-[11px] text-neutral-400 dark:text-neutral-500">
             Last: {formatDateTime(job.last_run_at)}
-          </UIText>
+          </div>
         )}
       </div>
 
@@ -180,7 +168,7 @@ const JobCard = memo(function JobCard({
           className="h-auto sm:h-auto rounded-lg border border-[#1a73e8]/30 bg-[#1a73e8]/10 px-2.5 py-1.5 active:bg-[#1a73e8]/20"
 >
           <History size={13} color="#1a73e8" />
-          <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">History</UIText>
+          <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">History</span>
         </Button>
 
         {/* Right: Actions */}
@@ -198,7 +186,7 @@ const JobCard = memo(function JobCard({
             ) : (
               <>
                 <Play size={12} color={dark ? '#f5f5f5' : '#111'} fill={dark ? '#f5f5f5' : '#111'} />
-                <UIText className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Run</UIText>
+                <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Run</span>
               </>
             )}
           </Button>
@@ -299,7 +287,7 @@ const RunCard = memo(function RunCard({
                     : 'border-neutral-300 bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800'
             }`}
 >
-            <UIText
+            <div
               className={`text-[10px] font-bold uppercase tracking-wider ${
                 isRunActive
                   ? 'text-blue-700 dark:text-blue-300'
@@ -312,52 +300,52 @@ const RunCard = memo(function RunCard({
             `}
 >
               {isRunActive ? 'Running' : isRunFailed ? 'Failed' : isRunCompleted ? 'Success' : run.end_reason || 'Finished'}
-            </UIText>
+            </div>
           </div>
 
           {duration && (
-            <UIText className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400">⏱ {duration}</UIText>
+            <div className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400">⏱ {duration}</div>
           )}
         </div>
 
-        <UIText className="text-[11px] text-neutral-400 dark:text-neutral-500">{formatRunTime(run.started_at)}</UIText>
+        <div className="text-[11px] text-neutral-400 dark:text-neutral-500">{formatRunTime(run.started_at)}</div>
       </div>
 
       {/* Title / Preview */}
       <div className="mt-2">
-        <UIText className="text-xs font-medium text-neutral-800 dark:text-neutral-200" numberOfLines={expanded ? undefined : 2}>
+        <div className={`text-xs font-medium text-neutral-800 dark:text-neutral-200 ${expanded ? '' : 'line-clamp-2'}`}>
           {run.title || run.preview || '(No preview available)'}
-        </UIText>
-        <UIText className="mt-0.5 text-[10px] font-mono text-neutral-400 dark:text-neutral-500">{run.id}</UIText>
+        </div>
+        <div className="mt-0.5 text-[10px] font-mono text-neutral-400 dark:text-neutral-500">{run.id}</div>
       </div>
 
       {/* Metrics row */}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
           <MessageSquare size={11} color={dark ? '#aaa' : '#666'} />
-          <UIText className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.message_count ?? 0} msgs</UIText>
+          <div className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.message_count ?? 0} msgs</div>
         </div>
 
         {Boolean(run.tool_call_count) && (
           <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
             <Wrench size={11} color={dark ? '#aaa' : '#666'} />
-            <UIText className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.tool_call_count} tools</UIText>
+            <div className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.tool_call_count} tools</div>
           </div>
         )}
 
         {totalTokens> 0 && (
           <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
-            <UIText className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300">
+            <div className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300">
               {compactNumber(totalTokens)} tok
-            </UIText>
+            </div>
           </div>
         )}
 
         {Number(run.estimated_cost_usd)> 0 && (
           <div className="rounded bg-emerald-100/80 px-2 py-0.5 dark:bg-emerald-950/50">
-            <UIText className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300">
+            <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300">
               ${Number(run.estimated_cost_usd).toFixed(4)}
-            </UIText>
+            </div>
           </div>
         )}
       </div>
@@ -371,9 +359,9 @@ const RunCard = memo(function RunCard({
           aria-label={expanded ? 'Hide messages' : 'View messages'}
           className="h-auto sm:h-auto px-0 py-1"
 >
-          <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
+          <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
             {expanded ? 'Hide Messages' : 'View Messages'}
-          </UIText>
+          </span>
           {expanded ? <ChevronUp size={14} color="#1a73e8" /> : <ChevronDown size={14} color="#1a73e8" />}
         </Button>
 
@@ -384,7 +372,7 @@ const RunCard = memo(function RunCard({
           className="h-auto sm:h-auto rounded-lg bg-neutral-200/70 px-2.5 py-1 active:bg-neutral-300 dark:bg-neutral-800 dark:active:bg-neutral-700"
 >
           <ExternalLink size={12} color={dark ? '#ddd' : '#333'} />
-          <UIText className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Open in Chat</UIText>
+          <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Open in Chat</span>
         </Button>
       </div>
 
@@ -394,12 +382,12 @@ const RunCard = memo(function RunCard({
           {messagesLoading && !messages && (
             <div className="flex flex-col items-center justify-center py-6">
               <Spinner size={14} color="#1a73e8" />
-              <UIText className="mt-2 text-xs text-neutral-400">Loading transcript…</UIText>
+              <div className="mt-2 text-xs text-neutral-400">Loading transcript…</div>
             </div>
           )}
 
           {messages && messages.length === 0 && (
-            <UIText className="text-center text-xs text-neutral-400 py-4">No messages found for this run session.</UIText>
+            <div className="text-center text-xs text-neutral-400 py-4">No messages found for this run session.</div>
           )}
 
           {messages && messages.length> 0 && (
@@ -430,7 +418,7 @@ const RunCard = memo(function RunCard({
                         ) : (
                           <Bot size={12} color="#10b981" />
                         )}
-                        <UIText
+                        <div
                           className={`text-[10px] font-bold uppercase tracking-wider ${
                             isUser
                               ? 'text-blue-700 dark:text-blue-400'
@@ -440,29 +428,29 @@ const RunCard = memo(function RunCard({
                           }`}
 >
                           {isUser ? 'User / Trigger' : isTool ? `Tool: ${m.tool_name || m.name || 'call'}` : 'Hermes'}
-                        </UIText>
+                        </div>
                       </div>
                     </div>
 
                     {Boolean(reasoningText) && (
                       <div className="mb-1.5 rounded bg-neutral-200/60 p-1.5 dark:bg-neutral-800">
-                        <UIText className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 mb-0.5">
+                        <div className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 mb-0.5">
                           Thinking / Reasoning:
-                        </UIText>
-                        <UIText numberOfLines={4} className="text-[11px] italic text-neutral-600 dark:text-neutral-300 font-mono">
+                        </div>
+                        <div className="text-[11px] italic text-neutral-600 dark:text-neutral-300 font-mono line-clamp-4">
                           {reasoningText}
-                        </UIText>
+                        </div>
                       </div>
                     )}
 
                     {Boolean(contentText) && (
-                      <UIText
+                      <div
                         className={`text-xs leading-relaxed text-neutral-800 dark:text-neutral-200 ${
                           isTool ? 'font-mono text-[11px]' : ''
                         }`}
 >
                         {contentText}
-                      </UIText>
+                      </div>
                     )}
                   </div>
                 );
@@ -887,37 +875,6 @@ export function CronScreen() {
     }
   };
 
-  // Stable FlashList wiring: memoized cards + callbacks by item, so acting on
-  // one row doesn't rebuild every other row.
-  const renderJobItem = useCallback(
-    ({ item }: { item: CronJobItem }) => (
-      <JobCard
-        job={item}
-        dark={dark}
-        busy={actionLoadingId === item.id}
-        expanded={expandedIds.has(item.id)}
-        onToggleExpand={toggleExpand}
-        onOpenRuns={handleOpenRuns}
-        onTrigger={handleTrigger}
-        onPause={handlePause}
-        onResume={handleResume}
-        onEdit={openEditModal}
-        onDelete={handleDelete}
-      />
-    ),
-    [
-      actionLoadingId,
-      dark,
-      expandedIds,
-      handleDelete,
-      handleOpenRuns,
-      handlePause,
-      handleResume,
-      handleTrigger,
-      openEditModal,
-      toggleExpand,
-    ],
-  );
   // What the Notify field offers for the job being edited. `origin` only makes
   // sense for a job that has somewhere to go back to, and the server's list
   // never includes it (it prepends it per-blueprint, ops.py list_cron_blueprints).
@@ -931,7 +888,7 @@ export function CronScreen() {
       return (
         <div className="flex flex-col items-center justify-center py-16">
           <Spinner size={24} color="#1a73e8" />
-          <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading cron jobs…</UIText>
+          <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading cron jobs…</div>
         </div>
       );
     }
@@ -939,17 +896,17 @@ export function CronScreen() {
       return (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
           <Clock size={36} color={dark ? '#666' : '#999'} />
-          <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Cron Jobs Yet</UIText>
-          <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+          <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Cron Jobs Yet</div>
+          <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
             Schedule recurring prompts or automation tasks for Hermes.
-          </UIText>
+          </div>
           <Button
             onClick={openCreateModal}
             aria-label="Create first cron job"
             className="mt-4 h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2.5"
 >
             <Plus size={16} color="#fff" />
-            <UIText className="text-sm font-semibold text-white">Create First Job</UIText>
+            <span className="text-sm font-semibold text-white">Create First Job</span>
           </Button>
         </div>
       );
@@ -957,31 +914,6 @@ export function CronScreen() {
     return null;
   }, [dark, error, loading, openCreateModal, refreshing]);
 
-  const renderRunItem = useCallback(
-    ({ item }: { item: CronRunItem }) => (
-      <RunCard
-        run={item}
-        dark={dark}
-        expanded={expandedRunId === item.id}
-        messages={
-          runMessages[scopedRunKey(item.id, item.profile || selectedJobForRuns?.profile || activeProfile)]
-        }
-        messagesLoading={runMessagesLoading}
-        onToggleRun={toggleExpandRun}
-        onOpenInChat={handleOpenInChat}
-      />
-    ),
-    [
-      activeProfile,
-      dark,
-      expandedRunId,
-      handleOpenInChat,
-      runMessages,
-      runMessagesLoading,
-      selectedJobForRuns,
-      toggleExpandRun,
-    ],
-  );
   const runsHeader = useMemo(
     () =>
       runsError ? (
@@ -994,7 +926,7 @@ export function CronScreen() {
       return (
         <div className="flex flex-col items-center justify-center py-16">
           <Spinner size={24} color="#1a73e8" />
-          <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading run history…</UIText>
+          <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading run history…</div>
         </div>
       );
     }
@@ -1002,10 +934,10 @@ export function CronScreen() {
       return (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
           <Clock size={36} color={dark ? '#666' : '#999'} />
-          <UIText className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Runs Recorded</UIText>
-          <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+          <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Runs Recorded</div>
+          <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
             This cron job hasn&apos;t executed yet. You can tap &quot;Run&quot; on the job card to trigger a run now.
-          </UIText>
+          </div>
         </div>
       );
     }
@@ -1032,7 +964,7 @@ export function CronScreen() {
               className="h-8 rounded-lg bg-[#1a73e8] px-3"
 >
               <Plus size={16} color="#fff" />
-              <UIText className="text-xs font-semibold text-white">New</UIText>
+              <span className="text-xs font-semibold text-white">New</span>
             </Button>
           }
         />
@@ -1040,33 +972,47 @@ export function CronScreen() {
         {/* Status feedback toast */}
         {statusNotice && (
           <div className="mx-4 mt-2 rounded-lg bg-emerald-600 px-3 py-2">
-            <UIText className="text-center text-xs font-semibold text-white">{statusNotice}</UIText>
+            <div className="text-center text-xs font-semibold text-white">{statusNotice}</div>
           </div>
         )}
 
         <ErrorRetry error={error} onRetry={() => void loadJobs()} className="m-4" compact />
 
-        <WindowedList
-          data={jobs}
-          keyExtractor={jobKeyExtractor}
-          renderItem={renderJobItem}
-          ListEmptyComponent={jobsEmpty}
-          ItemSeparatorComponent={ListGap12}
-          contentClassName={jobsContentClass}
-
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${jobsContentClass}`}>
+            {jobs.length === 0
+              ? jobsEmpty
+              : jobs.map((job, i) => (
+                  <div key={job.id}>
+                    {i > 0 && <div style={{ height: 12 }} />}
+                    <JobCard
+                      job={job}
+                      dark={dark}
+                      busy={actionLoadingId === job.id}
+                      expanded={expandedIds.has(job.id)}
+                      onToggleExpand={toggleExpand}
+                      onOpenRuns={handleOpenRuns}
+                      onTrigger={handleTrigger}
+                      onPause={handlePause}
+                      onResume={handleResume}
+                      onEdit={openEditModal}
+                      onDelete={handleDelete}
+                    />
+                  </div>
+                ))}
+          </div>
+        </div>
 
         {/* Create / Edit sheet */}
         <Sheet
           open={modalOpen}
           onOpenChange={setModalOpen}
-          snapPoints={['90%']}
 >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
-            <UIText className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
+            <div className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
               {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
-            </UIText>
+            </div>
             <Button
               variant="ghost"
               size="icon"
@@ -1080,10 +1026,7 @@ export function CronScreen() {
           </div>
 
           {/* Body form */}
-          <ScrollArea
-            className="bg-white dark:bg-black"
-            contentClassName="p-4 gap-3.5 pb-8"
->
+          <div className="overflow-y-auto bg-white dark:bg-black"><div className="p-4 gap-3.5 pb-8">
             {formError && (
               <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
                 <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
@@ -1117,8 +1060,8 @@ export function CronScreen() {
                 className="font-mono rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
               />
               {/* Presets Chips */}
-              <UIText className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</UIText>
-              <ScrollArea horizontal className="flex gap-1.5">
+              <div className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</div>
+              <div className="overflow-x-auto flex gap-1.5"><div>
                 {SCHEDULE_PRESETS.map((preset) => (
                   <Button
                     key={preset.label}
@@ -1133,7 +1076,7 @@ export function CronScreen() {
                         : 'border-neutral-300 dark:border-neutral-700'
                     }`}
 >
-                    <UIText
+                    <span
                       className={`text-[11px] font-medium ${
                         formSchedule === preset.expr
                           ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
@@ -1141,10 +1084,10 @@ export function CronScreen() {
                       }`}
 >
                       {preset.label}
-                    </UIText>
+                    </span>
                   </Button>
                 ))}
-              </ScrollArea>
+              </div></div>
             </div>
 
             {/* Prompt / Instructions */}
@@ -1183,10 +1126,10 @@ export function CronScreen() {
               </Label>
               {deliverChoices.length === 1 ? (
                 <div className="rounded-xl border border-dashed border-neutral-300 px-3.5 py-2.5 dark:border-neutral-700">
-                  <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
                     This gateway reports no notification targets, so runs are saved without sending
                     anywhere. Connect a platform on the server to enable delivery.
-                  </UIText>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-1.5">
@@ -1209,7 +1152,7 @@ export function CronScreen() {
                         } ${disabled ? 'opacity-50' : ''}`}
 >
                         <div className="flex-1">
-                          <UIText
+                          <div
                             className={`text-sm font-medium ${
                               selected
                                 ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
@@ -1217,12 +1160,12 @@ export function CronScreen() {
                             }`}
 >
                             {option.name}
-                          </UIText>
+                          </div>
                           {disabled ? (
-                            <UIText className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                            <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
                               No home channel set
                               {option.home_env_var ? ` (${option.home_env_var})` : ''}
-                            </UIText>
+                            </div>
                           ) : null}
                         </div>
                       </Button>
@@ -1241,7 +1184,7 @@ export function CronScreen() {
                 aria-label="Cancel"
                 className="h-auto sm:h-auto flex-1 rounded-xl py-3"
 >
-                <UIText className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+                <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</span>
               </Button>
 
               <Button
@@ -1253,27 +1196,27 @@ export function CronScreen() {
                 {formSaving ? (
                   <Spinner size={14} color="#fff" />
                 ) : (
-                  <UIText className="text-sm font-semibold text-white">
+                  <span className="text-sm font-semibold text-white">
                     {editingJob ? 'Save Changes' : 'Create Job'}
-                  </UIText>
+                  </span>
                 )}
               </Button>
             </div>
-          </ScrollArea>
+          </div></div>
         </Sheet>
 
         {/* Runs History sheet */}
-        <Sheet open={runsModalOpen} onOpenChange={setRunsModalOpen} snapPoints={['85%']}>
+        <Sheet open={runsModalOpen} onOpenChange={setRunsModalOpen}>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
                 <div className="flex-1 pr-2">
                   <div className="flex items-center gap-2">
                     <History size={18} color="#1a73e8" />
-                    <UIText className="text-base font-bold text-neutral-950 dark:text-neutral-100">Run History</UIText>
+                    <div className="text-base font-bold text-neutral-950 dark:text-neutral-100">Run History</div>
                   </div>
-                  <UIText numberOfLines={1} className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                  <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
                     {selectedJobForRuns?.name || selectedJobForRuns?.id}
-                  </UIText>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -1304,15 +1247,31 @@ export function CronScreen() {
               </div>
 
               {/* Body */}
-              <WindowedList
-                data={runsList}
-                keyExtractor={runKeyExtractor}
-                renderItem={renderRunItem}
-                ListHeaderComponent={runsHeader}
-                ListEmptyComponent={runsEmpty}
-                ItemSeparatorComponent={ListGap12}
-                contentClassName={runsContentClass}
-              />
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${runsContentClass}`}>
+                  {runsHeader}
+                  {runsList.length === 0
+                    ? runsEmpty
+                    : runsList.map((run, i) => (
+                        <div key={run.id}>
+                          {i > 0 && <div style={{ height: 12 }} />}
+                          <RunCard
+                            run={run}
+                            dark={dark}
+                            expanded={expandedRunId === run.id}
+                            messages={
+                              runMessages[
+                                scopedRunKey(run.id, run.profile || selectedJobForRuns?.profile || activeProfile)
+                              ]
+                            }
+                            messagesLoading={runMessagesLoading}
+                            onToggleRun={toggleExpandRun}
+                            onOpenInChat={handleOpenInChat}
+                          />
+                        </div>
+                      ))}
+                </div>
+              </div>
         </Sheet>
       </div>
 

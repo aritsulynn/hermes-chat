@@ -1,15 +1,13 @@
 // Local notifications for turn completion and server asks.
 //
-// ── Scope note: what this module can no longer do ─────────────────────────────
-// The native build registered `expo-notifications` categories so an ask could be
-// answered straight from the notification ("Allow once" / "Reject" / a text
-// field), with `isAuthenticationRequired` standing in for a biometric check.
-// The browser Notification API has no equivalent: it can only be clicked, it
-// cannot carry action buttons, and it cannot be raised while the tab is closed
-// without a Service Worker plus server-side Web Push.
+// ── Scope note: what this module can and cannot do ───────────────────────────
+// The browser Notification API only supports a click: it cannot carry action
+// buttons, and it cannot be raised while the tab is closed without a Service
+// Worker plus server-side Web Push. So an ask cannot be answered from the
+// notification itself.
 //
 // Answering an ask is therefore **in-app only** — Ask Inbox, reachable from
-// More → Ask Inbox. That is a real feature regression, tracked as the Web Push
+// More → Ask Inbox. That is a real feature gap, tracked as the Web Push
 // backlog item. It is not a bug.
 //
 // Notifications only fire while the tab is in the BACKGROUND: in the foreground
@@ -111,11 +109,10 @@ export async function pushNotification(
  * Observe notification taps. Returns an unsubscribe function.
  *
  * There is no cold-start equivalent: the browser does not retain a
- * "last responded notification" for a page the way a native app retains it, and
- * a click on a banner for a page that is already loaded is a plain `onclick`.
- * A tap that arrives before the store has subscribed is therefore dropped
- * rather than queued — the user lands on the app and sees current state, which
- * is the correct outcome anyway.
+ * "last responded notification" for a page, and a click on a banner for a page
+ * that is already loaded is a plain `onclick`. A tap that arrives before the
+ * store has subscribed is therefore dropped rather than queued — the user lands
+ * on the app and sees current state, which is the correct outcome anyway.
  */
 export function onNotificationTapped(cb: HermesNotificationTapHandler): () => void {
   tapHandler = cb;

@@ -25,9 +25,9 @@ import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { placeholderColor, screenStyle } from '../../theme';
 import { ScreenHeader } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
+import { Textarea } from '../../components/ui/textarea';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Textarea } from '../../components/ui/textarea';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import {
   ConfirmDialog,
@@ -39,16 +39,13 @@ import {
   DialogTitle,
 } from '../../components/ui/dialog';
 import { toast } from '../../components/ui/toast';
-import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { formatBytes } from '../../utils/format';
 import { FileRow } from './components/FileRow';
 import { isTextReadable, joinPath } from './helpers';
 import type { ManagedFileEntry, ManagedFilesResponse, ManagedFileReadResponse } from './types';
-import { ScrollArea } from '../../components/ui/scroll';
 import { writeClipboard } from '../../services/clipboard';
-import { WindowedList } from '../../components/ui/windowed-list';
 
 export function FilesScreen() {
   const { authed, opsGet, opsMut, getAuthScope } = useApp();
@@ -249,7 +246,7 @@ export function FilesScreen() {
     [getAuthScope, load, opsGet],
   );
 
-  // Stable identity for the FlashList header: `load` and `listing.parent` are
+  // Stable identity for the list header: `load` and `listing.parent` are
   // the only things `handleGoUp` reads, so depending on it (instead of on a
   // hand-picked subset) is exactly the closure the memoized element needs.
   const handleGoUp = useCallback(async () => {
@@ -400,13 +397,6 @@ export function FilesScreen() {
     },
     [handleOpenEntry],
   );
-  const fileKeyExtractor = useCallback((item: ManagedFileEntry) => item.path, []);
-  const renderFileRow = useCallback(
-    ({ item }: { item: ManagedFileEntry }) => (
-      <FileRow entry={item} dark={dark} onOpen={handleOpenEntryStable} onDelete={handleDeleteEntry} />
-    ),
-    [dark, handleOpenEntryStable, handleDeleteEntry],
-  );
   const closePreview = useCallback(() => {
     // Release the base64 payload — keeping data_url retains the whole file in JS memory.
     setPreviewModalOpen(false);
@@ -432,8 +422,8 @@ export function FilesScreen() {
             <ArrowUp size={18} color="#f59e0b" />
           </div>
           <div className="flex flex-col flex-1 items-start">
-            <UIText className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</UIText>
-            <UIText className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</UIText>
+            <div className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</div>
+            <div className="text-xs text-neutral-500 dark:text-neutral-400">Parent directory</div>
           </div>
         </Button>
       ) : null,
@@ -444,21 +434,21 @@ export function FilesScreen() {
       loading && !refreshing ? (
         <div className="flex flex-col items-center justify-center py-16">
           <Spinner size={24} color="#1a73e8" />
-          <UIText className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</UIText>
+          <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</div>
         </div>
       ) : !loading ? (
         <div className="flex flex-col items-center justify-center py-20 px-6">
           <div className="flex flex-col h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
             <Folder size={28} color={dark ? '#666' : '#999'} />
           </div>
-          <UIText className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+          <div className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
             {searchInput ? 'No matching files' : 'Folder is empty'}
-          </UIText>
-          <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+          </div>
+          <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
             {searchInput
               ? `No files or folders matching "${searchInput}"`
               : 'Upload files or create folders using the top buttons.'}
-          </UIText>
+          </div>
         </div>
       ) : null,
     [loading, refreshing, searchInput, dark],
@@ -533,11 +523,7 @@ export function FilesScreen() {
 
         {/* Path Bar & Breadcrumbs */}
         <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
-          <ScrollArea
-            horizontal
-            className="flex-1 mr-2"
-            contentClassName="items-center"
->
+          <div className="overflow-x-auto flex-1 mr-2"><div className="items-center">
             <div className="flex items-center gap-1">
               <HardDrive size={14} color="#1a73e8" />
               {breadcrumbs.map((crumb, idx) => {
@@ -558,23 +544,22 @@ export function FilesScreen() {
                           : 'active:bg-neutral-200 dark:active:bg-neutral-800'
                       }`}
 >
-                      <UIText
-                        numberOfLines={1}
+                      <span
                         className={`font-mono text-xs ${
                           isLast
                             ? 'font-bold text-neutral-900 dark:text-neutral-100'
                             : 'text-[#1a73e8] dark:text-blue-400'
-                        }`}
+                        } truncate`}
 >
                         {crumb.label}
-                      </UIText>
+                      </span>
                     </Button>
-                    {!isLast && <UIText className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</UIText>}
+                    {!isLast && <div className="text-neutral-400 dark:text-neutral-600 text-xs mx-0.5">/</div>}
                   </div>
                 );
               })}
             </div>
-          </ScrollArea>
+          </div></div>
 
           <Button
             variant="ghost"
@@ -585,7 +570,7 @@ export function FilesScreen() {
             aria-label="Change directory"
             className="h-auto sm:h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70"
 >
-            <UIText className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</UIText>
+            <span className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</span>
           </Button>
         </div>
 
@@ -629,30 +614,36 @@ export function FilesScreen() {
                 onClick={() => void load(activeDirectory)}
                 className="ml-6 mt-1 self-start"
 >
-                <UIText className="text-xs font-semibold">Retry</UIText>
+                <span className="text-xs font-semibold">Retry</span>
               </Button>
             </UIAlert>
           </div>
         )}
 
-        {/* File List — virtualized so large folders don't mount every row. */}
-        {/* FlashList v2 sizes rows itself; drawDistance replaces the old
-            windowSize/maxToRenderPerBatch overscan tuning. */}
-        <WindowedList
-          data={filteredEntries}
-          keyExtractor={fileKeyExtractor}
-          renderItem={renderFileRow}
-          contentClassName={fileListContentClass}
-          ListHeaderComponent={fileListHeader}
-          ListEmptyComponent={fileListEmpty}
-        />
+        {/* File list. Keyed by path; the scroller is the box below. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${fileListContentClass}`}>
+            {fileListHeader}
+            {filteredEntries.length === 0
+              ? fileListEmpty
+              : filteredEntries.map((item) => (
+                  <FileRow
+                    key={item.path}
+                    entry={item}
+                    dark={dark}
+                    onOpen={handleOpenEntryStable}
+                    onDelete={handleDeleteEntry}
+                  />
+                ))}
+          </div>
+        </div>
 
         {/* Reading File Overlay */}
         {readingFile && (
           <div className="flex flex-col absolute inset-0 z-50 items-center justify-center bg-black/40">
             <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
               <Spinner size={24} color="#1a73e8" />
-              <UIText className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</UIText>
+              <div className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</div>
             </div>
           </div>
         )}
@@ -666,12 +657,12 @@ export function FilesScreen() {
               <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
               <div className="flex-1 pr-3">
-                <UIText numberOfLines={1} className="font-mono text-base font-bold text-neutral-900 dark:text-white">
+                <div className="font-mono text-base font-bold text-neutral-900 dark:text-white truncate">
                   {selectedFile?.name}
-                </UIText>
-                <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
+                </div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">
                   {formatBytes(selectedFile?.size)} · {selectedFile?.mime_type || 'Unknown type'}
-                </UIText>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -685,12 +676,12 @@ export function FilesScreen() {
                     {copied ? (
                       <>
                         <Check size={14} color="#10b981" />
-                        <UIText className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Copied</UIText>
+                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Copied</span>
                       </>
                     ) : (
                       <>
                         <Copy size={14} color={dark ? '#ccc' : '#444'} />
-                        <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Copy</UIText>
+                        <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Copy</span>
                       </>
                     )}
                   </Button>
@@ -709,7 +700,7 @@ export function FilesScreen() {
                       {savingFile ? (
                         <Spinner size={14} color="#fff" />
                       ) : (
-                        <UIText className="text-xs font-bold text-white">Save</UIText>
+                        <span className="text-xs font-bold text-white">Save</span>
                       )}
                     </Button>
                   ) : (
@@ -719,7 +710,7 @@ export function FilesScreen() {
                       aria-label="Edit file"
                       className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
 >
-                      <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</UIText>
+                      <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</span>
                     </Button>
                   )
                 ) : null}
@@ -770,22 +761,22 @@ export function FilesScreen() {
                   />
                 </div>
               ) : fileTextContent ? (
-                <ScrollArea className="flex-1" contentClassName="p-4" horizontal={false}>
-                  <ScrollArea horizontal>
-                    <UIText className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
+                <div className="overflow-y-auto flex-1"><div className="p-4">
+                  <div className="overflow-x-auto"><div>
+                    <div className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
                       {fileTextContent}
-                    </UIText>
-                  </ScrollArea>
-                </ScrollArea>
+                    </div>
+                  </div></div>
+                </div></div>
               ) : (
                 <div className="flex flex-col flex-1 items-center justify-center p-8">
                   <File size={48} color={dark ? '#555' : '#aaa'} />
-                  <UIText className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                  <div className="mt-4 text-center text-sm font-semibold text-neutral-800 dark:text-neutral-200">
                     Binary or Unsupported File Preview
-                  </UIText>
-                  <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                  </div>
+                  <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
                     This file cannot be rendered as text or an image.
-                  </UIText>
+                  </div>
                 </div>
               )}
             </div>
@@ -825,14 +816,14 @@ export function FilesScreen() {
                     className="h-10 rounded-xl px-4"
                     onClick={() => setPathModalOpen(false)}
 >
-                    <UIText className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</span>
                   </Button>
                   <Button
                     size="sm"
                     className="h-10 rounded-xl bg-[#1a73e8] px-5"
                     onClick={handleJumpToPath}
 >
-                    <UIText className="text-sm font-bold text-white">Go</UIText>
+                    <span className="text-sm font-bold text-white">Go</span>
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -873,7 +864,7 @@ export function FilesScreen() {
                       setNewFolderModalOpen(false);
                     }}
 >
-                    <UIText className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</span>
                   </Button>
                   <Button
                     size="sm"
@@ -884,7 +875,7 @@ export function FilesScreen() {
                     {creatingFolder ? (
                       <Spinner size={14} color="#fff" />
                     ) : (
-                      <UIText className="text-sm font-bold text-white">Create</UIText>
+                      <span className="text-sm font-bold text-white">Create</span>
                     )}
                   </Button>
                 </DialogFooter>
@@ -902,8 +893,8 @@ export function FilesScreen() {
               <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
               <div>
-                <UIText className="text-base font-bold text-neutral-900 dark:text-white">Create New File</UIText>
-                <UIText className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</UIText>
+                <div className="text-base font-bold text-neutral-900 dark:text-white">Create New File</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -913,7 +904,7 @@ export function FilesScreen() {
                   aria-label="Cancel"
                   className="h-auto sm:h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800"
 >
-                  <UIText className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</UIText>
+                  <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</span>
                 </Button>
 
                 <Button
@@ -926,7 +917,7 @@ export function FilesScreen() {
                   {creatingFile ? (
                     <Spinner size={14} color="#fff" />
                   ) : (
-                    <UIText className="text-xs font-bold text-white">Save File</UIText>
+                    <span className="text-xs font-bold text-white">Save File</span>
                   )}
                 </Button>
               </div>

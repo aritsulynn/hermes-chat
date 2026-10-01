@@ -1,14 +1,12 @@
 // Chat top bar — the normal header and the in-transcript search header.
 // Extracted from index.tsx to keep the screen focused on orchestration.
 //
-// Neither header takes an `insetTop` prop any more. The native build had every
-// call site thread a measured safe-area number into a `paddingTop`; the browser
-// knows the safe area already, so the bar reads `env(safe-area-inset-top)`.
+// No `insetTop` prop: the browser knows the safe area, so the bar reads
+// `env(safe-area-inset-top)` directly.
 import { ChevronDown, ChevronUp, Info, MoreVertical, Search, X } from 'lucide-react';
 import { CtxRing, HamburgerBtn } from '../../../components/ui/bits';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
-import { Text as UIText } from '../../../components/ui/text';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 
 /** The 52px bar plus whatever the OS inset wants above it. */
@@ -71,7 +69,7 @@ export function ChatNormalHeader({
                   onClick={onSelectInfo}
                   className="w-full items-center justify-start gap-2.5 px-3 py-2.5">
                   <Info size={17} color={iconColor} />
-                  <UIText className="text-left text-[15px]">Session info</UIText>
+                  <span className="text-left text-[15px]">Session info</span>
                 </Button>
               </PopoverClose>
             </PopoverContent>

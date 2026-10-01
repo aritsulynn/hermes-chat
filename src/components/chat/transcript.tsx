@@ -1,11 +1,10 @@
 // The chat transcript's scroller.
 //
-// This is not WindowedList, deliberately. The transcript is the one list in the
-// app that FlashList was doing more than recycling for:
+// A hand-rolled scroller rather than a generic list, because the transcript is
+// the one list in the app that needs more than rendering rows:
 //
 //   - It has to hold position when an older page is *prepended* above the
-//     viewport, or the view yanks to the top mid-read. FlashList had
-//     `maintainVisibleContentPosition` for that.
+//     viewport, or the view yanks to the top mid-read.
 //   - It has to keep following the tail while tokens stream in, but stop the
 //     moment the user scrolls up.
 //   - It is driven from outside by absolute offsets (the measured end, the
@@ -154,8 +153,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         if (!rowTops.current.length) measureRows();
         const top = rowTops.current[index];
         // An index past the measured set means the row is not mounted yet; the
-        // caller's own paging loop handles that, so fail the promise the way
-        // the FlashList version caught.
+        // caller's own paging loop handles that, so the promise rejects.
         if (top === undefined) throw new Error('row not measured');
         const target = top - el.clientHeight * viewPosition;
         el.scrollTo({ top: Math.max(0, target), behavior: animated ? 'smooth' : 'auto' });
@@ -197,7 +195,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       // right edge of this scroller, so without a reserved gutter the composer
       // painted over the scroll control: the scrollbar was still there and
       // still draggable, just invisible.
-      className={`min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] ${className ?? ''}`}
+      className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable] ${className ?? ''}`}
       onPointerDown={() => onInteractStart?.()}
       // pointercancel is not optional here: a drag that leaves the window, or a
       // scrollbar grab the browser takes over, never delivers pointerup — and
@@ -249,9 +247,8 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
          stretched to the full width and the bubble's align-self had no effect —
          every bubble came out full-width and left-aligned, instead of the
          user's sitting on the right. `display: contents` removes the wrapper
-         from layout so the bubble is the direct flex item, which is exactly
-         what FlashList's cell was on native. It is safe here because the
-         wrapper carries no semantics of its own.
+         from layout so the bubble is the direct flex item. It is safe here
+         because the wrapper carries no semantics of its own.
         */}
         {children}
       </div>

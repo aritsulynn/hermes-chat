@@ -1,4 +1,4 @@
-// Viewport size, tracked live. Replaces RN's `useWindowDimensions`.
+// Viewport size, tracked live.
 //
 // Not a constant read at mount: the chat screen's bubble width is a percentage
 // of the window and its composer listens to the visual viewport, so both have

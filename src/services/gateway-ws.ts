@@ -45,7 +45,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Minimal socket surface used here (RN's WebSocket type lacks readyState). */
+/** Minimal socket surface used here, so a test double only needs these members. */
 interface WsLike {
   readyState?: number;
   close?: () => void;

@@ -19,7 +19,6 @@ import { Input } from '../ui/input';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { ConfirmDialog } from '../ui/dialog';
 import { Spinner } from '../ui/bits';
-import { Text as UIText } from '../ui/text';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
@@ -73,8 +72,7 @@ const SessionRow = memo(function SessionRow({
   // null for the interactive defaults (`tui`/`desktop`/`mobile`) — see
   // formatSessionSource for where this vocabulary comes from.
   const tag = formatSessionSource(session.source);
-  // Long-press to delete, as before. The 400ms delay is the native
-  // `delayLongPress` this row used to pass.
+  // Long-press to delete. A 400ms delay sets it apart from a normal tap.
   const longPress = useLongPress(() => onDelete(session), { delay: 400 });
   return (
     <Button
@@ -93,49 +91,42 @@ const SessionRow = memo(function SessionRow({
           <Spinner size={13} color={liveColor(live, dark)} />
         </span>
       ) : null}
-      {/* `flex flex-col`, and this is the whole row's layout. It was a
-          `<View className="flex-1 min-w-0">`, and on native a `<View>` *is* a flex
-          column — that is what put the title on one line and the
-          time/tag/preview on the next. A `<span>` is `display: inline`, so the
-          three ran together on one line and every row collapsed to a single line
-          of text. */}
+      {/* `flex flex-col` is the whole row's layout: it puts the title on one
+          line and the time/tag/preview on the next. A plain inline `<span>`
+          would run all three together on a single line. */}
       <span className="flex min-w-0 flex-1 flex-col">
-        <UIText
-          numberOfLines={1}
+        <span
           className={`text-left text-[14px] ${
             active ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'
-          }`}>
+          } truncate`}>
           {session.title || '(untitled)'}
-        </UIText>
+        </span>
         {live === 'waiting' ? (
-          <UIText
-            numberOfLines={1}
-            className={`mt-0.5 text-[10px] font-medium ${dark ? 'text-amber-300' : 'text-amber-700'}`}>
+          <span
+            className={`mt-0.5 text-[10px] font-medium ${dark ? 'text-amber-300' : 'text-amber-700'} truncate`}>
             Waiting for your answer
-          </UIText>
+          </span>
         ) : null}
         {(preview || when || tag) && (
           <span className="mt-0.5 flex items-center gap-2">
             {when ? (
-              <UIText
-                numberOfLines={1}
+              <span
                 className={`shrink-0 text-[10px] ${
                   active ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-400 dark:text-neutral-500'
-                }`}>
+                } truncate`}>
                 {when}
-              </UIText>
+              </span>
             ) : null}
             {tag ? (
               <Badge variant="secondary" className="border-neutral-300 px-1.5 py-0 dark:border-neutral-700">
-                <UIText className="text-[10px] font-medium text-neutral-600 dark:text-neutral-300">{tag}</UIText>
+                <span className="text-[10px] font-medium text-neutral-600 dark:text-neutral-300">{tag}</span>
               </Badge>
             ) : null}
             {preview ? (
-              <UIText
-                numberOfLines={1}
-                className="min-w-0 flex-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+              <span
+                className="min-w-0 flex-1 text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
                 {preview}
-              </UIText>
+              </span>
             ) : null}
           </span>
         )}
@@ -220,9 +211,8 @@ export function HermesDrawerContent({
         setShowMoreMenu(true);
       }
     } else {
-      // Closing the drawer dismisses the account popover. On the web this is
-      // just state, because the Popover root is controlled — the native build
-      // had to remount it with a `key` to get the same effect.
+      // Closing the drawer dismisses the account popover. The Popover root is
+      // controlled, so this is just state.
       setShowUserMenu(false);
     }
   }, [open, pathname, refreshProfiles, refreshSessions, refreshLiveSessions]);
@@ -249,8 +239,7 @@ export function HermesDrawerContent({
   // Bottom reached: first reveal more of what's already fetched, else ask the
   // server for the next 100 (session.list is newest-first, limit-based).
   // A DOM scroller fires `scroll` continuously, so the threshold check is
-  // enough here — the native build needed momentum/drag-end handlers as a
-  // backstop because RN throttles onScroll.
+  // enough here.
   const handleRecentsScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const el = e.currentTarget;
@@ -347,21 +336,21 @@ export function HermesDrawerContent({
                     data-testid="profile-selector"
                     aria-label={`Switch profile. Active profile: ${activeProfile}`}
                     className="h-auto sm:h-auto min-w-0 flex-1 shrink items-center justify-start gap-2 px-1 py-1">
-                    <UIText className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">
+                    <span className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">
                       Hermes
-                    </UIText>
+                    </span>
                     <ChevronDown size={17} color={dimColor} />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent side="bottom" align="start" className="w-72 p-2">
                   <div className="flex items-center justify-between px-3 py-2.5">
                     <div>
-                      <UIText className="text-[14px] font-bold text-neutral-950 dark:text-neutral-100">
+                      <div className="text-[14px] font-bold text-neutral-950 dark:text-neutral-100">
                         Switch profile
-                      </UIText>
-                      <UIText className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
                         Chat and toolsets use this profile
-                      </UIText>
+                      </div>
                     </div>
                     <PopoverClose asChild>
                       <Button variant="ghost" size="icon" aria-label="Close profile picker">
@@ -372,7 +361,7 @@ export function HermesDrawerContent({
                   <div className="max-h-[420px] overflow-y-auto">
                     {profiles.length === 0 ? (
                       <div className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
-                        <UIText className="text-[13px] text-neutral-600 dark:text-neutral-300">{activeProfile}</UIText>
+                        <div className="text-[13px] text-neutral-600 dark:text-neutral-300">{activeProfile}</div>
                       </div>
                     ) : (
                       profiles.map((profile) => {
@@ -399,26 +388,24 @@ export function HermesDrawerContent({
                                 color={selected ? (dark ? '#7dd3fc' : '#0284c7') : dimColor}
                               />
                             </span>
-                            <span className="min-w-0 flex-1 text-left">
-                              <UIText
-                                numberOfLines={1}
+                            <span className="flex min-w-0 flex-1 flex-col text-left">
+                              <span
                                 className={`min-w-0 text-left text-[13px] font-semibold ${
                                   selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
-                                }`}>
+                                } truncate`}>
                                 {profile.display_name || profile.name}
-                              </UIText>
+                              </span>
                               {!!profile.description && (
-                                <UIText
-                                  numberOfLines={1}
-                                  className="min-w-0 text-[11px] text-neutral-500 dark:text-neutral-400">
+                                <span
+                                  className="min-w-0 text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
                                   {profile.description}
-                                </UIText>
+                                </span>
                               )}
                             </span>
                             {selected && (
-                              <UIText className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">
+                              <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">
                                 Active
-                              </UIText>
+                              </span>
                             )}
                           </Button>
                         );
@@ -459,15 +446,14 @@ export function HermesDrawerContent({
               busy ? 'opacity-50' : ''
             }`}>
             <SquarePen size={20} color={isNewChat ? brand : dimColor} />
-            <UIText
-              numberOfLines={1}
+            <span
               className={`min-w-0 flex-1 text-left text-[15px] ${
                 isNewChat
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                   : 'font-normal text-neutral-950 dark:text-neutral-100'
-              }`}>
+              } truncate`}>
               New chat
-            </UIText>
+            </span>
           </Button>
 
           {NAV_ITEMS.map((item) => {
@@ -480,15 +466,14 @@ export function HermesDrawerContent({
                 onClick={() => go(item.name)}
                 className={`h-auto sm:h-auto items-center justify-start gap-3 px-3 py-3 ${active ? activeItemClass : ''}`}>
                 <Icon size={20} color={active ? brand : dimColor} />
-                <UIText
-                  numberOfLines={1}
+                <span
                   className={`min-w-0 flex-1 text-left text-[15px] ${
                     active
                       ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                       : 'font-normal text-neutral-950 dark:text-neutral-100'
-                  }`}>
+                  } truncate`}>
                   {item.label}
-                </UIText>
+                </span>
               </Button>
             );
           })}
@@ -501,20 +486,19 @@ export function HermesDrawerContent({
               showMoreMenu || isMoreActive ? activeItemClass : ''
             }`}>
             <Ellipsis size={20} color={showMoreMenu || isMoreActive ? brand : dimColor} />
-            <UIText
-              numberOfLines={1}
+            <span
               className={`min-w-0 flex-1 text-left text-[15px] ${
                 showMoreMenu || isMoreActive
                   ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                   : 'font-normal text-neutral-950 dark:text-neutral-100'
-              }`}>
+              } truncate`}>
               More
-            </UIText>
+            </span>
             {pendingAskCount > 0 && (
               <Badge variant="destructive">
-                <UIText className="text-[10px] font-bold text-white">
+                <span className="text-[10px] font-bold text-white">
                   {pendingAskCount > 99 ? '99+' : pendingAskCount}
-                </UIText>
+                </span>
               </Badge>
             )}
           </Button>
@@ -532,15 +516,14 @@ export function HermesDrawerContent({
                     onClick={() => go(item.name)}
                     className={`h-auto sm:h-auto items-center justify-start gap-3 px-3 py-2.5 ${active ? activeItemClass : ''}`}>
                     <Icon size={18} color={active ? brand : dimColor} />
-                    <UIText
-                      numberOfLines={1}
+                    <span
                       className={`min-w-0 flex-1 text-left text-[13px] ${
                         active
                           ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
                           : 'font-normal text-neutral-800 dark:text-neutral-200'
-                      }`}>
+                      } truncate`}>
                       {item.label}
-                    </UIText>
+                    </span>
                   </Button>
                 );
               })}
@@ -551,21 +534,18 @@ export function HermesDrawerContent({
             and a vertical gap is inert on one. `gap-1` matches the two other
             lists in this drawer.
 
-            Native had no gap here and did not need one: a `Pressable` row with no
-            background of its own, held off the next by 10px of padding above and
-            below, reads fine at 0. A web `<button>` can carry a background — this
+            The gap matters because a `<button>` can carry a background — this
             row paints one when it is the active session, and the ghost variant
             paints one on hover — so at 0 two adjacent buttons share an edge and
-            read as one another. Measured before this change: 50 rows, every gap
-            between them exactly 0. */}
+            read as one another. */}
         <div className="flex flex-col gap-1 px-3 pt-3">
-          <UIText className="px-3 pb-1 text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
+          <div className="px-3 pb-1 text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
             {ql ? `Results (${visible.length})` : 'Recents'}
-          </UIText>
+          </div>
           {visible.length === 0 && (
-            <UIText className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">
+            <div className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">
               {ql ? 'No matches' : 'No sessions yet'}
-            </UIText>
+            </div>
           )}
           {visible.map((s) => {
             const active =
@@ -594,7 +574,7 @@ export function HermesDrawerContent({
           {!ql && sessionsLoadingMore && (
             <div className="flex items-center justify-center gap-2 py-3">
               <Spinner size={14} color={dimColor} />
-              <UIText className="text-[12px] text-neutral-500 dark:text-neutral-400">Loading more…</UIText>
+              <div className="text-[12px] text-neutral-500 dark:text-neutral-400">Loading more…</div>
             </div>
           )}
         </div>
@@ -612,23 +592,19 @@ export function HermesDrawerContent({
             <Button variant="ghost" className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-4 py-4">
               <Avatar className="size-11">
                 <AvatarFallback className="bg-[#1a73e8]">
-                  <UIText className="text-base font-bold text-white">
+                  <span className="text-base font-bold text-white">
                     {(username || 'H').slice(0, 1).toUpperCase()}
-                  </UIText>
+                  </span>
                 </AvatarFallback>
               </Avatar>
-              {/* Column for the same reason as SessionRow's wrapper: on native
-                  this was a `<View>`, so the username and the host were two lines.
-                  It stacks today only because `ui/Text` renders a `<div>` and a
-                  block box inside an inline one happens to force a break — an
-                  accident, not a layout. */}
+              {/* Stacks the username over the host (`flex flex-col`); a plain
+                  inline span would run them together on one line. */}
               <span className="flex flex-1 flex-col text-left">
-                <UIText
-                  numberOfLines={1}
-                  className="min-w-0 text-left text-[14px] font-semibold text-neutral-950 dark:text-neutral-100">
+                <span
+                  className="min-w-0 text-left text-[14px] font-semibold text-neutral-950 dark:text-neutral-100 truncate">
                   {username || 'Hermes'}
-                </UIText>
-                <UIText className="min-w-0 text-[13px] text-neutral-500 dark:text-neutral-400">{host || ''}</UIText>
+                </span>
+                <span className="min-w-0 text-[13px] text-neutral-500 dark:text-neutral-400">{host || ''}</span>
               </span>
               <ChevronRight
                 size={18}
@@ -651,13 +627,12 @@ export function HermesDrawerContent({
                       active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
                     }`}>
                     <Icon size={19} color={active ? brand : dark ? '#ccc' : '#444'} />
-                    <UIText
-                      numberOfLines={1}
+                    <span
                       className={`min-w-0 flex-1 text-left text-[13px] font-medium ${
                         active ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-900 dark:text-neutral-100'
-                      }`}>
+                      } truncate`}>
                       {item.label}
-                    </UIText>
+                    </span>
                   </Button>
                 </PopoverClose>
               );
@@ -671,11 +646,10 @@ export function HermesDrawerContent({
                 onClick={() => go('settings')}
                 className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-3.5 py-3">
                 <Settings size={19} color={dark ? '#ccc' : '#444'} />
-                <UIText
-                  numberOfLines={1}
-                  className="min-w-0 flex-1 text-left text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
+                <span
+                  className="min-w-0 flex-1 text-left text-[13px] font-medium text-neutral-900 dark:text-neutral-100 truncate">
                   Settings
-                </UIText>
+                </span>
               </Button>
             </PopoverClose>
           </PopoverContent>

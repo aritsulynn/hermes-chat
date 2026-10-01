@@ -6,7 +6,6 @@ import type { UiMessage } from '../../utils/messages';
 import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../../utils/diff';
 import { TypingDots } from '../ui/bits';
 import { Button } from '../ui/button';
-import { Text as UIText } from '../ui/text';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { useLongPress } from '../../hooks/use-long-press';
 import type { AnchorMeasure } from './composer';
@@ -129,20 +128,20 @@ const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: bo
         const kind = diffLineKind(line);
         return (
           <div key={i} style={bgOf(kind) ? { backgroundColor: bgOf(kind) } : undefined}>
-            <UIText
+            <div
               className={`px-1.5 text-[11px] leading-[15px] ${
                 hasThai(line) ? '' : 'font-mono'
               }`}
               style={{ color: colorOf(kind) }}>
               {line || ' '}
-            </UIText>
+            </div>
           </div>
         );
       })}
       {lines.length > DIFF_MAX_LINES && (
-        <UIText className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
+        <div className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
           … {lines.length - DIFF_MAX_LINES} more lines
-        </UIText>
+        </div>
       )}
     </div>
   );
@@ -158,26 +157,25 @@ const ToolOutput = memo(function ToolOutput({ text }: { text: string }) {
   return (
     <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 bg-black/[0.03] dark:border-neutral-700/70 dark:bg-white/[0.05]">
       {shown.map((l, i) => (
-        <UIText
+        <div
           key={i}
           className={`px-1.5 text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300 ${
             hasThai(l) ? '' : 'font-mono'
           }`}>
           {l || ' '}
-        </UIText>
+        </div>
       ))}
       {lines.length > OUTPUT_MAX_LINES && (
-        <UIText className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
+        <div className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
           … {lines.length - OUTPUT_MAX_LINES} more lines
-        </UIText>
+        </div>
       )}
     </div>
   );
 });
 
 // Stable thumbnail — a plain <img> with a fixed src has no identity churn, so
-// the memo() below is all that is needed (the native build had to fight
-// expo-image's `source` prop and pass an explicit recyclingKey).
+// the memo() below is all that is needed.
 const BubbleThumb = memo(function BubbleThumb({ uri, name }: { uri: string; name: string }) {
   return (
     <img
@@ -198,7 +196,6 @@ const dismissKeyboard = () => {
 
 export const MessageBubble = memo(function MessageBubble({
   item,
-  bubbleMax,
   dark,
   expanded,
   highlight,
@@ -214,7 +211,6 @@ export const MessageBubble = memo(function MessageBubble({
   onRegenerate,
 }: {
   item: UiMessage;
-  bubbleMax: number;
   dark: boolean;
   expanded: boolean;
   highlight?: boolean;
@@ -361,7 +357,10 @@ export const MessageBubble = memo(function MessageBubble({
                     ? 'self-start bg-transparent'
                     : 'self-start bg-[#f0f0f2] dark:bg-[#272727]'
       }${highlight ? ' border-2 border-[#b45309] dark:border-[#fbbf24]' : ''}`}
-      style={{ maxWidth: bubbleMax }}
+      // 85% of the *content column*, not the window, so a long row (a thinking
+      // summary, a tool card) can never spill past the column and drag a
+      // horizontal scrollbar across the transcript.
+      style={{ maxWidth: '85%' }}
       role={toggleable ? 'button' : undefined}
       aria-label={toggleable ? `${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}` : undefined}
       aria-expanded={toggleable ? expanded : undefined}
@@ -378,11 +377,10 @@ export const MessageBubble = memo(function MessageBubble({
             <div className="flex h-[18px] items-center">
               <Brain size={14} color={dark ? '#999' : '#777'} />
             </div>
-            <UIText
-              numberOfLines={expanded ? undefined : 1}
-              className="shrink text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400">
+            <div
+              className={`shrink text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400 ${expanded ? '' : 'truncate'}`}>
               {cleanThinking(mergedText)}
-            </UIText>
+            </div>
           </div>
         ) : (
           <TypingDots dim />
@@ -399,11 +397,10 @@ export const MessageBubble = memo(function MessageBubble({
                 <Check size={14} color={dark ? '#8fa8ff' : '#3b5bdb'} />
               )}
             </div>
-            <UIText
-              numberOfLines={expanded ? undefined : 2}
-              className="shrink text-[13px] leading-[18px] text-[#3b5bdb] dark:text-[#8fa8ff]">
+            <div
+              className={`shrink text-[13px] leading-[18px] text-[#3b5bdb] dark:text-[#8fa8ff] ${expanded ? '' : 'line-clamp-2'}`}>
               {mergedText}
-            </UIText>
+            </div>
             {!!toolDiff && (
               // A <span> wrapper, not a nested Text: the outer element is a div
               // and a div inside a div would break the run of added/removed
@@ -418,22 +415,22 @@ export const MessageBubble = memo(function MessageBubble({
             <>
               {!!item.command && (
                 <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 bg-neutral-100/60 dark:border-neutral-700/70 dark:bg-white/[0.05]">
-                  <UIText className="px-1.5 py-1 font-mono text-[11px] leading-[15px] text-neutral-600 dark:text-neutral-300">
+                  <div className="px-1.5 py-1 font-mono text-[11px] leading-[15px] text-neutral-600 dark:text-neutral-300">
                     {item.command}
-                  </UIText>
+                  </div>
                 </div>
               )}
               {!!item.output && !(!!toolDiff && looksLikeDiff(item.output)) && <ToolOutput text={item.output} />}
               {!!toolDiff && <DiffView diff={toolDiff} dark={dark} />}
               {!item.output && !toolDiff && !item.command && !!item.detail && (
-                <UIText className="mt-1 text-[12px] leading-[17px] text-neutral-600 dark:text-neutral-300">
+                <div className="mt-1 text-[12px] leading-[17px] text-neutral-600 dark:text-neutral-300">
                   {item.detail}
-                </UIText>
+                </div>
               )}
               {!item.output && !toolDiff && !item.command && !item.detail && !item.pending && (
-                <UIText className="mt-1 text-[11px] italic text-neutral-400 dark:text-neutral-500">
+                <div className="mt-1 text-[11px] italic text-neutral-400 dark:text-neutral-500">
                   no result captured
-                </UIText>
+                </div>
               )}
             </>
           )}
@@ -441,7 +438,7 @@ export const MessageBubble = memo(function MessageBubble({
       ) : item.role === 'summary' ? (
         <div className="flex items-center gap-1.5">
           <FileText size={12} color={dark ? '#777' : '#999'} />
-          <UIText className="text-[11px] text-neutral-500 dark:text-neutral-400">{mergedText}</UIText>
+          <div className="text-[11px] text-neutral-500 dark:text-neutral-400">{mergedText}</div>
         </div>
       ) : markdown ? (
         item.role === 'user' ? (
@@ -468,18 +465,18 @@ export const MessageBubble = memo(function MessageBubble({
             )}
             {!!liveText &&
               (streamPlain ? (
-                <UIText className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
+                <div className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
                   {liveText}
-                </UIText>
+                </div>
               ) : (
                 <ChatMarkdown body={body} theme="ai" dark={dark} />
               ))}
           </>
         )
       ) : (
-        <UIText className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
+        <div className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
           {mergedText}
-        </UIText>
+        </div>
       )}
       {/* Footer: bot time lives in its ⋯ menu, ours in the long-press menu —
           copy icon stays on bot bubbles only. */}
@@ -529,9 +526,9 @@ export const MessageBubble = memo(function MessageBubble({
                 {!!item.ts && (
                   <div className="flex items-center gap-2.5 px-3 py-2">
                     <Clock size={17} color={dark ? '#888' : '#999'} />
-                    <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                    <div className="text-[13px] text-neutral-500 dark:text-neutral-400">
                       {formatBubbleTime(item.ts)}
-                    </UIText>
+                    </div>
                   </div>
                 )}
                 <PopoverClose asChild>
@@ -541,7 +538,7 @@ export const MessageBubble = memo(function MessageBubble({
                     onClick={onBranchChat}
                     className="w-full items-center justify-start gap-2.5 px-3 py-2.5">
                     <GitFork size={17} color={dark ? '#aaa' : '#999'} />
-                    <UIText className="text-[15px]">Branch chat</UIText>
+                    <span className="text-[15px]">Branch chat</span>
                   </Button>
                 </PopoverClose>
               </PopoverContent>

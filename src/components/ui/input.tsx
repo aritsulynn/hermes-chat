@@ -2,7 +2,7 @@ import { cn } from '@/utils/cn';
 import * as React from 'react';
 
 type InputProps = Omit<React.ComponentProps<'input'>, 'size'> & {
-  /** react-native's read-only switch. `disabled` already exists on <input>. */
+  /** Read-only switch; ignored because `disabled` already exists on <input>. */
   editable?: boolean;
 };
 

@@ -202,12 +202,10 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
         // cookie in its own jar, where JS cannot read it. Storing the password
         // would add a real secret to `localStorage` and buy nothing back.
         //
-        // This branch existed only because the native build wrote the password
-        // to the keychain behind a `rememberPw` flag — a flag that was
-        // hardcoded `true` and never surfaced in Settings, so it was never a
-        // choice the user could make. It is gone, and with it the last writer
-        // of `savePassword`; see the "Credentials" note in services/connection.ts
-        // for what the boot-time `clearPassword` call is now asserting.
+        // The old `rememberPw` flag is gone, and with it the last
+        // writer of `savePassword`; see the "Credentials" note in
+        // services/connection.ts for what the boot-time `clearPassword` call is
+        // now asserting.
         // Bounded waits — a wedged dashboard must never trap boot on a
         // spinner: list/open each get a ceiling, then we land on chat.
         let list: SessionSummary[] = [];

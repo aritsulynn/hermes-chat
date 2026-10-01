@@ -1,19 +1,10 @@
 // Markdown rendering for chat bubbles.
 //
-// The native build fed `react-native-markdown-display` a `rules` object and one
-// of four StyleSheet themes (assistant/user × light/dark). Both halves collapse
-// here:
-//
-//   - `rules` became react-markdown's `components` map, keyed by tag name.
-//   - Four themes became two. The light/dark split was a StyleSheet limitation —
-//     NativeWind cannot reach into a library's internal styles — and the web has
-//     `dark:` variants keyed off the `.dark` class the store already puts on
-//     <html>. So the theme argument is now just *which bubble* (assistant ink
-//     vs the user's blue chip), and the scheme follows the document.
-//
-// A third thing went away with it: the rules were a factory over `dark` because
-// "markdown has no styles channel for dark". That problem does not exist for
-// react-markdown, so `mdComponents` depends only on the bubble role.
+// react-markdown with a `components` map keyed by tag name. The theme argument
+// is only *which bubble* (assistant ink vs the user's blue chip); light/dark is
+// handled by `dark:` variants keyed off the `.dark` class the store puts on
+// <html>. Because react-markdown has a real styles channel there is no factory
+// over `dark`, so `mdComponents` depends only on the bubble role.
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';

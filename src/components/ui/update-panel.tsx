@@ -1,6 +1,6 @@
 // Settings → About: Hermes **server** update panel.
 //
-// Mirrors the dashboard's System page update controls, but native:
+// Mirrors the dashboard's System page update controls:
 //   check → apply (with confirm) → live-stream the action log until the
 //   background `hermes update` exits → read the durable receipt.
 //
@@ -26,7 +26,6 @@ import { Button } from './button';
 import { Badge } from './badge';
 import { Alert as UIAlert, AlertDescription } from './alert';
 import { Spinner } from './bits';
-import { Text as UIText } from './text';
 import { ConfirmDialog } from './dialog';
 import * as api from '../../services/api';
 import {
@@ -68,7 +67,7 @@ function Chip({ tone, label }: { tone: UpdateTone; label: string }) {
   const variant = tone === 'danger' ? 'destructive' : tone === 'muted' ? 'secondary' : 'outline';
   return (
     <Badge variant={variant} className={CHIP[tone]}>
-      <UIText className={`text-[11px] font-semibold ${CHIP_TEXT[tone]}`}>{label}</UIText>
+      <span className={`text-[11px] font-semibold ${CHIP_TEXT[tone]}`}>{label}</span>
     </Badge>
   );
 }
@@ -156,9 +155,8 @@ export function UpdatePanel() {
     scrollLogToEnd();
   }, [setFollow, scrollLogToEnd]);
 
-  // The native build used ScrollView's onContentSizeChange to pin the tail as
-  // lines arrived. A DOM scroller has no such event, so this watches the
-  // rendered text instead — same trigger, and only while the user is at the
+  // Pins the tail as lines arrive: a DOM scroller has no content-size event, so
+  // this watches the rendered text instead, and only while the user is at the
   // bottom, so reading earlier output is not yanked away.
   useEffect(() => {
     if (atBottomRef.current) scrollLogToEnd();
@@ -340,13 +338,13 @@ export function UpdatePanel() {
     <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <UIText className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+          <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
             Hermes Update
-          </UIText>
-          <UIText className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+          </div>
+          <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
             {info?.currentVersion ? `Version ${info.currentVersion}` : 'Check for a new server version'}
             {info && info.installMethod && info.installMethod !== 'unknown' ? ` · ${info.installMethod}` : ''}
-          </UIText>
+          </div>
         </div>
         <Chip tone={updateStatusTone(info)} label={updateStatusLabel(info)} />
       </div>
@@ -366,27 +364,26 @@ export function UpdatePanel() {
             onClick={() => setCommitsOpen((v) => !v)}
             variant="ghost"
             className="self-start px-0 py-1">
-            <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+            <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
               {info.commits.length} commit{info.commits.length === 1 ? '' : 's'} behind
-            </UIText>
+            </span>
             {commitsOpen ? <ChevronUp size={14} color="#888" /> : <ChevronDown size={14} color="#888" />}
           </Button>
           <div className="flex flex-col gap-1.5">
             {(commitsOpen ? info.commits : info.commits.slice(0, 5)).map((c, i) => (
               <div key={`${c.sha}-${i}`} className="flex items-start gap-2">
-                <UIText className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
+                <div className="font-mono text-[11px] text-neutral-400 dark:text-neutral-500">
                   {(c.sha || '·').slice(0, 7)}
-                </UIText>
+                </div>
                 <div className="min-w-0 flex-1">
-                  <UIText
-                    numberOfLines={commitsOpen ? undefined : 1}
-                    className="text-[11px] text-neutral-600 dark:text-neutral-300">
+                  <div
+                    className={`text-[11px] text-neutral-600 dark:text-neutral-300 ${commitsOpen ? '' : 'truncate'}`}>
                     {c.summary || '(no summary)'}
-                  </UIText>
+                  </div>
                   {commitsOpen && (!!c.author || !!c.at) && (
-                    <UIText className="mt-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+                    <div className="mt-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
                       {[c.author, formatCommitDate(c.at)].filter(Boolean).join(' · ')}
-                    </UIText>
+                    </div>
                   )}
                 </div>
               </div>
@@ -412,9 +409,9 @@ export function UpdatePanel() {
         <div className="mt-3">
           <Chip tone={receiptOutcomeTone(receipt)} label={receiptLabel} />
           {receipt?.finishedAt ? (
-            <UIText className="mt-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+            <div className="mt-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
               Finished {receipt.finishedAt}
-            </UIText>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -428,9 +425,9 @@ export function UpdatePanel() {
             variant="outline"
             className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2">
             {checking ? <Spinner size={14} color="#1a73e8" /> : <RefreshCw size={14} color="#1a73e8" />}
-            <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
+            <span className="shrink text-[13px] font-semibold truncate">
               Check for updates
-            </UIText>
+            </span>
           </Button>
 
           {canApply && (
@@ -444,9 +441,9 @@ export function UpdatePanel() {
               ) : (
                 <Download size={14} color={dark ? '#111' : '#fff'} />
               )}
-              <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
+              <span className="shrink text-[13px] font-semibold truncate">
                 Update now
-              </UIText>
+              </span>
             </Button>
           )}
         </div>
@@ -458,9 +455,9 @@ export function UpdatePanel() {
           variant="outline"
           className="self-stretch gap-1.5 rounded-xl px-3 py-2">
           <RotateCw size={14} color="#666" />
-          <UIText numberOfLines={1} className="shrink text-[13px] font-semibold">
+          <span className="shrink text-[13px] font-semibold truncate">
             Restart gateway
-          </UIText>
+          </span>
         </Button>
       </div>
 
@@ -469,9 +466,9 @@ export function UpdatePanel() {
           <div className="flex items-center justify-between border-b border-neutral-700/60 px-3 py-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <Terminal size={13} color="#9aa0a6" />
-              <UIText numberOfLines={1} className="font-mono text-[11px] text-neutral-200">
+              <div className="font-mono text-[11px] text-neutral-200 truncate">
                 {activeAction}
-              </UIText>
+              </div>
               <Chip tone={actionOutcomeTone(running, exitCode)} label={actionOutcomeLabel(running, exitCode)} />
             </div>
             <Button
@@ -490,9 +487,9 @@ export function UpdatePanel() {
             ref={logRef}
             onScroll={onLogScroll}
             className="max-h-[230px] overflow-y-auto overscroll-contain px-2.5 py-2.5 pb-7">
-            <UIText className="select-text whitespace-pre-wrap font-mono text-[11px] leading-4 text-neutral-300">
+            <div className="select-text whitespace-pre-wrap font-mono text-[11px] leading-4 text-neutral-300">
               {lines.length ? lines.join('\n') : note || 'Starting…'}
-            </UIText>
+            </div>
           </div>
           {!atBottom && (
             <Button

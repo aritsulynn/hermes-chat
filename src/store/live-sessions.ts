@@ -1,5 +1,5 @@
 // Pure helpers for the live-session map. Kept out of the slice so they are
-// testable without pulling in react-native (the store's test glob is
+// testable without a DOM or bundler (the store's test glob is
 // `src/store/*.test.mjs`, which node runs with no bundler).
 
 /** A live session's state, as reported by `session.active_list`. */

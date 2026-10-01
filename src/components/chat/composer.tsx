@@ -5,7 +5,6 @@ import type { Attachment } from '../../utils/messages';
 import { reasoningLabel } from '../../utils/reasoning';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
-import { Text as UIText } from '../ui/text';
 
 // How a control reports its position for a screen-level popover. The popover
 // lives in the chat screen (not here) so it can float above the list and still
@@ -121,8 +120,7 @@ export const Composer = memo(function Composer({
       // `pointer-events-none` on the chat screen's overlay footer, which owns
       // this whole band. The footer must be transparent to gestures so the
       // transcript underneath still scrolls; the composer inside it must be
-      // opaque, or the send button and the text field stop responding. That is
-      // the DOM spelling of the native footer's `pointerEvents="box-none"`.
+      // opaque, or the send button and the text field stop responding.
       className="pointer-events-auto px-2.5 pt-2"
       style={{
         // Above the keyboard when one is up, otherwise clear of the home
@@ -151,11 +149,10 @@ export const Composer = memo(function Composer({
                   ) : (
                     <Paperclip size={12} color="#1a73e8" />
                   )}
-                  <UIText
-                    numberOfLines={1}
-                    className="min-w-0 shrink text-left text-xs text-[#1a73e8] dark:text-[#7aa7ff]">
+                  <span
+                    className="min-w-0 shrink text-left text-xs text-[#1a73e8] dark:text-[#7aa7ff] truncate">
                     {a.name}
-                  </UIText>
+                  </span>
                   <X size={12} color="#1a73e8" />
                 </Button>
               );
@@ -208,11 +205,10 @@ export const Composer = memo(function Composer({
             onClick={() => onOpenModelPicker(measurer(modelRef.current))}
             className="min-w-0 shrink gap-1 px-1.5 py-1.5 shadow-none">
             <span className="flex min-w-0 shrink items-center gap-0.5">
-              <UIText
-                numberOfLines={1}
-                className="min-w-0 shrink text-left text-[13px] font-semibold text-neutral-700 dark:text-neutral-200">
+              <span
+                className="min-w-0 shrink text-left text-[13px] font-semibold text-neutral-700 dark:text-neutral-200 truncate">
                 {modelLabel}
-              </UIText>
+              </span>
               <ChevronDown size={14} color={dark ? '#a3a3a3' : '#666'} />
             </span>
           </Button>
@@ -223,9 +219,9 @@ export const Composer = memo(function Composer({
               size="sm"
               onClick={() => onOpenEffortPicker(measurer(effortRef.current))}
               className="shrink-0 px-2 py-1.5 shadow-none">
-              <UIText className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
+              <span className="text-[13px] font-semibold text-neutral-500 dark:text-neutral-400">
                 {reasoningLabel(effort, effortWire)}
-              </UIText>
+              </span>
             </Button>
           )}
           <div className="flex-1" />
@@ -237,9 +233,9 @@ export const Composer = memo(function Composer({
                   size="sm"
                   onClick={() => onQueue(input)}
                   className="shrink-0 rounded-lg px-2.5 py-1.5 shadow-none">
-                  <UIText className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">
+                  <span className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">
                     Queue
-                  </UIText>
+                  </span>
                 </Button>
               )}
               {hasText && (
@@ -248,7 +244,7 @@ export const Composer = memo(function Composer({
                   size="sm"
                   onClick={() => onRedirect(input)}
                   className="shrink-0 rounded-lg px-2 py-1.5 shadow-none">
-                  <UIText className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</UIText>
+                  <span className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</span>
                 </Button>
               )}
               <Button

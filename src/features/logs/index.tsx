@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
-import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { Navigate as Redirect } from 'react-router-dom';
@@ -25,13 +24,8 @@ import { placeholderColor, screenStyle } from '../../theme';
 import { ScreenHeader } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
-import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
-import { ScrollArea } from '../../components/ui/scroll';
+import type { LogFile, LogLevelFilter } from './helpers';
 import { writeClipboard } from '../../services/clipboard';
-import { WindowedList } from '../../components/ui/windowed-list';
-import type { WindowedListRef } from '../../components/ui/windowed-list';
-
-type LogRow = { line: string; sev: LineSeverity };
 
 export function LogsScreen() {
   const { authed, opsGet, getAuthScope } = useApp();
@@ -41,7 +35,7 @@ export function LogsScreen() {
   // and each value feeds the header/filter chrome plus the list surface.
   const screen = useMemo(() => screenStyle(dark), [dark]);
   const placeholder = useMemo(() => placeholderColor(dark, 'log'), [dark]);
-  const listRef = useRef<WindowedListRef>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const [file, setFile] = useState<LogFile>('agent');
   const [level, setLevel] = useState<LogLevelFilter>('ALL');
@@ -160,7 +154,7 @@ export function LogsScreen() {
   const scrollToBottom = useCallback(() => {
     if (rows.length> 0) {
       try {
-        listRef.current?.scrollToEnd({ animated: true });
+        listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
       } catch (e) {
         console.warn('[logs] scrollToEnd failed', e);
       }
@@ -170,44 +164,13 @@ export function LogsScreen() {
   const scrollToTop = useCallback(() => {
     if (rows.length> 0) {
       try {
-        void listRef.current?.scrollToIndex(0, { animated: true });
+        listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) {
         console.warn('[logs] scrollToIndex failed', e);
       }
     }
   }, [rows.length]);
-  // Index prefix keeps keys unique across refreshes; length suffix disambiguates
-  // same-index edits without slicing the line (avoids a per-cell string alloc).
-  const logKeyExtractor = useCallback((item: { line: string }, index: number) => `${index}-${item.line.length}`, []);
-  const renderLogRow = useCallback(({ item, index }: { item: LogRow; index: number }) => {
-    const isErr = item.sev === 'error';
-    const isWarn = item.sev === 'warning';
-    const isDbg = item.sev === 'debug';
-    return (
-      <div
-        className={`flex items-start py-0.5 px-1 rounded ${
-          isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
-        }`}
->
-        <UIText className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</UIText>
-        <UIText
-          className={`flex-1 font-mono text-[11px] leading-4 ${
-            isErr
-              ? 'text-red-400 font-medium'
-              : isWarn
-                ? 'text-amber-300'
-                : isDbg
-                  ? 'text-neutral-500'
-                  : 'text-neutral-200'
-          }`}
->
-          {item.line}
-        </UIText>
-      </div>
-    );
-  }, []);
-
-  // Padding only; the windowed scroller supplies the flex column.
+  // Padding only; the scroller below supplies the flex column.
   const logListContentClass =
     'p-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+48px)]';
 
@@ -243,13 +206,13 @@ export function LogsScreen() {
                     autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
                   }`}
                 />
-                <UIText
+                <span
                   className={`text-xs font-semibold ${
                     autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
                   }`}
 >
                   {autoRefresh ? 'Live' : 'Paused'}
-                </UIText>
+                </span>
               </Button>
 
               {/* Copy button */}
@@ -267,7 +230,7 @@ export function LogsScreen() {
                 ) : (
                   <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />
                 )}
-                <UIText
+                <span
                   className={`text-xs font-medium ${
                     copied
                       ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
@@ -275,7 +238,7 @@ export function LogsScreen() {
                   }`}
 >
                   {copied ? 'Copied' : 'Copy'}
-                </UIText>
+                </span>
               </Button>
 
               {/* Manual refresh button */}
@@ -301,11 +264,7 @@ export function LogsScreen() {
         <div className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
           {/* Top line: Log File Tabs & Filter Toggle */}
           <div className="flex items-center justify-between" style={{ gap: 10 }}>
-            <ScrollArea
-              horizontal
-              contentClassName="gap-2 pr-1 items-center"
-              className="flex-1"
->
+            <div className="overflow-x-auto flex-1"><div className="gap-2 pr-1 items-center">
               {LOG_FILES.map((f) => {
                 const isSelected = file === f;
                 return (
@@ -323,17 +282,17 @@ export function LogsScreen() {
                     }`}
 >
                     <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
-                    <UIText
+                    <span
                       className={`text-xs font-semibold ${
                         isSelected ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
                       }`}
 >
                       {f}
-                    </UIText>
+                    </span>
                   </Button>
                 );
               })}
-            </ScrollArea>
+            </div></div>
 
             <Button
               variant="ghost"
@@ -347,13 +306,13 @@ export function LogsScreen() {
               }`}
 >
               <SlidersHorizontal size={13} color={showFilters ? '#1a73e8' : dark ? '#9ca3af' : '#6b7280'} />
-              <UIText
+              <span
                 className={`text-xs font-medium ${
                   showFilters ? 'font-semibold text-[#1a73e8]' : 'text-neutral-600 dark:text-neutral-400'
                 }`}
 >
                 Filter
-              </UIText>
+              </span>
             </Button>
           </div>
 
@@ -389,13 +348,10 @@ export function LogsScreen() {
               <div style={{ gap: 10 }}>
                 {/* Severity Level Chips */}
                 <div>
-                  <UIText className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
                     Severity Level
-                  </UIText>
-                  <ScrollArea
-                    horizontal
-                    contentClassName="gap-2 pr-1"
->
+                  </div>
+                  <div className="overflow-x-auto"><div className="gap-2 pr-1">
                     {LOG_LEVELS.map((lvl) => {
                       const isSelected = level === lvl;
                       const color = LEVEL_COLORS[lvl];
@@ -414,24 +370,24 @@ export function LogsScreen() {
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                           }`}
 >
-                          <UIText
+                          <span
                             className={`text-xs font-semibold ${
                               isSelected ? color.activeText : 'text-neutral-600 dark:text-neutral-400'
                             }`}
 >
                             {lvl}
-                          </UIText>
+                          </span>
                         </Button>
                       );
                     })}
-                  </ScrollArea>
+                  </div></div>
                 </div>
 
                 {/* Line Count Chips */}
                 <div>
-                  <UIText className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
                     Line Count
-                  </UIText>
+                  </div>
                   <div className="flex items-center" style={{ gap: 8 }}>
                     {LINE_COUNTS.map((cnt) => {
                       const isSelected = lineCount === cnt;
@@ -449,13 +405,13 @@ export function LogsScreen() {
                               : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
                           }`}
 >
-                          <UIText
+                          <span
                             className={`text-xs font-semibold ${
                               isSelected ? 'text-white dark:text-neutral-950' : 'text-neutral-600 dark:text-neutral-400'
                             }`}
 >
                             {cnt}
-                          </UIText>
+                          </span>
                         </Button>
                       );
                     })}
@@ -467,13 +423,10 @@ export function LogsScreen() {
 
           {/* Status Bar info & quick severity toggles */}
           <div className="mt-3 flex items-center justify-between">
-            <UIText className="text-xs text-neutral-500 dark:text-neutral-400">
-              {/* A <span>, not another UIText: this component renders a <div>,
-                  and a div inside a div breaks the sentence across three
-                  lines. Native's <Text> nested inline, which is why this read
-                  as one string there. */}
+            <div className="text-xs text-neutral-500 dark:text-neutral-400">
+              {/* A <span> so the sentence stays inline. */}
               Showing <span className="font-semibold text-neutral-700 dark:text-neutral-200">{stats.total}</span> lines
-            </UIText>
+            </div>
             <div className="flex items-center" style={{ gap: 8 }}>
               {stats.errorCount> 0 && (
                 <Button
@@ -489,9 +442,9 @@ export function LogsScreen() {
                   }`}
 >
                   <AlertTriangle size={12} color="#e11d48" />
-                  <UIText className="text-xs font-semibold text-rose-700 dark:text-rose-300">
+                  <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">
                     {stats.errorCount} Error{stats.errorCount> 1 ? 's' : ''}
-                  </UIText>
+                  </span>
                 </Button>
               )}
               {stats.warnCount> 0 && (
@@ -507,9 +460,9 @@ export function LogsScreen() {
                       : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40'
                   }`}
 >
-                  <UIText className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                     {stats.warnCount} Warn{stats.warnCount> 1 ? 's' : ''}
-                  </UIText>
+                  </span>
                 </Button>
               )}
             </div>
@@ -527,28 +480,50 @@ export function LogsScreen() {
         {loading && lines.length === 0 ? (
           <div className="flex flex-col flex-1 items-center justify-center">
             <Spinner size={24} color="#1a73e8" />
-            <UIText className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</UIText>
+            <div className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</div>
           </div>
         ) : lines.length === 0 ? (
           <div className="flex flex-col flex-1 items-center justify-center p-6">
             <Terminal size={36} color={dark ? '#555' : '#aaa'} />
-            <UIText className="mt-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+            <div className="mt-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
               No log entries found
-            </UIText>
-            <UIText className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+            </div>
+            <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
               {search ? 'Try clearing the search query or changing log level.' : `${file}.log is empty.`}
-            </UIText>
+            </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col bg-[#101014]">
-            {/* FlashList v2 sizes rows itself; drawDistance replaces the old
-                windowSize/maxToRenderPerBatch overscan tuning. */}
-            <WindowedList
-              data={rows}
-              keyExtractor={logKeyExtractor}
-              contentClassName={logListContentClass}
-              renderItem={renderLogRow}
-            />
+            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${logListContentClass}`}>
+                {rows.map((item, index) => {
+                  const isErr = item.sev === 'error';
+                  const isWarn = item.sev === 'warning';
+                  const isDbg = item.sev === 'debug';
+                  return (
+                    <div
+                      key={`${index}-${item.line.length}`}
+                      className={`flex items-start rounded px-1 py-0.5 ${
+                        isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
+                      }`}>
+                      <div className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</div>
+                      <div
+                        className={`flex-1 font-mono text-[11px] leading-4 ${
+                          isErr
+                            ? 'font-medium text-red-400'
+                            : isWarn
+                              ? 'text-amber-300'
+                              : isDbg
+                                ? 'text-neutral-500'
+                                : 'text-neutral-200'
+                        }`}>
+                        {item.line}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Quick Jump Buttons (Floating) */}
             <div className="absolute bottom-6 right-5 flex-col" style={{ gap: 12 }}>

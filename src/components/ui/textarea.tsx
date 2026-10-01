@@ -2,7 +2,7 @@ import { cn } from '@/utils/cn';
 import { forwardRef, type ComponentProps } from 'react';
 
 type TextareaProps = Omit<ComponentProps<'textarea'>, 'rows'> & {
-  /** react-native always rendered multiline; a <textarea> always is one. */
+  /** Accepted for compatibility; a <textarea> is always the multiline field. */
   multiline?: boolean;
   /** Sets the starting height. `undefined` lets the field grow with content. */
   numberOfLines?: number;

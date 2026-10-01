@@ -30,22 +30,15 @@ const buttonVariants = cva(
   }
 );
 
-// On native this was a second cva handed to `TextClassContext`, because a
-// `<button type="button">` cannot colour a nested `<Text>`. Here it merges straight into
-// the button's own className and reaches the label and any icon by inheritance.
-// `active:` becomes `active:` in CSS too, but a mouse-down on a real button
-// does not reliably fire it, so the pressed state is carried by
-// `active:opacity-*` in the base below rather than per-variant colour swaps.
+// The button's text colour, merged into the button's own className so it
+// reaches the label and any icon by inheritance. `active:` styling is carried
+// by `active:opacity-*` in the base below rather than per-variant colour swaps,
+// because a mouse-down on a real button does not reliably fire `active:`.
 //
-// It must NOT carry `pointer-events-none`, which it did until the first
-// end-to-end run of the ported app. That was correct on native and is
-// catastrophic here: the style used to be handed to a nested `<Text>`, where
-// letting touches fall through to the parent `<Pressable>` is the whole point of
-// it. Once it moved onto the `<button>` element it disabled the button, so
-// nothing in the app could be clicked at all — the Connect button on Login
-// included, and the typecheck, the tests and the build were all perfectly green
-// while the app was inert. The descendant equivalent lives in `buttonVariants`
-// as `[&_svg]:pointer-events-none`, where it belongs: an icon must not be the
+// It must NOT carry `pointer-events-none`: that would disable the button
+// itself, making the whole app inert while typecheck, tests and build stayed
+// green. The descendant equivalent lives in `buttonVariants` as
+// `[&_svg]:pointer-events-none`, where it belongs — an icon must not be the
 // event target for its own button, but the button itself must stay clickable.
 const buttonTextVariants = cva('text-foreground text-sm font-medium transition-colors', {
   variants: {

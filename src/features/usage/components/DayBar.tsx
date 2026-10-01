@@ -20,9 +20,7 @@ export const DayBar = memo(function DayBar({
   return (
     // `flex flex-col` is load-bearing, not decoration: the bar and its label are
     // stacked, and `items-center` / `justify-end` do nothing without a flex
-    // container. The native build got this for free — a React Native view was
-    // `display:flex` with row direction by default — so the class was never
-    // written there and has to be written here.
+    // container.
     <button
       type="button"
       onClick={() => onSelect(day)}

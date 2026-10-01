@@ -1,14 +1,8 @@
 // Bottom sheets, as Radix dialogs pinned to the bottom of the viewport.
 //
-// The native build drove @gorhom/bottom-sheet imperatively: the parent held a
-// ref and called present()/dismiss(). `useSheet` existed to paper over two
-// gorhom bugs — a dismiss() on a closed sheet wedging its portal forever, and a
-// present() issued mid-dismiss animation leaving the sheet stranded halfway up
-// the screen. Both were library bugs with no web equivalent, so the whole
-// dance is gone: a sheet is now `<Dialog open>`, and the parent's boolean is
-// the single source of truth. `snapPoints` survives as a max-height, which is
-// the only part of it that ever meant anything visually.
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+// A sheet is `<Dialog open>`: the parent owns a boolean, and that boolean is
+// the single source of truth. The body caps at `max-h-[92vh]` and scrolls.
+import { useEffect, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Check, Copy, Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react';
 import { parseClarify } from '../../utils/messages';
@@ -16,19 +10,13 @@ import { mergeUsage, contextTone } from '../../utils/usage';
 import { compactNumber } from '../../utils/format';
 import { useThemeValue } from '../../hooks/app-store';
 import { cn } from '../../utils/cn';
-import { placeholderColor, screenBg } from '../../theme';
+import { screenBg } from '../../theme';
 import type { GatewayWs, ServerAsk } from '../../services/gateway-ws';
 import { Button } from './button';
+import { Spinner } from './bits';
 import { Input } from './input';
 import { Progress } from './progress';
-import { Text } from './text';
 import { Textarea } from './textarea';
-
-/** `['70%']` -> `max-h-[70%]`. A sheet with no snap points fills the viewport. */
-function snapHeight(snapPoints?: Array<string | number>): string {
-  if (!snapPoints?.length) return 'max-h-[92vh]';
-  return `max-h-[${snapPoints[0]}]`;
-}
 
 const sheetBody = 'flex flex-col gap-2.5 overflow-y-auto overscroll-contain p-4';
 
@@ -83,12 +71,12 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
   return (
     <div className="flex gap-2 py-1">
-      <Text className="w-[88px] shrink-0 text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400">
+      <div className="w-[88px] shrink-0 text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400">
         {label}
-      </Text>
-      <Text className="min-w-0 flex-1 select-text text-sm leading-[18px] text-neutral-950 dark:text-neutral-100">
+      </div>
+      <div className="min-w-0 flex-1 select-text text-sm leading-[18px] text-neutral-950 dark:text-neutral-100">
         {value}
-      </Text>
+      </div>
     </div>
   );
 }
@@ -96,12 +84,12 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
 function StatCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-1 flex-col gap-0.5 rounded-xl bg-[#f4f4f6] px-3 py-2 dark:bg-[#212121]">
-      <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
         {label}
-      </Text>
-      <Text numberOfLines={1} className="text-[16px] font-bold text-neutral-950 dark:text-neutral-100">
+      </div>
+      <div className="text-[16px] font-bold text-neutral-950 dark:text-neutral-100 truncate">
         {value}
-      </Text>
+      </div>
     </div>
   );
 }
@@ -147,7 +135,7 @@ function InfoSheetContent({
   const canSave = draft.trim().length > 0 && draft.trim() !== title;
   return (
     <div className={cn(sheetBody, 'gap-3')}>
-      <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Session info</Text>
+      <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Session info</div>
       <div className="flex flex-col gap-1 rounded-2xl bg-[#f4f4f6] px-3.5 py-2 dark:bg-[#212121]">
         <InfoRow label="Title" value={title || '(untitled)'} />
         <InfoRow
@@ -179,26 +167,26 @@ function InfoSheetContent({
           }}
         />
         <Button onClick={() => draft.trim() && onRename(draft.trim())} disabled={!canSave} className="px-3.5 py-2">
-          <Text className="text-sm font-semibold">Save</Text>
+          <span className="text-sm font-semibold">Save</span>
         </Button>
       </div>
-      <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage</Text>
+      <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage</div>
       {usageLoading ? (
         <div className="flex items-center gap-2 py-2">
-          <Spinner dark={dark} />
-          <Text className="text-sm text-neutral-500 dark:text-neutral-400">loading usage…</Text>
+          <Spinner size={16} color={dark ? '#888' : '#666'} />
+          <div className="text-sm text-neutral-500 dark:text-neutral-400">loading usage…</div>
         </div>
       ) : !snap ? (
-        <Text className="text-sm text-neutral-500 dark:text-neutral-400">No usage reported yet.</Text>
+        <div className="text-sm text-neutral-500 dark:text-neutral-400">No usage reported yet.</div>
       ) : (
         <div className="flex flex-col gap-2">
           {ctxPct != null && (
             <div className="flex flex-col gap-1.5 rounded-2xl bg-[#f4f4f6] p-3.5 dark:bg-[#212121]">
               <div className="flex items-center justify-between">
-                <Text className="text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">
+                <div className="text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">
                   Context window
-                </Text>
-                <Text
+                </div>
+                <div
                   className={cn(
                     'text-[13px] font-bold',
                     tone === 'hot'
@@ -209,7 +197,7 @@ function InfoSheetContent({
                   )}>
                   {snap.contextEstimated ? '~' : ''}
                   {ctxPct}%
-                </Text>
+                </div>
               </div>
               <Progress
                 value={ctxPct}
@@ -219,9 +207,9 @@ function InfoSheetContent({
                 }
               />
               {snap.contextUsed != null && snap.contextMax != null && (
-                <Text className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                <div className="text-[12px] text-neutral-500 dark:text-neutral-400">
                   {compactNumber(snap.contextUsed)} / {compactNumber(snap.contextMax)} tokens
-                </Text>
+                </div>
               )}
             </div>
           )}
@@ -239,45 +227,52 @@ function InfoSheetContent({
   );
 }
 
-export const InfoSheet = forwardRef<
-  HTMLDivElement,
-  {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    title: string;
-    model: string;
-    provider: string;
-    info: any;
-    usage: any;
-    usageLoading: boolean;
-    onRename: (title: string) => void;
-    tokenEstimate: number;
-  }
->(function InfoSheet({ open, onOpenChange, ...rest }, ref) {
+export function InfoSheet({
+  open,
+  onOpenChange,
+  ...rest
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  model: string;
+  provider: string;
+  info: any;
+  usage: any;
+  usageLoading: boolean;
+  onRename: (title: string) => void;
+  tokenEstimate: number;
+}) {
   return (
-    <SheetChrome open={open} onOpenChange={onOpenChange} className={snapHeight(['90vh'])}>
+    <SheetChrome open={open} onOpenChange={onOpenChange}>
       <InfoSheetContent {...rest} />
     </SheetChrome>
   );
-});
+}
 
 // ── Ask sheet (clarify / approval / sudo / secret / vault) ───────────────────
 
-export const AskSheet = forwardRef<
-  HTMLDivElement,
-  {
-    open: boolean;
-    /** Only fires for a programmatic close; the sheet blocks Escape/backdrop. */
-    onOpenChange: (open: boolean) => void;
-    ask: ServerAsk | null;
-    onValue: (v: string) => void;
-    onApproval: (c: string) => boolean;
-    onAskResult: (result: Record<string, unknown>) => boolean;
-    gw: GatewayWs | null;
-    /** Which chat this ask belongs to (the approval acts on the open chat). */
-    contextLabel?: string;
-  }
->(function AskSheet({ open, onOpenChange, ask, onValue, onApproval, onAskResult, gw, contextLabel }, ref) {
+export function AskSheet({
+  open,
+  onOpenChange,
+  ask,
+  onValue,
+  onApproval,
+  onAskResult,
+  gw,
+  contextLabel,
+}: {
+  open: boolean;
+  /** Only fires for a programmatic close; the sheet blocks Escape/backdrop. */
+  onOpenChange: (open: boolean) => void;
+  ask: ServerAsk | null;
+  onValue: (v: string) => void;
+  onApproval: (c: string) => boolean;
+  onAskResult: (result: Record<string, unknown>) => boolean;
+  gw: GatewayWs | null;
+  /** Which chat this ask belongs to (the approval acts on the open chat). */
+  contextLabel?: string;
+}) {
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   // Which button was tapped — keeps the sheet from answering twice.
@@ -364,12 +359,12 @@ export const AskSheet = forwardRef<
         <>
           <div className="flex items-center gap-2">
             <MessageSquare size={18} color={dark ? '#f5f5f5' : '#111'} />
-            <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Clarify</Text>
+            <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Clarify</div>
           </div>
           {questions.map((q) => (
             <div key={q.qid} className="flex flex-col gap-1.5">
               {!!q.question && (
-                <Text className="text-sm text-neutral-700 dark:text-neutral-200">{q.question}</Text>
+                <div className="text-sm text-neutral-700 dark:text-neutral-200">{q.question}</div>
               )}
               <div className="flex flex-wrap gap-2">
                 {q.choices.map((c) => {
@@ -381,7 +376,7 @@ export const AskSheet = forwardRef<
                       variant={on ? 'default' : 'outline'}
                       size="sm"
                       className="rounded-full px-3 py-[7px]">
-                      <Text className="text-sm">{c}</Text>
+                      <span className="text-sm">{c}</span>
                     </Button>
                   );
                 })}
@@ -404,7 +399,7 @@ export const AskSheet = forwardRef<
           ))}
           <div className="flex items-center justify-end gap-2.5">
             <Button onClick={submitAll} className="mt-2 px-[18px] py-[11px]">
-              <Text className="text-[15px] font-semibold">Send answer</Text>
+              <span className="text-[15px] font-semibold">Send answer</span>
             </Button>
           </div>
         </>
@@ -447,22 +442,22 @@ export const AskSheet = forwardRef<
         <>
           <div className="flex items-center gap-2">
             <TriangleAlert size={18} color="#d97706" />
-            <Text className="min-w-0 flex-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">
+            <div className="min-w-0 flex-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">
               Allow this command?
-            </Text>
+            </div>
           </div>
           {!!contextLabel && (
-            <Text numberOfLines={1} className="text-[13px] text-neutral-500 dark:text-neutral-400">
+            <div className="text-[13px] text-neutral-500 dark:text-neutral-400 truncate">
               in {contextLabel}
-            </Text>
+            </div>
           )}
-          {!!description && <Text className="text-sm text-neutral-700 dark:text-neutral-200">{description}</Text>}
+          {!!description && <div className="text-sm text-neutral-700 dark:text-neutral-200">{description}</div>}
           {!!cmd && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Command
-                </Text>
+                </div>
                 <Button
                   onClick={copyCmd}
                   aria-label={cmdCopied ? 'Copied' : 'Copy command'}
@@ -474,17 +469,17 @@ export const AskSheet = forwardRef<
                   ) : (
                     <Copy size={14} color={dark ? '#aaa' : '#666'} />
                   )}
-                  <Text className="text-[12px] font-medium text-neutral-500 dark:text-neutral-400">
+                  <span className="text-[12px] font-medium text-neutral-500 dark:text-neutral-400">
                     {cmdCopied ? 'Copied' : 'Copy'}
-                  </Text>
+                  </span>
                 </Button>
               </div>
               {/* Long commands scroll inside their own box, not pushing the
                   buttons off the bottom of the sheet. */}
               <div className="max-h-[150px] overflow-y-auto overscroll-contain rounded-lg bg-[#f4f4f6] p-2 dark:bg-[#212121]">
-                <Text className="select-text font-mono text-[13px] leading-[18px] text-neutral-950 dark:text-neutral-100">
+                <div className="select-text font-mono text-[13px] leading-[18px] text-neutral-950 dark:text-neutral-100">
                   {cmd}
-                </Text>
+                </div>
               </div>
             </div>
           )}
@@ -500,8 +495,8 @@ export const AskSheet = forwardRef<
                   onClick={() => answer(c)}
                   variant={deny ? 'destructive' : 'default'}
                   className="flex-col gap-0.5 px-4 py-2.5">
-                  <Text className="text-center text-[15px] font-semibold">{meta.label}</Text>
-                  {!!meta.hint && <Text className="mt-0.5 text-center text-[12px]">{meta.hint}</Text>}
+                  <span className="text-center text-[15px] font-semibold">{meta.label}</span>
+                  {!!meta.hint && <span className="mt-0.5 text-center text-[12px]">{meta.hint}</span>}
                 </Button>
               );
             })}
@@ -531,12 +526,12 @@ export const AskSheet = forwardRef<
       <>
         <div className="flex items-center gap-2">
           {sheetIcon}
-          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">{label}</Text>
+          <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">{label}</div>
         </div>
         {!!ask.params.command && (
-          <Text className="select-text rounded-lg bg-[#f4f4f6] p-2 font-mono text-[13px] text-neutral-950 dark:bg-[#212121] dark:text-neutral-100">
+          <div className="select-text rounded-lg bg-[#f4f4f6] p-2 font-mono text-[13px] text-neutral-950 dark:bg-[#212121] dark:text-neutral-100">
             {String(ask.params.command)}
-          </Text>
+          </div>
         )}
         <Input
           className="rounded-lg border border-neutral-300 p-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
@@ -548,10 +543,10 @@ export const AskSheet = forwardRef<
         />
         <div className="flex items-center justify-end gap-2.5">
           <Button onClick={() => onValue('')} variant="outline" size="sm" className="px-2.5 py-1.5">
-            <Text>Skip</Text>
+            <span>Skip</span>
           </Button>
           <Button onClick={() => onValue(text)} className="mt-2 px-[18px] py-[11px]">
-            <Text className="text-[15px] font-semibold">Send</Text>
+            <span className="text-[15px] font-semibold">Send</span>
           </Button>
         </div>
       </>
@@ -573,7 +568,6 @@ export const AskSheet = forwardRef<
           onPointerDownOutside={(e) => e.preventDefault()}
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 flex max-h-[90vh] flex-col rounded-t-2xl shadow-lg outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
-            snapHeight(['90vh']),
           )}
           style={{ background: screenBg(dark) }}>
           <div className="flex justify-center pt-2.5 pb-1" aria-hidden>
@@ -585,63 +579,48 @@ export const AskSheet = forwardRef<
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   );
-});
+}
 
 /**
  * Themed bottom sheet. Use it directly when the body brings its own scroller
  * (a list), or via FormSheet for a short form.
  */
-export const Sheet = forwardRef<
-  HTMLDivElement,
-  {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    snapPoints?: Array<string | number>;
-    children: React.ReactNode;
-  }
->(function Sheet({ open, onOpenChange, snapPoints, children }, ref) {
+export function Sheet({
+  open,
+  onOpenChange,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
   return (
-    <SheetChrome open={open} onOpenChange={onOpenChange} className={snapHeight(snapPoints)}>
+    <SheetChrome open={open} onOpenChange={onOpenChange}>
       {children}
     </SheetChrome>
   );
-});
+}
 
 /**
  * Themed bottom sheet for short forms (create/edit). The body is a scroller so
  * a long form cannot push its submit button off the bottom edge.
  */
-export const FormSheet = forwardRef<
-  HTMLDivElement,
-  {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    snapPoints?: Array<string | number>;
-    /** Pinned above the scroller so it stays put while the body scrolls. */
-    header?: React.ReactNode;
-    children: React.ReactNode;
-  }
->(function FormSheet({ open, onOpenChange, snapPoints, header, children }, ref) {
+export function FormSheet({
+  open,
+  onOpenChange,
+  header,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Pinned above the scroller so it stays put while the body scrolls. */
+  header?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <SheetChrome open={open} onOpenChange={onOpenChange} className={snapHeight(snapPoints)}>
+    <SheetChrome open={open} onOpenChange={onOpenChange}>
       {header}
       <div className={cn(sheetBody, 'pb-8')}>{children}</div>
     </SheetChrome>
   );
-});
-
-/** The native `ActivityIndicator`. A bordered spinning square, no dependency. */
-function Spinner({ dark }: { dark: boolean }) {
-  return (
-    <span
-      role="status"
-      aria-label="Loading"
-      className={cn(
-        'inline-block size-4 animate-spin rounded-[3px] border-2 border-current border-t-transparent align-[-2px]',
-        dark ? 'text-[#888]' : 'text-[#666]',
-      )}
-    />
-  );
 }
-
-export { Spinner };

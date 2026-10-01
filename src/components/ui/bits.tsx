@@ -7,7 +7,6 @@ import { Alert as UIAlert, AlertDescription } from './alert';
 import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
-import { Text as UIText } from './text';
 
 // Circular context-window ring for the chat header — sits left of the kebab,
 // taps into Session info for the exact numbers.
@@ -126,13 +125,13 @@ export function ScreenHeader({
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <HamburgerBtn />
         <div className="min-w-0 flex-1">
-          <UIText numberOfLines={1} className="text-xl font-bold text-neutral-950 dark:text-neutral-100">
+          <div className="text-xl font-bold text-neutral-950 dark:text-neutral-100 truncate">
             {title}
-          </UIText>
+          </div>
           {!!subtitle && (
-            <UIText numberOfLines={1} className="text-xs text-neutral-500 dark:text-neutral-400">
+            <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
               {subtitle}
-            </UIText>
+            </div>
           )}
         </div>
       </div>
@@ -188,7 +187,7 @@ export function ErrorRetry({
         onClick={onRetry}
         className="mt-1 self-start"
         aria-label={retryLabel}>
-        <UIText className="text-xs font-semibold">{retryLabel}</UIText>
+        <span className="text-xs font-semibold">{retryLabel}</span>
       </Button>
     </UIAlert>
   );
@@ -212,7 +211,7 @@ export function Field({
 }) {
   const [visible, setVisible] = useState(false);
   const { theme } = useThemeValue();
-  // Makes the browser draw the native input (and its autofill dropdown, and
+  // Makes the browser draw the input (and its autofill dropdown, and
   // the on-screen keyboard) in the app's palette rather than the OS default.
   const scheme = { colorScheme: theme === 'dark' ? ('dark' as const) : ('light' as const) };
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -264,7 +263,7 @@ export function Field({
           onKeyDown={onKeyDown}
         />
         <Button variant="link" onClick={() => setVisible((v) => !v)} className="px-2.5 py-2">
-          <UIText className="text-sm font-semibold">{visible ? 'Hide' : 'Show'}</UIText>
+          <span className="text-sm font-semibold">{visible ? 'Hide' : 'Show'}</span>
         </Button>
       </div>
     </div>
@@ -283,9 +282,8 @@ function idFor(label: string): string {
  * to sit on the text baseline without nudging the row's height, and the user
  * reads it as a state of that chat, not as a screen-wide loading state.
  * `animate-spin` needs no mount/unmount bookkeeping — the CSS animation stops
- * with the element, so a row that scrolls out of a windowed list cannot leave
- * an animation running. That was the reason the native version kept a ref and
- * had to stop an Animated.loop on cleanup.
+ * with the element, so a row that leaves the viewport cannot leave an animation
+ * running.
  */
 export function Spinner({ size = 14, color }: { size?: number; color: string }) {
   return (
@@ -305,8 +303,7 @@ export function TypingDots({ dim }: { dim?: boolean }) {
           key={i}
           className="h-[7px] w-[7px] animate-[dot-pulse_700ms_ease-in-out_infinite] rounded-full"
           // Staggered start so the three dots rise in sequence rather than
-          // pulsing as one bar. The native build got this from three
-          // Animated.timing loops with 0/150/300ms delays.
+          // pulsing as one bar.
           style={{ backgroundColor: color, animationDelay: `${i * 150}ms` }}
         />
       ))}

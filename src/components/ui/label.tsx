@@ -4,14 +4,8 @@ import * as React from 'react';
 type LabelProps = React.ComponentProps<'label'>;
 
 /**
- * A plain `<label>`.
- *
- * The native version was a pressable Root wrapping a Text, because
- * react-native has no `<label>`. That split existed only to forward
- * `onPress`/`onPressIn`/`onLongPress` to a touchable wrapper; no call site
- * passed any of them, and on the web clicking a `<label>` focuses and toggles
- * its associated control natively, which is strictly better than a synthetic
- * press handler.
+ * A plain `<label>`. Clicking it focuses and toggles its associated control
+ * natively, so no press handler is needed.
  */
 function Label({ className, ...props }: LabelProps) {
   return (

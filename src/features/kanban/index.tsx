@@ -11,18 +11,16 @@ import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
+import { Input } from '../../components/ui/input';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import { FormSheet } from '../../components/ui/sheets';
-import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
 import { CardChips } from './components/CardChips';
 import { placeholderColor, screenStyle } from '../../theme';
 import { asTask, dotOf } from './helpers';
 import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';
-import { ScrollArea } from '../../components/ui/scroll';
 
 // Memoized task row: opening/editing one card must not re-render every card
 // on the board. The press binding closes over the row's own task, so the
@@ -42,19 +40,17 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
       variant="outline"
       className="h-auto sm:h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
 >
-      <UIText
-        className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
-        numberOfLines={2}
+      <span
+        className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100 line-clamp-2"
 >
         {task.title}
-      </UIText>
+      </span>
       {!!task.body && (
-        <UIText
-          className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
-          numberOfLines={2}
+        <span
+          className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400 line-clamp-2"
 >
           {task.body}
-        </UIText>
+        </span>
       )}
       <CardChips t={task} dark={dark} />
     </Button>
@@ -89,10 +85,8 @@ export function KanbanScreen() {
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newStatus, setNewStatus] = useState('');
-  // Bottom sheets. Plain controlled booleans now: the sheets are Radix
-  // dialogs, so there is no imperative present/dismiss to marshal, and none of
-  // the gorhom state machine `useSheet` existed to paper over has a web
-  // equivalent to break.
+  // Bottom sheets. Plain controlled booleans: the sheets are Radix dialogs,
+  // so there is no imperative present/dismiss to marshal.
   useEffect(() => {
     if (authed) return;
     setBoards([]);
@@ -330,7 +324,7 @@ export function KanbanScreen() {
         
         {/* Board switcher + new-task button */}
         <div className="flex items-center gap-2 px-3 pt-2">
-          <ScrollArea horizontal contentClassName="gap-2 grow">
+          <div className="overflow-x-auto"><div className="gap-2 grow">
             {boards.map((b) => {
               const active = b.slug === slug || (!slug && b.is_current);
               return (
@@ -344,19 +338,19 @@ export function KanbanScreen() {
                   size="sm"
                   className="rounded-full px-3 py-1.5"
 >
-                  <UIText className="text-[13px] font-semibold">
+                  <span className="text-[13px] font-semibold">
                     {b.name || b.slug}
                     {typeof b.total === 'number' ? ` · ${b.total}` : ''}
-                  </UIText>
+                  </span>
                 </Button>
               );
             })}
             {boards.length === 0 && !loading && (
-              <UIText className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+              <div className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
                 {activeBoard?.name || 'default board'}
-              </UIText>
+              </div>
             )}
-          </ScrollArea>
+          </div></div>
           <Button
             variant="ghost"
             size="icon"
@@ -374,7 +368,7 @@ export function KanbanScreen() {
             size="icon"
             className="h-9 w-9 rounded-full"
           >
-            <UIText className="text-[20px] leading-[20px]">+</UIText>
+            <span className="text-[20px] leading-[20px]">+</span>
           </Button>
         </div>
         {!!error && (
@@ -384,18 +378,15 @@ export function KanbanScreen() {
             </UIAlert>
           </div>
         )}
-        <ScrollArea
-          contentClassName="p-3 gap-2.5 pb-6"
-
->
+        <div className="overflow-y-auto"><div className="mx-auto w-full max-w-4xl p-3 gap-2.5 pb-6">
           {loading && <Spinner size={14} color="currentColor" />}
           {!loading && !board && !error && (
-            <UIText className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</UIText>
+            <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
           )}
           {!loading && board && totalTasks === 0 && (
-            <UIText className="text-sm text-neutral-500 dark:text-neutral-400">
+            <div className="text-sm text-neutral-500 dark:text-neutral-400">
               No tasks yet — tap + to create one.
-            </UIText>
+            </div>
           )}
           {(board?.columns ?? []).map((col) => {
             const shut = isCollapsed(col.name, col.tasks.length);
@@ -410,18 +401,18 @@ export function KanbanScreen() {
                   className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
 >
                   <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
-                  <UIText className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
+                  <span className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
                     {col.name}
-                  </UIText>
-                  <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+                  </span>
+                  <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
                     {col.tasks.length}
-                  </UIText>
-                  <UIText className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</UIText>
+                  </span>
+                  <span className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</span>
                 </Button>
                 {!shut && (
                   <div className="flex flex-col gap-2 p-2.5">
                     {col.tasks.length === 0 && (
-                      <UIText className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</UIText>
+                      <div className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</div>
                     )}
                     {col.tasks.map((t) => (
                       <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
@@ -431,13 +422,12 @@ export function KanbanScreen() {
               </div>
             );
           })}
-        </ScrollArea>
+        </div></div>
 
         {/* Task detail sheet. */}
         <FormSheet
           open={!!detail}
           onOpenChange={(o) => !o && setDetail(null)}
-          snapPoints={['70%']}
 >
           {detail && (
             <>
@@ -452,9 +442,9 @@ export function KanbanScreen() {
                 placeholder="Title"
 
               />
-              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Move to
-              </UIText>
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {statusOptions.filter((s) => s !== 'archived').map((s) => {
                   const on = detail?.status === s;
@@ -469,16 +459,16 @@ export function KanbanScreen() {
                       size="sm"
                       className="rounded-full px-3 py-1.5"
 >
-                      <UIText className="text-[13px] font-medium capitalize">
+                      <span className="text-[13px] font-medium capitalize">
                         {s}
-                      </UIText>
+                      </span>
                     </Button>
                   );
                 })}
               </div>
-              <UIText className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Notes
-              </UIText>
+              </div>
               <Textarea
                 aria-label="Notes"
                 className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
@@ -495,7 +485,7 @@ export function KanbanScreen() {
                   className="flex-1 rounded-xl px-4 py-3"
                   disabled={saving}
 >
-                  <UIText className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</UIText>
+                  <span className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</span>
                 </Button>
                 <Button
                   onClick={deleteDetail}
@@ -503,7 +493,7 @@ export function KanbanScreen() {
                   className="rounded-xl px-4 py-3"
                   disabled={saving}
 >
-                  <UIText className="text-[15px] font-semibold">Delete</UIText>
+                  <span className="text-[15px] font-semibold">Delete</span>
                 </Button>
               </div>
             </>
@@ -514,9 +504,8 @@ export function KanbanScreen() {
         <FormSheet
           open={showCreate}
           onOpenChange={setShowCreate}
-          snapPoints={['70%']}
 >
-          <UIText className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</UIText>
+          <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</div>
           <Input
             aria-label="Title"
             className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
@@ -546,9 +535,9 @@ export function KanbanScreen() {
                   size="sm"
                   className="px-3 py-1.5"
 >
-                  <UIText className="text-[13px] font-medium capitalize">
+                  <span className="text-[13px] font-medium capitalize">
                     {s}
-                  </UIText>
+                  </span>
                 </Button>
               );
             })}
@@ -559,7 +548,7 @@ export function KanbanScreen() {
             className="rounded-xl px-4 py-3"
             disabled={!newTitle.trim() || saving}
 >
-            <UIText className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</UIText>
+            <span className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</span>
           </Button>
         </FormSheet>
       </div>

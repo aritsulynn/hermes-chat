@@ -1,12 +1,4 @@
-// Lightweight toast host — the themed replacement for the
-// `Alert.alert(title, message)` one-button popups the app fired on every failed
-// action. Those blocked the screen they were reporting on, and on Android they
-// ignored the app theme and dark mode entirely.
-//
-// `toast()` is a plain module function so it can be called from callbacks and
-// async handlers without threading a hook through every feature. <ToastHost />
-// must be mounted once near the root (see app/_layout.tsx).
-import { Text as UIText } from '@/components/ui/text';
+
 import * as React from 'react';
 import { CircleCheck, TriangleAlert, X } from 'lucide-react';
 
@@ -71,10 +63,8 @@ function ToastItem({
     <button
       type="button"
       onClick={onDismiss}
-      // Errors interrupt; everything else is announced politely. The native
-      // build used accessibilityLiveRegion for this, which has no DOM
-      // equivalent, so it is a live region here — same intent, and it is what
-      // actually reaches a screen reader on the web.
+      // Errors interrupt; everything else is announced politely. `role` maps to
+      // the matching ARIA live region.
       role={variant === 'destructive' ? 'alert' : 'status'}
       aria-live={variant === 'destructive' ? 'assertive' : 'polite'}
       aria-label={description ? `${title}. ${description}` : title}
@@ -82,22 +72,20 @@ function ToastItem({
       <span className="mt-0.5">
         <Icon size={17} color={iconColor} />
       </span>
-      <span className="min-w-0 flex-1">
-        <UIText
-          numberOfLines={2}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span
           className={`text-[14px] font-semibold ${
             variant === 'destructive'
               ? 'text-red-600 dark:text-red-400'
               : 'text-neutral-950 dark:text-neutral-100'
-          }`}>
+          } line-clamp-2`}>
           {title}
-        </UIText>
+        </span>
         {!!description && (
-          <UIText
-            numberOfLines={3}
-            className="mt-0.5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300">
+          <span
+            className="mt-0.5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300 line-clamp-3">
             {description}
-          </UIText>
+          </span>
         )}
       </span>
       <span className="mt-0.5">
@@ -116,9 +104,7 @@ export function ToastHost() {
     // the screen underneath; each row opts back in.
     <div
       className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex flex-col items-center gap-2 px-4"
-      // The native build read this from useSafeAreaInsets. `env()` is the same
-      // number, resolved by the browser, and it keeps the host free of a
-      // layout-measurement pass on every render.
+      // Clears the home indicator via the browser-reported safe area.
       style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}>
       {list.map((t) => (
         <div key={t.id} className="pointer-events-auto w-full max-w-[420px]">

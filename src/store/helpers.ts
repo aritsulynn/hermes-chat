@@ -188,8 +188,7 @@ export async function uploadAttachments(
     const name = f.name.replace(/[\\/]/g, '_') || `upload-${Date.now()}-${index}`;
     const image = isImageAttachment(f);
     // Attachments come from an <input type="file">, so the uri is always a
-    // blob:/data: URL now. This used to try a native file:// read first and
-    // fall back to this; the fallback was the only path that ever ran on web.
+    // blob:/data: URL.
     const b64 = await blobToBase64(f.uri);
     if (!b64) throw new Error(`${name}: could not read the file`);
     if (b64.length > MAX_UPLOAD_BYTES * 1.4) throw new Error(`${name}: too large (10 MB max)`);

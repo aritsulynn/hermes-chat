@@ -87,8 +87,7 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       // drawer, and wrong when boot is restoring the last one. The boot path
       // calls this for its side effects only, and the unconditional navigate
       // turned every deep link into /chat — a /logs reload would end up showing
-      // the transcript. The native build never showed it because there was no
-      // such thing as a deep link to a non-chat screen.
+      // the transcript.
       const shouldNavigate = options?.navigate !== false;
       const g = gw.current;
       if (!g) {
