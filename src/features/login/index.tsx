@@ -38,8 +38,8 @@ export function LoginScreen() {
 
   if (booting) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-white dark:bg-black">
-        <Spinner size={24} color="#1a73e8" />
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-background">
+        <Spinner size={24} color="var(--brand-hex)" />
         <span className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</span>
       </div>
     );
@@ -48,7 +48,7 @@ export function LoginScreen() {
 
   return (
     <div
-      className="flex h-full flex-col overflow-y-auto bg-white dark:bg-black"
+      className="flex h-full flex-col overflow-y-auto bg-background"
       style={{
         paddingTop: 'env(safe-area-inset-top, 0px)',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -58,7 +58,7 @@ export function LoginScreen() {
         style={{ paddingBottom: 24 + kbH }}>
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[#1a73e8] shadow-lg">
+          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-brand shadow-lg">
             <span className="text-[32px] font-extrabold text-white">H</span>
           </div>
           <h1 className="mt-3 text-[28px] font-extrabold tracking-tight text-neutral-950 dark:text-neutral-100">
@@ -68,7 +68,7 @@ export function LoginScreen() {
         </div>
 
         {/* Credentials card */}
-        <div className="rounded-3xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+        <div className="rounded-3xl border border-border bg-elevated p-4 dark:bg-elevated">
           <Field label="Host" value={host} onChange={setHost} placeholder="http://your-server:9119" />
           <Field label="Username" value={username} onChange={setUsername} />
           <div className="-mb-2">
@@ -85,7 +85,7 @@ export function LoginScreen() {
         <Button
           onClick={submit}
           aria-label="Connect to the gateway"
-          className="mt-4 h-auto sm:h-auto rounded-2xl bg-[#1a73e8] px-[18px] py-3.5 text-white hover:bg-[#1a73e8]/90"
+          className="mt-4 h-auto sm:h-auto rounded-2xl bg-brand px-[18px] py-3.5 text-white hover:bg-brand/90"
           disabled={busy}>
           {busy ? (
             <Spinner size={16} color="#fff" />

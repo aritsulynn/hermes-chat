@@ -25,6 +25,7 @@ import {
 import { useLongPress } from '../../hooks/use-long-press';
 import type { AnchorMeasure } from './composer';
 import { useStreamingText } from '../../hooks/app-store';
+import { brandColor } from '../../theme';
 import { ChatMarkdown } from './markdown';
 import { useSmoothText } from './use-smooth-text';
 
@@ -79,9 +80,7 @@ const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: bo
           ? '#ff8a8a'
           : '#c5221f'
         : kind === 'hunk'
-          ? dark
-            ? '#7aa7ff'
-            : '#1a73e8'
+          ? brandColor(dark)
           : kind === 'meta'
             ? dark
               ? '#8b8b8b'
@@ -100,7 +99,7 @@ const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: bo
           : '#ffebe9'
         : undefined;
   return (
-    <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 dark:border-neutral-700/70">
+    <div className="mt-1 overflow-hidden rounded-lg border border-border/70 dark:border-border/70">
       {shown.map((line, i) => {
         const kind = diffLineKind(line);
         return (
@@ -130,7 +129,7 @@ const ToolOutput = memo(function ToolOutput({ text }: { text: string }) {
   const lines = useMemo(() => text.split('\n'), [text]);
   const shown = lines.length > OUTPUT_MAX_LINES ? lines.slice(0, OUTPUT_MAX_LINES) : lines;
   return (
-    <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 bg-black/[0.03] dark:border-neutral-700/70 dark:bg-white/[0.05]">
+    <div className="mt-1 overflow-hidden rounded-lg border border-border/70 bg-black/[0.03] dark:border-border/70 dark:bg-popover/[0.05]">
       {shown.map((l, i) => (
         <div
           key={i}
@@ -400,7 +399,7 @@ export const MessageBubble = memo(function MessageBubble({
                 {expanded && (
                   <>
                     {!!item.command && (
-                      <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 bg-neutral-100/60 dark:border-neutral-700/70 dark:bg-white/[0.05]">
+                      <div className="mt-1 overflow-hidden rounded-lg border border-border/70 bg-muted/60 dark:border-border/70 dark:bg-popover/[0.05]">
                         <div className="px-1.5 py-1 font-mono text-[11px] leading-[15px] text-neutral-600 dark:text-neutral-300">
                           {item.command}
                         </div>

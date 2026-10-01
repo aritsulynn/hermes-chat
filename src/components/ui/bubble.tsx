@@ -49,7 +49,7 @@ const bubbleVariants = cva(
         user: '*:data-[slot=bubble-content]:bg-[#e5e7eb] dark:*:data-[slot=bubble-content]:bg-[#3f3f46]',
         assistant: '*:data-[slot=bubble-content]:bg-[#f0f0f2] dark:*:data-[slot=bubble-content]:bg-[#272727]',
         thinking:
-          '*:data-[slot=bubble-content]:border-[#e2e2e6] *:data-[slot=bubble-content]:bg-[#f7f7f9] dark:*:data-[slot=bubble-content]:border-neutral-700 dark:*:data-[slot=bubble-content]:bg-[#212121]',
+          '*:data-[slot=bubble-content]:border-border *:data-[slot=bubble-content]:bg-elevated dark:*:data-[slot=bubble-content]:border-neutral-700',
         interim:
           '*:data-[slot=bubble-content]:border-[#f0e0a0] *:data-[slot=bubble-content]:bg-[#fff8e1] dark:*:data-[slot=bubble-content]:border-[#6b5a1e] dark:*:data-[slot=bubble-content]:bg-[#3a2f10]',
         notice: '*:data-[slot=bubble-content]:bg-[#fdecea] dark:*:data-[slot=bubble-content]:bg-[#3d2020]',

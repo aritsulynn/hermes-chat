@@ -109,7 +109,7 @@ const AskCard = memo(function AskCard({
     : true;
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
+    <div className="rounded-2xl border border-border bg-popover p-4 dark:bg-input/30">
       <div className="flex items-start gap-3">
         <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/40">
           <Icon size={18} color={iconColor} />
@@ -138,7 +138,7 @@ const AskCard = memo(function AskCard({
       <div className="mt-3 text-sm leading-5 text-neutral-700 dark:text-neutral-200">{requestSummary(entry)}</div>
 
       {entry.method === 'approval' && !!entry.params.command && (
-        <div className="mt-2 rounded-xl bg-neutral-100 p-2.5 dark:bg-neutral-900">
+        <div className="mt-2 rounded-xl bg-muted p-2.5 dark:bg-muted">
           <div className="font-mono text-xs text-neutral-800 dark:text-neutral-200 line-clamp-3">
             {String(entry.params.command)}
           </div>
@@ -153,7 +153,7 @@ const AskCard = memo(function AskCard({
                 <Button
                   onClick={() => onAnswer(entry, { choice: 'once' })}
                   aria-label="Allow once"
-                  className="h-auto sm:h-auto flex-1 rounded-xl bg-[#1a73e8] px-3 py-2.5">
+                  className="h-auto sm:h-auto flex-1 rounded-xl bg-brand px-3 py-2.5">
                   <span className="text-sm font-semibold text-white">Allow once</span>
                 </Button>
               )}
@@ -212,7 +212,7 @@ const AskCard = memo(function AskCard({
                         placeholder="Type your answer…"
 
                         aria-label="Your answer"
-                        className="min-h-[60px] rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                        className="min-h-[60px] rounded-xl border border-border px-3 py-2 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
                       />
                     )}
                   </div>
@@ -231,7 +231,7 @@ const AskCard = memo(function AskCard({
                   onClick={submit}
                   disabled={!canSubmit}
                   aria-label="Send answer"
-                  className="h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2">
+                  className="h-auto sm:h-auto rounded-xl bg-brand px-4 py-2">
                   <span className="text-sm font-semibold text-white">Send</span>
                 </Button>
               </div>
@@ -246,7 +246,7 @@ const AskCard = memo(function AskCard({
 
                 autoCapitalize="none"
                 aria-label="Your answer"
-                className="rounded-xl border border-neutral-300 px-3 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                className="rounded-xl border border-border px-3 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
               />
               <div className="flex items-center justify-end gap-2">
                 <Button
@@ -260,7 +260,7 @@ const AskCard = memo(function AskCard({
                 <Button
                   onClick={submit}
                   aria-label="Send answer"
-                  className="h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2">
+                  className="h-auto sm:h-auto rounded-xl bg-brand px-4 py-2">
                   <span className="text-sm font-semibold text-white">Send</span>
                 </Button>
               </div>
@@ -326,7 +326,7 @@ export function AskInboxScreen() {
 
   if (!authed) {
     return (
-      <div className="flex flex-col flex-1 items-center justify-center bg-white dark:bg-black">
+      <div className="flex flex-col flex-1 items-center justify-center bg-background">
         <div className="text-neutral-500 dark:text-neutral-400 text-base">Sign in to view asks.</div>
       </div>
     );
@@ -337,7 +337,7 @@ export function AskInboxScreen() {
       <ScreenScaffold
         header={<ScreenHeader title="Ask Inbox" />}>
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
-            <div className="mb-1 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-950/50 dark:bg-blue-950/20">
+            <div className="mb-1 flex items-center gap-3 rounded-2xl border border-brand/30 bg-brand/10 p-4 dark:border-brand/30">
               <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
               <div className="flex-1">
                 <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">
@@ -356,7 +356,7 @@ export function AskInboxScreen() {
             ))}
 
             {pending.length === 0 && (
-              <div className="flex flex-col items-center rounded-2xl border border-dashed border-neutral-300 px-6 py-12 dark:border-neutral-700">
+              <div className="flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-12">
                 <Check size={28} color={dark ? '#86efac' : '#16a34a'} />
                 <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">
                   You are all caught up
@@ -375,7 +375,7 @@ export function AskInboxScreen() {
                 {settled.slice(0, 10).map((entry) => (
                   <div
                     key={entry.key}
-                    className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
+                    className="flex items-center gap-2 rounded-xl border border-border px-3 py-2.5">
                     {entry.status === 'answered' ? (
                       <Check size={15} color="#16a34a" />
                     ) : (

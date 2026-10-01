@@ -123,14 +123,14 @@ export const Composer = memo(function Composer({
       // this whole band. The footer must be transparent to gestures so the
       // transcript underneath still scrolls; the composer inside it must be
       // opaque, or the send button and the text field stop responding.
-      className="pointer-events-auto px-2.5 pt-2"
+      className="pointer-events-auto px-2.5 pt-2 shadow-[0_8px_24px_-8px_rgb(0_0_0_/_0.45)]"
       style={{
         // Only the home-indicator clearance lives here; the keyboard lift is the
         // footer's job (see the note above). `env()` beats a measured inset —
         // no layout pass.
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 10px)',
       }}>
-      <div className="frame-focus flex flex-col gap-1.5 rounded-2xl border border-neutral-200/80 bg-[#f4f4f6] px-3 pb-2 pt-2 dark:border-neutral-700/70 dark:bg-[#212121]">
+      <div className="frame-focus glass-composer flex flex-col gap-1.5 rounded-3xl border border-border/80 px-3 pb-2 pt-2">
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.map((a) => {
@@ -145,12 +145,12 @@ export const Composer = memo(function Composer({
                   {isImg ? (
                     <img src={a.uri} alt={a.name} className="h-7 w-7 rounded-md bg-[#d7e3f7] object-cover" />
                   ) : (
-                    <Paperclip size={12} color="#1a73e8" />
+                    <Paperclip size={12} color="var(--brand-hex)" />
                   )}
-                  <span className="min-w-0 shrink text-left text-xs text-[#1a73e8] dark:text-[#7aa7ff] truncate">
+                  <span className="min-w-0 shrink text-left text-xs text-brand truncate">
                     {a.name}
                   </span>
-                  <X size={12} color="#1a73e8" />
+                  <X size={12} color="var(--brand-hex)" />
                 </Button>
               );
             })}
@@ -161,7 +161,7 @@ export const Composer = memo(function Composer({
           aria-label="Message"
           // The container draws the border and background; the field itself is
           // transparent, or it reads as a frame inside a frame.
-          className="max-h-[180px] min-h-[64px] border-0 bg-transparent px-1.5 py-2.5 text-[15px] text-neutral-950 shadow-none focus-visible:ring-0 dark:text-neutral-100"
+          className="max-h-[180px] min-h-[64px] resize-none border-0 bg-transparent px-1.5 py-2.5 text-[15px] text-neutral-950 shadow-none focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
           value={input}
           onChange={(e) => {
             const t = e.target.value;

@@ -30,17 +30,17 @@ export const DayBar = memo(function DayBar({
       <div
         className={`w-full rounded-t-sm ${
           selected
-            ? 'bg-blue-600 dark:bg-blue-500'
+            ? 'bg-brand dark:bg-brand/100'
             : hasTokens
-              ? 'bg-[#1a73e8] dark:bg-[#7aa7ff]'
-              : 'bg-neutral-200 dark:bg-neutral-800'
+              ? 'bg-brand'
+              : 'bg-border'
         }`}
         style={{ height: `${heightPercent}%` }}
       />
       <span
         className={`mt-1.5 font-mono text-[9px] ${
           selected
-            ? 'font-bold text-blue-600 dark:text-blue-400'
+            ? 'font-bold text-brand'
             : hasTokens
               ? 'font-medium text-neutral-700 dark:text-neutral-300'
               : 'text-neutral-400 dark:text-neutral-600'

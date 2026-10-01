@@ -85,7 +85,7 @@ const JobCard = memo(function JobCard({
   const isError = job.last_status === 'error' || Boolean(job.last_error);
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+    <div className="rounded-2xl border border-border bg-elevated p-4 dark:bg-elevated">
       {/* Header: Title + Status Badge */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
@@ -118,7 +118,7 @@ const JobCard = memo(function JobCard({
 
       {/* Schedule badge & next run */}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded-md bg-neutral-200/80 px-2 py-1 dark:bg-neutral-800">
+        <div className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 dark:bg-muted">
           <Clock size={12} color={dark ? '#ccc' : '#444'} />
           <div className="font-mono text-xs font-medium text-neutral-800 dark:text-neutral-200">
             {scheduleExpr || '(no schedule)'}
@@ -155,15 +155,15 @@ const JobCard = memo(function JobCard({
       )}
 
       {/* Action Buttons Toolbar */}
-      <div className="mt-3.5 flex items-center justify-between pt-2.5 border-t border-neutral-200/70 dark:border-neutral-800/70">
+      <div className="mt-3.5 flex items-center justify-between pt-2.5 border-t border-border/70 dark:border-border/70">
         {/* Left: Runs History */}
         <Button
           variant="ghost"
           onClick={() => void onOpenRuns(job)}
           aria-label={`Run history for ${job.name || job.id}`}
-          className="h-auto sm:h-auto rounded-lg border border-[#1a73e8]/30 bg-[#1a73e8]/10 px-2.5 py-1.5 active:bg-[#1a73e8]/20">
-          <History size={13} color="#1a73e8" />
-          <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">History</span>
+          className="h-auto sm:h-auto rounded-lg border border-brand/30 bg-brand/10 px-2.5 py-1.5 active:bg-brand/20">
+          <History size={13} color="var(--brand-hex)" />
+          <span className="text-xs font-semibold text-brand">History</span>
         </Button>
 
         {/* Right: Actions */}
@@ -174,9 +174,9 @@ const JobCard = memo(function JobCard({
             disabled={busy}
             onClick={() => void onTrigger(job)}
             aria-label={`Run ${job.name || job.id} now`}
-            className="h-auto sm:h-auto rounded-lg border border-neutral-300 px-2.5 py-1.5 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800">
+            className="h-auto sm:h-auto rounded-lg border border-border px-2.5 py-1.5 active:bg-muted dark:active:bg-muted">
             {busy ? (
-              <Spinner size={14} color="#1a73e8" />
+              <Spinner size={14} color="var(--brand-hex)" />
             ) : (
               <>
                 <Play size={12} color={dark ? '#f5f5f5' : '#111'} fill={dark ? '#f5f5f5' : '#111'} />
@@ -193,7 +193,7 @@ const JobCard = memo(function JobCard({
               disabled={busy}
               onClick={() => void onResume(job)}
               aria-label={`Resume ${job.name || job.id}`}
-              className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800">
+              className="h-8 w-8 rounded-lg border border-border active:bg-muted dark:active:bg-muted">
               <RotateCw size={13} color={dark ? '#f5f5f5' : '#111'} />
             </Button>
           ) : (
@@ -203,7 +203,7 @@ const JobCard = memo(function JobCard({
               disabled={busy}
               onClick={() => void onPause(job)}
               aria-label={`Pause ${job.name || job.id}`}
-              className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800">
+              className="h-8 w-8 rounded-lg border border-border active:bg-muted dark:active:bg-muted">
               <Pause size={13} color={dark ? '#f5f5f5' : '#111'} />
             </Button>
           )}
@@ -215,7 +215,7 @@ const JobCard = memo(function JobCard({
             disabled={busy}
             onClick={() => onEdit(job)}
             aria-label={`Edit ${job.name || job.id}`}
-            className="h-8 w-8 rounded-lg border border-neutral-300 active:bg-neutral-200 dark:border-neutral-700 dark:active:bg-neutral-800">
+            className="h-8 w-8 rounded-lg border border-border active:bg-muted dark:active:bg-muted">
             <Pencil size={13} color={dark ? '#ccc' : '#555'} />
           </Button>
 
@@ -262,24 +262,24 @@ const RunCard = memo(function RunCard({
   const totalTokens = (run.input_tokens || 0) + (run.output_tokens || 0);
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-3.5 dark:border-neutral-800 dark:bg-neutral-950/50">
+    <div className="rounded-2xl border border-border bg-elevated p-3.5 dark:bg-input/30/50">
       {/* Header: Status + Time + Duration */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div
             className={`rounded-full px-2 py-0.5 border ${
               isRunActive
-                ? 'border-blue-300 bg-blue-100 dark:border-blue-800 dark:bg-blue-950/60'
+                ? 'border-brand/40 bg-brand/15 dark:border-brand/40'
                 : isRunFailed
                   ? 'border-red-300 bg-red-100 dark:border-red-800 dark:bg-red-950/60'
                   : isRunCompleted
                     ? 'border-emerald-300 bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60'
-                    : 'border-neutral-300 bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800'
+                    : 'border-border bg-muted dark:bg-muted'
             }`}>
             <div
               className={`text-[10px] font-bold uppercase tracking-wider ${
                 isRunActive
-                  ? 'text-blue-700 dark:text-blue-300'
+                  ? 'text-brand'
                   : isRunFailed
                     ? 'text-red-700 dark:text-red-300'
                     : isRunCompleted
@@ -313,20 +313,20 @@ const RunCard = memo(function RunCard({
 
       {/* Metrics row */}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
+        <div className="flex items-center gap-1 rounded bg-muted px-2 py-0.5 dark:bg-muted">
           <MessageSquare size={11} color={dark ? '#aaa' : '#666'} />
           <div className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.message_count ?? 0} msgs</div>
         </div>
 
         {Boolean(run.tool_call_count) && (
-          <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
+          <div className="flex items-center gap-1 rounded bg-muted px-2 py-0.5 dark:bg-muted">
             <Wrench size={11} color={dark ? '#aaa' : '#666'} />
             <div className="text-[11px] text-neutral-700 dark:text-neutral-300">{run.tool_call_count} tools</div>
           </div>
         )}
 
         {totalTokens > 0 && (
-          <div className="flex items-center gap-1 rounded bg-neutral-200/60 px-2 py-0.5 dark:bg-neutral-800">
+          <div className="flex items-center gap-1 rounded bg-muted px-2 py-0.5 dark:bg-muted">
             <div className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300">
               {compactNumber(totalTokens)} tok
             </div>
@@ -343,24 +343,24 @@ const RunCard = memo(function RunCard({
       </div>
 
       {/* Action buttons: View Messages / Open in Chat */}
-      <div className="mt-3 flex items-center justify-between pt-2 border-t border-neutral-200/60 dark:border-neutral-800/60">
+      <div className="mt-3 flex items-center justify-between pt-2 border-t border-border/60 dark:border-border/60">
         <Button
           variant="ghost"
           onClick={() => void onToggleRun(run.id)}
 
           aria-label={expanded ? 'Hide messages' : 'View messages'}
           className="h-auto sm:h-auto px-0 py-1">
-          <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">
+          <span className="text-xs font-semibold text-brand">
             {expanded ? 'Hide Messages' : 'View Messages'}
           </span>
-          {expanded ? <ChevronUp size={14} color="#1a73e8" /> : <ChevronDown size={14} color="#1a73e8" />}
+          {expanded ? <ChevronUp size={14} color="var(--brand-hex)" /> : <ChevronDown size={14} color="var(--brand-hex)" />}
         </Button>
 
         <Button
           variant="ghost"
           onClick={() => void onOpenInChat(run)}
           aria-label="Open this run in chat"
-          className="h-auto sm:h-auto rounded-lg bg-neutral-200/70 px-2.5 py-1 active:bg-neutral-300 dark:bg-neutral-800 dark:active:bg-neutral-700">
+          className="h-auto sm:h-auto rounded-lg bg-muted px-2.5 py-1 active:bg-muted dark:bg-muted dark:active:bg-muted">
           <ExternalLink size={12} color={dark ? '#ddd' : '#333'} />
           <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200">Open in Chat</span>
         </Button>
@@ -368,10 +368,10 @@ const RunCard = memo(function RunCard({
 
       {/* Expanded Transcript Preview */}
       {expanded && (
-        <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-black/60">
+        <div className="mt-3 rounded-xl border border-border bg-popover p-3 dark:bg-background/60">
           {messagesLoading && !messages && (
             <div className="flex flex-col items-center justify-center py-6">
-              <Spinner size={14} color="#1a73e8" />
+              <Spinner size={14} color="var(--brand-hex)" />
               <div className="mt-2 text-xs text-neutral-400">Loading transcript…</div>
             </div>
           )}
@@ -393,15 +393,15 @@ const RunCard = memo(function RunCard({
                     key={m.id ? String(m.id) : `msg-${idx}`}
                     className={`rounded-lg p-2.5 ${
                       isUser
-                        ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40'
+                        ? 'bg-brand/10 border border-brand/30 dark:border-brand/30'
                         : isTool
-                          ? 'bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800'
-                          : 'bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200/70 dark:border-neutral-800'
+                          ? 'bg-elevated border border-border dark:border-border'
+                          : 'bg-elevated border border-border/70 dark:border-border'
                     }`}>
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-1.5">
                         {isUser ? (
-                          <User size={12} color="#1a73e8" />
+                          <User size={12} color="var(--brand-hex)" />
                         ) : isTool ? (
                           <Wrench size={12} color="#8b5cf6" />
                         ) : (
@@ -410,7 +410,7 @@ const RunCard = memo(function RunCard({
                         <div
                           className={`text-[10px] font-bold uppercase tracking-wider ${
                             isUser
-                              ? 'text-blue-700 dark:text-blue-400'
+                              ? 'text-brand'
                               : isTool
                                 ? 'text-purple-700 dark:text-purple-400'
                                 : 'text-emerald-700 dark:text-emerald-400'
@@ -421,7 +421,7 @@ const RunCard = memo(function RunCard({
                     </div>
 
                     {Boolean(reasoningText) && (
-                      <div className="mb-1.5 rounded bg-neutral-200/60 p-1.5 dark:bg-neutral-800">
+                      <div className="mb-1.5 rounded bg-muted p-1.5 dark:bg-muted">
                         <div className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 mb-0.5">
                           Thinking / Reasoning:
                         </div>
@@ -855,14 +855,14 @@ export function CronScreen() {
     if (loading && !refreshing) {
       return (
         <div className="flex flex-col items-center justify-center py-16">
-          <Spinner size={24} color="#1a73e8" />
+          <Spinner size={24} color="var(--brand-hex)" />
           <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading cron jobs…</div>
         </div>
       );
     }
     if (!error) {
       return (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border p-8">
           <Clock size={36} color={dark ? '#666' : '#999'} />
           <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Cron Jobs Yet</div>
           <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
@@ -871,7 +871,7 @@ export function CronScreen() {
           <Button
             onClick={openCreateModal}
             aria-label="Create first cron job"
-            className="mt-4 h-auto sm:h-auto rounded-xl bg-[#1a73e8] px-4 py-2.5">
+            className="mt-4 h-auto sm:h-auto rounded-xl bg-brand px-4 py-2.5">
             <Plus size={16} color="#fff" />
             <span className="text-sm font-semibold text-white">Create First Job</span>
           </Button>
@@ -892,14 +892,14 @@ export function CronScreen() {
     if (runsLoading && runsList.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-16">
-          <Spinner size={24} color="#1a73e8" />
+          <Spinner size={24} color="var(--brand-hex)" />
           <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading run history…</div>
         </div>
       );
     }
     if (runsList.length === 0 && !runsError) {
       return (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 p-8 dark:border-neutral-800">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border p-8">
           <Clock size={36} color={dark ? '#666' : '#999'} />
           <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">No Runs Recorded</div>
           <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
@@ -923,7 +923,7 @@ export function CronScreen() {
           <ScreenHeader
             title="Cron Jobs"
             actions={
-              <Button onClick={openCreateModal} className="h-8 rounded-lg bg-[#1a73e8] px-3">
+              <Button onClick={openCreateModal} className="h-8 rounded-lg bg-brand px-3">
                 <Plus size={16} color="#fff" />
                 <span className="text-xs font-semibold text-white">New</span>
               </Button>
@@ -966,7 +966,7 @@ export function CronScreen() {
       {/* Create / Edit sheet */}
         <Sheet open={modalOpen} onOpenChange={setModalOpen}>
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between border-b border-border px-5 pb-3">
             <div className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
               {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
             </div>
@@ -982,7 +982,7 @@ export function CronScreen() {
           </div>
 
           {/* Body form */}
-          <div className="overflow-y-auto bg-white dark:bg-black">
+          <div className="overflow-y-auto bg-background">
             <div className="flex flex-col gap-3.5 p-4 pb-8">
               {formError && (
                 <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
@@ -1000,7 +1000,7 @@ export function CronScreen() {
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. morning-brief"
                   autoCapitalize="none"
-                  className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                  className="rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
                 />
               </div>
 
@@ -1014,7 +1014,7 @@ export function CronScreen() {
                   onChange={(e) => setFormSchedule(e.target.value)}
                   placeholder="e.g. 0 9 * * *"
                   autoCapitalize="none"
-                  className="font-mono rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                  className="font-mono rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
                 />
                 {/* Presets Chips */}
                 <div className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</div>
@@ -1030,13 +1030,13 @@ export function CronScreen() {
                         onClick={() => setFormSchedule(preset.expr)}
                         className={`h-auto sm:h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
                           formSchedule === preset.expr
-                            ? 'border-[#1a73e8] bg-[#1a73e8]/10'
-                            : 'border-neutral-300 dark:border-neutral-700'
+                            ? 'border-brand bg-brand/10'
+                            : 'border-border dark:border-border'
                         }`}>
                         <span
                           className={`text-[11px] font-medium ${
                             formSchedule === preset.expr
-                              ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                              ? 'text-brand'
                               : 'text-neutral-600 dark:text-neutral-300'
                           }`}>
                           {preset.label}
@@ -1058,7 +1058,7 @@ export function CronScreen() {
                   placeholder="Describe what the agent should execute when this cron job triggers..."
 
                   numberOfLines={4}
-                  className="min-h-[100px] rounded-xl border border-neutral-300 p-3 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                  className="min-h-[100px] rounded-xl border border-border p-3 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
                 />
               </div>
 
@@ -1072,7 +1072,7 @@ export function CronScreen() {
                   onChange={(e) => setFormModel(e.target.value)}
                   placeholder="e.g. nous/hermes-3-llama-3.1-8b (leave blank for default)"
                   autoCapitalize="none"
-                  className="rounded-xl border border-neutral-300 px-3.5 py-2.5 text-sm text-neutral-950 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                  className="rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
                 />
               </div>
 
@@ -1080,7 +1080,7 @@ export function CronScreen() {
               <div>
                 <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Notify</Label>
                 {deliverChoices.length === 1 ? (
-                  <div className="rounded-xl border border-dashed border-neutral-300 px-3.5 py-2.5 dark:border-neutral-700">
+                  <div className="rounded-xl border border-dashed border-border px-3.5 py-2.5">
                     <div className="text-xs text-neutral-500 dark:text-neutral-400">
                       This gateway reports no notification targets, so runs are saved without sending anywhere. Connect
                       a platform on the server to enable delivery.
@@ -1100,13 +1100,13 @@ export function CronScreen() {
                           disabled={disabled}
                           onClick={() => setFormDeliver(option.id)}
                           className={`h-auto sm:h-auto w-full items-start justify-start rounded-xl border px-3 py-2.5 ${
-                            selected ? 'border-[#1a73e8] bg-[#1a73e8]/10' : 'border-neutral-300 dark:border-neutral-700'
+                            selected ? 'border-brand bg-brand/10' : 'border-border dark:border-border'
                           } ${disabled ? 'opacity-50' : ''}`}>
                           <div className="flex-1">
                             <div
                               className={`text-sm font-medium ${
                                 selected
-                                  ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                                  ? 'text-brand'
                                   : 'text-neutral-800 dark:text-neutral-200'
                               }`}>
                               {option.name}
@@ -1140,7 +1140,7 @@ export function CronScreen() {
                   disabled={formSaving}
                   onClick={handleSave}
                   aria-label={editingJob ? 'Save changes' : 'Create job'}
-                  className="h-auto sm:h-auto flex-1 rounded-xl bg-[#1a73e8] py-3 active:bg-blue-600">
+                  className="h-auto sm:h-auto flex-1 rounded-xl bg-brand py-3 active:bg-brand">
                   {formSaving ? (
                     <Spinner size={14} color="#fff" />
                   ) : (
@@ -1157,10 +1157,10 @@ export function CronScreen() {
         {/* Runs History sheet */}
         <Sheet open={runsModalOpen} onOpenChange={setRunsModalOpen}>
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-neutral-200 px-5 pb-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between border-b border-border px-5 pb-3">
             <div className="flex-1 pr-2">
               <div className="flex items-center gap-2">
-                <History size={18} color="#1a73e8" />
+                <History size={18} color="var(--brand-hex)" />
                 <div className="text-base font-bold text-neutral-950 dark:text-neutral-100">Run History</div>
               </div>
               <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
@@ -1177,7 +1177,7 @@ export function CronScreen() {
                 onClick={() => void handleRefreshRuns()}
                 className="h-9 w-9 rounded-lg">
                 {runsLoading ? (
-                  <Spinner size={14} color="#1a73e8" />
+                  <Spinner size={14} color="var(--brand-hex)" />
                 ) : (
                   <RefreshCw size={18} color={dark ? '#ccc' : '#444'} />
                 )}

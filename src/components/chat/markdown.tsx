@@ -57,9 +57,8 @@ const C = {
     p: 'my-2',
     list: 'my-2 pl-5',
     li: 'my-1 [&>p]:my-0 has-[>input]:list-none',
-    link: 'text-[#1a73e8] underline underline-offset-2 dark:text-[#7aa7ff]',
-    quote:
-      'my-2 border-l-[3px] border-l-[#1a73e8] bg-[#e8eef7] px-2.5 py-1.5 dark:border-l-[#7aa7ff] dark:bg-[#232a3a]',
+    link: 'text-brand underline underline-offset-2',
+    quote: 'my-2 border-l-[3px] border-l-brand bg-brand/10 px-2.5 py-1.5',
     code: 'rounded bg-[#e4e4e8] px-1 py-0.5 text-[13px] dark:bg-[#2b2b31]',
     fence: 'my-2 overflow-hidden rounded-lg',
     fenceHead: 'flex items-center justify-between px-2.5 pb-0.5 pt-1.5',
@@ -116,8 +115,8 @@ const C = {
 const T = {
   wrap: 'my-3 w-fit max-w-full overflow-x-auto rounded-lg border border-black/[0.12] dark:border-white/[0.14]',
   table: 'border-collapse text-[13px]',
-  head: 'bg-black/[0.045] dark:bg-white/[0.06]',
-  row: 'border-b border-black/[0.08] hover:bg-black/[0.02] dark:border-white/[0.1] dark:hover:bg-white/[0.03]',
+  head: 'bg-black/[0.045] dark:bg-popover/[0.06]',
+  row: 'border-b border-black/[0.08] hover:bg-black/[0.02] dark:border-white/[0.1] dark:hover:bg-popover/[0.03]',
   body: '[&>tr:last-child]:border-0',
   // 20px on 13px text: cells inherit the body's 24px otherwise, which is a
   // reading measure for 15px prose and makes a table's rows airy and slow to
@@ -151,7 +150,7 @@ function CodeBlock({ theme, code, lang }: { theme: MdTheme; code: string; lang: 
           type="button"
           onClick={() => void copy()}
           aria-label="Copy code block"
-          className="rounded px-1 py-0.5 text-[11px] font-semibold hover:bg-white/10"
+          className="rounded px-1 py-0.5 text-[11px] font-semibold hover:bg-popover/10"
           style={{ color: brandColor(false) }}>
           Copy
         </button>

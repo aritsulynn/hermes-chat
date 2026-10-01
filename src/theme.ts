@@ -26,6 +26,8 @@ export const THEME = {
     border: 'hsl(0 0% 89.8%)',
     input: 'hsl(0 0% 89.8%)',
     ring: 'hsl(0 0% 63%)',
+    elevated: 'hsl(240 10% 96.1%)',
+    elevatedForeground: 'hsl(0 0% 3.9%)',
     radius: '0.625rem',
     chart1: 'hsl(12 76% 61%)',
     chart2: 'hsl(173 58% 39%)',
@@ -52,6 +54,8 @@ export const THEME = {
     border: 'hsl(0 0% 14.9%)',
     input: 'hsl(0 0% 14.9%)',
     ring: 'hsl(300 0% 45%)',
+    elevated: 'hsl(0 0% 13%)',
+    elevatedForeground: 'hsl(0 0% 98%)',
     radius: '0.625rem',
     chart1: 'hsl(220 70% 50%)',
     chart2: 'hsl(160 60% 45%)',
@@ -72,11 +76,28 @@ export type ThemeColors = (typeof THEME)['light'];
 /** Primary brand blue (light) / its dark-mode counterpart. */
 export const BRAND_BLUE = '#1a73e8';
 export const BRAND_BLUE_DARK = '#7aa7ff';
-/** Brand blue for the current scheme (icon `color` props, inline styles). */
-export const brandColor = (dark: boolean): string => (dark ? BRAND_BLUE_DARK : BRAND_BLUE);
+export const CHAMBER_BRAND = '#b35017';
+export const CHAMBER_BRAND_DARK = '#da7c47';
+
+function currentAccent(): string {
+  try {
+    return document.documentElement.getAttribute('data-accent') ?? 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+/** Brand color for the current scheme (icon `color` props, inline styles). */
+export const brandColor = (dark: boolean): string => {
+  if (currentAccent() === 'openchamber') return dark ? CHAMBER_BRAND_DARK : CHAMBER_BRAND;
+  return dark ? BRAND_BLUE_DARK : BRAND_BLUE;
+};
 
 /** Full-screen surface behind every tab (`flex: 1` + scheme background). */
-export const screenBg = (dark: boolean): string => (dark ? '#000' : '#fff');
+export const screenBg = (dark: boolean): string => {
+  if (currentAccent() === 'openchamber') return dark ? '#120f0e' : '#fdfcfa';
+  return dark ? '#000' : '#fff';
+};
 /**
  * Style object for a full-screen surface (`style={screenStyle(dark)}`).
  *

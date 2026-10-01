@@ -244,7 +244,7 @@ function BrokenImage({ src, alt, dark }: { src: string; alt?: string; dark: bool
         if (url) window.open(url, '_blank', 'noopener');
       }}
       aria-label={alt || basename(p) || 'Open link'}
-      className="my-1 h-auto sm:h-auto w-full justify-start gap-2 rounded-[10px] border border-neutral-200 px-2.5 py-2 dark:border-neutral-700">
+      className="my-1 h-auto sm:h-auto w-full justify-start gap-2 rounded-[10px] border border-border px-2.5 py-2">
       <ImageOff size={15} color={dark ? '#aaa' : '#777'} />
       <span className="flex-1 text-left text-[13px] text-neutral-600 dark:text-neutral-300 truncate">
         {alt || basename(p) || 'image'}
@@ -413,7 +413,7 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
               )}
             </>
           ) : preview?.kind === 'text' ? (
-            <div className="mx-3 overflow-y-auto rounded-xl bg-white/5 p-3">
+            <div className="mx-3 overflow-y-auto rounded-xl bg-popover/5 p-3">
               <div className="select-text whitespace-pre-wrap text-[13px] leading-[19px] text-white/90">
                 {preview.text || '(empty file)'}
               </div>
@@ -430,7 +430,7 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
             size="icon"
             onClick={onClose}
             aria-label="Close preview"
-            className="absolute right-3 h-10 w-10 rounded-full bg-white/15"
+            className="absolute right-3 h-10 w-10 rounded-full bg-popover/15"
             style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
             <X size={20} color="#fff" />
           </Button>
@@ -442,7 +442,7 @@ function FilePreviewModal({ preview, onClose }: { preview: Preview | null; onClo
                 else if (preview.kind === 'text') void navigator.share?.({ text: preview.text });
               }}
               aria-label="Share"
-              className="absolute left-3 h-auto sm:h-auto gap-1.5 rounded-full bg-white/15 px-3 py-2"
+              className="absolute left-3 h-auto sm:h-auto gap-1.5 rounded-full bg-popover/15 px-3 py-2"
               style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
               <Share2 size={16} color="#fff" />
               <span className="text-[12px] font-semibold text-white">Share</span>

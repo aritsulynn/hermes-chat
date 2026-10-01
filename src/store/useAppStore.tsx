@@ -31,6 +31,7 @@ import {
   getCookie as getStoredCookie,
   getModel,
   getPassword,
+  getAccent,
   getTheme,
   loadConnection,
   saveCookie,
@@ -683,8 +684,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         // Restore the saved preference before releasing the splash gate.
         const savedTheme = await getTheme().catch(() => null);
+        const savedAccent = await getAccent().catch(() => null);
         if (cancelled) return;
-        hydrateTheme(savedTheme);
+        hydrateTheme(savedTheme, savedAccent);
         // Restore the local-notifications preference.
         await loadNotifications(() => cancelled);
         // Restore the last picked model so the composer chip survives restarts

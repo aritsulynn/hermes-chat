@@ -62,7 +62,7 @@ function ToastItem({ title, description, variant, onDismiss }: Omit<ToastData, '
       role={variant === 'destructive' ? 'alert' : 'status'}
       aria-live={variant === 'destructive' ? 'assertive' : 'polite'}
       aria-label={description ? `${title}. ${description}` : title}
-      className="flex w-full max-w-[420px] animate-[toast-in_220ms_ease-out] items-start gap-2.5 rounded-xl border border-neutral-200 bg-white px-3.5 py-3 text-left shadow-lg shadow-black/10 dark:border-neutral-700 dark:bg-[#1c1c1e]">
+      className="flex w-full max-w-[420px] animate-[toast-in_220ms_ease-out] items-start gap-2.5 rounded-xl border border-border bg-popover px-3.5 py-3 text-left shadow-lg shadow-black/10 dark:bg-[#1c1c1e]">
       <span className="mt-0.5">
         <Icon size={17} color={iconColor} />
       </span>

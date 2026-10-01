@@ -41,7 +41,7 @@ export function SettingsScreen() {
     notificationsEnabled,
     setNotifications,
   } = useApp();
-  const { theme, themeMode, setTheme } = useThemeValue();
+  const { theme, themeMode, setTheme, accent, setAccent } = useThemeValue();
   const dark = theme === 'dark';
   const isReady = conn === 'ready';
   const isConnecting = conn === 'connecting' || conn === 'reconnecting';
@@ -92,8 +92,8 @@ export function SettingsScreen() {
                     onClick={() => setTheme('light')}
                     className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                       themeMode === 'light'
-                        ? 'border-amber-500 bg-amber-50 dark:bg-neutral-950'
-                        : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                        ? 'border-amber-500 bg-amber-50 dark:bg-input/30'
+                        : 'border-border bg-popover'
                     }`}>
                     <div className="flex items-center justify-center h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-950/60 mb-2">
                       <Sun size={18} color="#d97706" />
@@ -123,7 +123,7 @@ export function SettingsScreen() {
                     className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                       themeMode === 'dark'
                         ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50'
-                        : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                        : 'border-border bg-popover'
                     }`}>
                     <div className="flex items-center justify-center h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-950/60 mb-2">
                       <Moon size={18} color="#6366f1" />
@@ -153,7 +153,7 @@ export function SettingsScreen() {
                     className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
                       themeMode === 'system'
                         ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/50'
-                        : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                        : 'border-border bg-popover'
                     }`}>
                     <div className="flex flex-col mb-2 h-8 w-8 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/60">
                       <Monitor size={18} color={dark ? '#38bdf8' : '#0284c7'} />
@@ -170,6 +170,70 @@ export function SettingsScreen() {
                       <div className="mt-1.5 flex items-center gap-1">
                         <Check size={12} color={dark ? '#7dd3fc' : '#0369a1'} />
                         <div className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</div>
+                      </div>
+                    )}
+                  </button>
+                </div>
+              </Card>
+              <Card>
+                <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">Accent</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
+                  Hermes blue or OpenChamber warm ember
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    aria-label="Hermes accent"
+                    aria-pressed={accent === 'default'}
+                    onClick={() => setAccent('default')}
+                    className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
+                      accent === 'default'
+                        ? 'border-brand bg-brand/10'
+                        : 'border-border bg-popover'
+                    }`}>
+                    <div className="flex items-center justify-center h-8 w-8 rounded-full bg-brand mb-2">
+                      <span className="text-sm font-bold text-white">H</span>
+                    </div>
+                    <span
+                      className={`text-sm font-semibold ${
+                        accent === 'default'
+                          ? 'font-bold text-brand'
+                          : 'text-neutral-700 dark:text-neutral-300'
+                      }`}>
+                      Hermes
+                    </span>
+                    {accent === 'default' && (
+                      <div className="mt-1.5 flex items-center gap-1">
+                        <Check size={12} color="var(--brand-hex)" />
+                        <div className="text-[11px] font-semibold text-brand">Active</div>
+                      </div>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="OpenChamber accent"
+                    aria-pressed={accent === 'openchamber'}
+                    onClick={() => setAccent('openchamber')}
+                    className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
+                      accent === 'openchamber'
+                        ? 'border-[#da7c47] bg-orange-50 dark:bg-orange-950/40'
+                        : 'border-border bg-popover'
+                    }`}>
+                    <div className="flex items-center justify-center h-8 w-8 rounded-full bg-[#da7c47] mb-2">
+                      <span className="text-sm font-bold text-white">O</span>
+                    </div>
+                    <span
+                      className={`text-sm font-semibold ${
+                        accent === 'openchamber'
+                          ? 'font-bold text-[#b35017] dark:text-[#da7c47]'
+                          : 'text-neutral-700 dark:text-neutral-300'
+                      }`}>
+                      Chamber
+                    </span>
+                    {accent === 'openchamber' && (
+                      <div className="mt-1.5 flex items-center gap-1">
+                        <Check size={12} color={dark ? '#da7c47' : '#b35017'} />
+                        <div className="text-[11px] font-semibold text-[#b35017] dark:text-[#da7c47]">Active</div>
                       </div>
                     )}
                   </button>
@@ -207,13 +271,13 @@ export function SettingsScreen() {
                         onClick={() => void applyApprovalMode(a.value)}
                         className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
                           on
-                            ? 'border-[#1a73e8] bg-blue-50/70 dark:bg-blue-950/40'
-                            : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                            ? 'border-brand bg-brand/10'
+                            : 'border-border bg-popover'
                         }`}>
                         <div className="min-w-0 flex-1">
                           <div
                             className={`text-sm font-semibold ${
-                              on ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-800 dark:text-neutral-200'
+                              on ? 'text-brand' : 'text-neutral-800 dark:text-neutral-200'
                             }`}>
                             {a.label}
                           </div>
@@ -225,7 +289,7 @@ export function SettingsScreen() {
                   })}
                 </div>
 
-                <Separator className="my-3 bg-neutral-200 dark:bg-neutral-800" />
+                <Separator className="my-3 bg-border" />
                 {[
                   ['Profile', typeof sessionInfo?.profile_name === 'string' ? sessionInfo.profile_name : ''],
                   ['Model', typeof sessionInfo?.model === 'string' ? sessionInfo.model : ''],
@@ -244,7 +308,7 @@ export function SettingsScreen() {
 
                 {mcpServers.length > 0 && (
                   <>
-                    <Separator className="my-2 bg-neutral-200 dark:bg-neutral-800" />
+                    <Separator className="my-2 bg-border" />
                     <div className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">MCP servers</div>
                     {mcpServers.map((s, i) => (
                       <div key={`${s?.name ?? i}`} className="flex items-center justify-between py-1">
@@ -312,10 +376,10 @@ export function SettingsScreen() {
               </div>
               <Card>
                 {/* User row */}
-                <div className="flex items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-800">
+                <div className="flex items-center justify-between py-2 border-b border-border">
                   <div className="flex items-center gap-2.5">
-                    <Avatar className="bg-[#1a73e8]">
-                      <AvatarFallback className="bg-[#1a73e8]">
+                    <Avatar className="bg-brand">
+                      <AvatarFallback className="bg-brand">
                         <span className="text-sm font-bold text-white">
                           {(username || 'H').slice(0, 1).toUpperCase()}
                         </span>
@@ -331,7 +395,7 @@ export function SettingsScreen() {
                 </div>
 
                 {/* Active agent profile — switch from the Drawer. */}
-                <div className="flex items-center justify-between border-b border-neutral-200 py-2.5 dark:border-neutral-800">
+                <div className="flex items-center justify-between border-b border-border py-2.5">
                   <div className="flex items-center gap-2">
                     <CircleUserRound size={15} color={dark ? '#aaa' : '#666'} />
                     <div className="text-xs text-neutral-600 dark:text-neutral-300">Agent Profile</div>
@@ -340,7 +404,7 @@ export function SettingsScreen() {
                 </div>
 
                 {/* Host row */}
-                <div className="flex items-center justify-between py-2.5 border-b border-neutral-200 dark:border-neutral-800">
+                <div className="flex items-center justify-between py-2.5 border-b border-border">
                   <div className="flex items-center gap-2">
                     <Server size={15} color={dark ? '#aaa' : '#666'} />
                     <div className="text-xs text-neutral-600 dark:text-neutral-300">Server Host</div>
@@ -386,7 +450,7 @@ export function SettingsScreen() {
                 </div>
               </div>
               <Card>
-                <div className="flex items-center justify-between py-1 border-b border-neutral-200 dark:border-neutral-800">
+                <div className="flex items-center justify-between py-1 border-b border-border">
                   <div className="text-xs text-neutral-600 dark:text-neutral-300">Client</div>
                   <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100">Hermes Mobile</div>
                 </div>
@@ -394,7 +458,7 @@ export function SettingsScreen() {
                   <div className="text-xs text-neutral-600 dark:text-neutral-300">Build ID</div>
                   <div className="text-xs font-mono text-neutral-500 dark:text-neutral-400">{BUILD_ID}</div>
                 </div>
-                <div className="flex items-center justify-between py-1 border-t border-neutral-200 dark:border-neutral-800">
+                <div className="flex items-center justify-between py-1 border-t border-border">
                   <div className="text-xs text-neutral-600 dark:text-neutral-300">Last event</div>
                   <div className="text-xs font-mono text-neutral-500 dark:text-neutral-400">
                     {String(diag?.ws?.lastEvent ?? '—')}

@@ -26,7 +26,7 @@
 //    default is a desktop density; this app is driven with a thumb.
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, CircleUserRound, Ellipsis, Search, Settings, SquarePen, X } from 'lucide-react';
+import { Activity, BellRing, ChevronDown, CircleUserRound, Plus, ScrollText, Settings, X } from 'lucide-react';
 import { useApp } from '../../hooks/app-store';
 import { navigate } from '../../store/nav';
 import { useLongPress } from '../../hooks/use-long-press';
@@ -36,15 +36,6 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/pop
 import { ConfirmDialog } from '../ui/dialog';
 import { Spinner } from '../ui/bits';
 import { Avatar, AvatarFallback } from '../ui/avatar';
-import { Badge } from '../ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
-
 import {
   SidebarContent,
   SidebarFooter,
@@ -55,15 +46,11 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarTrigger,
   useSidebar,
 } from '../ui/sidebar';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
-import { MORE_NAV_ITEMS, NAV_ITEMS, PROFILE_NAV_ITEMS } from './nav-config';
-import { formatRelative, formatSessionSource } from '../../utils/format';
+import { MORE_NAV_ITEMS, NAV_ITEMS } from './nav-config';
+import { formatRelative } from '../../utils/format';
 import { profileSessionKey } from '../../store/helpers';
 import type { LiveStatus } from '../../store/live-sessions';
 import type { ScopedSessionSummary } from '../../store/types';
@@ -74,9 +61,7 @@ import type { ScopedSessionSummary } from '../../store/types';
 // switch stops being a React re-render of this panel. That last part matters
 // here specifically, because this panel re-renders on every streamed token.
 const ICON_DIM = 'text-[#555] dark:text-[#a3a3a3]';
-const ICON_BRAND = 'text-[#1a73e8] dark:text-[#7aa7ff]';
-// The account footer's glyphs, one step darker than `ICON_DIM` in each scheme.
-const ICON_MUTED = 'text-[#444] dark:text-[#ccc]';
+const ICON_BRAND = 'text-brand';
 // `waiting` is a turn blocked on the user, so it is the one that gets the
 // warmer colour — a spinner alone would read as "busy, fine".
 const ICON_WAITING = 'text-[#b45309] dark:text-[#f0b429]';
@@ -107,7 +92,6 @@ function liveColorClass(status: LiveStatus | undefined): string {
 //
 // Hence `mx-auto` as well as `justify-center`: one centres the button in the
 // rail, the other centres the icon in the button.
-const RAIL_ROW = 'group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:justify-center';
 const RAIL_LABEL = 'group-data-[collapsible=icon]:hidden';
 
 // Memoized recents row: the session list is windowed to 50 rendered rows
@@ -130,11 +114,7 @@ const SessionRow = memo(function SessionRow({
   onOpen: (s: ScopedSessionSummary) => void;
   onDelete: (s: ScopedSessionSummary) => void;
 }) {
-  const preview = (session.preview || '').trim();
   const when = formatRelative(session.startedAt);
-  // null for the interactive defaults (`tui`/`desktop`/`mobile`) — see
-  // formatSessionSource for where this vocabulary comes from.
-  const tag = formatSessionSource(session.source);
   // Long-press to delete. A 400ms delay sets it apart from a normal tap.
   const longPress = useLongPress(() => onDelete(session), { delay: 400 });
   return (
@@ -146,52 +126,28 @@ const SessionRow = memo(function SessionRow({
       aria-description={live ? liveHint(live) : undefined}
       onClick={() => onOpen(session)}
       {...longPress}
-      className={`h-auto sm:h-auto w-full items-start justify-start gap-2 px-3 py-2.5 text-left ${
-        active ? 'rounded-xl bg-[#e8e8ec] dark:bg-[#272727]' : ''
+      className={`h-auto sm:h-auto w-full items-center justify-start gap-2 rounded-xl px-3 py-2.5 text-left ${
+        active ? 'bg-brand/10' : ''
       }`}>
       {live ? (
-        <span className="pt-[3px]">
+        <span className="shrink-0">
           <Spinner size={13} className={liveColorClass(live)} />
         </span>
       ) : null}
-      {/* `flex flex-col` is the whole row's layout: it puts the title on one
-          line and the time/tag/preview on the next. A plain inline `<span>`
-          would run all three together on a single line. */}
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span
-          className={`text-left text-[14px] ${
-            active ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-950 dark:text-neutral-100'
-          } truncate`}>
-          {session.title || '(untitled)'}
-        </span>
-        {live === 'waiting' ? (
-          <span className="mt-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 truncate">
-            Waiting for your answer
-          </span>
-        ) : null}
-        {(preview || when || tag) && (
-          <span className="mt-0.5 flex items-center gap-2">
-            {when ? (
-              <span
-                className={`shrink-0 text-[10px] ${
-                  active ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-400 dark:text-neutral-500'
-                } truncate`}>
-                {when}
-              </span>
-            ) : null}
-            {tag ? (
-              <Badge variant="secondary" className="border-neutral-300 px-1.5 py-0 dark:border-neutral-700">
-                <span className="text-[10px] font-medium text-neutral-600 dark:text-neutral-300">{tag}</span>
-              </Badge>
-            ) : null}
-            {preview ? (
-              <span className="min-w-0 flex-1 text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
-                {preview}
-              </span>
-            ) : null}
-          </span>
-        )}
+      <span
+        className={`min-w-0 flex-1 text-left text-[14px] ${
+          active ? 'font-semibold text-brand' : 'text-neutral-950 dark:text-neutral-100'
+        } truncate`}>
+        {session.title || '(untitled)'}
       </span>
+      {when ? (
+        <span
+          className={`shrink-0 text-[12px] ${
+            active ? 'text-brand' : 'text-neutral-400 dark:text-neutral-500'
+          } truncate`}>
+          {when}
+        </span>
+      ) : null}
     </Button>
   );
 });
@@ -200,8 +156,6 @@ export function HermesSidebarContent() {
   const { pathname } = useLocation();
   const {
     authed,
-    username,
-    host,
     busy,
     activeProfile,
     profiles,
@@ -211,7 +165,6 @@ export function HermesSidebarContent() {
     sessionKey,
     openingId,
     sessions,
-    messages,
     pendingAskCount,
     newSession,
     openSession,
@@ -231,17 +184,14 @@ export function HermesSidebarContent() {
   const frameVisible = isMobile ? openMobile : expanded;
   // Hooks FIRST — no early return above this line (authed flips at login;
   // returning early before hooks breaks hook order).
-  const [showUserMenu, setShowUserMenu] = useState(false);
   // Themed replacement for the old Alert.alert delete confirm.
   const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState('');
   // Infinite scroll: render in pages of 50, grow on scroll-bottom. Network
   // fetch only when the local list is exhausted but the server may hold more.
   const [visibleCount, setVisibleCount] = useState(50);
 
-  // Keep Recents fresh every time the panel is opened (replaces the old
+  // Keep the list fresh every time the panel is opened (replaces the old
   // manual Refresh item).
   useEffect(() => {
     if (frameVisible) {
@@ -250,15 +200,8 @@ export function HermesSidebarContent() {
       // Live statuses are polled by the store; opening the panel is the moment
       // they become visible, so re-read rather than show whatever was last known.
       void refreshLiveSessions();
-      if (MORE_NAV_ITEMS.some((item) => pathname === `/${item.name}`)) {
-        setShowMoreMenu(true);
-      }
-    } else {
-      // Closing the panel dismisses the account popover. The Popover root is
-      // controlled, so this is just state.
-      setShowUserMenu(false);
     }
-  }, [frameVisible, pathname, refreshProfiles, refreshSessions, refreshLiveSessions]);
+  }, [frameVisible, refreshProfiles, refreshSessions, refreshLiveSessions]);
 
   // Inline filter replaces the removed /sessions page (the panel is the list now).
   // Memoized so every streamed token doesn't refilter + rebuild rows.
@@ -330,10 +273,6 @@ export function HermesSidebarContent() {
   // runtime id minted by resume/create — comparing stored vs live never
   // matches, so highlight must use the stored key.
   const activeId = sessionKey ?? sessionId;
-  const hasActiveRecent = sessions.some(
-    (s) => onChat && (s.profile ?? activeProfile) === activeProfile && s.id === activeId,
-  );
-  const isNewChat = onChat && !hasActiveRecent && messages.length === 0;
   const go = (name: string) => {
     dismissIfOverlay();
     navigate(`/${name}`);
@@ -342,249 +281,78 @@ export function HermesSidebarContent() {
   return (
     <>
       <SidebarHeader className="gap-1 px-3 pt-[max(env(safe-area-inset-top,0px),8px)]">
-        {searchOpen ? (
-          <div className="flex items-center gap-1">
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search chats…"
-              autoFocus
-              className="flex-1 rounded-lg border border-neutral-300 px-3 py-2.5 text-[16px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                setSearchOpen(false);
-                setQ('');
-              }}>
+        <div className="flex items-center">
+          {/* Full-screen sheet slides in from the left, so its dismiss lives
+              at the same edge. The profile switcher moved to the footer. */}
+          {isMobile && (
+            <Button variant="ghost" size="icon" aria-label="Close menu" onClick={() => setOpenMobile(false)}>
               <X size={20} className={ICON_DIM} />
             </Button>
+          )}
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <div className="truncate px-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">
+              Sessions
+            </div>
           </div>
-        ) : (
-          <div className="flex items-center">
-            {/* Uncontrolled on purpose: mounting the root only while the panel
-                is open is what tears its portal down on close. The trigger and
-                the search button below are NOT gated on that — in the icon rail
-                the trigger is the only way back out. */}
-            {frameVisible && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    data-testid="profile-selector"
-                    aria-label={`Switch profile. Active profile: ${activeProfile}`}
-                    // In the icon rail there is no room for the wordmark, so it
-                    // is dropped rather than truncated to a stray letter.
-                    className="h-auto sm:h-auto min-w-0 flex-1 shrink items-center justify-start gap-2 px-1 py-1 group-data-[collapsible=icon]:hidden">
-                    <span className="text-[22px] font-extrabold text-neutral-950 dark:text-neutral-100">Hermes</span>
-                    <ChevronDown size={17} className={ICON_DIM} />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent side="bottom" align="start" className="w-72 p-2">
-                  <div className="flex items-center justify-between px-3 py-2.5">
-                    <div>
-                      <div className="text-[14px] font-bold text-neutral-950 dark:text-neutral-100">Switch profile</div>
-                      <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                        Chat and toolsets use this profile
-                      </div>
-                    </div>
-                    <PopoverClose asChild>
-                      <Button variant="ghost" size="icon" aria-label="Close profile picker">
-                        <X size={18} className={ICON_DIM} />
-                      </Button>
-                    </PopoverClose>
-                  </div>
-                  <div className="max-h-[420px] overflow-y-auto">
-                    {profiles.length === 0 ? (
-                      <div className="rounded-xl bg-neutral-100 px-3 py-3 dark:bg-neutral-900">
-                        <div className="text-[13px] text-neutral-600 dark:text-neutral-300">{activeProfile}</div>
-                      </div>
-                    ) : (
-                      profiles.map((profile) => {
-                        const selected = profile.name === activeProfile;
-                        const row = (
-                          <Button
-                            variant="ghost"
-                            data-testid={`profile-option-${profile.name}`}
-                            aria-pressed={selected}
-                            disabled={busy || selected}
-                            onClick={() => {
-                              dismissIfOverlay();
-                              void switchProfile(profile.name);
-                            }}
-                            className={`h-auto sm:h-auto w-full items-center justify-start gap-3 px-3 py-3 ${
-                              selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
-                            } ${busy && !selected ? 'opacity-50' : ''}`}>
-                            <span
-                              className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                                selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-neutral-100 dark:bg-neutral-900'
-                              }`}>
-                              <CircleUserRound
-                                size={17}
-                                className={selected ? 'text-[#0284c7] dark:text-[#7dd3fc]' : ICON_DIM}
-                              />
-                            </span>
-                            <span className="flex min-w-0 flex-1 flex-col text-left">
-                              <span
-                                className={`min-w-0 text-left text-[13px] font-semibold ${
-                                  selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
-                                } truncate`}>
-                                {profile.display_name || profile.name}
-                              </span>
-                              {!!profile.description && (
-                                <span className="min-w-0 text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
-                                  {profile.description}
-                                </span>
-                              )}
-                            </span>
-                            {selected && (
-                              <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</span>
-                            )}
-                          </Button>
-                        );
-                        // A disabled row can't run PopoverClose's click handler,
-                        // so the active row stays a plain Button (tapping it
-                        // does nothing, same as before).
-                        return selected || busy ? (
-                          <div key={profile.name}>{row}</div>
-                        ) : (
-                          <PopoverClose asChild key={profile.name}>
-                            {row}
-                          </PopoverClose>
-                        );
-                      })
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
+            {/* Tinted compose pill, pinned right like theirs. Icon-only in
+                the collapsed rail. */}
             <Button
               variant="ghost"
-              size="icon"
-              aria-label="Search chats"
-              onClick={() => setSearchOpen(true)}
-              className="group-data-[collapsible=icon]:hidden">
-              <Search size={20} className={ICON_DIM} />
+              data-testid="new-chat"
+              aria-label="New chat"
+              disabled={busy}
+              onClick={() => {
+                if (busy) return;
+                dismissIfOverlay();
+                void newSession();
+              }}
+              className={`h-9 shrink-0 gap-1 rounded-full border border-brand/40 bg-brand/10 px-3 text-brand group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:w-9 group-data-[collapsible=icon]:px-0 ${busy ? 'opacity-50' : ''}`}>
+              <Plus size={16} />
+              <span className={`text-[13px] font-semibold ${RAIL_LABEL}`}>new chat</span>
             </Button>
-            {/* The collapse toggle. Always visible — in the icon rail it is
-                the only way back out, so it must not be hidden with the rest
-                of the header. Inside the mobile sheet it collapses the sheet,
-                and shadcn's own close button is hidden by the sidebar. */}
-            <SidebarTrigger className="group-data-[collapsible=icon]:mx-auto" />
+            {/* Desktop rail toggle. Mobile already has the X on the left,
+                so showing this too would be two dismiss controls. */}
+            {!isMobile && <SidebarTrigger className="group-data-[collapsible=icon]:mx-auto" />}
           </div>
-        )}
+        {/* Search lives below the header row, not behind an icon toggle.
+            Hidden in the collapsed rail where a full field cannot fit. */}
+        <div className="flex items-center gap-1 group-data-[collapsible=icon]:hidden">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search sessions…"
+            aria-label="Search chats"
+            className="min-w-0 flex-1 rounded-lg border border-border px-3 py-2 text-[14px] text-neutral-950 dark:text-neutral-100"
+          />
+          {!!q && (
+            <Button variant="ghost" size="icon" aria-label="Clear search" onClick={() => setQ('')}>
+              <X size={18} className={ICON_DIM} />
+            </Button>
+          )}
+        </div>
       </SidebarHeader>
 
       {/* The sidebar's own scroller. The recents paging hangs off its `scroll`
           event, so this element is the one that has to hear it. */}
       <SidebarContent onScroll={handleRecentsScroll}>
-        <SidebarGroup>
+        {/* Everything that is not a chat. Flat, no folders — the list above
+            stays one chronological run of sessions. */}
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel className="text-[13px] font-semibold">Browse</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  size="lg"
-                  isActive={isNewChat}
-                  tooltip="New chat"
-                  disabled={busy}
-                  onClick={() => {
-                    if (busy) return;
-                    dismissIfOverlay();
-                    void newSession();
-                  }}
-                  className={`${RAIL_ROW} ${busy ? 'opacity-50' : ''}`}>
-                  <SquarePen className={isNewChat ? ICON_BRAND : ICON_DIM} />
-                  <span className={RAIL_LABEL}>New chat</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {NAV_ITEMS.map((item) => {
+              {[...NAV_ITEMS, ...MORE_NAV_ITEMS.filter((item) => item.name !== 'asks')].map((item) => {
                 const active = pathname === `/${item.name}`;
                 const Icon = item.icon;
                 return (
                   <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton
-                      size="lg"
-                      isActive={active}
-                      tooltip={item.label}
-                      onClick={() => go(item.name)}
-                      className={RAIL_ROW}>
+                    <SidebarMenuButton size="lg" isActive={active} tooltip={item.label} onClick={() => go(item.name)}>
                       <Icon className={active ? ICON_BRAND : ICON_DIM} />
-                      <span className={RAIL_LABEL}>{item.label}</span>
+                      <span>{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
               })}
-
-              <Collapsible
-                open={showMoreMenu}
-                onOpenChange={setShowMoreMenu}
-                className="group/collapsible"
-                render={<SidebarMenuItem />}>
-                <CollapsibleTrigger render={<SidebarMenuButton size="lg" tooltip="More" className={RAIL_ROW} />}>
-                  {/* Deliberately never "active". More is a door, not a
-                      destination: pressing it used to tint the label and the
-                      ellipsis brand-blue and paint the row `sidebar-accent`,
-                      and leaving that on made the row read as a place you had
-                      navigated to. What says "open" is the panel below and the
-                      chevron; what says "you are here" is the child row — the
-                      highlight belongs on Kanban when you are on Kanban, and
-                      having it in two places at once was the noise. */}
-                  <Ellipsis className={ICON_DIM} />
-                  <span className={RAIL_LABEL}>More</span>
-                  {pendingAskCount > 0 && (
-                    <Badge variant="destructive" className="ml-auto">
-                      <span className="text-[10px] font-bold text-white">
-                        {pendingAskCount > 99 ? '99+' : pendingAskCount}
-                      </span>
-                    </Badge>
-                  )}
-                  {/* The chevron is the affordance that says "this opens"; it
-                      rotates when it does. `ml-auto` only when there is no
-                      badge already doing the pushing, or the two would split
-                      the free space between them and leave the chevron floating
-                      in the middle. */}
-                  <ChevronRight
-                    className={`size-4 shrink-0 transition-transform duration-200 group-data-open/collapsible:rotate-90 group-data-[collapsible=icon]:hidden ${
-                      pendingAskCount > 0 ? '' : 'ml-auto'
-                    } ${ICON_DIM}`}
-                  />
-                </CollapsibleTrigger>
-                {/* The vertical rule and the indent are `SidebarMenuSub`'s own
-                    `border-l border-sidebar-border` — see the note below. */}
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {MORE_NAV_ITEMS.map((item) => {
-                      const active = pathname === `/${item.name}`;
-                      const Icon = item.icon;
-                      return (
-                        <SidebarMenuSubItem key={item.name}>
-                          {/* `SidebarMenuSubButton` renders an `<a>` by default
-                              — shadcn assumes these are real links. Ours route
-                              through `navigate()`, so an `<a>` with no `href`
-                              would drop out of the tab order entirely: a
-                              keyboard user could reach every top-level row and
-                              none of these. Rendering a real button restores
-                              that, and matches the rows above. */}
-                          <SidebarMenuSubButton
-                            render={<button type="button" />}
-                            isActive={active}
-                            onClick={() => go(item.name)}
-                            // `w-full` because a `<button>` sizes to its content
-                            // where the `<a>` it replaced stretched to fill the
-                            // row. Without it the hit area shrinks to the label.
-                            className="w-full">
-                            {' '}
-                            <Icon className={active ? ICON_BRAND : ICON_DIM} />
-                            <span>{item.label}</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      );
-                    })}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </Collapsible>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -592,8 +360,9 @@ export function HermesSidebarContent() {
         {/* Hidden in the icon rail: a session list is not a thing that
             collapses to icons. See the note at the top of the file. */}
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel className="text-[13px] font-semibold">
-            {ql ? `Results (${visible.length})` : 'Recents'}
+          <SidebarGroupLabel className="flex items-center justify-between text-[13px] font-semibold">
+            <span>{ql ? `Results (${visible.length})` : 'Chats'}</span>
+            {!ql && <span className="font-normal text-neutral-400 dark:text-neutral-500">{sessions.length}</span>}
           </SidebarGroupLabel>
           <SidebarGroupContent className="flex flex-col gap-1">
             {visible.length === 0 && (
@@ -632,80 +401,138 @@ export function HermesSidebarContent() {
             )}
           </SidebarGroupContent>
         </SidebarGroup>
+
+
       </SidebarContent>
 
-      <SidebarFooter className="p-0 pb-[max(env(safe-area-inset-bottom,0px),8px)]">
-        {/* A Base UI dropdown menu rather than the Radix popover this used to
-            be. The content was always a menu — three destinations, a separator,
-            then Settings — and a popover only approximated that: no arrow-key
-            roving, no typeahead, no `role="menu"`, and every row had to wrap
-            itself in a `PopoverClose` to dismiss on select. A dropdown menu
-            does all four by itself, so the `PopoverClose` wrappers are gone and
-            the rows below are plain `DropdownMenuItem`s.
-            Controlled via `showUserMenu` to keep the existing behaviour where
-            collapsing the sidebar dismisses the menu. */}
-        <DropdownMenu open={showUserMenu} onOpenChange={setShowUserMenu}>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                className="h-auto sm:h-auto w-full items-center justify-start gap-3 px-4 py-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
-              />
-            }>
-            <Avatar className="size-11 group-data-[collapsible=icon]:size-9">
-              <AvatarFallback className="bg-[#1a73e8]">
-                <span className="text-base font-bold text-white">{(username || 'H').slice(0, 1).toUpperCase()}</span>
-              </AvatarFallback>
-            </Avatar>
-            {/* Stacks the username over the host (`flex flex-col`); a plain
-                inline span would run them together on one line. */}
-            <span className="flex flex-1 flex-col text-left group-data-[collapsible=icon]:hidden">
-              <span className="min-w-0 text-left text-[14px] font-semibold text-neutral-950 dark:text-neutral-100 truncate">
-                {username || 'Hermes'}
-              </span>
-              <span className="min-w-0 text-[13px] text-neutral-500 dark:text-neutral-400">{host || ''}</span>
-            </span>
-            {/* No chevron. The row is already the widest thing in the panel and
-                reads as a button; the arrow was one more mark competing with
-                the avatar and the two lines of text for the same 300px. */}
-          </DropdownMenuTrigger>
-          {/* `w-72` beats the content's own `w-(--anchor-width)` because both are
-              single-class utilities and Tailwind emits the arbitrary-value
-              form first — so this is source order, not specificity. It holds,
-              but it is the kind of thing that looks removable and is not. A
-              menu as wide as the footer button (the anchor default) is wider
-              than the labels need. */}
-          <DropdownMenuContent side="top" align="start" className="w-72">
-            {/* Logs & Usage quick nav */}
-            {PROFILE_NAV_ITEMS.map((item) => {
-              const active = pathname === `/${item.name}`;
-              const Icon = item.icon;
-              return (
-                <DropdownMenuItem
-                  key={item.name}
-                  onClick={() => go(item.name)}
-                  className={`gap-3 px-3.5 py-3 ${active ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''}`}>
-                  <Icon size={19} className={active ? ICON_BRAND : ICON_MUTED} />
-                  <span
-                    className={`min-w-0 flex-1 text-left text-[13px] font-medium ${
-                      active ? 'text-[#1a73e8] dark:text-[#7aa7ff]' : 'text-neutral-900 dark:text-neutral-100'
-                    } truncate`}>
-                    {item.label}
+      <SidebarFooter className="px-3 pb-[max(env(safe-area-inset-bottom,0px),8px)] group-data-[collapsible=icon]:px-2">
+        <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
+          {/* Profile switcher, bottom-left. Uncontrolled on purpose: mounting
+              the root only while the panel is open is what tears its portal
+              down on close. */}
+          {frameVisible && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  data-testid="profile-selector"
+                  aria-label={`Switch profile. Active profile: ${activeProfile}`}
+                  className="h-auto min-w-0 flex-1 items-center justify-start gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+                  <Avatar className="size-9 shrink-0">
+                    <AvatarFallback className="bg-brand">
+                      <span className="text-sm font-bold text-white">
+                        {activeProfile.slice(0, 1).toUpperCase()}
+                      </span>
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="min-w-0 flex-1 text-left text-[13px] font-semibold text-neutral-900 dark:text-neutral-100 group-data-[collapsible=icon]:hidden truncate">
+                    {activeProfile}
                   </span>
-                </DropdownMenuItem>
-              );
-            })}
-
-            <DropdownMenuSeparator className="my-0.5 bg-neutral-100 dark:bg-neutral-800" />
-
-            <DropdownMenuItem onClick={() => go('settings')} className="gap-3 px-3.5 py-3">
-              <Settings size={19} className={ICON_MUTED} />
-              <span className="min-w-0 flex-1 text-left text-[13px] font-medium text-neutral-900 dark:text-neutral-100 truncate">
-                Settings
-              </span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                  <ChevronDown size={15} className={`${ICON_DIM} group-data-[collapsible=icon]:hidden`} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="start" className="w-72 p-2">
+                <div className="flex items-center justify-between px-3 py-2.5">
+                  <div>
+                    <div className="text-[14px] font-bold text-neutral-950 dark:text-neutral-100">Switch profile</div>
+                    <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      Chat and toolsets use this profile
+                    </div>
+                  </div>
+                  <PopoverClose asChild>
+                    <Button variant="ghost" size="icon" aria-label="Close profile picker">
+                      <X size={18} className={ICON_DIM} />
+                    </Button>
+                  </PopoverClose>
+                </div>
+                <div className="max-h-[420px] overflow-y-auto">
+                  {profiles.length === 0 ? (
+                    <div className="rounded-xl bg-muted px-3 py-3 dark:bg-muted">
+                      <div className="text-[13px] text-neutral-600 dark:text-neutral-300">{activeProfile}</div>
+                    </div>
+                  ) : (
+                    profiles.map((profile) => {
+                      const selected = profile.name === activeProfile;
+                      const row = (
+                        <Button
+                          variant="ghost"
+                          data-testid={`profile-option-${profile.name}`}
+                          aria-pressed={selected}
+                          disabled={busy || selected}
+                          onClick={() => {
+                            dismissIfOverlay();
+                            void switchProfile(profile.name);
+                          }}
+                          className={`h-auto sm:h-auto w-full items-center justify-start gap-3 px-3 py-3 ${
+                            selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
+                          } ${busy && !selected ? 'opacity-50' : ''}`}>
+                          <span
+                            className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                              selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-elevated'
+                            }`}>
+                            <CircleUserRound
+                              size={17}
+                              className={selected ? 'text-[#0284c7] dark:text-[#7dd3fc]' : ICON_DIM}
+                            />
+                          </span>
+                          <span className="flex min-w-0 flex-1 flex-col text-left">
+                            <span
+                              className={`min-w-0 text-left text-[13px] font-semibold ${
+                                selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
+                              } truncate`}>
+                              {profile.display_name || profile.name}
+                            </span>
+                            {!!profile.description && (
+                              <span className="min-w-0 text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                                {profile.description}
+                              </span>
+                            )}
+                          </span>
+                          {selected && (
+                            <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</span>
+                          )}
+                        </Button>
+                      );
+                      // A disabled row can't run PopoverClose's click handler,
+                      // so the active row stays a plain Button (tapping it
+                      // does nothing, same as before).
+                      return selected || busy ? (
+                        <div key={profile.name}>{row}</div>
+                      ) : (
+                        <PopoverClose asChild key={profile.name}>
+                          {row}
+                        </PopoverClose>
+                      );
+                    })
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          {/* Shortcuts to the places people go from here. Asks first: a
+              pending approval is the one thing that should shout. */}
+          <div className="flex shrink-0 items-center group-data-[collapsible=icon]:flex-col">
+            <span className="relative">
+              <Button variant="ghost" size="icon" aria-label="Ask Inbox" onClick={() => go('asks')}>
+                <BellRing size={20} className={pathname === '/asks' ? ICON_BRAND : ICON_DIM} />
+              </Button>
+              {pendingAskCount > 0 && (
+                <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                  {pendingAskCount > 99 ? '99+' : pendingAskCount}
+                </span>
+              )}
+            </span>
+            <Button variant="ghost" size="icon" aria-label="Logs" onClick={() => go('logs')}>
+              <ScrollText size={20} className={pathname === '/logs' ? ICON_BRAND : ICON_DIM} />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="Usage" onClick={() => go('usage')}>
+              <Activity size={20} className={pathname === '/usage' ? ICON_BRAND : ICON_DIM} />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="Settings" onClick={() => go('settings')}>
+              <Settings size={20} className={pathname === '/settings' ? ICON_BRAND : ICON_DIM} />
+            </Button>
+          </div>
+        </div>
       </SidebarFooter>
 
       <ConfirmDialog

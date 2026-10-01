@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore, useState } from 'react';
-import { AlertCircle, LoaderCircle, PanelLeft } from 'lucide-react';
+import { AlertCircle, List, LoaderCircle } from 'lucide-react';
 import { useThemeValue } from '../../hooks/app-store';
 import { cn } from '../../utils/cn';
 import { getSidebarShown, openNavDrawer, subscribeSidebarShown } from '../../store/nav';
@@ -140,7 +140,7 @@ export function HamburgerBtn() {
         openNavDrawer();
       }}
       className={cn(headerIconButtonClass, 'justify-center')}>
-      <PanelLeft size={20} className="size-5" color={theme === 'dark' ? '#f5f5f5' : '#111'} />
+      <List size={20} className="size-5" color={theme === 'dark' ? '#f5f5f5' : '#111'} />
     </Button>
   );
 }
@@ -223,12 +223,12 @@ export function ScreenScaffold({
     return () => ro.disconnect();
   }, []);
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
+    <div className="relative flex min-h-0 flex-1 flex-col bg-background">
       <div
         ref={measure}
         // The glass. 80% opaque + blur behind it; no border — the blur is what
         // separates the header from the content, the way OpenChamber does it.
-        className="absolute inset-x-0 top-0 z-30 bg-white/80 backdrop-blur dark:bg-black/80">
+        className="absolute inset-x-0 top-0 z-30 bg-popover/80 backdrop-blur dark:bg-background/80">
         {header}
       </div>
       <div
@@ -250,10 +250,7 @@ export function ScreenScaffold({
 export function Card({ className, children, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
-      className={cn(
-        'rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60',
-        className,
-      )}
+      className={cn('rounded-2xl border border-border bg-elevated p-4', className)}
       {...props}>
       {children}
     </div>
@@ -327,7 +324,7 @@ export function Field({
         <Input
           id={idFor(label)}
           style={scheme}
-          className="rounded-lg border border-neutral-300 bg-white px-2.5 py-2 text-[15px] text-neutral-950 dark:border-neutral-700 dark:bg-black dark:text-neutral-100"
+          className="rounded-lg border border-border bg-popover px-2.5 py-2 text-[15px] text-neutral-950 dark:bg-background dark:text-neutral-100"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
@@ -344,7 +341,7 @@ export function Field({
       <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400" htmlFor={idFor(label)}>
         {label}
       </Label>
-      <div className="frame-focus flex items-center rounded-lg border border-neutral-300 bg-white pr-1 dark:border-neutral-700 dark:bg-black">
+      <div className="frame-focus flex items-center rounded-lg border border-border bg-popover pr-1 dark:bg-background">
         <Input
           id={idFor(label)}
           style={scheme}

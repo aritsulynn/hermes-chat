@@ -52,13 +52,13 @@ const ToolsetRow = memo(function ToolsetRow({
     <div
       className={`rounded-2xl border p-3.5 ${
         enabled
-          ? 'border-neutral-300 bg-neutral-50/70 dark:border-neutral-700 dark:bg-neutral-900/60'
-          : 'border-neutral-200 bg-white/70 dark:border-neutral-800 dark:bg-neutral-950/60'
+          ? 'border-border bg-elevated dark:bg-elevated'
+          : 'border-border bg-popover/70 dark:bg-input/30/60'
       }`}>
       <div className="flex items-center gap-3">
         <div
           className={`flex flex-col h-9 w-9 items-center justify-center rounded-xl ${
-            enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-neutral-100 dark:bg-neutral-900'
+            enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-elevated'
           }`}>
           <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
         </div>
@@ -229,7 +229,7 @@ export function ToolsetsScreen() {
             </Card>
 
             {!loading && !unsupported && !error && (
-              <div className="frame-focus mb-3 flex items-center rounded-xl border border-neutral-200 bg-white px-3 dark:border-neutral-700 dark:bg-neutral-950">
+              <div className="frame-focus mb-3 flex items-center rounded-xl border border-border bg-popover px-3 dark:bg-input/30">
                 <Search size={16} color={dark ? '#888' : '#777'} />
                 <Input
                   value={query}

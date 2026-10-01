@@ -128,7 +128,7 @@ function JumpButton({ bottom }: { bottom: number }) {
       // composer card against the chat screen's overlay footer.
       // `right-3` is inside the column the rail provides, so the button sits on
       // the bubbles' right edge rather than the window's.
-      className="pointer-events-auto absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white text-[#333] dark:border-neutral-700 dark:bg-[#2a2a2a] dark:text-[#e5e5e5]"
+      className="pointer-events-auto absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-border bg-popover text-[#333] dark:bg-[#2a2a2a] dark:text-[#e5e5e5]"
       // Floats just above the footer, whose measured height already includes
       // the keyboard lift.
       style={{ bottom, boxShadow: '0 2px 6px rgb(0 0 0 / 0.18)' }}>

@@ -54,7 +54,7 @@ const CHIP: Record<UpdateTone, string> = {
   success: 'border-emerald-300 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40',
   warning: 'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40',
   danger: 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40',
-  muted: 'border-neutral-300 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800',
+  muted: 'border-border bg-muted dark:bg-muted',
 };
 const CHIP_TEXT: Record<UpdateTone, string> = {
   success: 'text-emerald-700 dark:text-emerald-300',
@@ -335,7 +335,7 @@ export function UpdatePanel() {
   const receiptLabel = receiptOutcomeLabel(receipt);
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+    <div className="rounded-2xl border border-border bg-elevated p-4 dark:bg-elevated">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Hermes Update</div>
@@ -422,7 +422,7 @@ export function UpdatePanel() {
             onClick={() => void refresh(true)}
             variant="outline"
             className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2">
-            {checking ? <Spinner size={14} color="#1a73e8" /> : <RefreshCw size={14} color="#1a73e8" />}
+            {checking ? <Spinner size={14} color="var(--brand-hex)" /> : <RefreshCw size={14} color="var(--brand-hex)" />}
             <span className="shrink text-[13px] font-semibold truncate">Check for updates</span>
           </Button>
 

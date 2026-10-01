@@ -1,8 +1,8 @@
 // Theme slice — light/dark/system preference, `.dark` class sync on <html>,
 // and the saved-preference hydration used during boot.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { saveTheme } from '../../services/connection';
-import type { ResolvedTheme, Theme } from '../../services/connection';
+import { saveAccent, saveTheme } from '../../services/connection';
+import type { Accent, ResolvedTheme, Theme } from '../../services/connection';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
@@ -38,8 +38,11 @@ export interface ThemeSlice {
   themeMode: Theme;
   theme: ResolvedTheme;
   setTheme: (t: Theme) => void;
+  /** Accent palette on top of light/dark — default is Hermes, openchamber is warm. */
+  accent: Accent;
+  setAccent: (a: Accent) => void;
   /** Apply the persisted preference during boot (also syncs the `.dark` class). */
-  hydrateTheme: (saved?: Theme | null) => void;
+  hydrateTheme: (saved?: Theme | null, savedAccent?: Accent | null) => void;
 }
 
 export function useThemeSlice(): ThemeSlice {
@@ -47,6 +50,7 @@ export function useThemeSlice(): ThemeSlice {
   const systemTheme: ResolvedTheme = systemDark ? 'dark' : 'light';
   // First install follows the device. An explicit saved Light/Dark choice wins.
   const [themeMode, setThemeMode] = useState<Theme>('system');
+  const [accent, setAccentState] = useState<Accent>('default');
   const theme: ResolvedTheme = themeMode === 'system' ? systemTheme : themeMode;
 
   // Every `dark:` variant in the app resolves against `.dark` on <html>, so one
@@ -55,6 +59,7 @@ export function useThemeSlice(): ThemeSlice {
   // frame as the press) and the effect below applies it again once React has
   // re-rendered, so without this guard one toggle would recalc twice.
   const appliedSchemeRef = useRef<ResolvedTheme | null>(null);
+  const appliedAccentRef = useRef<Accent | null>(null);
   const applyScheme = useCallback((next: ResolvedTheme) => {
     if (appliedSchemeRef.current === next) return;
     appliedSchemeRef.current = next;
@@ -62,6 +67,17 @@ export function useThemeSlice(): ThemeSlice {
       document.documentElement.classList.toggle('dark', next === 'dark');
     } catch (e) {
       console.warn('[theme] could not toggle the .dark class', e);
+    }
+  }, []);
+
+  const applyAccent = useCallback((next: Accent) => {
+    if (appliedAccentRef.current === next) return;
+    appliedAccentRef.current = next;
+    try {
+      if (next === 'default') document.documentElement.removeAttribute('data-accent');
+      else document.documentElement.setAttribute('data-accent', next);
+    } catch (e) {
+      console.warn('[theme] could not set data-accent', e);
     }
   }, []);
 
@@ -81,16 +97,34 @@ export function useThemeSlice(): ThemeSlice {
     applyScheme(theme);
   }, [applyScheme, theme]);
 
-  const hydrateTheme = useCallback(
-    (saved?: Theme | null) => {
-      if (saved) setThemeMode(saved);
-      applyScheme(saved === 'system' || !saved ? systemTheme : saved);
+  useEffect(() => {
+    applyAccent(accent);
+  }, [applyAccent, accent]);
+
+  const setAccent = useCallback(
+    (a: Accent) => {
+      setAccentState(a);
+      applyAccent(a);
+      void saveAccent(a).catch((e: unknown) => console.warn('[theme] saveAccent failed', e));
     },
-    [applyScheme, systemTheme],
+    [applyAccent],
+  );
+
+  const hydrateTheme = useCallback(
+    (saved?: Theme | null, savedAccent?: Accent | null) => {
+      if (saved) setThemeMode(saved);
+      if (savedAccent) setAccentState(savedAccent);
+      applyScheme(saved === 'system' || !saved ? systemTheme : saved);
+      applyAccent(savedAccent ?? 'default');
+    },
+    [applyScheme, applyAccent, systemTheme],
   );
 
   // Memoised: this object is the ThemeContext value, so a fresh literal every
   // render would re-render all ~18 theme consumers on EVERY store update
   // (each keystroke, each session change) instead of only on a theme change.
-  return useMemo(() => ({ themeMode, theme, setTheme, hydrateTheme }), [themeMode, theme, setTheme, hydrateTheme]);
+  return useMemo(
+    () => ({ themeMode, theme, setTheme, accent, setAccent, hydrateTheme }),
+    [themeMode, theme, setTheme, accent, setAccent, hydrateTheme],
+  );
 }

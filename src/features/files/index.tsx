@@ -418,7 +418,7 @@ export function FilesScreen() {
           variant="ghost"
           onClick={handleGoUp}
           aria-label="Parent directory"
-          className="h-auto sm:h-auto w-full justify-start gap-3 border-b border-neutral-100 px-4 py-3 active:bg-neutral-100 dark:border-neutral-900 dark:active:bg-neutral-900">
+          className="h-auto sm:h-auto w-full justify-start gap-3 border-b border-border px-4 py-3 active:bg-muted dark:active:bg-muted">
           <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
             <ArrowUp size={18} color="#f59e0b" />
           </div>
@@ -434,12 +434,12 @@ export function FilesScreen() {
     () =>
       loading && !refreshing ? (
         <div className="flex flex-col items-center justify-center py-16">
-          <Spinner size={24} color="#1a73e8" />
+          <Spinner size={24} color="var(--brand-hex)" />
           <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading files...</div>
         </div>
       ) : !loading ? (
         <div className="flex flex-col items-center justify-center py-20 px-6">
-          <div className="flex flex-col h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-900">
+          <div className="flex flex-col h-14 w-14 items-center justify-center rounded-2xl bg-elevated">
             <Folder size={28} color={dark ? '#666' : '#999'} />
           </div>
           <div className="mt-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
@@ -483,7 +483,7 @@ export function FilesScreen() {
                     onClick={handlePickAndUploadImage}
                     disabled={uploading}>
                     {uploading ? (
-                      <Spinner size={20} color="#1a73e8" />
+                      <Spinner size={20} color="var(--brand-hex)" />
                     ) : (
                       <Upload size={20} color={dark ? '#e5e5e5' : '#333'} />
                     )}
@@ -497,11 +497,11 @@ export function FilesScreen() {
             />
 
             {/* Path Bar & Breadcrumbs */}
-            <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/50">
+            <div className="flex items-center justify-between border-b border-border bg-elevated px-3 py-1.5 dark:bg-elevated">
               <div className="overflow-x-auto flex-1 mr-2">
                 <div className="items-center">
                   <div className="flex items-center gap-1">
-                    <HardDrive size={14} color="#1a73e8" />
+                    <HardDrive size={14} color="var(--brand-hex)" />
                     {breadcrumbs.map((crumb, idx) => {
                       const isLast = idx === breadcrumbs.length - 1;
                       return (
@@ -516,14 +516,14 @@ export function FilesScreen() {
                             }}
                             className={`h-auto sm:h-auto rounded px-1.5 py-0.5 ${
                               isLast
-                                ? 'bg-neutral-200/60 dark:bg-neutral-800'
-                                : 'active:bg-neutral-200 dark:active:bg-neutral-800'
+                                ? 'bg-border'
+                                : 'active:bg-muted dark:active:bg-muted'
                             }`}>
                             <span
                               className={`font-mono text-xs ${
                                 isLast
                                   ? 'font-bold text-neutral-900 dark:text-neutral-100'
-                                  : 'text-[#1a73e8] dark:text-blue-400'
+                                  : 'text-brand'
                               } truncate`}>
                               {crumb.label}
                             </span>
@@ -543,14 +543,14 @@ export function FilesScreen() {
                   setPathModalOpen(true);
                 }}
                 aria-label="Change directory"
-                className="h-auto sm:h-auto rounded-md bg-neutral-200/70 px-2 py-1 dark:bg-neutral-800 active:opacity-70">
+                className="h-auto sm:h-auto rounded-md bg-muted px-2 py-1 dark:bg-muted active:opacity-70">
                 <span className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">Change</span>
               </Button>
             </div>
 
             {/* Search / Filter Bar */}
-            <div className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-              <div className="frame-focus flex items-center gap-2 rounded-xl bg-neutral-100 px-3 py-1.5 dark:bg-neutral-900">
+            <div className="border-b border-border px-3 py-2">
+              <div className="frame-focus flex items-center gap-2 rounded-xl bg-muted px-3 py-1.5 dark:bg-muted">
                 <Search size={15} color={dark ? '#888' : '#9ca3af'} />
                 <Input
                   value={searchQuery}
@@ -613,8 +613,8 @@ export function FilesScreen() {
       {/* Reading File Overlay */}
       {readingFile && (
         <div className="flex flex-col absolute inset-0 z-50 items-center justify-center bg-black/40">
-          <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-xl dark:bg-neutral-900">
-            <Spinner size={24} color="#1a73e8" />
+          <div className="flex flex-col items-center rounded-2xl bg-popover p-5 shadow-xl dark:bg-muted">
+            <Spinner size={24} color="var(--brand-hex)" />
             <div className="mt-3 text-sm font-medium text-neutral-800 dark:text-neutral-200">Opening file...</div>
           </div>
         </div>
@@ -624,10 +624,10 @@ export function FilesScreen() {
         <DialogPrimitive.Root open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
-            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-hidden dark:bg-neutral-950">
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-popover outline-hidden dark:bg-input/30">
               <DialogPrimitive.Title className="sr-only">File preview</DialogPrimitive.Title>
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
                   <div className="flex-1 pr-3">
                     <div className="font-mono text-base font-bold text-neutral-900 dark:text-white truncate">
                       {selectedFile?.name}
@@ -643,7 +643,7 @@ export function FilesScreen() {
                         variant="ghost"
                         onClick={handleCopyText}
                         aria-label="Copy file contents"
-                        className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700">
+                        className="h-auto sm:h-auto rounded-lg bg-muted px-2.5 py-1.5 active:bg-border dark:active:bg-muted">
                         {copied ? (
                           <>
                             <Check size={14} color="#10b981" />
@@ -666,7 +666,7 @@ export function FilesScreen() {
                           onClick={handleSaveEditedFile}
                           disabled={savingFile}
                           aria-label="Save file"
-                          className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3 py-1.5 active:opacity-80">
+                          className="h-auto sm:h-auto rounded-lg bg-brand px-3 py-1.5 active:opacity-80">
                           {savingFile ? (
                             <Spinner size={14} color="#fff" />
                           ) : (
@@ -678,7 +678,7 @@ export function FilesScreen() {
                           variant="ghost"
                           onClick={() => setIsEditingFile(true)}
                           aria-label="Edit file"
-                          className="h-auto sm:h-auto rounded-lg bg-neutral-100 px-2.5 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700">
+                          className="h-auto sm:h-auto rounded-lg bg-muted px-2.5 py-1.5 active:bg-border dark:active:bg-muted">
                           <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</span>
                         </Button>
                       )
@@ -690,7 +690,7 @@ export function FilesScreen() {
                         size="icon"
                         onClick={() => handleDeleteEntry(selectedFile.path, false, selectedFile.name)}
                         aria-label="Delete file"
-                        className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800">
+                        className="h-8 w-8 rounded-lg active:bg-muted dark:active:bg-muted">
                         <Trash2 size={18} color="#ef4444" />
                       </Button>
                     ) : null}
@@ -700,14 +700,14 @@ export function FilesScreen() {
                       size="icon"
                       onClick={closePreview}
                       aria-label="Close preview"
-                      className="h-8 w-8 rounded-lg active:bg-neutral-100 dark:active:bg-neutral-800">
+                      className="h-8 w-8 rounded-lg active:bg-muted dark:active:bg-muted">
                       <X size={20} color={dark ? '#eee' : '#333'} />
                     </Button>
                   </div>
                 </div>
 
                 {/* Preview Content */}
-                <div className="flex-1 bg-neutral-50 dark:bg-black">
+                <div className="flex-1 bg-elevated dark:bg-background">
                   {selectedFile?.mime_type?.startsWith('image/') && selectedFile.data_url ? (
                     <div className="flex flex-col flex-1 items-center justify-center p-4">
                       <img src={selectedFile.data_url} alt={selectedFile.name} className="size-full object-contain" />
@@ -769,7 +769,7 @@ export function FilesScreen() {
                   autoCapitalize="none"
                   aria-label="Directory path"
                   placeholder={activeDirectory || '~'}
-                  className="mt-1 rounded-xl border border-neutral-300 p-3 font-mono text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
+                  className="mt-1 rounded-xl border border-border p-3 font-mono text-sm text-neutral-900 dark:text-white"
                 />
 
                 <DialogFooter>
@@ -780,7 +780,7 @@ export function FilesScreen() {
                     onClick={() => setPathModalOpen(false)}>
                     <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Cancel</span>
                   </Button>
-                  <Button size="sm" className="h-10 rounded-xl bg-[#1a73e8] px-5" onClick={handleJumpToPath}>
+                  <Button size="sm" className="h-10 rounded-xl bg-brand px-5" onClick={handleJumpToPath}>
                     <span className="text-sm font-bold text-white">Go</span>
                   </Button>
                 </DialogFooter>
@@ -806,7 +806,7 @@ export function FilesScreen() {
                   autoFocus
                   aria-label="Folder name"
                   placeholder="folder_name"
-                  className="mt-1 rounded-xl border border-neutral-300 p-3 text-sm text-neutral-900 dark:border-neutral-700 dark:text-white"
+                  className="mt-1 rounded-xl border border-border p-3 text-sm text-neutral-900 dark:text-white"
                 />
 
                 <DialogFooter>
@@ -822,7 +822,7 @@ export function FilesScreen() {
                   </Button>
                   <Button
                     size="sm"
-                    className="h-10 rounded-xl bg-[#1a73e8] px-5"
+                    className="h-10 rounded-xl bg-brand px-5"
                     disabled={creatingFolder || !newFolderName.trim()}
                     onClick={handleCreateFolder}>
                     {creatingFolder ? (
@@ -841,10 +841,10 @@ export function FilesScreen() {
         <DialogPrimitive.Root open={newFileModalOpen} onOpenChange={setNewFileModalOpen}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
-            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-hidden dark:bg-neutral-950">
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-popover outline-hidden dark:bg-input/30">
               <DialogPrimitive.Title className="sr-only">New file</DialogPrimitive.Title>
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
                   <div>
                     <div className="text-base font-bold text-neutral-900 dark:text-white">Create New File</div>
                     <div className="text-xs text-neutral-500 dark:text-neutral-400">in {activeDirectory || '~'}</div>
@@ -855,7 +855,7 @@ export function FilesScreen() {
                       variant="ghost"
                       onClick={() => setNewFileModalOpen(false)}
                       aria-label="Cancel"
-                      className="h-auto sm:h-auto rounded-lg px-3 py-1.5 active:bg-neutral-100 dark:active:bg-neutral-800">
+                      className="h-auto sm:h-auto rounded-lg px-3 py-1.5 active:bg-muted dark:active:bg-muted">
                       <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Cancel</span>
                     </Button>
 
@@ -864,7 +864,7 @@ export function FilesScreen() {
                       onClick={handleCreateFile}
                       disabled={creatingFile || !newFileName.trim()}
                       aria-label="Create file"
-                      className="h-auto sm:h-auto rounded-lg bg-[#1a73e8] px-3.5 py-1.5 active:opacity-80">
+                      className="h-auto sm:h-auto rounded-lg bg-brand px-3.5 py-1.5 active:opacity-80">
                       {creatingFile ? (
                         <Spinner size={14} color="#fff" />
                       ) : (
@@ -874,7 +874,7 @@ export function FilesScreen() {
                   </div>
                 </div>
 
-                <div className="p-3 border-b border-neutral-200 dark:border-neutral-800">
+                <div className="p-3 border-b border-border">
                   <Label className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
                     File Name (e.g. notes.txt, script.py, config.json)
                   </Label>
@@ -885,7 +885,7 @@ export function FilesScreen() {
                     autoFocus
                     placeholder="filename.txt"
                     aria-label="File name"
-                    className="rounded-xl border border-neutral-300 dark:border-neutral-700 p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
+                    className="rounded-xl border border-border p-2.5 font-mono text-sm text-neutral-900 dark:text-white"
                   />
                 </div>
 
@@ -900,7 +900,7 @@ export function FilesScreen() {
 
                     autoCapitalize="none"
                     placeholder="Enter text or code here..."
-                    className="flex-1 rounded-xl border border-neutral-300 dark:border-neutral-700 p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
+                    className="flex-1 rounded-xl border border-border p-3 font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100"
                   />
                 </div>
               </div>

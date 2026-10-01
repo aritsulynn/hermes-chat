@@ -326,6 +326,9 @@ export async function clearCookie(host?: string, username?: string): Promise<voi
 
 export type Theme = 'light' | 'dark' | 'system';
 export type ResolvedTheme = Exclude<Theme, 'system'>;
+export type Accent = 'default' | 'openchamber';
+
+const K_ACCENT = 'hermes.ui.accent';
 
 export async function getTheme(): Promise<Theme | null> {
   const v = await get(K_THEME);
@@ -334,6 +337,15 @@ export async function getTheme(): Promise<Theme | null> {
 
 export async function saveTheme(t: Theme): Promise<void> {
   await set(K_THEME, t);
+}
+
+export async function getAccent(): Promise<Accent | null> {
+  const v = await get(K_ACCENT);
+  return v === 'openchamber' || v === 'default' ? (v as Accent) : null;
+}
+
+export async function saveAccent(a: Accent): Promise<void> {
+  await set(K_ACCENT, a);
 }
 
 export async function clearPassword(host?: string, username?: string): Promise<void> {

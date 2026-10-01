@@ -683,7 +683,7 @@ export function ChatScreen() {
   if (booting) {
     return (
       <div style={screen}>
-        <div className="flex flex-col flex-1 bg-white items-center justify-center gap-3 dark:bg-black">
+        <div className="flex flex-col flex-1 bg-popover items-center justify-center gap-3 dark:bg-background">
           <Spinner size={24} color="currentColor" />
           <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</div>
         </div>
@@ -702,7 +702,7 @@ export function ChatScreen() {
             </div>
           </div>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
+        <div className="flex min-h-0 flex-1 flex-col bg-popover dark:bg-background">
           <div className="flex flex-col flex-1 items-center justify-center p-6">
             <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
               No active session — start a new one.
@@ -745,7 +745,7 @@ export function ChatScreen() {
     <div ref={rootRef} style={screen} className="relative">
       {/* Floating glass header: absolute so the transcript scrolls under it.
           Same surface as ScreenScaffold uses everywhere else. */}
-      <div className="absolute inset-x-0 top-0 z-30 bg-white/80 backdrop-blur dark:bg-black/80">
+      <div className="absolute inset-x-0 top-0 z-30 bg-popover/80 backdrop-blur dark:bg-background/80">
         <ChatNormalHeader
           dark={dark}
           iconColor={headerIcon}
@@ -761,7 +761,7 @@ export function ChatScreen() {
           itself when the keyboard is closed, and KeyboardAvoidingView lifts
           it when open. Keeping 'bottom' would double the gap above the
           gesture bar (and float the composer above the keyboard). */}
-      <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-black">
+      <div className="flex min-h-0 flex-1 flex-col bg-popover dark:bg-background">
         {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
         <UserMenuDialog
           open={!!userMenu}
@@ -782,7 +782,7 @@ export function ChatScreen() {
               const above = userMenu.anchor.y > 128;
               return (
                 <div
-                  className="absolute w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
+                  className="absolute w-48 rounded-xl border border-border bg-popover p-1.5 shadow-lg"
                   style={
                     above
                       ? { bottom: winH - userMenu.anchor.y + 8, left }
@@ -907,7 +907,7 @@ export function ChatScreen() {
                   const done = todos.filter(todoDone).length;
                   const active = todos.find(todoActive);
                   return (
-                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                       <Button
                         variant="ghost"
                         onClick={() => setTodosOpen((v) => !v)}
@@ -943,7 +943,7 @@ export function ChatScreen() {
                                       d
                                         ? 'text-emerald-600 dark:text-emerald-400'
                                         : a
-                                          ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                                          ? 'text-brand'
                                           : 'text-neutral-400 dark:text-neutral-500'
                                     }`}>
                                     {d ? '✓' : a ? '◐' : '○'}
@@ -971,7 +971,7 @@ export function ChatScreen() {
                   const running = subagents.filter((s) => !subagentDone(s)).length;
                   const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
                   return (
-                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                       <Button
                         variant="ghost"
                         onClick={() => setSubagentsOpen((v) => !v)}
@@ -1005,7 +1005,7 @@ export function ChatScreen() {
                                     className={`shrink-0 text-[13px] leading-[18px] ${
                                       done
                                         ? 'text-neutral-400 dark:text-neutral-500'
-                                        : 'text-[#1a73e8] dark:text-[#7aa7ff]'
+                                        : 'text-brand'
                                     }`}>
                                     {done ? '✓' : '◐'}
                                   </div>
@@ -1035,7 +1035,7 @@ export function ChatScreen() {
             end. Sits above the completion panel so completions stay nearest the
             input. */}
               {queued.length > 0 && (
-                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                   <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
@@ -1077,7 +1077,7 @@ export function ChatScreen() {
             so its rows stay tappable on Android and the input keeps focus while
             the user keeps typing. */}
               {visibleCompletions.length > 0 && (
-                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
+                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                   <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       {completionKind === 'slash' ? 'Commands' : 'References'}
@@ -1097,7 +1097,7 @@ export function ChatScreen() {
                             data-testid={`completion-option-${i}`}
                             onClick={() => applyCompletion(item)}
                             className="flex items-center gap-2 px-3 py-2">
-                            <span className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff] truncate">
+                            <span className="shrink-0 text-[14px] font-semibold text-brand truncate">
                               {label}
                             </span>
                             {item.meta ? (
@@ -1108,7 +1108,7 @@ export function ChatScreen() {
                               <div className="flex-1" />
                             )}
                             {item.kind === 'skill' && (
-                              <span className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-muted dark:text-neutral-300">
                                 skill
                               </span>
                             )}
@@ -1120,8 +1120,8 @@ export function ChatScreen() {
                 </div>
               )}
               {editingRowId != null && (
-                <div className="mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
-                  <div className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
+                <div className="mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/5 px-3 py-1.5/40/10">
+                  <div className="min-w-0 flex-1 text-[12px] text-brand">
                     Editing — resend to rewind and rerun from here
                   </div>
                   <Button variant="link" onClick={cancelEdit} className="shrink-0 px-1.5 py-0.5">
@@ -1212,7 +1212,7 @@ export function ChatScreen() {
               </DropdownMenuRadioGroup>
             </DropdownMenuGroup>
             {/* Fast mode — separate from reasoning (`config.set fast`). */}
-            <DropdownMenuSeparator className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
+            <DropdownMenuSeparator className="my-1 h-[1px] bg-muted dark:bg-muted" />
             <DropdownMenuCheckboxItem
               data-testid="fast-toggle"
               checked={sessionInfo?.fast === true}
@@ -1295,7 +1295,7 @@ export function ChatScreen() {
               // are inert — the scroller takes its content height (a few
               // thousand px once a provider is expanded) and spills straight out
               // of the capped panel instead of scrolling inside it.
-              className="absolute z-[70] flex flex-col rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
+              className="absolute z-[70] flex flex-col rounded-xl border border-border bg-popover p-1"
               style={{
                 width: popW,
                 left: popLeft,
@@ -1307,7 +1307,7 @@ export function ChatScreen() {
               </div>
               <div className="px-1.5 pb-1.5">
                 <Input
-                  className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                  className="rounded-lg border border-border px-2.5 py-1.5 text-[14px] text-neutral-950 dark:text-neutral-100"
                   value={modelQuery}
                   onChange={(e) => setModelQuery(e.target.value)}
                   placeholder="Search models…"
@@ -1352,7 +1352,7 @@ export function ChatScreen() {
                               <div
                                 key={mm}
                                 className={`flex items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
-                                  on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
+                                  on ? 'bg-brand/10 dark:bg-brand/20' : ''
                                 }`}>
                                 {' '}
                                 <Button
@@ -1373,7 +1373,7 @@ export function ChatScreen() {
                                   <span
                                     className={`min-w-0 flex-1 text-left text-[14px] ${
                                       on
-                                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                                        ? 'font-semibold text-brand'
                                         : 'text-neutral-950 dark:text-neutral-100'
                                     } truncate`}>
                                     {on ? '● ' : '○ '}
@@ -1418,7 +1418,7 @@ export function ChatScreen() {
           const left = Math.max(8, Math.min(tip.anchor.x + tip.anchor.w / 2 - 48, winW - 104));
           return (
             <div
-              className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-white/90"
+              className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-popover/90"
               style={{ bottom: Math.max(8, rootH - relY + 8), left }}>
               <div className="text-[12px] text-white dark:text-black">{tip.label}</div>
             </div>

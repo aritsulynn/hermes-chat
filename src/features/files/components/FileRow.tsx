@@ -44,7 +44,7 @@ export const FileRow = memo(function FileRow({
         }
       }}
       {...longPress}
-      className="flex cursor-pointer items-center gap-3 border-b border-neutral-100 px-4 py-2.5 hover:bg-neutral-100 dark:border-neutral-900 dark:hover:bg-neutral-900">
+      className="flex cursor-pointer items-center gap-3 border-b border-border px-4 py-2.5 hover:bg-muted dark:hover:bg-muted">
       <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={iconStyle}>
         <Icon size={20} color={iconColor} />
       </div>

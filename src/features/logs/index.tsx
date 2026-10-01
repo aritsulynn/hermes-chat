@@ -200,11 +200,11 @@ export function LogsScreen() {
                       className={`h-9 rounded-xl border px-3 ${
                         autoRefresh
                           ? 'border-emerald-500/40 bg-emerald-500/10'
-                          : 'border-neutral-200 bg-neutral-100/70 dark:border-neutral-800 dark:bg-neutral-900'
+                          : 'border-border bg-muted/70 dark:bg-muted'
                       }`}>
                       <div
                         className={`h-2 w-2 rounded-full ${
-                          autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-neutral-500'
+                          autoRefresh ? 'bg-emerald-500' : 'bg-neutral-400 dark:bg-elevated0'
                         }`}
                       />
                       <span
@@ -222,7 +222,7 @@ export function LogsScreen() {
                       className={`h-9 rounded-xl border px-3 ${
                         copied
                           ? 'border-emerald-500/40 bg-emerald-500/10'
-                          : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
+                          : 'border-border bg-popover dark:bg-muted'
                       }`}>
                       {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />}
                       <span
@@ -241,7 +241,7 @@ export function LogsScreen() {
                       disabled={loading || refreshing}
                       onClick={() => void fetchLogs()}
                       aria-label="Refresh logs"
-                      className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+                      className="rounded-xl border border-border bg-popover dark:bg-muted">
                       <RefreshCw
                         size={20}
                         color={dark ? '#9ca3af' : '#6b7280'}
@@ -253,7 +253,7 @@ export function LogsScreen() {
               />
 
               {/* Filter Toolbar Card */}
-              <div className="border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
+              <div className="border-b border-border bg-elevated px-4 py-3 dark:bg-elevated">
           {/* Top line: Log File Tabs & Filter Toggle */}
           <div className="flex items-center justify-between" style={{ gap: 10 }}>
             <div className="overflow-x-auto flex-1">
@@ -270,8 +270,8 @@ export function LogsScreen() {
                       onClick={() => setFile(f)}
                       className={`h-auto sm:h-auto rounded-xl border px-3.5 py-2 ${
                         isSelected
-                          ? 'border-[#1a73e8] bg-[#1a73e8]'
-                          : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
+                          ? 'border-brand bg-brand'
+                          : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
                       }`}>
                       <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
                       <span
@@ -293,13 +293,13 @@ export function LogsScreen() {
               aria-label="Toggle filters"
               className={`h-9 rounded-xl border px-3 ${
                 showFilters
-                  ? 'border-[#1a73e8]/40 bg-[#1a73e8]/10'
-                  : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
+                  ? 'border-brand/40 bg-brand/10'
+                  : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
               }`}>
-              <SlidersHorizontal size={13} color={showFilters ? '#1a73e8' : dark ? '#9ca3af' : '#6b7280'} />
+              <SlidersHorizontal size={13} color={showFilters ? 'var(--brand-hex)' : dark ? '#9ca3af' : '#6b7280'} />
               <span
                 className={`text-xs font-medium ${
-                  showFilters ? 'font-semibold text-[#1a73e8]' : 'text-neutral-600 dark:text-neutral-400'
+                  showFilters ? 'font-semibold text-brand' : 'text-neutral-600 dark:text-neutral-400'
                 }`}>
                 Filter
               </span>
@@ -307,7 +307,7 @@ export function LogsScreen() {
           </div>
 
           {showFilters && (
-            <div className="mt-3 pt-3 border-t border-neutral-200/70 dark:border-neutral-800/70" style={{ gap: 12 }}>
+            <div className="mt-3 pt-3 border-t border-border/70 dark:border-border/70" style={{ gap: 12 }}>
               {/* Search Input — border lives on the Input itself */}
               <div className="flex items-center gap-2">
                 <Search size={15} color={dark ? '#737373' : '#9ca3af'} />
@@ -362,7 +362,7 @@ export function LogsScreen() {
                             className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
                               isSelected
                                 ? `${color.activeBg} ${color.activeBorder}`
-                                : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
+                                : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
                             }`}>
                             <span
                               className={`text-xs font-semibold ${
@@ -395,8 +395,8 @@ export function LogsScreen() {
                           onClick={() => setLineCount(cnt)}
                           className={`h-auto sm:h-auto flex-1 rounded-lg border py-1.5 ${
                             isSelected
-                              ? 'border-neutral-900 bg-neutral-900 dark:border-neutral-100 dark:bg-neutral-100'
-                              : 'border-neutral-200 bg-white active:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:active:bg-neutral-900'
+                              ? 'border-neutral-900 bg-neutral-900 dark:bg-neutral-100'
+                              : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
                           }`}>
                           <span
                             className={`text-xs font-semibold ${
@@ -470,7 +470,7 @@ export function LogsScreen() {
         {/* Log Output Area */}
         {loading && lines.length === 0 ? (
           <div className="flex flex-col flex-1 items-center justify-center">
-            <Spinner size={24} color="#1a73e8" />
+            <Spinner size={24} color="var(--brand-hex)" />
             <div className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</div>
           </div>
         ) : lines.length === 0 ? (
@@ -528,7 +528,7 @@ export function LogsScreen() {
               size="icon"
               onClick={scrollToTop}
               aria-label="Scroll to top"
-              className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800">
+              className="h-11 w-11 rounded-full border border-border bg-muted active:bg-muted">
               <ArrowUp size={18} color="#fff" />
             </Button>
             <Button
@@ -536,7 +536,7 @@ export function LogsScreen() {
               size="icon"
               onClick={scrollToBottom}
               aria-label="Scroll to bottom"
-              className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600">
+              className="h-11 w-11 rounded-full border border-brand/30 bg-brand active:bg-brand">
               <ArrowDown size={18} color="#fff" />
             </Button>
           </div>

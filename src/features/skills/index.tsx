@@ -214,10 +214,10 @@ export function SkillsScreen() {
         <DialogPrimitive.Root open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
-            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-white outline-hidden dark:bg-neutral-950">
+            <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-popover outline-hidden dark:bg-input/30">
               <DialogPrimitive.Title className="sr-only">Skill file</DialogPrimitive.Title>
               <div className="flex-1" style={{ paddingTop: 48 }}>
-                <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
                   <div className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white truncate">
                     {viewing ?? ''}
                   </div>
@@ -226,7 +226,7 @@ export function SkillsScreen() {
                     onClick={() => void writeClipboard(content).catch(() => {})}
                     aria-label="Copy skill file"
                     className="h-auto sm:h-auto px-2 py-1.5">
-                    <span className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</span>
+                    <span className="text-xs font-semibold text-brand">Copy</span>
                   </Button>
                   <Button
                     variant="ghost"

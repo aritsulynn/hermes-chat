@@ -79,7 +79,7 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
 
 function StatCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-1 flex-col gap-0.5 rounded-xl bg-[#f4f4f6] px-3 py-2 dark:bg-[#212121]">
+    <div className="flex flex-1 flex-col gap-0.5 rounded-xl bg-elevated px-3 py-2">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
         {label}
       </div>
@@ -129,7 +129,7 @@ function InfoSheetContent({
   return (
     <div className={cn(sheetBody, 'gap-3')}>
       <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Session info</div>
-      <div className="flex flex-col gap-1 rounded-2xl bg-[#f4f4f6] px-3.5 py-2 dark:bg-[#212121]">
+      <div className="flex flex-col gap-1 rounded-2xl bg-elevated px-3.5 py-2">
         <InfoRow label="Title" value={title || '(untitled)'} />
         <InfoRow
           label="Model"
@@ -150,7 +150,7 @@ function InfoSheetContent({
       </div>
       <div className="flex items-center gap-2">
         <Input
-          className="min-w-0 flex-1 rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+          className="min-w-0 flex-1 rounded-xl border border-border px-3 py-2 text-sm text-neutral-950 dark:text-neutral-100"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Rename session…"
@@ -174,7 +174,7 @@ function InfoSheetContent({
       ) : (
         <div className="flex flex-col gap-2">
           {ctxPct != null && (
-            <div className="flex flex-col gap-1.5 rounded-2xl bg-[#f4f4f6] p-3.5 dark:bg-[#212121]">
+            <div className="flex flex-col gap-1.5 rounded-2xl bg-elevated p-3.5">
               <div className="flex items-center justify-between">
                 <div className="text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">Context window</div>
                 <div
@@ -192,7 +192,7 @@ function InfoSheetContent({
               </div>
               <Progress
                 value={ctxPct}
-                className="bg-neutral-200 dark:bg-neutral-800"
+                className="bg-border"
                 indicatorClassName={tone === 'hot' ? 'bg-[#c5221f]' : tone === 'warn' ? 'bg-[#d97706]' : 'bg-[#1a7f37]'}
               />
               {snap.contextUsed != null && snap.contextMax != null && (
@@ -371,7 +371,7 @@ export function AskSheet({
                   this dialog's radius and padding. */}
               {q.choices.length === 0 && (
                 <Textarea
-                  className="min-h-0 w-full rounded-lg border-neutral-300 bg-transparent p-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                  className="min-h-0 w-full resize-none rounded-lg border-border bg-transparent p-2.5 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Type your answer…"
@@ -457,7 +457,7 @@ export function AskSheet({
               </div>
               {/* Long commands scroll inside their own box, not pushing the
                   buttons off the bottom of the sheet. */}
-              <div className="max-h-[150px] overflow-y-auto overscroll-contain rounded-lg bg-[#f4f4f6] p-2 dark:bg-[#212121]">
+              <div className="max-h-[150px] overflow-y-auto overscroll-contain rounded-lg bg-elevated p-2">
                 <div className="select-text font-mono text-[13px] leading-[18px] text-neutral-950 dark:text-neutral-100">
                   {cmd}
                 </div>
@@ -510,12 +510,12 @@ export function AskSheet({
           <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">{label}</div>
         </div>
         {!!ask.params.command && (
-          <div className="select-text rounded-lg bg-[#f4f4f6] p-2 font-mono text-[13px] text-neutral-950 dark:bg-[#212121] dark:text-neutral-100">
+          <div className="select-text rounded-lg bg-elevated p-2 font-mono text-[13px] text-neutral-950 dark:text-neutral-100">
             {String(ask.params.command)}
           </div>
         )}
         <Input
-          className="rounded-lg border border-neutral-300 p-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+          className="rounded-lg border border-border p-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="…"

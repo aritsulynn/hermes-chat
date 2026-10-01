@@ -151,14 +151,14 @@ export function UsageScreen() {
                   aria-label="Refresh usage"
                   disabled={loading || refreshing}
                   onClick={() => void fetchUsage(true)}
-                  className="border border-neutral-300 dark:border-neutral-700">
+                  className="border border-border">
                   <RefreshCw size={20} color={dark ? '#ccc' : '#444'} />
                 </HeaderIconButton>
               }
             />
 
             {/* Period Selector Bar */}
-            <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+            <div className="flex items-center justify-between border-b border-border bg-elevated px-4 py-2.5 dark:bg-elevated">
               <div className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</div>
               <div className="flex gap-1">
                 {PERIOD_OPTIONS.map((opt) => (
@@ -171,8 +171,8 @@ export function UsageScreen() {
                     onClick={() => setDays(opt.days)}
                     className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
                       days === opt.days
-                        ? 'border-[#1a73e8] bg-[#1a73e8]'
-                        : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
+                        ? 'border-brand bg-brand'
+                        : 'border-border bg-popover dark:border-border'
                     }`}>
                     <span
                       className={`text-xs font-semibold ${
@@ -278,8 +278,8 @@ export function UsageScreen() {
                       </div>
                       <Progress
                         value={Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}
-                        indicatorClassName="bg-[#1a73e8]"
-                        className="bg-neutral-200 dark:bg-neutral-800"
+                        indicatorClassName="bg-brand"
+                        className="bg-border"
                       />
                     </div>
 
@@ -294,7 +294,7 @@ export function UsageScreen() {
                       <Progress
                         value={Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}
                         indicatorClassName="bg-[#8b5cf6]"
-                        className="bg-neutral-200 dark:bg-neutral-800"
+                        className="bg-border"
                       />
                     </div>
 
@@ -310,7 +310,7 @@ export function UsageScreen() {
                         <Progress
                           value={Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}
                           indicatorClassName="bg-[#f59e0b]"
-                          className="bg-neutral-200 dark:bg-neutral-800"
+                          className="bg-border"
                         />
                       </div>
                     )}
@@ -327,7 +327,7 @@ export function UsageScreen() {
                         <Progress
                           value={Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}
                           indicatorClassName="bg-[#10b981]"
-                          className="bg-neutral-200 dark:bg-neutral-800"
+                          className="bg-border"
                         />
                       </div>
                     )}
@@ -339,7 +339,7 @@ export function UsageScreen() {
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Daily Activity</div>
                     {selectedDay && (
-                      <div className="text-xs font-mono text-[#1a73e8] dark:text-[#7aa7ff]">
+                      <div className="text-xs font-mono text-brand">
                         {selectedDay.day}:{' '}
                         {compactNumber((selectedDay.input_tokens || 0) + (selectedDay.output_tokens || 0))} tokens (
                         {selectedDay.sessions || 0} sess)
@@ -384,7 +384,7 @@ export function UsageScreen() {
                         return (
                           <div
                             key={`${modelName}-${idx}`}
-                            className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+                            className="rounded-xl border border-border bg-popover p-3 dark:bg-input/30">
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1">
                                 <div className="text-sm font-semibold text-neutral-950 dark:text-neutral-100 truncate">
@@ -406,7 +406,7 @@ export function UsageScreen() {
                               </div>
                             </div>
 
-                            <div className="mt-2.5 flex items-center justify-between border-t border-neutral-100 pt-2 dark:border-neutral-900">
+                            <div className="mt-2.5 flex items-center justify-between border-t border-border pt-2">
                               <div className="text-[11px] text-neutral-500">In: {compactNumber(m.input_tokens)}</div>
                               <div className="text-[11px] text-neutral-500">Out: {compactNumber(m.output_tokens)}</div>
                             </div>
@@ -440,7 +440,7 @@ export function UsageScreen() {
                               <span className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
                                 {item.name}
                               </span>
-                              <span className="font-mono text-[11px] font-bold text-[#1a73e8] dark:text-[#7aa7ff]">
+                              <span className="font-mono text-[11px] font-bold text-brand">
                                 {item.count}
                               </span>
                               {typeof item.percentage === 'number' && (

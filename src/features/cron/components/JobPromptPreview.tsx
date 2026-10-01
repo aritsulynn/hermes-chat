@@ -39,7 +39,7 @@ export function JobPromptPreview({
   }, [checkOverflow]);
 
   return (
-    <div className="mt-3 rounded-xl bg-white/80 p-2.5 dark:bg-neutral-950/60">
+    <div className="mt-3 rounded-xl bg-popover/80 p-2.5 dark:bg-input/30/60">
       <div
         ref={textRef}
         className={`text-xs leading-relaxed text-neutral-800 dark:text-neutral-200 ${
@@ -53,10 +53,10 @@ export function JobPromptPreview({
           onClick={onToggleExpand}
           aria-expanded={isExpanded}
           className="mt-1.5 flex w-full items-center justify-end gap-1">
-          <span className="text-[10px] font-medium text-[#1a73e8] dark:text-[#7aa7ff]">
+          <span className="text-[10px] font-medium text-brand">
             {isExpanded ? 'Collapse' : 'Show more'}
           </span>
-          {isExpanded ? <ChevronUp size={12} color="#1a73e8" /> : <ChevronDown size={12} color="#1a73e8" />}
+          {isExpanded ? <ChevronUp size={12} color="var(--brand-hex)" /> : <ChevronDown size={12} color="var(--brand-hex)" />}
         </button>
       )}
     </div>

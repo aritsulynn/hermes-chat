@@ -39,7 +39,6 @@ const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 // touch target, which is why the reduction stopped there and the submenu came
 // up to meet it rather than the other way round.
 const SIDEBAR_WIDTH = '18.75rem';
-const SIDEBAR_WIDTH_MOBILE = '18.75rem';
 const SIDEBAR_WIDTH_ICON = '4.5rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
 
@@ -187,12 +186,14 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
-          style={
-            {
-              '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
-          }
+          // Full-screen sheet on phones: the content is a real screen here
+          // (profile, search, recents), not a peek at one, and full width is
+          // what leaves room for a proper close button in the header.
+          // Desktop below is untouched — still the collapsible icon panel.
+          // Width rides an inline style (not a class) so it wins over the
+          // sheet's own `data-[side]:w-3/4` + `sm:max-w-sm` rules.
+          className="bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          style={{ width: '100%', maxWidth: '100%' }}
           side={side}>
           <SheetHeader className="sr-only">
             <SheetTitle>Sidebar</SheetTitle>

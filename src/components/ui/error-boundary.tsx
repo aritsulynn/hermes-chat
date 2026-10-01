@@ -37,17 +37,17 @@ export class ErrorBoundary extends Component<Props, State> {
     const { error } = this.state;
     if (!error) return this.props.children;
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-white p-6 text-center dark:bg-black">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-popover p-6 text-center dark:bg-background">
         <div className="text-[15px] font-semibold text-neutral-900 dark:text-neutral-100">
           Something went wrong rendering this screen.
         </div>
-        <pre className="max-h-[40vh] max-w-[min(90vw,48rem)] overflow-auto rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-left text-[12px] leading-[18px] whitespace-pre-wrap text-neutral-700 dark:border-neutral-700 dark:bg-[#1b1b1b] dark:text-neutral-300">
+        <pre className="max-h-[40vh] max-w-[min(90vw,48rem)] overflow-auto rounded-lg border border-border bg-elevated p-3 text-left text-[12px] leading-[18px] whitespace-pre-wrap text-neutral-700 dark:bg-[#1b1b1b] dark:text-neutral-300">
           {error.message || String(error)}
         </pre>
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="rounded-lg border border-neutral-300 px-3 py-2 text-[14px] font-semibold text-neutral-900 dark:border-neutral-700 dark:text-neutral-100">
+          className="rounded-lg border border-border px-3 py-2 text-[14px] font-semibold text-neutral-900 dark:text-neutral-100">
           Reload
         </button>
       </div>

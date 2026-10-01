@@ -37,7 +37,7 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
     <Button
       onClick={() => onOpen(task)}
       variant="outline"
-      className="h-auto sm:h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]">
+      className="h-auto sm:h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-border bg-popover p-2.5 ">
       <span className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100 line-clamp-2">
         {task.title}
       </span>
@@ -298,7 +298,7 @@ export function KanbanScreen() {
 
   if (booting) {
     return (
-      <div className="flex flex-col flex-1 bg-white dark:bg-black items-center justify-center gap-3">
+      <div className="flex flex-col flex-1 bg-background items-center justify-center gap-3">
         <Spinner size={24} color="currentColor" />
       </div>
     );
@@ -390,11 +390,11 @@ export function KanbanScreen() {
               return (
                 <div
                   key={col.name}
-                  className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
+                  className="overflow-hidden rounded-2xl border border-border">
                   <Button
                     onClick={() => toggleColumn(col.name, !shut)}
                     variant="ghost"
-                    className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]">
+                    className="justify-start gap-2 rounded-none bg-elevated px-3 py-2.5">
                     <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
                     <span className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
                       {col.name}
@@ -462,7 +462,7 @@ export function KanbanScreen() {
               </div>
               <Textarea
                 aria-label="Notes"
-                className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                className="min-h-[90px] rounded-xl border border-border px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:text-neutral-100"
                 value={editBody}
                 onChange={(e) => setEditBody(e.target.value)}
                 placeholder="Details…"
@@ -489,13 +489,13 @@ export function KanbanScreen() {
           <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</div>
           <Input
             aria-label="Title"
-            className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+            className="rounded-xl border border-border px-3 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="Title"
           />
           <Textarea
-            className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+            className="min-h-[80px] rounded-xl border border-border px-3 py-2.5 text-[14px] text-neutral-950 dark:text-neutral-100"
             aria-label="Notes"
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}

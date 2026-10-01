@@ -58,6 +58,9 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-elevated: hsl(var(--elevated));
+  --color-elevated-foreground: hsl(var(--elevated-foreground));
+  --color-brand: hsl(var(--brand));
 
   /* Sidebar palette. shadcn's sidebar component reads `--sidebar*`, but the
      registry ships no values for them (the sidebar and the style manifest both
@@ -147,6 +150,10 @@
     --input: 0 0% 89.8%;
     --ring: 0 0% 63%;
     --radius: 0.625rem;
+    --elevated: 240 10% 96.1%;
+    --elevated-foreground: 0 0% 3.9%;
+    --brand: 214.1 81.7% 50.6%;
+    --brand-hex: #1a73e8;
     /* Sidebar — mirrors the drawer this replaces. `--sidebar` matches
        `screenBg(false)` (#fff) and `--sidebar-accent-foreground` is
        `brandColor(false)` (#1a73e8). */
@@ -191,6 +198,10 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 300 0% 45%;
+    --elevated: 0 0% 13%;
+    --elevated-foreground: 0 0% 98%;
+    --brand: 219.7 100% 73.9%;
+    --brand-hex: #7aa7ff;
     /* Sidebar dark — `screenBg(true)` is #000 and `brandColor(true)` is #7aa7ff. */
     --sidebar: 0 0% 0%;
     --sidebar-foreground: 0 0% 98%;
@@ -205,6 +216,89 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+  }
+
+  /* Accent palettes — orthogonal to light/dark. `data-accent` rides on <html>
+     alongside `.dark`, so light/dark stays the mode and accent only remaps the
+     roles. Values below are OpenChamber's warm paper (light) and ink (dark). */
+  :root[data-accent='openchamber'] {
+    --background: 40 43% 98.6%;
+    --foreground: 70 5.5% 21.6%;
+    --card: 40 43% 98.6%;
+    --card-foreground: 70 5.5% 21.6%;
+    --popover: 40 43% 98.6%;
+    --popover-foreground: 70 5.5% 21.6%;
+    --primary: 21.9 77.2% 39.6%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 16% 96.3%;
+    --secondary-foreground: 70 5.5% 21.6%;
+    --muted: 40 16% 96.3%;
+    --muted-foreground: 60 4.5% 34.5%;
+    --accent: 40 16% 96.3%;
+    --accent-foreground: 70 5.5% 21.6%;
+    --border: 25.7 11.9% 88.4%;
+    --input: 25.7 11.9% 88.4%;
+    --ring: 21.9 77.2% 39.6%;
+    --elevated: 40 18% 96.7%;
+    --elevated-foreground: 70 5.5% 21.6%;
+    --brand: 21.9 77.2% 39.6%;
+    --brand-hex: #b35017;
+    /* Warm up the neutral ramp so existing text-neutral-* classes follow the
+       paper tone without touching every screen. */
+    --color-neutral-950: #393a34;
+    --color-neutral-900: #44453f;
+    --color-neutral-800: #4d4d47;
+    --color-neutral-700: #5c5c54;
+    --color-neutral-600: #6b6b63;
+    --color-neutral-500: #7a776f;
+    --color-neutral-400: #9a968e;
+    --sidebar: 40 43% 98.6%;
+    --sidebar-foreground: 70 5.5% 21.6%;
+    --sidebar-accent: 40 16% 92%;
+    --sidebar-accent-foreground: 21.9 77.2% 39.6%;
+    --sidebar-border: 25.7 11.9% 88.4%;
+    --sidebar-ring: 21.9 77.2% 39.6%;
+    --sidebar-primary: 21.9 77.2% 39.6%;
+    --sidebar-primary-foreground: 0 0% 100%;
+  }
+
+  .dark[data-accent='openchamber'] {
+    --background: 15 12.5% 6.3%;
+    --foreground: 44 12.2% 75.9%;
+    --card: 15 12.5% 6.3%;
+    --card-foreground: 44 12.2% 75.9%;
+    --popover: 40 6.7% 8.8%;
+    --popover-foreground: 44 12.2% 75.9%;
+    --primary: 21.6 66.5% 56.7%;
+    --primary-foreground: 15 12.5% 6.3%;
+    --secondary: 30 4.5% 8.6%;
+    --secondary-foreground: 44 12.2% 75.9%;
+    --muted: 30 4.5% 8.6%;
+    --muted-foreground: 42.9 5.9% 53.3%;
+    --accent: 30 4.5% 8.6%;
+    --accent-foreground: 44 12.2% 75.9%;
+    --border: 0 1.4% 13.9%;
+    --input: 0 1.4% 13.9%;
+    --ring: 21.6 66.5% 56.7%;
+    --elevated: 40 6.7% 8.8%;
+    --elevated-foreground: 44 12.2% 75.9%;
+    --brand: 21.6 66.5% 56.7%;
+    --brand-hex: #da7c47;
+    /* Warm ink ramp for dark — headings come from neutral-100, secondary text
+       from neutral-400/500. */
+    --color-neutral-100: #c9c5ba;
+    --color-neutral-200: #aba9a3;
+    --color-neutral-300: #8f8b81;
+    --color-neutral-400: #8f8b81;
+    --color-neutral-500: #6e6a61;
+    --sidebar: 15 12.5% 6.3%;
+    --sidebar-foreground: 44 12.2% 75.9%;
+    --sidebar-accent: 30 4.5% 12%;
+    --sidebar-accent-foreground: 21.6 66.5% 65%;
+    --sidebar-border: 0 1.4% 13.9%;
+    --sidebar-ring: 21.6 66.5% 56.7%;
+    --sidebar-primary: 21.6 66.5% 56.7%;
+    --sidebar-primary-foreground: 15 12.5% 6.3%;
   }
 
   /* The app fills the viewport and scrolls its own panes (chat log, file list),
@@ -264,6 +358,33 @@
   button:not(:disabled),
   [role='button']:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+/* Floating glass composer, after OpenChamber's `oc-glass-composer`. The card
+   is translucent elevated tint + backdrop blur instead of a solid fill, so
+   transcript rows sliding underneath show through blurred and the box reads
+   as floating rather than as another grey card. Shadow lives on the wrapper
+   (see composer.tsx), never on this element: Chromium grows a backdrop-filter
+   layer by the shadow's blur and paints a flat grey band over the content
+   above. */
+.glass-composer {
+  background-color: color-mix(in srgb, hsl(var(--elevated)) 82%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .glass-composer {
+    background-color: hsl(var(--elevated));
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-composer {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: hsl(var(--elevated));
   }
 }
 
