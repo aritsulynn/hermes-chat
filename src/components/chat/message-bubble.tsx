@@ -471,14 +471,18 @@ export const MessageBubble = memo(function MessageBubble({
                 in shadcn's MessageFooter, because the buttons have always sat on
                 the bubble's own background. */}
             {((copyable && item.role !== 'user') || canRegenerate || canBranch) && (
-              <div className="mt-1 flex items-center gap-3 self-end">
+              // `gap-2`, not `gap-3`: the buttons are ghost, so the space that
+              // reads is the icon-to-icon gap (6px of padding either side of a
+              // 12px glyph), and 12px of it made three glyphs look scattered
+              // across the bubble. 4px was the other extreme — at that pitch the
+              // 8px corner radius of the hover fill nearly touches.
+              <div className="mt-1 flex items-center gap-2 self-end">
                 {copyable && item.role !== 'user' && (
                   <Button
                     variant="ghost"
-                    size="icon"
+                    size="iconSm"
                     onClick={handleCopyClick}
                     aria-label={copied ? 'Copied' : 'Copy'}
-                    className="h-6 w-6"
                     {...copyLongPress}>
                     <span ref={copyAnchor}>
                       {copied ? (
@@ -492,10 +496,9 @@ export const MessageBubble = memo(function MessageBubble({
                 {canRegenerate && (
                   <Button
                     variant="ghost"
-                    size="icon"
+                    size="iconSm"
                     onClick={handleRegenClick}
                     aria-label="Regenerate"
-                    className="h-6 w-6"
                     {...regenLongPress}>
                     <span ref={regenAnchor}>
                       <RotateCcw size={12} color={dark ? '#aaa' : '#999'} />
@@ -514,8 +517,7 @@ export const MessageBubble = memo(function MessageBubble({
                   // `w-(--anchor-width)` — the width of its trigger — which for a
                   // 24px icon button clamps the menu to `min-w-32`.
                   <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={<Button variant="ghost" size="icon" aria-label="More actions" className="h-6 w-6" />}>
+                    <DropdownMenuTrigger render={<Button variant="ghost" size="iconSm" aria-label="More actions" />}>
                       <Ellipsis size={12} color={dark ? '#aaa' : '#999'} />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="top" align="end" className="w-48">

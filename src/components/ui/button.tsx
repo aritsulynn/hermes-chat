@@ -20,7 +20,13 @@ const buttonVariants = cva(
         default: 'h-10 px-4 py-2 has-[>svg]:px-3 sm:h-9',
         sm: 'h-9 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5 sm:h-8',
         lg: 'h-11 rounded-md px-6 has-[>svg]:px-4 sm:h-10',
+        // `sm:`-stepped on purpose: a phone gets the larger target, a pointer the
+        // tighter one. It is also why a call site cannot shrink this size with a
+        // plain `className="h-6 w-6"` — that only overrides the unprefixed half,
+        // and `sm:h-9 sm:w-9` still wins from 640px up, so on a desktop the button
+        // silently stays 36px. Use `iconSm` (or spell both breakpoints) instead.
         icon: 'h-10 w-10 sm:h-9 sm:w-9',
+        iconSm: 'h-6 w-6',
       },
     },
     defaultVariants: {
@@ -55,6 +61,7 @@ const buttonTextVariants = cva('text-foreground text-sm font-medium transition-c
       sm: '',
       lg: '',
       icon: '',
+      iconSm: '',
     },
   },
   defaultVariants: {

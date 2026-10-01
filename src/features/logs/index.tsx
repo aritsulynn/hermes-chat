@@ -320,12 +320,12 @@ export function LogsScreen() {
                 {Boolean(search) && (
                   <Button
                     variant="ghost"
-                    size="icon"
+                    size="iconSm"
                     onClick={() => {
                       setSearch('');
                     }}
                     aria-label="Clear filter"
-                    className="h-6 w-6 rounded-md">
+                    className="rounded-md">
                     <X size={15} color={dark ? '#888' : '#999'} />
                   </Button>
                 )}

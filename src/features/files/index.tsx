@@ -582,10 +582,10 @@ export function FilesScreen() {
             {searchQuery ? (
               <Button
                 variant="ghost"
-                size="icon"
+                size="iconSm"
                 onClick={() => setSearchQuery('')}
                 aria-label="Clear search"
-                className="h-6 w-6 rounded-md">
+                className="rounded-md">
                 <X size={14} color={dark ? '#888' : '#9ca3af'} />
               </Button>
             ) : null}
