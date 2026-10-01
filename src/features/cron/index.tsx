@@ -926,10 +926,6 @@ export function CronScreen() {
     [deliveryTargets, editingJob],
   );
 
-  const jobsExtra = useMemo(
-    () => ({ actionLoadingId, dark, expandedIds }),
-    [actionLoadingId, dark, expandedIds],
-  );
   const jobsEmpty = useMemo(() => {
     if (loading && !refreshing) {
       return (
@@ -985,10 +981,6 @@ export function CronScreen() {
       selectedJobForRuns,
       toggleExpandRun,
     ],
-  );
-  const runsExtra = useMemo(
-    () => ({ dark, expandedRunId, runMessages, runMessagesLoading }),
-    [dark, expandedRunId, runMessages, runMessagesLoading],
   );
   const runsHeader = useMemo(
     () =>
