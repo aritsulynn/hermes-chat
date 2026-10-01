@@ -137,6 +137,26 @@ What the port changed, so the reasoning is not re-derived:
 - **`flex-row` does not exist in web Tailwind.** `flex` already means
   `display:flex` with row direction. 122 occurrences became `flex`. If you add
   a class from memory of the native code, check it against the web scale.
+- **A converted `<View>` needs its defaults written out.** React Native's `<View>`
+  is `display:flex; flex-direction:column`; a `<div>` is a block box, and
+  `items-*`, `justify-*` and `gap-*` do nothing on one. Wherever a className
+  relied on that default, `flex flex-col` was added — `flex flex-col` and not
+  bare `flex`, because a row would be wrong for any View with more than one
+  child. The visible symptom when it is missing is a spinner in the corner of
+  its box, or a strip with no gaps.
+- **One difference is known and deliberately not fixed.** RN's default
+  `flex-shrink` is `0`; CSS's is `1`. A converted `<View>` in a flex row can
+  therefore shrink where on native it could not — long text truncating, a fixed
+  icon button squashing. About 50 elements have a fixed width or height inside a
+  flex row with no `shrink-0`, though many are in columns or fixed-position
+  contexts where it cannot happen. Adding `shrink-0` to all of them blind is as
+  likely to break a layout as to fix one, and it cannot be checked without a
+  gateway, so it was left alone. **If a row looks squashed or clipped on a
+  narrow screen, this is the first thing to look at.**
+- **Nested text needs a `<span>`.** `ui/Text` renders a `<div>`; a native
+  `<Text>` nested inline. `scripts/jsx-nesting.mts` finds this — use it rather
+  than reading for it. (It also prints a lot of `<div>` in `<div>`, which is
+  normal; only the Text-like names matter.)
 - **Two lists, two strategies.** `WindowedList` (files, cron, logs) renders a
   trailing window that grows on scroll. `Transcript` (chat) is a plain scroller
   with an imperative handle, because the transcript needs scroll-position
@@ -151,7 +171,11 @@ What the port changed, so the reasoning is not re-derived:
   `navigator.clipboard` is undefined outside a secure context and this client is
   routinely served from a plain-HTTP LAN address. Do not "simplify" it away.
 - **`scripts/codemod-*.mjs` are one-shot and already run.** They are kept as the
-  record of what was mechanical and what was not. Do not re-run them.
+  record of what was mechanical and what was not. Do not re-run them — one of
+  them (`codemod-scroll.mjs`) had a bug that ate JSX, and three files were
+  damaged before it was found and the run redone from `HEAD`.
+- **`scripts/jsx-balance.mts` and `scripts/jsx-nesting.mts` are not one-shot.**
+  They parse with TypeScript and are worth running after touching JSX structure.
 
 ### Deliberately dropped (see "Backlog")
 
