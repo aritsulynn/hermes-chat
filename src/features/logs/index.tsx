@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
-import type { FlashListRef } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { Text as UIText } from '../../components/ui/text';
@@ -30,6 +28,8 @@ import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from '
 import type { LineSeverity, LogFile, LogLevelFilter } from './helpers';
 import { ScrollArea } from '../../components/ui/scroll';
 import { writeClipboard } from '../../services/clipboard';
+import { WindowedList } from '../../components/ui/windowed-list';
+import type { WindowedListRef } from '../../components/ui/windowed-list';
 
 type LogRow = { line: string; sev: LineSeverity };
 
@@ -41,7 +41,7 @@ export function LogsScreen() {
   // and each value feeds the header/filter chrome plus the list surface.
   const screen = useMemo(() => screenStyle(dark), [dark]);
   const placeholder = useMemo(() => placeholderColor(dark, 'log'), [dark]);
-  const listRef = useRef<FlashListRef<LogRow>>(null);
+  const listRef = useRef<WindowedListRef>(null);
 
   const [file, setFile] = useState<LogFile>('agent');
   const [level, setLevel] = useState<LogLevelFilter>('ALL');
@@ -111,16 +111,17 @@ export function LogsScreen() {
   useEffect(() => {
     if (!autoRefresh || !authed) return;
     let appActive = true;
-    const sub = AppState.addEventListener('change', (s) => {
-      appActive = s === 'active';
-    });
+    const onVisibility = () => {
+      appActive = !document.hidden;
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     const interval = setInterval(() => {
       if (!appActive) return;
       void fetchLogs(true);
     }, 3500);
     return () => {
       clearInterval(interval);
-      sub.remove();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [autoRefresh, authed, fetchLogs]);
 
@@ -169,7 +170,7 @@ export function LogsScreen() {
   const scrollToTop = useCallback(() => {
     if (rows.length> 0) {
       try {
-        void listRef.current?.scrollToIndex({ index: 0, animated: true });
+        void listRef.current?.scrollToIndex(0, { animated: true });
       } catch (e) {
         console.warn('[logs] scrollToIndex failed', e);
       }
@@ -206,15 +207,9 @@ export function LogsScreen() {
     );
   }, []);
 
-  // Stable content style — FlashList re-measures on contentContainerStyle
-  // identity change, so keep the ref stable across renders.
-  const logListContentStyle = useMemo(
-    () => ({
-      padding: 10,
-      paddingBottom: insets.bottom + 48,
-    }),
-    [insets.bottom],
-  );
+  // Padding only; the windowed scroller supplies the flex column.
+  const logListContentClass =
+    'gap-2 p-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+48px)]';
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -544,13 +539,11 @@ export function LogsScreen() {
           <div className="flex-1 bg-[#101014]">
             {/* FlashList v2 sizes rows itself; drawDistance replaces the old
                 windowSize/maxToRenderPerBatch overscan tuning. */}
-            <FlashList
-              ref={listRef}
+            <WindowedList
               data={rows}
               keyExtractor={logKeyExtractor}
-              contentClassName={logListContentStyle}
+              contentClassName={logListContentClass}
               renderItem={renderLogRow}
-              drawDistance={800}
             />
 
             {/* Quick Jump Buttons (Floating) */}
@@ -561,7 +554,6 @@ export function LogsScreen() {
                 onClick={scrollToTop}
                 aria-label="Scroll to top"
                 className="h-11 w-11 rounded-full border border-neutral-700/80 bg-neutral-900/90 active:bg-neutral-800"
-                style={{ elevation: 4 }}
 >
                 <ArrowUp size={18} color="#fff" />
               </Button>
@@ -571,7 +563,6 @@ export function LogsScreen() {
                 onClick={scrollToBottom}
                 aria-label="Scroll to bottom"
                 className="h-11 w-11 rounded-full border border-blue-400/30 bg-[#1a73e8] active:bg-blue-600"
-                style={{ elevation: 4 }}
 >
                 <ArrowDown size={18} color="#fff" />
               </Button>

@@ -1,12 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { toast } from '../../components/ui/toast';
 import { Button } from '../../components/ui/button';
 import { ConfirmDialog } from '../../components/ui/dialog';
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Sheet, useSheet } from '../../components/ui/sheets';
 import { Text as UIText } from '../../components/ui/text';
 import { Spinner } from '../../components/ui/bits';
@@ -55,6 +53,7 @@ import {
 import type { DeliveryTarget } from './helpers';
 import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
 import { ScrollArea } from '../../components/ui/scroll';
+import { WindowedList } from '../../components/ui/windowed-list';
 
 // Vertical gap between virtualized cards (FlashList v2 ignores `gap` in
 // contentContainerStyle, so the separator carries the spacing).
@@ -1021,14 +1020,8 @@ export function CronScreen() {
     }
     return null;
   }, [dark, runsError, runsList.length, runsLoading]);
-  const jobsContentStyle = useMemo(
-    () => ({ padding: 14, paddingBottom: insets.bottom + 32 }),
-    [insets.bottom],
-  );
-  const runsContentStyle = useMemo(
-    () => ({ padding: 16, paddingBottom: insets.bottom + 30 }),
-    [insets.bottom],
-  );
+  const jobsContentClass = 'gap-3 p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)]';
+  const runsContentClass = 'gap-2 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+30px)]';
   const handleJobsRefresh = useCallback(() => {
     void loadJobs(true);
   }, [loadJobs]);
@@ -1065,15 +1058,14 @@ export function CronScreen() {
 
         <ErrorRetry error={error} onRetry={() => void loadJobs()} className="m-4" compact />
 
-        <FlashList
+        <WindowedList
           data={jobs}
-          style={{ flex: 1 }}
           keyExtractor={jobKeyExtractor}
           renderItem={renderJobItem}
           extraData={jobsExtra}
           ListEmptyComponent={jobsEmpty}
           ItemSeparatorComponent={ListGap12}
-          contentClassName={jobsContentStyle}
+          contentClassName={jobsContentClass}
 
         />
 
@@ -1331,16 +1323,15 @@ export function CronScreen() {
               </div>
 
               {/* Body */}
-              <FlashList
+              <WindowedList
                 data={runsList}
-                style={{ flex: 1 }}
                 keyExtractor={runKeyExtractor}
                 renderItem={renderRunItem}
-                extraData={runsExtra}
+          extraData={runsExtra}
                 ListHeaderComponent={runsHeader}
                 ListEmptyComponent={runsEmpty}
                 ItemSeparatorComponent={ListGap12}
-                contentClassName={runsContentStyle}
+                contentClassName={runsContentClass}
               />
         </Sheet>
       </div>

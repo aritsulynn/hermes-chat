@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
 import { Navigate as Redirect } from 'react-router-dom';
 import {
   AlertCircle,
@@ -48,6 +47,7 @@ import { isTextReadable, joinPath } from './helpers';
 import type { ManagedFileEntry, ManagedFilesResponse, ManagedFileReadResponse } from './types';
 import { ScrollArea } from '../../components/ui/scroll';
 import { writeClipboard } from '../../services/clipboard';
+import { WindowedList } from '../../components/ui/windowed-list';
 
 export function FilesScreen() {
   const { authed, opsGet, opsMut, getAuthScope } = useApp();
@@ -420,15 +420,10 @@ export function FilesScreen() {
     setIsEditingFile(false);
   }, []);
 
-  // Stable list chrome — inline elements would remount header/empty/content on
-  // every keystroke. Memoize so typing in search only refilters data.
-  const fileListContentStyle = useMemo(
-    () => ({
-      paddingBottom: insets.bottom + 24,
-      flexGrow: 1,
-    }),
-    [insets.bottom],
-  );
+  // The scroller is its own box now, so the content is just padding. The
+  // bottom pad clears the home indicator, which the browser reports via env().
+  const fileListContentClass =
+    'px-4 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] grow';
   const fileListRefreshControl = useMemo(
     () => <RefreshControl refreshing={refreshing} onRefresh={() => void load(activeDirectory, true)} />,
     [refreshing, load, activeDirectory],
@@ -652,14 +647,12 @@ export function FilesScreen() {
         {/* File List — virtualized so large folders don't mount every row. */}
         {/* FlashList v2 sizes rows itself; drawDistance replaces the old
             windowSize/maxToRenderPerBatch overscan tuning. */}
-        <FlashList
-          style={{ flex: 1 }}
+        <WindowedList
           data={filteredEntries}
           keyExtractor={fileKeyExtractor}
           renderItem={renderFileRow}
-          contentClassName={fileListContentStyle}
+          contentClassName={fileListContentClass}
           refreshControl={fileListRefreshControl}
-          drawDistance={800}
           ListHeaderComponent={fileListHeader}
           ListEmptyComponent={fileListEmpty}
         />
