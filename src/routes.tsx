@@ -5,9 +5,11 @@ import { FilesScreen } from './features/files';
 import { KanbanScreen } from './features/kanban';
 import { LogsScreen } from './features/logs';
 import { McpScreen } from './features/mcp';
+import { PairingScreen } from './features/pairing';
 import { SettingsScreen } from './features/settings';
 import { SkillsScreen } from './features/skills';
 import { SkillsHubScreen } from './features/skills-hub';
+import { WebhooksScreen } from './features/webhooks';
 import { ToolsetsScreen } from './features/toolsets';
 import { UsageScreen } from './features/usage';
 
@@ -25,6 +27,8 @@ export const APP_ROUTES = [
   { path: '/kanban', element: <KanbanScreen /> },
   { path: '/logs', element: <LogsScreen /> },
   { path: '/mcp', element: <McpScreen /> },
+  { path: '/pairing', element: <PairingScreen /> },
+  { path: '/webhooks', element: <WebhooksScreen /> },
   { path: '/settings', element: <SettingsScreen /> },
   { path: '/skills', element: <SkillsScreen /> },
   { path: '/skills-hub', element: <SkillsHubScreen /> },

@@ -236,6 +236,20 @@ export const mcpCatalog = (profile?: string | null): string =>
 /** POST — install a catalog entry (env secrets, optional background git clone). */
 export const mcpCatalogInstall = (): string => '/api/mcp/catalog/install';
 
+// ── Pairing ─────────────────────────────────────────────────────────────────
+
+export const pairing = (): string => '/api/pairing';
+export const pairingApprove = (): string => '/api/pairing/approve';
+export const pairingRevoke = (): string => '/api/pairing/revoke';
+export const pairingClearPending = (): string => '/api/pairing/clear-pending';
+
+// ── Webhooks ────────────────────────────────────────────────────────────────
+
+export const webhooks = (profile?: string | null): string => withProfile('/api/webhooks', profile);
+export const webhooksEnable = (): string => '/api/webhooks/enable';
+export const webhook = (name: string): string => `/api/webhooks/${encodeURIComponent(name)}`;
+export const webhookEnabled = (name: string): string => `/api/webhooks/${encodeURIComponent(name)}/enabled`;
+
 // ── Toolsets ────────────────────────────────────────────────────────────────
 /** Unlike `withProfile`, an empty profile resolves to the default namespace
  *  rather than being omitted. */

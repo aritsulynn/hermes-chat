@@ -74,8 +74,8 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Config | `/config` | `ConfigPage.tsx` | missing | L |
 | Keys / Env | `/env` | `EnvPage.tsx` | missing | L |
 | Plugins | `/plugins` | `PluginsPage.tsx` | missing | L |
-| Pairing | `/pairing` | `PairingPage.tsx` | missing | M |
-| Webhooks | `/webhooks` | `WebhooksPage.tsx` | missing | M |
+| Pairing | `/pairing` | `PairingPage.tsx` | **done** | M |
+| Webhooks | `/webhooks` | `WebhooksPage.tsx` | **done** | M |
 | Timeline / branch view | `/sessions` | `SessionsPage.tsx` | missing | M |
 | i18n + Thai | whole app | `src/i18n/` | missing | L |
 
@@ -159,14 +159,17 @@ The mobile app already has helpers, so adding an endpoint is fast:
   and to the preview header.
 - Remaining optional: chunked `upload-stream`, `fs/write-text` spot editor.
 
-### 4.5 Pairing `M`
+### 4.5 Pairing `M` — done
 - `GET /api/pairing`, `POST /api/pairing/approve|revoke|clear-pending`
 - Reference: `PairingPage.tsx` (274)
+- Shipped: `src/features/pairing/index.tsx` (route `/pairing`) + `src/services/pairing.ts`.
 
-### 4.6 Webhooks `M`
+### 4.6 Webhooks `M` — done
 - `GET /api/webhooks`, `POST /api/webhooks/enable`, `POST /api/webhooks`,
   `DELETE /api/webhooks/{name}`, `PUT /api/webhooks/{name}/enabled`
 - Reference: `WebhooksPage.tsx` (613)
+- Shipped: `src/features/webhooks/index.tsx` (route `/webhooks`) +
+  `src/services/webhooks.ts`; create sheet surfaces the one-time HMAC secret.
 
 ### 4.7 Timeline / branch view `M`
 - `GET /api/sessions/{id}/timeline`, `/latest-descendant`, `/messages/around`
