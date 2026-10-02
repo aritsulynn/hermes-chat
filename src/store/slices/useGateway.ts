@@ -1,7 +1,7 @@
 // Gateway slice — the gateway WS wiring: the active-list probe, reconnect
 // reconcile, server-ask hydration, and the long-lived openWs() factory.
 // Extracted from store/useAppStore.tsx.
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { navigate } from '../nav';
 import { GatewayWs, isCurrentSessionEvent } from '../../services/gateway-ws';
 import { clearSessionMessagesCache, mintWsTicket, toWsUrl } from '../../services/dashboard';
@@ -34,6 +34,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
     releaseLocalTurnRef,
     askInboxRef,
     askRef,
+    ask,
     setAskInbox,
     setAsk,
     bindAskOwner,
@@ -249,6 +250,27 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
     }
     if (ids.size > 0) await g.syncOpenRequests([...ids]);
   }, []);
+
+  // While a foreground ask is open, re-check it on a timer. Answering from
+  // another device resolves the request gateway-side, but nothing pushes that
+  // here — without this, the sheet sits open forever asking an answered
+  // question. The same snapshot that clears the sheet also settles the inbox
+  // row (it syncs every pending session, not just the open one). A still-open
+  // ask survives the check untouched: its rpcId is still in the open set.
+  //
+  // Keyed on the rpcId, not the ask object: rehydrations (reconnect, room
+  // switch) hand back a new object for the same request, and that must not
+  // restart the timer.
+  const openAskRpcId = ask?.rpcId;
+  useEffect(() => {
+    if (!openAskRpcId) return;
+    const t = setInterval(() => {
+      const g = gw.current;
+      if (!g) return;
+      void syncOpenRequests(g).catch(() => {});
+    }, 15000);
+    return () => clearInterval(t);
+  }, [openAskRpcId, syncOpenRequests, gw]);
 
   const openWs = useCallback(
     async (h: string, user: string): Promise<GatewayWs> => {
@@ -707,7 +729,12 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             });
             askInboxRef.current = next;
             setAskInbox(next);
-            if (askRef.current?.sessionId === sid && !open.has(askRef.current.rpcId)) setAsk(null);
+            // A snapshot is per session, so an ask for another room must never
+            // be cleared by it — but a session-less ask was shown as the
+            // current room's, so the current room's snapshot may clear it.
+            const cur = askRef.current;
+            const belongs = cur && (cur.sessionId ? cur.sessionId === sid : sid === sessionIdRef.current);
+            if (cur && belongs && !open.has(cur.rpcId)) setAsk(null);
           },
         },
       });
