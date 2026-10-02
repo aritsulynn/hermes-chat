@@ -58,13 +58,13 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Feature | Desktop route | Reference | Mobile | Size |
 | --- | --- | --- | --- | --- |
 | Session export | `/sessions` | `SessionsPage.tsx` | missing | S |
-| Schedule builder (cron) | `/cron` | `lib/schedule.ts` + `ScheduleBuilder.tsx` | missing | S–M |
-| Analytics by model | `/analytics` | `AnalyticsPage.tsx` | partial | S |
-| Skill editor | `/skills` | `SkillEditorDialog.tsx` | missing | M |
+| Schedule builder (cron) | `/cron` | `lib/schedule.ts` + `ScheduleBuilder.tsx` | **done** | S–M |
+| Analytics by model | `/analytics` | `AnalyticsPage.tsx` | partial (usage already renders `by_model`) | S |
+| Skill editor | `/skills` | `SkillEditorDialog.tsx` | **done** | M |
 | Skill hub (search/install) | `/skills` | `SkillsPage.tsx` | missing | M |
 | Toolset config | — | `ToolsetConfigDrawer.tsx` | missing | M |
 | Files write/delete/download | `/files` | `FilesPage.tsx` | missing | M |
-| Reasoning picker | `/chat` | `ReasoningPicker.tsx` | missing | S–M |
+| Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
 | Session search | `/sessions` | `SessionsPage.tsx` | missing | M |
 | Models (aux / MoA) | `/models` | `ModelsPage.tsx` | partial | M–L |
 | MCP | `/mcp` | `McpPage.tsx` | read-only | L |
@@ -92,7 +92,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   (existing menu); reuse `services/clipboard.ts` where useful.
 - **Note:** no new screen needed — hang it off the chat menu.
 
-### 3.2 Cron ScheduleBuilder `S–M`
+### 3.2 Cron ScheduleBuilder `S–M` — done
 
 - **What:** replace the raw cron-expression field with a human-readable builder
   (hourly / daily / weekly / interval / custom).
@@ -102,22 +102,22 @@ The mobile app already has helpers, so adding an endpoint is fast:
 - **Touch:** `src/features/cron/index.tsx` — today it uses `formSchedule` +
   `SCHEDULE_PRESETS` from `src/features/cron/helpers.ts`; the input is around line 1007.
 - **Note:** there is a test at `lib/schedule.test.ts` — port it too.
+- **Shipped:** `src/utils/schedule.ts` (+ tests), `src/features/cron/components/ScheduleBuilder.tsx`.
 
 ### 3.3 Analytics by model `S`
 
-- **What:** add a per-model usage breakdown (today there is only the daily chart plus
-  `by_model` from `/analytics/usage`).
+- **What:** add a per-model usage breakdown.
 - **Endpoint:** `GET /api/analytics/models?days=`
-- **Reference:** `AnalyticsPage.tsx`
-- **Touch:** `src/features/usage/index.tsx`, `src/services/api.ts`
+- **Note:** the usage screen already renders `by_model` from `/analytics/usage`, so
+  this is an upgrade, not a gap. Lower priority.
 
-### 3.4 Reasoning picker `S–M`
+### 3.4 Reasoning picker — already done
 
-- **What:** choose reasoning effort per model in the chat screen.
-- **Endpoint:** existing (`/api/model/options` already returns `capabilities.reasoning`).
-- **Reference:** `web/src/components/ReasoningPicker.tsx` (117), `lib/reasoning-effort.ts`
-- **Touch:** mobile chat header / model picker.
-- **Note:** mobile already has part of this in `utils/reasoning.ts` — check first.
+- Mobile's chat already has a thinking-effort menu (`effort`, `applyEffort`,
+  `effortOptions` in `src/features/chat/index.tsx`), plus the vocabulary in
+  `src/utils/reasoning.ts`. The desktop `ReasoningPicker` only differs by
+  persisting to `agent.reasoning_effort`; mobile switches the live session via WS.
+  No port needed.
 
 ### 3.5 Session search `M`
 
@@ -132,10 +132,11 @@ The mobile app already has helpers, so adding an endpoint is fast:
 
 ## 4. Medium
 
-### 4.1 Skill editor `M`
+### 4.1 Skill editor `M` — done
 - `PUT /api/skills/content`, `POST /api/skills`
 - Reference: `SkillEditorDialog.tsx` (216)
-- Touch: `src/features/skills/index.tsx`, `src/services/api.ts`
+- Shipped: `src/features/skills/components/SkillEditor.tsx`, `New skill` /
+  `Edit` actions in `src/features/skills/index.tsx`.
 
 ### 4.2 Skill hub — search/install skills `M`
 - `GET /api/skills/hub/search?q=&source=&limit=`, `/sources`, `/preview?identifier=`, `/scan`
