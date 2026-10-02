@@ -1,6 +1,6 @@
 // Drawer navigation config + icon helper, shared by the drawer content and the
 // route table in routes.tsx.
-import { Activity, BellRing, Boxes, Clock, Folder, Kanban, Link2, Plug, ScrollText, Store, Wrench, Zap } from 'lucide-react';
+import { Activity, BellRing, Boxes, Clock, Folder, Kanban, Link2, Plug, ScrollText, Server, Store, Wrench, Zap } from 'lucide-react';
 
 // Module-level icon helper — used by the route table and the drawer content.
 export const drawerIcon =
@@ -21,6 +21,7 @@ export const MORE_NAV_ITEMS = [
   { name: 'mcp', label: 'MCP', icon: Plug },
   { name: 'pairing', label: 'Pairing', icon: Link2 },
   { name: 'webhooks', label: 'Webhooks', icon: Zap },
+  { name: 'system', label: 'System', icon: Server },
 ] as const;
 
 // Items shown inside the profile bar popover (above Settings / Log Out)

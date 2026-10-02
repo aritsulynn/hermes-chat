@@ -69,7 +69,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Models (aux / MoA) | `/models` | `ModelsPage.tsx` | partial | M–L |
 | MCP | `/mcp` | `McpPage.tsx` | **done** (servers + catalog) | L |
 | Channels | `/channels` | `ChannelsPage.tsx` | missing | L |
-| System / Ops | `/system` | `SystemPage.tsx` | missing | L |
+| System / Ops | `/system` | `SystemPage.tsx` | **done** (core) | L |
 | Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | partial | L |
 | Config | `/config` | `ConfigPage.tsx` | missing | L |
 | Keys / Env | `/env` | `EnvPage.tsx` | missing | L |
@@ -181,6 +181,16 @@ The mobile app already has helpers, so adding an endpoint is fast:
 - Reference: `McpPage.tsx` (917)
 - Shipped: `src/features/mcp/index.tsx` (route `/mcp`) + `src/services/mcp.ts`,
   with an add-server sheet and a catalog install sheet for declared env vars.
+
+### 4.9 System / Ops `L` — done (core)
+- `GET /api/system/stats`, `/api/health`, `POST /api/gateway/start|stop`,
+  `GET /api/credentials/pool`, `/api/curator`, `/api/ops/{doctor,security-audit,backup,checkpoints}`
+- Reference: `SystemPage.tsx` (1649)
+- Shipped: `src/features/system/index.tsx` (route `/system`) + `src/services/system.ts`:
+  host stats, gateway start/stop, credential pool, and the maintenance actions
+  (doctor / security audit / backup / prune checkpoints) with a live log.
+- Remaining from the desktop page: memory provider, shell hooks, config editor —
+  those belong to the not-yet-ported Config/Memory surfaces.
 
 ---
 

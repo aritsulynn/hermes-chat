@@ -272,8 +272,33 @@ export const toolsetEnv = (name: string, profile?: string | null): string =>
 export const toolsetPostSetup = (name: string, profile?: string | null): string =>
   `/api/tools/toolsets/${encodeURIComponent(name)}/post-setup?profile=${profileParam(profile)}`;
 
-// ── Server update / gateway actions ─────────────────────────────────────────
+// ── System / ops ────────────────────────────────────────────────────────────
 
+/** GET /api/system/stats — host + process CPU/memory/disk/uptime. */
+export const systemStats = (): string => '/api/system/stats';
+/** GET /api/health — machine-level health probe. */
+export const health = (): string => '/api/health';
+/** POST /api/gateway/start | /stop. */
+export const gatewayStart = (): string => '/api/gateway/start';
+export const gatewayStop = (): string => '/api/gateway/stop';
+/** GET — curator (skill maintenance) status; POST `/run` triggers a pass. */
+export const curator = (): string => '/api/curator';
+export const curatorRun = (): string => '/api/curator/run';
+/** GET /api/credentials — redacted credential pool. */
+export const credentials = (): string => '/api/credentials';
+export const credentialsPool = (): string => '/api/credentials/pool';
+export const credentialsPoolEntry = (provider: string, index: number): string =>
+  `/api/credentials/pool/${encodeURIComponent(provider)}/${index}`;
+/** Ops one-shots: doctor, security audit, backup, checkpoints. */
+export const opsDoctor = (): string => '/api/ops/doctor';
+export const opsSecurityAudit = (): string => '/api/ops/security-audit';
+export const opsBackup = (): string => '/api/ops/backup';
+export const opsBackupDownload = (archive?: string): string =>
+  archive ? `/api/ops/backup/download?archive=${encodeURIComponent(archive)}` : '/api/ops/backup/download';
+export const opsCheckpoints = (): string => '/api/ops/checkpoints';
+export const opsCheckpointsPrune = (): string => '/api/ops/checkpoints/prune';
+
+// ── Server update / gateway actions ─────────────────────────────────────────
 /** Long-poll action log for a background action (e.g. `hermes update`). */
 export const actionStatus = (name: string, lines: number): string =>
   `/api/actions/${encodeURIComponent(name)}/status?lines=${lines}`;

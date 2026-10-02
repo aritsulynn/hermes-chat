@@ -9,6 +9,7 @@ import { PairingScreen } from './features/pairing';
 import { SettingsScreen } from './features/settings';
 import { SkillsScreen } from './features/skills';
 import { SkillsHubScreen } from './features/skills-hub';
+import { SystemScreen } from './features/system';
 import { WebhooksScreen } from './features/webhooks';
 import { ToolsetsScreen } from './features/toolsets';
 import { UsageScreen } from './features/usage';
@@ -29,6 +30,7 @@ export const APP_ROUTES = [
   { path: '/mcp', element: <McpScreen /> },
   { path: '/pairing', element: <PairingScreen /> },
   { path: '/webhooks', element: <WebhooksScreen /> },
+  { path: '/system', element: <SystemScreen /> },
   { path: '/settings', element: <SettingsScreen /> },
   { path: '/skills', element: <SkillsScreen /> },
   { path: '/skills-hub', element: <SkillsHubScreen /> },
