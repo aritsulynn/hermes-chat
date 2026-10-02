@@ -1,10 +1,9 @@
 // Skills route — agent skill inventory ported from Hermes Desktop's
 // Capabilities pane (`apps/desktop/src/api/skills.ts` + `store/agent-plugins.ts`).
 // Same backend REST contract over the mobile app's authed ops helpers.
-import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
-import { RefreshCw, Pencil, Plus, X } from 'lucide-react';
+import { RefreshCw, Plus, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
@@ -14,9 +13,8 @@ import { Input } from '../../components/ui/input';
 import { toast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/bits';
 import { brandColor, screenStyle } from '../../theme';
-import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
+import { getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
-import { writeClipboard } from '../../services/clipboard';
 import { SkillEditor } from './components/SkillEditor';
 
 // Memoized row: the installed-skills list is small and bounded, so no
@@ -43,7 +41,11 @@ const SkillRow = memo(function SkillRow({
       <div className="flex items-center gap-2">
         {/* text-left: buttons centre their text by UA default, which is why
             every row read centred despite the stretched column. */}
-        <button type="button" className="flex min-w-0 flex-1 flex-col text-left" onClick={() => void onOpen(name)}>
+        <button
+          type="button"
+          aria-label={`Edit ${name}`}
+          className="flex min-w-0 flex-1 flex-col text-left"
+          onClick={() => void onOpen(name)}>
           <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">{name}</span>
           {!!skill.description && (
             <span className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
@@ -53,7 +55,7 @@ const SkillRow = memo(function SkillRow({
           <span className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
             {[skill.origin ? String(skill.origin) : '', typeof skill.usage === 'number' ? `${skill.usage} uses` : '']
               .filter(Boolean)
-              .join(' · ') || 'Tap to view SKILL.md'}
+              .join(' · ') || 'Tap to edit SKILL.md'}
           </span>
         </button>
         {canToggle &&
@@ -80,9 +82,6 @@ export function SkillsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
-  const [content, setContent] = useState('');
-  const [contentLoading, setContentLoading] = useState(false);
   // Editor: `null` while closed, `{ name: string | null }` while open — `name:
   // null` means create mode, matching the desktop dialog's `editName` contract.
   const [editor, setEditor] = useState<{ name: string | null } | null>(null);
@@ -107,8 +106,6 @@ export function SkillsScreen() {
   useEffect(() => {
     if (authed) return;
     setSkills(null);
-    setViewing(null);
-    setContent('');
     setEditor(null);
     setError(null);
   }, [authed]);
@@ -166,23 +163,9 @@ export function SkillsScreen() {
     [getAuthScope, opsMut],
   );
 
-  const openContent = useCallback(
-    async (name: string) => {
-      const scope = getAuthScope();
-      setViewing(name);
-      setContent('');
-      setContentLoading(true);
-      try {
-        const res = await getSkillContent(opsGet, name);
-        if (getAuthScope() === scope) setContent(res.content || '(empty)');
-      } catch (e) {
-        if (getAuthScope() === scope) setContent(`Couldn't load SKILL.md: ${errMsg(e)}`);
-      } finally {
-        if (getAuthScope() === scope) setContentLoading(false);
-      }
-    },
-    [getAuthScope, opsGet],
-  );
+  const openEditor = useCallback((name: string) => {
+    setEditor({ name });
+  }, []);
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -260,7 +243,7 @@ export function SkillsScreen() {
                     dark={dark}
                     toggling={toggling === String(s.name)}
                     onToggle={toggle}
-                    onOpen={openContent}
+                    onOpen={openEditor}
                   />
                 ))
               )}
@@ -268,71 +251,6 @@ export function SkillsScreen() {
           )}
         </div>
       </ScreenScaffold>
-
-      {/* SKILL.md viewer */}
-      <DialogPrimitive.Root open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
-          <DialogPrimitive.Content className="fixed inset-0 z-50 flex flex-col bg-popover outline-hidden dark:bg-background">
-            <DialogPrimitive.Title className="sr-only">Skill file</DialogPrimitive.Title>
-            {/* Flush to the top: a fixed 48px used to sit here and left a dead
-                band above the bar on web, where there is no status bar to
-                clear. The env() inset is 0 there and the real status-bar
-                height under edge-to-edge native. */}
-            <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                <div className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white truncate">
-                  {viewing ?? ''}
-                </div>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    // Close the viewer first: two stacked full-screen dialogs
-                    // fight over pointer events. The editor holds the name, so
-                    // the viewer does not need to stay mounted.
-                    const name = viewing;
-                    setViewing(null);
-                    if (name) setEditor({ name });
-                  }}
-                  aria-label="Edit skill file"
-                  className="h-auto sm:h-auto px-2 py-1.5">
-                  <Pencil size={15} color={brandColor(dark)} />
-                  <span className="text-xs font-semibold text-brand">Edit</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => void writeClipboard(content).catch(() => {})}
-                  aria-label="Copy skill file"
-                  className="h-auto sm:h-auto px-2 py-1.5">
-                  <span className="text-xs font-semibold text-brand">Copy</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setViewing(null)}
-                  aria-label="Close skill file"
-                  // 44px target on every breakpoint: size="icon" shrinks to 36px
-                  // past sm via sm:h-9 sm:w-9, so both halves are spelled out
-                  // (a bare h-11 w-11 only wins below sm).
-                  className="h-11 w-11 shrink-0 rounded-md sm:h-11 sm:w-11">
-                  <X size={20} color={dark ? '#eee' : '#333'} />
-                </Button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="p-4">
-                  {contentLoading ? (
-                    <Spinner size={14} color={brand} />
-                  ) : (
-                    <div className="font-mono text-xs leading-5 whitespace-pre-wrap wrap-break-word text-neutral-900 dark:text-neutral-100">
-                      {content}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </DialogPrimitive.Content>
-        </DialogPrimitive.Portal>
-      </DialogPrimitive.Root>
 
       {/* Create/edit SKILL.md. Mounted only while open so React state resets on
           each fresh open (see SkillEditor's note on why it is not a `key`). */}
@@ -347,7 +265,6 @@ export function SkillsScreen() {
           onClose={() => setEditor(null)}
           onSaved={(name) => {
             toast({ title: editor.name ? 'Skill saved' : 'Skill created', description: name });
-            setViewing(null);
             void load(true);
           }}
         />
