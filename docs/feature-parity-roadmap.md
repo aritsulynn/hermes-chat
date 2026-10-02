@@ -67,7 +67,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
 | Session search | `/sessions` | `SessionsPage.tsx` | **done** (sidebar FTS) | M |
 | Models (aux / MoA) | `/models` | `ModelsPage.tsx` | partial | M–L |
-| MCP | `/mcp` | `McpPage.tsx` | read-only | L |
+| MCP | `/mcp` | `McpPage.tsx` | **done** (servers + catalog) | L |
 | Channels | `/channels` | `ChannelsPage.tsx` | missing | L |
 | System / Ops | `/system` | `SystemPage.tsx` | missing | L |
 | Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | partial | L |
@@ -171,6 +171,13 @@ The mobile app already has helpers, so adding an endpoint is fast:
 ### 4.7 Timeline / branch view `M`
 - `GET /api/sessions/{id}/timeline`, `/latest-descendant`, `/messages/around`
 - Reference: `SessionsPage.tsx`
+
+### 4.8 MCP servers + catalog `L` — done
+- `GET/POST/PUT/DELETE /api/mcp/servers*`, `/test`, `/auth`, `/enabled`
+- `GET /api/mcp/catalog`, `POST /api/mcp/catalog/install`
+- Reference: `McpPage.tsx` (917)
+- Shipped: `src/features/mcp/index.tsx` (route `/mcp`) + `src/services/mcp.ts`,
+  with an add-server sheet and a catalog install sheet for declared env vars.
 
 ---
 

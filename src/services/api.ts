@@ -213,8 +213,30 @@ export const skillHubUninstall = (): string => '/api/skills/hub/uninstall';
 /** POST — update every installed hub skill. */
 export const skillHubUpdate = (): string => '/api/skills/hub/update';
 
-// ── Toolsets ────────────────────────────────────────────────────────────────
+// ── MCP servers ─────────────────────────────────────────────────────────────
 
+/** GET — configured MCP servers (redacted env, enabled state). */
+export const mcpServers = (profile?: string | null): string =>
+  withProfile('/api/mcp/servers', profile);
+/** POST — add a server; PUT replaces the whole map. */
+export const mcpServersSave = (): string => '/api/mcp/servers';
+export const mcpServer = (name: string): string => `/api/mcp/servers/${encodeURIComponent(name)}`;
+/** PUT — toggle one server's `enabled`. */
+export const mcpServerEnabled = (name: string): string =>
+  `/api/mcp/servers/${encodeURIComponent(name)}/enabled`;
+/** POST — probe a server, returning its tools/prompts/resources. */
+export const mcpServerTest = (name: string): string =>
+  `/api/mcp/servers/${encodeURIComponent(name)}/test`;
+/** POST — start MCP OAuth, returning the authorization URL. */
+export const mcpServerAuth = (name: string): string =>
+  `/api/mcp/servers/${encodeURIComponent(name)}/auth`;
+/** GET — Nous-approved catalog, annotated installed/enabled. */
+export const mcpCatalog = (profile?: string | null): string =>
+  withProfile('/api/mcp/catalog', profile);
+/** POST — install a catalog entry (env secrets, optional background git clone). */
+export const mcpCatalogInstall = (): string => '/api/mcp/catalog/install';
+
+// ── Toolsets ────────────────────────────────────────────────────────────────
 /** Unlike `withProfile`, an empty profile resolves to the default namespace
  *  rather than being omitted. */
 function profileParam(profile?: string | null): string {

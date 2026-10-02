@@ -4,6 +4,7 @@ import { CronScreen } from './features/cron';
 import { FilesScreen } from './features/files';
 import { KanbanScreen } from './features/kanban';
 import { LogsScreen } from './features/logs';
+import { McpScreen } from './features/mcp';
 import { SettingsScreen } from './features/settings';
 import { SkillsScreen } from './features/skills';
 import { SkillsHubScreen } from './features/skills-hub';
@@ -23,6 +24,7 @@ export const APP_ROUTES = [
   { path: '/files', element: <FilesScreen /> },
   { path: '/kanban', element: <KanbanScreen /> },
   { path: '/logs', element: <LogsScreen /> },
+  { path: '/mcp', element: <McpScreen /> },
   { path: '/settings', element: <SettingsScreen /> },
   { path: '/skills', element: <SkillsScreen /> },
   { path: '/skills-hub', element: <SkillsHubScreen /> },
