@@ -357,7 +357,10 @@ export function HermesSidebarContent() {
             Browse
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            {/* gap-1 like the Chats list below: active and hover paint the
+                same rounded bg, so with the primitive's gap-0 the two rects
+                touch and their corners merge into one thick blob. */}
+            <SidebarMenu className="gap-1">
               {/* Desktop only: compose reads as the first nav row here, beside
                   the places it navigates to. The mobile sheet keeps it in its
                   header instead (see SidebarHeader above). In the rail it is the
@@ -392,7 +395,9 @@ export function HermesSidebarContent() {
                       isActive={active}
                       tooltip={item.label}
                       onClick={() => go(item.name)}
-                      className={RAIL_ROW}>
+                      // Hover matches the Chats rows below (ghost Button):
+                      // same bg and ink, otherwise Browse hovers lighter.
+                      className={`${RAIL_ROW} hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50`}>
                       <Icon className={active ? ICON_BRAND : ICON_DIM} />
                       <span className={RAIL_LABEL}>{item.label}</span>
                     </SidebarMenuButton>
@@ -559,8 +564,11 @@ export function HermesSidebarContent() {
               pending approval is the one thing that should shout. */}
           <div className="flex shrink-0 items-center group-data-[collapsible=icon]:flex-col">
             <span className="relative">
+              {/* size-5 is load-bearing, not decoration: ghost buttons shrink
+                  any svg without a size-* class to 16px, which is why these
+                  read smaller than the 20px rail rows above. */}
               <Button variant="ghost" size="icon" aria-label="Ask Inbox" onClick={() => go('asks')}>
-                <BellRing size={20} className={pathname === '/asks' ? ICON_BRAND : ICON_DIM} />
+                <BellRing size={20} className={`${pathname === '/asks' ? ICON_BRAND : ICON_DIM} size-5`} />
               </Button>
               {pendingAskCount > 0 && (
                 <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
@@ -569,13 +577,13 @@ export function HermesSidebarContent() {
               )}
             </span>
             <Button variant="ghost" size="icon" aria-label="Logs" onClick={() => go('logs')}>
-              <ScrollText size={20} className={pathname === '/logs' ? ICON_BRAND : ICON_DIM} />
+              <ScrollText size={20} className={`${pathname === '/logs' ? ICON_BRAND : ICON_DIM} size-5`} />
             </Button>
             <Button variant="ghost" size="icon" aria-label="Usage" onClick={() => go('usage')}>
-              <Activity size={20} className={pathname === '/usage' ? ICON_BRAND : ICON_DIM} />
+              <Activity size={20} className={`${pathname === '/usage' ? ICON_BRAND : ICON_DIM} size-5`} />
             </Button>
             <Button variant="ghost" size="icon" aria-label="Settings" onClick={() => go('settings')}>
-              <Settings size={20} className={pathname === '/settings' ? ICON_BRAND : ICON_DIM} />
+              <Settings size={20} className={`${pathname === '/settings' ? ICON_BRAND : ICON_DIM} size-5`} />
             </Button>
           </div>
         </div>
