@@ -75,7 +75,10 @@ export function ProfilesScreen() {
     if (authed) void load();
   }, [authed, load]);
 
-  const useProfile = useCallback(
+  // Not a hook despite the old `useProfile` name — ESLint's rules-of-hooks
+  // reads the `use` prefix as a hook call and rejects it inside onClick.
+  // Pairs with doExport below.
+  const doUseProfile = useCallback(
     async (p: ProfileInfo) => {
       const scope = getAuthScope();
       setBusyName(p.name);
@@ -221,7 +224,7 @@ export function ProfilesScreen() {
                     {!isActive && (
                       <Button
                         aria-label={`Use ${p.name}`}
-                        onClick={() => void useProfile(p)}
+                        onClick={() => void doUseProfile(p)}
                         disabled={busyName === p.name}
                         className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
                         {busyName === p.name ? <Spinner size={13} color="#fff" /> : <Check size={13} color="#fff" />}

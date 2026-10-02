@@ -246,7 +246,9 @@ export function FilesScreen() {
         }
       }
     },
-    [getAuthScope, load, opsGet],
+    // `setSearchQuery` is an alias for the `setSearchInput` state setter, so its
+    // identity is stable; ESLint cannot see through the alias.
+    [getAuthScope, load, opsGet, setSearchQuery],
   );
 
   // Stable identity for the list header: `load` and `listing.parent` are

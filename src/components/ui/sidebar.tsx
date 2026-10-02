@@ -165,7 +165,9 @@ function Sidebar({
   variant?: 'sidebar' | 'floating' | 'inset';
   collapsible?: 'offcanvas' | 'icon' | 'none';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  // Both useSidebar() calls are one hook: destructured up here so nothing is
+  // read after the two early returns below.
+  const { isMobile, state, openMobile, setOpenMobile, toggleSidebar } = useSidebar();
 
   if (collapsible === 'none') {
     return (
@@ -205,7 +207,6 @@ function Sidebar({
     );
   }
 
-  const { toggleSidebar } = useSidebar();
   // Clicking the collapsed rail expands it: with no hamburger in the screen
   // header and no room for a toggle button at 64px, the rail itself is the only
   // affordance on desktop. Guarded so the expanded panel is unaffected.

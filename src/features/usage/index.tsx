@@ -14,7 +14,7 @@ import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
 import { normalizeModelUsage, normalizeToolSkillList } from './helpers';
-import type { ModelUsageItem, ToolSkillItem } from './helpers';
+import type { ModelUsageItem } from './helpers';
 
 const PERIOD_OPTIONS = [
   { label: '7 Days', days: 7 },
@@ -84,14 +84,23 @@ export function UsageScreen() {
 
   const totals = data?.totals || {};
   const totalTokens = (totals?.total_input || 0) + (totals?.total_output || 0) + (totals?.total_reasoning || 0);
-  const dailyEntries: any[] = Array.isArray(data?.daily) ? data.daily : [];
-  const modelEntries: any[] = Array.isArray(data?.by_model) ? data.by_model : [];
+  // One memo over the whole `data` object: the per-field `data?.daily` /
+  // `data?.tools` / `data?.skills` deps each produced a fresh array (or a fresh
+  // `undefined`) on every render, so every useMemo below re-ran on every render
+  // and the memoisation did nothing.
+  const { dailyEntries, modelEntries, toolsList, skillsList } = useMemo(() => {
+    return {
+      dailyEntries: Array.isArray(data?.daily) ? data.daily : [],
+      modelEntries: (Array.isArray(data?.by_model) ? data.by_model : []) as any[],
+      toolsList: normalizeToolSkillList(data?.tools, 'tool'),
+      skillsList: normalizeToolSkillList(data?.skills, 'skill'),
+    };
+  }, [data]);
+
   // Prefer the richer `/analytics/models` rows (provider, cost, sessions); fall
   // back to the lighter `by_model` from `/analytics/usage` when either is empty.
   const modelUsage: ModelUsageItem[] = useMemo(() => normalizeModelUsage(modelsData), [modelsData]);
   const richModels = modelUsage.length > 0;
-  const toolsList: ToolSkillItem[] = useMemo(() => normalizeToolSkillList(data?.tools, 'tool'), [data?.tools]);
-  const skillsList: ToolSkillItem[] = useMemo(() => normalizeToolSkillList(data?.skills, 'skill'), [data?.skills]);
 
   // Fill in missing days so the chart shows a continuous daily timeline
   const fullDailyEntries = useMemo(() => {

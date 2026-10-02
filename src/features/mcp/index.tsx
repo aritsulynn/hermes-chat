@@ -418,7 +418,6 @@ export function McpScreen() {
         <AddServerSheet
           dark={dark}
           opsMut={opsMut}
-          profile={profile}
           getAuthScope={getAuthScope}
           onClose={() => setAddOpen(false)}
           onAdded={() => {
@@ -620,14 +619,12 @@ function CatalogRow({ entry, onInstall }: { entry: McpCatalogEntry; onInstall: (
 function AddServerSheet({
   dark,
   opsMut,
-  profile,
   getAuthScope,
   onClose,
   onAdded,
 }: {
   dark: boolean;
   opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<unknown>;
-  profile: string;
   getAuthScope: () => unknown;
   onClose: () => void;
   onAdded: () => void;
@@ -686,7 +683,7 @@ function AddServerSheet({
     } finally {
       if (getAuthScope() === scope) setSaving(false);
     }
-  }, [args, bearer, command, env, getAuthScope, httpAuth, name, onAdded, opsMut, transport, url, profile]);
+  }, [args, bearer, command, env, getAuthScope, httpAuth, name, onAdded, opsMut, transport, url]);
 
   return (
     <DialogPrimitive.Root open onOpenChange={(o) => !o && onClose()}>

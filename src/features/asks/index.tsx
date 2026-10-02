@@ -66,7 +66,10 @@ const AskCard = memo(function AskCard({
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const isSecret = entry.method === 'sudo' || entry.method === 'secret' || entry.method.startsWith('vault.');
-  const clarify = entry.method === 'clarify' ? parseClarify(entry) : null;
+  // Memoised on `entry` so the effect below can depend on `clarify`: parsed
+  // inline it was a fresh object each render, which made both the dep and the
+  // restored-answers object unstable (setState in a loop).
+  const clarify = useMemo(() => (entry.method === 'clarify' ? parseClarify(entry) : null), [entry]);
 
   // A locked answer arrives on a reconnect replay; show it instead of an empty
   // box so a half-answered question does not look unanswered.
@@ -77,7 +80,7 @@ const AskCard = memo(function AskCard({
     }
     setPicked(restored);
     setText(clarify?.single ? (clarify.questions[0]?.lockedAnswer ?? '') : '');
-  }, [entry.key, clarify?.single]);
+  }, [entry.key, clarify]);
 
   const submit = useCallback(() => {
     if (clarify) {
