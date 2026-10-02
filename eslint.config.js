@@ -5,7 +5,20 @@ import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', '.openchamber', 'public'] },
+  // `**/…` and not a bare name: in flat config an ignore like `public` only
+  // matches at the config root, so the Capacitor build output nested under
+  // `android/app/**/assets/public` was being linted as source — 6,800+ errors
+  // of minified bundle, none of them ours.
+  {
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/.openchamber/**',
+      '**/public/**',
+      // Gradle output — native-bridge.js is a Capacitor-generated asset.
+      '**/build/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
