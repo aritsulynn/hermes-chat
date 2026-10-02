@@ -71,7 +71,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Channels | `/channels` | `ChannelsPage.tsx` | **done** | L |
 | System / Ops | `/system` | `SystemPage.tsx` | **done** (core) | L |
 | Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | **done** | L |
-| Config | `/config` | `ConfigPage.tsx` | missing | L |
+| Config | `/config` | `ConfigPage.tsx` | **done** (YAML) | L |
 | Keys / Env | `/keys` | `EnvPage.tsx` | **done** (env vars) | L |
 | Plugins | `/plugins` | `PluginsPage.tsx` | **done** | L |
 | Pairing | `/pairing` | `PairingPage.tsx` | **done** | M |
@@ -234,6 +234,17 @@ The mobile app already has helpers, so adding an endpoint is fast:
   probe, reveal-on-demand (token-gated) with copy, delete, and add-a-custom-key.
   The desktop's custom provider-endpoints editor (config.yaml `providers.*`) is
   a distinct surface and is not ported here.
+
+### 4.14 Config `L` — done (raw YAML)
+- `GET /api/config/raw`, `PUT /api/config/raw` (full-document replacement)
+- Also wired: `GET /api/config`, `/api/config/schema` (for the form surface)
+- Reference: `ConfigPage.tsx` (680)
+- Shipped: `src/features/config/index.tsx` (route `/config`) + `src/services/config.ts`:
+  a raw-YAML editor showing the profile-scoped config path, with dirty tracking,
+  a save that surfaces the backend's YAML validation error, a discard, and a
+  reload guarded by an unsaved-changes confirm. The desktop's schema-driven
+  category form (per-field renderer + scoped reset) is a large separate renderer
+  and is not ported.
 
 ---
 

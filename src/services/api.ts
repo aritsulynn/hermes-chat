@@ -134,6 +134,17 @@ export const cronJobAction = (id: string, action: CronJobAction, profile?: strin
 export const cronJobRuns = (id: string, profile?: string | null, limit = 30): string =>
   withProfile(`/api/cron/jobs/${encodeURIComponent(id)}/runs${query({ limit })}`, profile);
 
+// ── Config ──────────────────────────────────────────────────────────────────
+
+/** Raw config.yaml text plus its resolved path. */
+export const configRaw = (profile?: string | null): string => withProfile('/api/config/raw', profile);
+/** Normalized config object (form surface). */
+export const configObject = (profile?: string | null): string => withProfile('/api/config', profile);
+/** Schema-driven field metadata. */
+export const configSchema = (profile?: string | null): string => withProfile('/api/config/schema', profile);
+/** Built-in defaults, for a scoped reset. */
+export const configDefaults = (): string => '/api/config/defaults';
+
 // ── Env / Keys ──────────────────────────────────────────────────────────────
 
 /** All env vars with set/redacted metadata (channel-managed keys excluded). */
