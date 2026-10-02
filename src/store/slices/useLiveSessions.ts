@@ -39,6 +39,10 @@ export function useLiveSessionsSlice({
   // A ref, not state: the poll loop reads it on every tick, and a state write
   // here would tear down and rebuild the interval mid-cycle.
   const armed = useRef(false);
+  // Mirror of `liveSessions` for the poll's equality check below — reading it
+  // from a ref keeps `refreshLiveSessions` off the state dependency list, which
+  // is what lets the 4s interval stay armed.
+  const liveSessionsRef = useRef<LiveSessionMap>(liveSessions);
 
   const refreshLiveSessions = useCallback(async () => {
     const g = gw.current;
@@ -60,7 +64,26 @@ export function useLiveSessionsSlice({
         if (!owner) continue;
         next[owner] = row.status;
       }
-      setLiveSessions(next);
+      // Same content, new object would still change identity and re-render
+      // every `useApp()` consumer — `liveSessions` sits in the shared store
+      // value, so this runs every 4s and that is not free on a phone. Keep the
+      // previous reference when nothing moved.
+      let changed = rows.length === 0 && Object.keys(liveSessionsRef.current).length === 0;
+      if (!changed) {
+        const current = liveSessionsRef.current;
+        const keys = Object.keys(next);
+        changed = keys.length !== Object.keys(current).length;
+        if (!changed) {
+          for (const key of keys) {
+            if (current[key] !== next[key]) {
+              changed = true;
+              break;
+            }
+          }
+        }
+      }
+      liveSessionsRef.current = next;
+      if (changed) setLiveSessions(next);
       setLiveSessionsKnown(true);
     } catch {
       // Older gateways have no session.active_list, and a poll racing a socket

@@ -11,19 +11,37 @@
 // "auth-expired" (which forces a logout on the next tick, see useGateway), so
 // the strip only appears when it has something durable to say.
 import { CloudOff, RefreshCw } from 'lucide-react';
-import { useApp, useThemeValue } from '../hooks/app-store';
+import { useApp, useConn, useThemeValue } from '../hooks/app-store';
+import { useGrace } from '../hooks/use-grace';
 import { Button } from './ui/button';
 import { Spinner } from './ui/bits';
 
+/**
+ * How long a drop has to last before the strip admits it exists.
+ *
+ * A socket that is going to come back inside this window never surfaces. See
+ * hooks/use-grace for why the flash was worse than the outage.
+ */
+const BANNER_GRACE_MS = 1500;
+
 export function ConnectionBanner() {
-  const { conn, authed, login, reconnectNow, diagnostics } = useApp();
+  const { authed, login, reconnectNow, diagnostics } = useApp();
+  // Read through its own context: this strip is the one thing that must react
+  // to a socket transition, and it should be the only thing that does.
+  const conn = useConn();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
 
-  if (!authed) return null;
+  // `connecting` is included: the first connect after a cold boot is a real wait
+  // the login screen cannot cover. The resume case — a drop that heals in a few
+  // hundred ms — is not, and that is what this window hides.
+  const offline = conn === 'connecting' || conn === 'reconnecting' || conn === 'closed';
+  const announced = useGrace(offline, BANNER_GRACE_MS);
+
+  if (!authed || !announced) return null;
+
   const stalled = conn === 'connecting' || conn === 'reconnecting';
   const dropped = conn === 'closed';
-  if (!stalled && !dropped) return null;
 
   // Last socket close, so a stuck "reconnecting…" names its cause (1006 =
   // network/server gone, 44xx = auth). Already in Copy diagnostics too.

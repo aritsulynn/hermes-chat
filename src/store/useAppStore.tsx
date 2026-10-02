@@ -132,6 +132,19 @@ export function useThemeValue(): ThemeSlice {
   return v;
 }
 
+// `conn` is isolated from AppContext for the same reason. It flips on every
+// socket transition — and on Android that is exactly what happens when the user
+// leaves to another app: the WebView's socket dies with 1003 and `conn` runs
+// ready → reconnecting → ready. In the shared value that gave all 27 useApp()
+// consumers a new object, so the chat screen and its virtualized transcript
+// re-rendered twice over on every app resume — which read to the user as "the
+// app reloaded". Only four components read `conn` at all.
+const ConnContext = createContext<ConnState>('idle');
+
+export function useConn(): ConnState {
+  return useContext(ConnContext);
+}
+
 export function useApp(): AppStore {
   const v = useContext(AppContext);
   if (!v) throw new Error('useApp must be used inside AppProvider');
@@ -887,7 +900,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setUsername,
       password,
       setPassword,
-      conn,
       activeProfile,
       profiles,
       refreshProfiles,
@@ -1089,10 +1101,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppContext.Provider value={value}>
-      <ThemeContext.Provider value={themeSlice}>
-        <StreamingContext.Provider value={streaming}>{children}</StreamingContext.Provider>
-      </ThemeContext.Provider>
-    </AppContext.Provider>
+    <ConnContext.Provider value={conn}>
+      <AppContext.Provider value={value}>
+        <ThemeContext.Provider value={themeSlice}>
+          <StreamingContext.Provider value={streaming}>{children}</StreamingContext.Provider>
+        </ThemeContext.Provider>
+      </AppContext.Provider>
+    </ConnContext.Provider>
   );
 }

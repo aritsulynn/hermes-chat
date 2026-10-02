@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { Check, CircleUserRound, Download, Globe, Info, LogOut, Palette, Server, Shield, User } from 'lucide-react';
-import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useApp, useConn, useThemeValue } from '../../hooks/app-store';
 import { Card, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
@@ -20,7 +20,6 @@ export function SettingsScreen() {
     authed,
     username,
     host,
-    conn,
     activeProfile,
     logout,
     sessionInfo,
@@ -29,6 +28,7 @@ export function SettingsScreen() {
     notificationsEnabled,
     setNotifications,
   } = useApp();
+  const conn = useConn();
   const { theme, themeMode, setTheme, accent, setAccent } = useThemeValue();
   const dark = theme === 'dark';
   const isReady = conn === 'ready';

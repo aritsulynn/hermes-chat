@@ -19,7 +19,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useApp, useConn, useThemeValue } from '../../hooks/app-store';
 import { asRecord } from '../../utils/ops';
 import { errMsg } from '../../utils/messages';
 import { Button } from './button';
@@ -88,7 +88,8 @@ function formatCommitDate(at: number): string {
 }
 
 export function UpdatePanel() {
-  const { conn, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const conn = useConn();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
 

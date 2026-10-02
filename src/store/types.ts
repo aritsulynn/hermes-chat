@@ -3,7 +3,7 @@
 // one place instead of buried above a 4k-line provider.
 import type { AskInboxEntry } from '../services/ask-inbox';
 import type { ModelProviderOption } from '../services/dashboard';
-import type { ConnState, GatewayWs, ServerAsk, SessionSummary } from '../services/gateway-ws';
+import type { GatewayWs, ServerAsk, SessionSummary } from '../services/gateway-ws';
 import type { LiveSessionMap } from './live-sessions';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
 
@@ -43,7 +43,9 @@ export interface AppStore {
   setUsername: (v: string) => void;
   password: string;
   setPassword: (v: string) => void;
-  conn: ConnState;
+  /** NOT here on purpose — `conn` has its own context (`useConn`). It flips on
+   *  every socket transition, and leaving it in the shared value re-rendered
+   *  all 27 useApp() consumers whenever the Android socket died on resume. */
   /** Gateway profile currently selected for Chat and profile-aware screens. */
   activeProfile: string;
   profiles: AgentProfile[];

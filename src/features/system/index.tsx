@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { Database, HardDrive, KeyRound, Play, RefreshCw, RotateCw, Shield, Square, Stethoscope } from 'lucide-react';
-import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useApp, useConn, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -38,7 +38,8 @@ function formatUptime(seconds: number | null): string {
 }
 
 export function SystemScreen() {
-  const { authed, opsGet, opsMut, getAuthScope, conn } = useApp();
+  const { authed, opsGet, opsMut, getAuthScope } = useApp();
+  const conn = useConn();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
