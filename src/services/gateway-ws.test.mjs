@@ -201,6 +201,73 @@ test('dispatch records the last event sid for on-device diagnostics', () => {
   assert.equal(debug.eventCounts['message.delta'], 2);
 });
 
+test('a wake during a ticket mint does not dial the spent ticket', async () => {
+  const RealWS = globalThis.WebSocket;
+  const states = [];
+  const dials = [];
+  const spent = new Set();
+  let mints = 0;
+  class FakeWS {
+    constructor(url) {
+      this.url = url;
+      this.readyState = 0;
+      dials.push(url);
+      setTimeout(() => {
+        // A ticket is single-use: replaying one gets rejected outright.
+        if (spent.has(url)) {
+          this.readyState = 3;
+          this.onclose?.({ code: 4401 });
+          return;
+        }
+        spent.add(url);
+        this.readyState = 1;
+        this.onopen?.();
+      }, 0);
+    }
+    send() {}
+    close() {
+      try {
+        this.onclose?.({ code: 1000 });
+      } catch {}
+    }
+  }
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  globalThis.WebSocket = FakeWS;
+  const gateway = new GatewayWs({
+    wsUrl: 'ws://ticket-1',
+    events: { onState: (s) => states.push(s) },
+    refreshUrl: async () => {
+      await sleep(60); // a real ticket mint is a round trip
+      return `ws://ticket-${++mints + 1}`;
+    },
+  });
+  try {
+    void gateway.connect(1000);
+    await sleep(20);
+    // Network drops: 1006, no close frame, nothing to explain it.
+    gateway.ws.readyState = 3;
+    gateway.ws.onclose({ code: 1006 });
+    await sleep(10); // the mint is in flight here
+    // The user taps Retry — or the phone wakes and fires `online`/`focus`.
+    gateway.retryNow();
+    await sleep(150);
+    assert.ok(
+      !states.includes('auth-expired'),
+      `spent ticket was replayed (dials=${JSON.stringify(dials)} states=${JSON.stringify(states)})`,
+    );
+    // And the wake must not be swallowed: it has to buy the fresh ticket that
+    // was already in flight rather than sit out a backoff.
+    assert.ok(dials.includes('ws://ticket-2'), `wake never dialled the minted ticket (dials=${JSON.stringify(dials)})`);
+    assert.ok(
+      dials.every((url, i) => i === 0 || url !== 'ws://ticket-1'),
+      `ticket-1 was dialled ${dials.filter((u) => u === 'ws://ticket-1').length} times (dials=${JSON.stringify(dials)})`,
+    );
+  } finally {
+    gateway.close();
+    globalThis.WebSocket = RealWS;
+  }
+});
+
 test('a ping failure on an open socket triggers a reconnect instead of stranding the chat', async () => {
   const RealWS = globalThis.WebSocket;
   const states = [];

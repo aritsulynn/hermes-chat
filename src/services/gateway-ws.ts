@@ -280,6 +280,14 @@ export class GatewayWs {
   >();
   private closed = false;
   private backoff = WS_INITIAL_BACKOFF_MS;
+  /** True once this.url has been handed to a socket. Tickets are single-use, so
+   *  the URL is dead the moment it is dialled — see the guard in `dial`. */
+  private urlSpent = false;
+  /** True while `refreshUrl` is in flight. The mint owns the next dial. */
+  private minting = false;
+  /** Set by `retryNow` during a mint: that mint must skip its backoff wait
+   *  instead of being raced by a second dial. */
+  private dialAsSoonAsMinted = false;
   /** online/focus/visibility hooks, kept so detach can remove the same fns. */
   private wakeListeners: { wake: () => void; visible: () => void } | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -349,6 +357,8 @@ export class GatewayWs {
     this.closed = true;
     this.detachLifecycleHooks();
     this.clearTimers();
+    this.minting = false;
+    this.dialAsSoonAsMinted = false;
     try {
       asWsLike(this.ws)?.close?.();
     } catch {}
@@ -364,10 +374,19 @@ export class GatewayWs {
   /** Cut through the backoff and dial immediately (banner Retry button). */
   retryNow() {
     if (this.closed) return;
+    this.backoff = WS_INITIAL_BACKOFF_MS;
+    // A mint is in flight and is about to hand us a fresh, unspent ticket.
+    // Dialling now would replay the spent URL, get an auth close back, and read
+    // as a logged-out user. Let the mint own this dial and just drop its wait —
+    // which is the whole point of retryNow: the user should not wait out a
+    // backoff while a perfectly dialable socket is one round trip away.
+    if (this.minting) {
+      this.dialAsSoonAsMinted = true;
+      return;
+    }
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.reconnectScheduled = false;
-    this.backoff = WS_INITIAL_BACKOFF_MS;
     this.dial();
   }
 
@@ -431,6 +450,17 @@ export class GatewayWs {
 
   private dial() {
     if (this.closed) return;
+    // A ticket is single-use, so a URL a previous socket already dialled is
+    // dead: the server answers with an auth close (4401/4403), which `onclose`
+    // treats as a logged-out user and tears the whole session down over what
+    // was only a network blip. With a refreshUrl the only way forward is a
+    // fresh ticket — which is exactly what a reconnect mints, so hand off
+    // rather than replay. (Without one there is nothing better to do, so the
+    // old behaviour stands.)
+    if (this.urlSpent && this.refreshUrl) {
+      this.scheduleReconnect();
+      return;
+    }
     this.reconnectScheduled = false;
     const generation = ++this.socketGeneration;
     this.failPendingForGeneration(generation - 1, {
@@ -444,6 +474,8 @@ export class GatewayWs {
     this.setState(this.backoff > WS_INITIAL_BACKOFF_MS ? 'reconnecting' : 'connecting');
     let ws: WebSocket;
     try {
+      // From here the ticket is committed — nothing may dial it again.
+      this.urlSpent = true;
       ws = new WebSocket(this.url);
     } catch {
       return this.scheduleReconnect();
@@ -509,8 +541,10 @@ export class GatewayWs {
     this.reconnectScheduled = true;
     this.setState('reconnecting');
     if (this.refreshUrl) {
+      this.minting = true;
       try {
         this.url = await this.refreshUrl();
+        this.urlSpent = false;
         this.backoff = WS_INITIAL_BACKOFF_MS;
       } catch (e: unknown) {
         // A rejected session cookie cannot be repaired by another ticket mint.
@@ -523,11 +557,22 @@ export class GatewayWs {
           return;
         }
         // Transient mint/network failure — back off and retry; the next attempt
-        // will surface auth-expired if the server rejects the session.
+        // will surface auth-expired if the server rejects the session. `url`
+        // stays spent, which is fine: the `dial` guard routes the retry back
+        // through a mint instead of replaying it.
+      } finally {
+        this.minting = false;
       }
     }
     if (this.closed) {
       this.reconnectScheduled = false;
+      return;
+    }
+    // A wake landed while the ticket was being minted — dial the fresh one now.
+    if (this.dialAsSoonAsMinted) {
+      this.dialAsSoonAsMinted = false;
+      this.reconnectScheduled = false;
+      this.dial();
       return;
     }
     const wait = Math.min(this.backoff, this.maxBackoffMs);
