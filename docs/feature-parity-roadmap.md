@@ -57,7 +57,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 
 | Feature | Desktop route | Reference | Mobile | Size |
 | --- | --- | --- | --- | --- |
-| Session export | `/sessions` | `SessionsPage.tsx` | missing | S |
+| Session export | `/sessions` | `SessionsPage.tsx` | **done** (chat menu) | S |
 | Schedule builder (cron) | `/cron` | `lib/schedule.ts` + `ScheduleBuilder.tsx` | **done** | S–M |
 | Analytics by model | `/analytics` | `AnalyticsPage.tsx` | partial (usage already renders `by_model`) | S |
 | Skill editor | `/skills` | `SkillEditorDialog.tsx` | **done** | M |
@@ -83,14 +83,13 @@ The mobile app already has helpers, so adding an endpoint is fast:
 
 ## 3. Easy wins — start here
 
-### 3.1 Session export `S`
+### 3.1 Session export `S` — done
 
 - **What:** export a conversation to a file from the chat screen.
 - **Endpoint:** `GET /api/sessions/{id}/export`
-- **Reference:** `web/src/lib/api.ts` (response shape), `SessionsPage.tsx`
-- **Touch:** `src/services/api.ts` (add a builder), `src/features/chat/index.tsx`
-  (existing menu); reuse `services/clipboard.ts` where useful.
-- **Note:** no new screen needed — hang it off the chat menu.
+- **Shipped:** `exportSession` on the session-ops slice + `getSessionExportText`
+  in `services/dashboard.ts`; the chat context-ring menu gains **Export session**
+  and saves the raw JSON with a filename derived from the session title.
 
 ### 3.2 Cron ScheduleBuilder `S–M` — done
 

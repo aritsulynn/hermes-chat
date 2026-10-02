@@ -755,7 +755,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Sessions ─────────────────────────────────────────────────────────────
 
-  const { openSession, newSession } = add(useSessionOpsSlice(ctx));
+  const { openSession, newSession, exportSession } = add(useSessionOpsSlice(ctx));
 
   const { switchProfile, branchSession } = add(useProfileOpsSlice(ctx));
 
@@ -939,6 +939,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionsLoadingMore,
       openSession,
       newSession,
+      exportSession,
       send,
       stop,
       loadProviders,
@@ -1041,6 +1042,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionsLoadingMore,
       openSession,
       newSession,
+      exportSession,
       send,
       stop,
       loadProviders,

@@ -10,7 +10,14 @@
 import { CtxRingBody, ScreenHeader } from '../../../components/ui/bits';
 import { compactNumber } from '../../../utils/format';
 import { Button } from '../../../components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../../components/ui/dropdown-menu';
+import { Download } from 'lucide-react';
 
 export function ChatNormalHeader({
   dark,
@@ -23,6 +30,7 @@ export function ChatNormalHeader({
   output,
   costUsd,
   subagents,
+  onExport,
 }: {
   dark: boolean;
   title: string;
@@ -35,9 +43,12 @@ export function ChatNormalHeader({
   output?: number | null;
   costUsd?: number | null;
   subagents?: number | null;
+  /** Download the open session as JSON. */
+  onExport?: () => void;
 }) {
   // The ring is a menu: a header badge is a one-tap summary, and the numbers
   // behind it are four separate fields that have no other home in the UI.
+  const headerIcon = dark ? '#a3a3a3' : '#555';
   const ctxLabel = contextPercent != null ? `${parseFloat(contextPercent.toFixed(1))}%` : '';
   const ctxRow = (k: string, v: string) => (
     <div className="flex items-center justify-between gap-4 px-3 py-1.5">
@@ -74,6 +85,15 @@ export function ChatNormalHeader({
                 {output != null && ctxRow('Output', compactNumber(output))}
                 {costUsd != null && costUsd > 0 && ctxRow('Cost', `$${costUsd.toFixed(2)}`)}
                 {subagents != null && subagents > 0 && ctxRow('Subagents', String(subagents))}
+                {onExport && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onExport} className="gap-2">
+                      <Download size={15} color={headerIcon} />
+                      <span className="text-[13px] text-neutral-800 dark:text-neutral-200">Export session</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

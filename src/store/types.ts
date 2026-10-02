@@ -116,6 +116,8 @@ export interface AppStore {
   sessionsLoadingMore: boolean;
   openSession: (s: ScopedSessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
+  /** Download the open session as JSON; returns the filename and raw text. */
+  exportSession: (title?: string) => Promise<{ filename: string; text: string }>;
   send: () => Promise<void>;
   stop: () => void;
   getGw: () => GatewayWs | null;

@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, ChevronRight, Clock, Copy, FileText, Image as I
 import { useApp, useStreamingRead, useThemeValue } from '../../hooks/app-store';
 import { Transcript } from '../../components/chat/transcript';
 import { MessageScrollerItem } from '../../components/ui/message-scroller';
+import { toast } from '../../components/ui/toast';
 import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
 import type { TranscriptHandle } from '../../components/chat/transcript';
 import { useScrollbarGutter, useViewportSize } from '../../hooks/use-viewport';
@@ -20,6 +21,7 @@ import {
   todoActive,
   todoDone,
   todoLabel,
+  errMsg,
 } from '../../utils/messages';
 import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '../../utils/reasoning';
 import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
@@ -110,6 +112,7 @@ export function ChatScreen() {
     refreshToolResults,
     pickModel,
     copyText,
+    exportSession,
     answerValue,
     answerApproval,
     answerAsk,
@@ -460,6 +463,34 @@ export function ChatScreen() {
   );
   const onCopy = useCallback((id: string, text: string) => void copyText(id, text), [copyText]);
   const onRegenerate = useCallback(() => regenerate(), [regenerate]);
+
+  // Export the whole session as JSON. The store returns the raw text; the save
+  // is an anchor download, which works on web and in the native shell (the
+  // WebView routes the `download` attribute to the platform downloader).
+  const [exporting, setExporting] = useState(false);
+  const handleExportSession = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { filename, text } = await exportSession(
+        sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : undefined,
+      );
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast({ title: 'Session exported', description: filename });
+    } catch (e) {
+      toast({ title: 'Export failed', description: errMsg(e), variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
+  }, [exportSession, exporting, sessionTitle]);
   // Long-press menu on our own messages (Copy / Edit) — same popover pattern.
   const [userMenu, setUserMenu] = useState<{ anchor: AnchorRect; id: string } | null>(null);
   const openUserMenu = useCallback((m: AnchorMeasure, id: string) => m((a) => setUserMenu({ anchor: a, id })), []);
@@ -780,6 +811,7 @@ export function ChatScreen() {
           output={usage?.output ?? null}
           costUsd={usage?.costUsd ?? null}
           subagents={subagents.length}
+          onExport={() => void handleExportSession()}
         />
       </div>
 

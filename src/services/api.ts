@@ -97,6 +97,11 @@ export const sessionMessages = (
 export const cronRunMessages = (runId: string, profile?: string | null, limit = 100): string =>
   withProfile(`/api/sessions/${encodeURIComponent(runId)}/messages${query({ order: 'oldest', limit })}`, profile);
 
+/** Full session JSON export (metadata + every message, including inactive rows).
+ *  Streams `application/json`; the caller saves the raw body. */
+export const sessionExport = (storedId: string, profile?: string | null): string =>
+  withProfile(`/api/sessions/${sessionPath(storedId)}/export`, profile);
+
 // ── Cron ────────────────────────────────────────────────────────────────────
 
 /** Job list for one profile. */

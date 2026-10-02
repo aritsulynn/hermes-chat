@@ -493,6 +493,30 @@ export async function apiGet(
   }
 }
 
+/** Raw text of a session export (`GET /api/sessions/{id}/export`).
+ *
+ *  The endpoint streams JSON, so the body is returned as text and the caller
+ *  saves it verbatim — parsing then re-serialising would lose the streaming
+ *  fidelity and could choke on a very large transcript. */
+export async function getSessionExportText(
+  baseUrl: string,
+  cookie: string,
+  storedId: string,
+  profile?: string,
+  onCookie?: CookieUpdater,
+): Promise<string> {
+  const base = normalizeBase(baseUrl);
+  const res = await fetchAuthed(
+    `${base}${api.sessionExport(storedId, profile)}`,
+    { headers: { Cookie: cookie } },
+    cookie,
+    HTTP_SESSION_MESSAGES_TIMEOUT_MS,
+    onCookie,
+  );
+  if (!res.ok) throw new Error(`Session export failed: HTTP ${res.status}`);
+  return res.text();
+}
+
 export async function apiMut(
   baseUrl: string,
   cookie: string,
