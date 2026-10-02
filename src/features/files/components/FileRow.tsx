@@ -22,8 +22,11 @@ export const FileRow = memo(function FileRow({
   const category = getFileCategory(entry.name, entry.mime_type);
   const isDir = entry.is_directory;
   const Icon = isDir ? Folder : category.icon;
-  const iconColor = isDir ? '#f59e0b' : category.color;
-  const iconBg = isDir ? '#f59e0b18' : category.bgColor;
+  // Folders follow the theme brand (icon + tint) so a future accent applies
+  // here with no code change. Per-file-type colours below stay fixed — they
+  // encode the kind of file, like the trust badges, not the theme.
+  const iconColor = isDir ? 'var(--brand-hex)' : category.color;
+  const iconBg = isDir ? undefined : category.bgColor;
   // Stable handlers + memoized style: inline arrows/objects here would defeat
   // memo() and re-render every row on each parent render.
   const handlePress = useCallback(() => onOpen(entry), [onOpen, entry]);
@@ -47,7 +50,9 @@ export const FileRow = memo(function FileRow({
       }}
       {...longPress}
       className="flex cursor-pointer items-center gap-3 border-b border-border px-4 py-2.5 hover:bg-muted dark:hover:bg-muted">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={iconStyle}>
+      <div
+        className={`flex h-10 w-10 items-center justify-center rounded-xl ${isDir ? 'bg-brand/10' : ''}`}
+        style={iconStyle}>
         <Icon size={20} color={iconColor} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-center">

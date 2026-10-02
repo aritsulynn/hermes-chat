@@ -455,8 +455,8 @@ export function FilesScreen() {
           onClick={handleGoUp}
           aria-label="Parent directory"
           className="h-auto sm:h-auto w-full justify-start gap-3 border-b border-border px-4 py-3 active:bg-muted dark:active:bg-muted">
-          <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15">
-            <ArrowUp size={18} color="#f59e0b" />
+          <div className="flex flex-col h-9 w-9 items-center justify-center rounded-xl bg-brand/10">
+            <ArrowUp size={18} color="var(--brand-hex)" />
           </div>
           <div className="flex flex-col flex-1 items-start">
             <div className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">..</div>

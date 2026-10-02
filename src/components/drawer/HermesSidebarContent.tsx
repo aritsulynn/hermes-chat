@@ -31,6 +31,7 @@ import {
   BellRing,
   ChevronDown,
   CircleUserRound,
+  Ellipsis,
   MessageSquare,
   Plus,
   ScrollText,
@@ -60,7 +61,7 @@ import {
   useSidebar,
 } from '../ui/sidebar';
 import { MORE_NAV_ITEMS, NAV_ITEMS } from './nav-config';
-import { formatRelative } from '../../utils/format';
+import { formatRelative, formatSessionSource } from '../../utils/format';
 import { profileSessionKey } from '../../store/helpers';
 import { searchSessions } from '../../services/session-search';
 import type { SessionSearchHit } from '../../services/session-search';
@@ -128,6 +129,9 @@ const SessionRow = memo(function SessionRow({
   onDelete: (s: ScopedSessionSummary) => void;
 }) {
   const when = formatRelative(session.startedAt);
+  // Only sessions the user didn't type here get a badge — plain human chats
+  // (`local`/`tui`/`desktop`) resolve to null and render nothing.
+  const tag = formatSessionSource(session.source);
   // Long-press to delete. A 400ms delay sets it apart from a normal tap.
   const longPress = useLongPress(() => onDelete(session), { delay: 400 });
   return (
@@ -147,11 +151,18 @@ const SessionRow = memo(function SessionRow({
           <Spinner size={13} className={liveColorClass(live)} />
         </span>
       ) : null}
-      <span
-        className={`min-w-0 flex-1 text-left text-[14px] ${
-          active ? 'font-semibold text-brand' : 'text-neutral-950 dark:text-neutral-100'
-        } truncate`}>
-        {session.title || '(untitled)'}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+        <span
+          className={`truncate text-[14px] ${
+            active ? 'font-semibold text-brand' : 'text-neutral-950 dark:text-neutral-100'
+          }`}>
+          {session.title || '(untitled)'}
+        </span>
+        {tag ? (
+          <span className="shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            {tag}
+          </span>
+        ) : null}
       </span>
       {when ? (
         <span
@@ -175,6 +186,7 @@ const SearchHitRow = memo(function SearchHitRow({
   hit: SessionSearchHit;
   onOpen: (hit: SessionSearchHit) => void;
 }) {
+  const tag = formatSessionSource(hit.source);
   return (
     <Button
       variant="ghost"
@@ -183,9 +195,14 @@ const SearchHitRow = memo(function SearchHitRow({
       className="h-auto sm:h-auto w-full flex-col items-start gap-1 rounded-xl px-3 py-2.5 text-left">
       <span className="flex w-full items-center gap-2">
         <MessageSquare size={13} className={ICON_DIM} />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-neutral-950 dark:text-neutral-100">
+        <span className="min-w-0 truncate text-[14px] font-semibold text-neutral-950 dark:text-neutral-100">
           {hit.title || '(untitled)'}
         </span>
+        {tag ? (
+          <span className="shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            {tag}
+          </span>
+        ) : null}
       </span>
       <span className="line-clamp-2 w-full text-[12px] text-neutral-500 dark:text-neutral-400">
         {hit.snippet || hit.preview}
@@ -234,6 +251,9 @@ export function HermesSidebarContent() {
   // Infinite scroll: render in pages of 50, grow on scroll-bottom. Network
   // fetch only when the local list is exhausted but the server may hold more.
   const [visibleCount, setVisibleCount] = useState(50);
+  // The Browse "More" flyout. Controlled so picking a row can close it
+  // explicitly before navigating away.
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Keep the list fresh every time the panel is opened (replaces the old
   // manual Refresh item).
@@ -366,6 +386,14 @@ export function HermesSidebarContent() {
   // runtime id minted by resume/create — comparing stored vs live never
   // matches, so highlight must use the stored key.
   const activeId = sessionKey ?? sessionId;
+  // Browse is split at Skills: the everyday rows stay out, everything below
+  // it lives in the More flyout. `asks` never appears here — it has its own
+  // bell in the footer.
+  const allBrowseNav = [...NAV_ITEMS, ...MORE_NAV_ITEMS.filter((item) => item.name !== 'asks')];
+  const skillsCut = allBrowseNav.findIndex((item) => item.name === 'skills');
+  const visibleBrowseNav = skillsCut === -1 ? allBrowseNav : allBrowseNav.slice(0, skillsCut + 1);
+  const overflowBrowseNav = skillsCut === -1 ? [] : allBrowseNav.slice(skillsCut + 1);
+  const overflowActive = overflowBrowseNav.some((item) => pathname === `/${item.name}`);
   const go = (name: string) => {
     dismissIfOverlay();
     navigate(`/${name}`);
@@ -374,13 +402,9 @@ export function HermesSidebarContent() {
   return (
     <>
       <SidebarHeader className="gap-1 px-3 pt-[max(env(safe-area-inset-top,0px),8px)] group-data-[collapsible=icon]:px-1.5">
-        {/* Title + compose pill (mobile) or just the collapse toggle (desktop).
-            New chat moves into Browse on desktop only — there it reads as a
-            nav row alongside the places it navigates to, and it leaves the
-            header carrying just the one control that can only live there. The
-            mobile sheet keeps it in the header: its top row is the full-width
-            title bar OpenChamber uses, and a nav-styled pill there would read
-            as a stray item. */}
+        {/* Title + compose pill (mobile) + collapse toggle (desktop).
+            Browse below also has a New chat row on all form factors — the
+            header pill stays as the thumb-reach shortcut on the mobile sheet. */}
         <div className="flex items-center">
           {/* Full-screen sheet slides in from the left, so its dismiss lives
               at the same edge. The profile switcher moved to the footer. */}
@@ -392,8 +416,9 @@ export function HermesSidebarContent() {
           <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
             <div className="truncate px-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Hermes</div>
           </div>
-          {/* Tinted compose pill, pinned right like theirs. Icon-only in
-              the collapsed rail. */}
+          {/* Mobile shortcut: tinted compose pill, pinned right. Browse below
+              has its own plain New chat row too — this one is just faster
+              with a thumb. */}
           {isMobile && (
             <Button
               variant="ghost"
@@ -450,28 +475,28 @@ export function HermesSidebarContent() {
                 same rounded bg, so with the primitive's gap-0 the two rects
                 touch and their corners merge into one thick blob. */}
             <SidebarMenu className="gap-1">
-              {/* Desktop only: compose reads as the first nav row here, beside
-                  the places it navigates to. The mobile sheet keeps it in its
-                  header instead (see SidebarHeader above). In the rail it is the
-                  top icon, which is why it precedes the config list. */}
-              {!isMobile && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    size="lg"
-                    data-testid="new-chat"
-                    aria-label="New chat"
-                    disabled={busy}
-                    onClick={() => {
-                      if (busy) return;
-                      void newSession();
-                    }}
-                    className={`text-brand ${RAIL_ROW} ${busy ? 'opacity-50' : ''}`}>
-                    <Plus className="text-brand" />
-                    <span className={RAIL_LABEL}>New chat</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              {[...NAV_ITEMS, ...MORE_NAV_ITEMS.filter((item) => item.name !== 'asks')].map((item) => {
+              {/* New chat is the first nav row on all form factors, styled
+                  exactly like the rows below it. Mobile keeps its header pill
+                  too (see SidebarHeader) as the thumb shortcut. In the rail
+                  it is the top icon, which is why it precedes the list. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  size="lg"
+                  data-testid="new-chat"
+                  aria-label="New chat"
+                  tooltip="New chat"
+                  disabled={busy}
+                  onClick={() => {
+                    if (busy) return;
+                    dismissIfOverlay();
+                    void newSession();
+                  }}
+                  className={`${RAIL_ROW} hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 ${busy ? 'opacity-50' : ''}`}>
+                  <Plus className={ICON_DIM} />
+                  <span className={RAIL_LABEL}>New chat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {visibleBrowseNav.map((item) => {
                 const active = pathname === `/${item.name}`;
                 const Icon = item.icon;
                 return (
@@ -493,6 +518,49 @@ export function HermesSidebarContent() {
                   </SidebarMenuItem>
                 );
               })}
+              {/* Everything below Skills lives here. The content portals to
+                  the body, so it opens the same way from the full panel and
+                  from the collapsed rail. */}
+              {overflowBrowseNav.length > 0 && (
+                <SidebarMenuItem>
+                  <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+                    <PopoverTrigger
+                      render={
+                        <SidebarMenuButton
+                          size="lg"
+                          isActive={overflowActive}
+                          tooltip="More"
+                          className={`${RAIL_ROW} hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50`}
+                        />
+                      }>
+                      <Ellipsis className={overflowActive ? ICON_BRAND : ICON_DIM} />
+                      <span className={RAIL_LABEL}>More</span>
+                    </PopoverTrigger>
+                    <PopoverContent side="bottom" align="start" className="w-60 p-1.5">
+                      <div className="flex max-h-[50vh] flex-col gap-1 overflow-y-auto">
+                        {overflowBrowseNav.map((item) => {
+                          const active = pathname === `/${item.name}`;
+                          const Icon = item.icon;
+                          return (
+                            <SidebarMenuButton
+                              key={item.name}
+                              size="lg"
+                              isActive={active}
+                              onClick={() => {
+                                setMoreOpen(false);
+                                go(item.name);
+                              }}
+                              className="hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50">
+                              <Icon className={active ? ICON_BRAND : ICON_DIM} />
+                              <span>{item.label}</span>
+                            </SidebarMenuButton>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -571,22 +639,24 @@ export function HermesSidebarContent() {
               down on close. */}
           {frameVisible && (
             <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  data-testid="profile-selector"
-                  aria-label={`Switch profile. Active profile: ${activeProfile}`}
-                  className="h-auto min-w-0 flex-1 items-center justify-start gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-                  <Avatar className="size-9 shrink-0">
-                    <AvatarFallback className="bg-brand">
-                      <span className="text-sm font-bold text-white">{activeProfile.slice(0, 1).toUpperCase()}</span>
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="min-w-0 flex-1 text-left text-[13px] font-semibold text-neutral-900 dark:text-neutral-100 group-data-[collapsible=icon]:hidden truncate">
-                    {activeProfile}
-                  </span>
-                  <ChevronDown size={15} className={`${ICON_DIM} group-data-[collapsible=icon]:hidden`} />
-                </Button>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    data-testid="profile-selector"
+                    aria-label={`Switch profile. Active profile: ${activeProfile}`}
+                    className="h-auto min-w-0 items-center justify-start gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                  />
+                }>
+                <Avatar className="size-9 shrink-0">
+                  <AvatarFallback className="bg-brand">
+                    <span className="text-sm font-bold text-white">{activeProfile.slice(0, 1).toUpperCase()}</span>
+                  </AvatarFallback>
+                </Avatar>
+                <span className="min-w-0 flex-1 text-left text-[13px] font-semibold text-neutral-900 dark:text-neutral-100 group-data-[collapsible=icon]:hidden truncate">
+                  {activeProfile}
+                </span>
+                <ChevronDown size={15} className={`${ICON_DIM} group-data-[collapsible=icon]:hidden`} />
               </PopoverTrigger>
               <PopoverContent side="top" align="start" className="w-72 p-2">
                 <div className="flex items-center justify-between px-3 py-2.5">
@@ -596,10 +666,8 @@ export function HermesSidebarContent() {
                       Chat and toolsets use this profile
                     </div>
                   </div>
-                  <PopoverClose asChild>
-                    <Button variant="ghost" size="icon" aria-label="Close profile picker">
-                      <X size={18} className={ICON_DIM} />
-                    </Button>
+                  <PopoverClose render={<Button variant="ghost" size="icon" aria-label="Close profile picker" />}>
+                    <X size={18} className={ICON_DIM} />
                   </PopoverClose>
                 </div>
                 <div className="max-h-[420px] overflow-y-auto">
@@ -621,21 +689,15 @@ export function HermesSidebarContent() {
                             void switchProfile(profile.name);
                           }}
                           className={`h-auto sm:h-auto w-full items-center justify-start gap-3 px-3 py-3 ${
-                            selected ? 'bg-sky-50 dark:bg-sky-950/50' : ''
+                            selected ? 'bg-brand/10' : ''
                           } ${busy && !selected ? 'opacity-50' : ''}`}>
-                          <span
-                            className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                              selected ? 'bg-sky-100 dark:bg-sky-950' : 'bg-elevated'
-                            }`}>
-                            <CircleUserRound
-                              size={17}
-                              className={selected ? 'text-[#0284c7] dark:text-[#7dd3fc]' : ICON_DIM}
-                            />
+                          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-elevated">
+                            <CircleUserRound size={17} className={selected ? ICON_BRAND : ICON_DIM} />
                           </span>
                           <span className="flex min-w-0 flex-1 flex-col text-left">
                             <span
                               className={`min-w-0 text-left text-[13px] font-semibold ${
-                                selected ? 'text-sky-700 dark:text-sky-300' : 'text-neutral-900 dark:text-neutral-100'
+                                selected ? 'text-brand' : 'text-neutral-900 dark:text-neutral-100'
                               } truncate`}>
                               {profile.display_name || profile.name}
                             </span>
@@ -645,9 +707,7 @@ export function HermesSidebarContent() {
                               </span>
                             )}
                           </span>
-                          {selected && (
-                            <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</span>
-                          )}
+                          {selected && <span className="text-[11px] font-semibold text-brand">Active</span>}
                         </Button>
                       );
                       // A disabled row can't run PopoverClose's click handler,
@@ -656,9 +716,7 @@ export function HermesSidebarContent() {
                       return selected || busy ? (
                         <div key={profile.name}>{row}</div>
                       ) : (
-                        <PopoverClose asChild key={profile.name}>
-                          {row}
-                        </PopoverClose>
+                        <PopoverClose key={profile.name} render={row} />
                       );
                     })
                   )}
@@ -668,7 +726,7 @@ export function HermesSidebarContent() {
           )}
           {/* Shortcuts to the places people go from here. Asks first: a
               pending approval is the one thing that should shout. */}
-          <div className="flex shrink-0 items-center group-data-[collapsible=icon]:flex-col">
+          <div className="ml-auto flex shrink-0 items-center group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:flex-col">
             <span className="relative">
               {/* size-5 is load-bearing, not decoration: ghost buttons shrink
                   any svg without a size-* class to 16px, which is why these

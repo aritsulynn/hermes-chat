@@ -59,9 +59,9 @@ const ToolsetRow = memo(function ToolsetRow({
       <div className="flex items-center gap-3">
         <div
           className={`flex flex-col h-9 w-9 items-center justify-center rounded-xl ${
-            enabled ? 'bg-sky-100 dark:bg-sky-950/70' : 'bg-elevated'
+            enabled ? 'bg-brand/10' : 'bg-elevated'
           }`}>
-          <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
+          <Boxes size={17} color={enabled ? brandColor(dark) : dark ? '#666' : '#999'} />
         </div>
         <button
           type="button"
