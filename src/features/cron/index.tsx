@@ -51,6 +51,30 @@ import {
 import type { DeliveryTarget } from './helpers';
 import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
 import { navigate } from '../../store/nav';
+import { ScheduleBuilder } from './components/ScheduleBuilder';
+import {
+  buildScheduleString,
+  describeSchedule,
+  englishOrdinal,
+  parseScheduleString,
+  type ScheduleBuilderState,
+  type ScheduleDescribeStrings,
+} from '../../utils/schedule';
+
+/** English strings for the human-readable schedule description. Kept here (not
+ *  in the pure helper) so a future i18n layer has one obvious place to swap. */
+const SCHEDULE_DESCRIBE_STRINGS: ScheduleDescribeStrings = {
+  none: '(no schedule)',
+  everyMinutes: 'Every {n} min',
+  everyHours: 'Every {n} h',
+  everyDays: 'Every {n} day(s)',
+  dailyAt: 'Daily at {time}',
+  weeklyAt: 'Weekly on {days} at {time}',
+  monthlyAt: 'Monthly on the {day} at {time}',
+  onceAt: 'Once at {time}',
+  weekdaysShort: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  ordinal: englishOrdinal,
+};
 
 type JobCardProps = {
   job: CronJobItem;
@@ -82,6 +106,11 @@ const JobCard = memo(function JobCard({
 }: JobCardProps) {
   const isPaused = !job.enabled || job.state === 'paused';
   const scheduleExpr = getScheduleExpr(job);
+  const scheduleDesc = describeSchedule(
+    typeof job.schedule === 'object' && job.schedule ? job.schedule : undefined,
+    job.schedule_display || scheduleExpr,
+    SCHEDULE_DESCRIBE_STRINGS,
+  );
   const isError = job.last_status === 'error' || Boolean(job.last_error);
 
   return (
@@ -118,11 +147,11 @@ const JobCard = memo(function JobCard({
 
       {/* Schedule badge & next run */}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 dark:bg-muted">
+        <div
+          title={scheduleExpr}
+          className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 dark:bg-muted">
           <Clock size={12} color={dark ? '#ccc' : '#444'} />
-          <div className="font-mono text-xs font-medium text-neutral-800 dark:text-neutral-200">
-            {scheduleExpr || '(no schedule)'}
-          </div>
+          <div className="text-xs font-medium text-neutral-800 dark:text-neutral-200">{scheduleDesc}</div>
         </div>
         {job.next_run_at && (
           <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
@@ -472,7 +501,12 @@ export function CronScreen() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJobItem | null>(null);
   const [formName, setFormName] = useState('');
-  const [formSchedule, setFormSchedule] = useState('0 9 * * *');
+  // The schedule picker owns structured state; `formSchedule` below is the
+  // backend-compatible string derived from it on every render.
+  const [scheduleState, setScheduleState] = useState<ScheduleBuilderState>(() =>
+    parseScheduleString('0 9 * * *'),
+  );
+  const formSchedule = buildScheduleString(scheduleState);
   const [formPrompt, setFormPrompt] = useState('');
   const [formModel, setFormModel] = useState('');
   // Omitted from the payload when empty so the server keeps whatever target the
@@ -573,7 +607,7 @@ export function CronScreen() {
   const openCreateModal = useCallback(() => {
     setEditingJob(null);
     setFormName('');
-    setFormSchedule('0 9 * * *');
+    setScheduleState(parseScheduleString('0 9 * * *'));
     setFormPrompt('');
     setFormModel('');
     setFormDeliver(LOCAL_DELIVERY);
@@ -585,7 +619,7 @@ export function CronScreen() {
     (job: CronJobItem) => {
       setEditingJob(job);
       setFormName(job.name || '');
-      setFormSchedule(getScheduleExpr(job) || '0 9 * * *');
+      setScheduleState(parseScheduleString(getScheduleExpr(job) || '0 9 * * *'));
       setFormPrompt(job.prompt || '');
       setFormModel(job.model || '');
       setFormDeliver(normaliseDelivery(job.deliver, deliveryOptions(deliveryTargets, { hasOrigin: true })));
@@ -1004,19 +1038,14 @@ export function CronScreen() {
                 />
               </div>
 
-              {/* Schedule Expression */}
+              {/* Schedule */}
               <div>
-                <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Schedule (Cron Expression) *
+                <Label className="mb-1.5 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Schedule *
                 </Label>
-                <Input
-                  value={formSchedule}
-                  onChange={(e) => setFormSchedule(e.target.value)}
-                  placeholder="e.g. 0 9 * * *"
-                  autoCapitalize="none"
-                  className="font-mono rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
-                />
-                {/* Presets Chips */}
+                <ScheduleBuilder value={scheduleState} onChange={setScheduleState} />
+                {/* Quick presets — one tap to a common schedule, parsed back into
+                    the builder so its fields fill in. */}
                 <div className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</div>
                 <div className="overflow-x-auto flex gap-1.5">
                   <div>
@@ -1024,10 +1053,9 @@ export function CronScreen() {
                       <Button
                         key={preset.label}
                         variant="ghost"
-
                         aria-pressed={formSchedule === preset.expr}
                         aria-label={`${preset.label} schedule, ${preset.expr}`}
-                        onClick={() => setFormSchedule(preset.expr)}
+                        onClick={() => setScheduleState(parseScheduleString(preset.expr))}
                         className={`h-auto sm:h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
                           formSchedule === preset.expr
                             ? 'border-brand bg-brand/10'

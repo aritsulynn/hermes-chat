@@ -65,18 +65,27 @@ export const LOCAL_DELIVERY = 'local';
  * offer.
  */
 export function deliveryOptions(targets: DeliveryTarget[], opts: { hasOrigin?: boolean } = {}): DeliveryTarget[] {
-  const local: DeliveryTarget = {
+  // The server's own list already carries a `local` row. Prepending a synthetic
+  // one unconditionally produced two options keyed `local` — a React
+  // duplicate-key warning and the same target twice in the form (see the
+  // desktop, which filters `target.id !== "local"`). So prefer the server's
+  // row and only synthesize `local` when the fetch failed and the list is empty.
+  const serverLocal = targets.find((t) => t.id === LOCAL_DELIVERY);
+  const local: DeliveryTarget = serverLocal ?? {
     id: LOCAL_DELIVERY,
     name: 'Save only (no notification)',
     home_target_set: true,
   };
-  if (!opts.hasOrigin) return [local, ...targets];
+  // `origin` is prepended by the server per blueprint, so it is never in the
+  // list; drop a stray one just in case so the key stays unique.
+  const rest = targets.filter((t) => t.id !== LOCAL_DELIVERY && t.id !== 'origin');
+  if (!opts.hasOrigin) return [local, ...rest];
   const origin: DeliveryTarget = {
     id: 'origin',
     name: 'Back to where it was created',
     home_target_set: true,
   };
-  return [local, origin, ...targets];
+  return [local, origin, ...rest];
 }
 
 /** A job's current `deliver`, normalised to something selectable.

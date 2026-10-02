@@ -37,6 +37,3 @@ android/app/build/
 android/captures/
 android/.idea/
 *.apk
-
-# working docs (manual QA plans, audits, refactor plans) — local only
-docs/
