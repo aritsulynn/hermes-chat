@@ -63,7 +63,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Skill editor | `/skills` | `SkillEditorDialog.tsx` | **done** | M |
 | Skill hub (search/install) | `/skills` | `SkillsPage.tsx` | **done** | M |
 | Toolset config | — | `ToolsetConfigDrawer.tsx` | **done** | M |
-| Files write/delete/download | `/files` | `FilesPage.tsx` | missing | M |
+| Files write/delete/download | `/files` | `FilesPage.tsx` | **done** (download added) | M |
 | Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
 | Session search | `/sessions` | `SessionsPage.tsx` | missing | M |
 | Models (aux / MoA) | `/models` | `ModelsPage.tsx` | partial | M–L |
@@ -152,11 +152,11 @@ The mobile app already has helpers, so adding an endpoint is fast:
 - Shipped: `src/features/toolsets/components/ToolsetConfigSheet.tsx`; rows on the
   toolsets screen now open the config sheet.
 
-### 4.4 Files write/delete/download `M`
-- `POST /api/fs/write-text`, `DELETE /api/files`, `GET /api/files/download`,
-  `GET /api/files/stream`, `POST /api/files/upload-stream`
-- Reference: `FilesPage.tsx` (526)
-- Touch: `src/features/files/index.tsx`, `src/services/api.ts`
+### 4.4 Files write/delete/download `M` — mostly already present; download added
+- Read/create/upload/edit/delete (including folders) already shipped on the
+  files screen; the missing piece was **download**, now added to each file row
+  and to the preview header.
+- Remaining optional: chunked `upload-stream`, `fs/write-text` spot editor.
 
 ### 4.5 Pairing `M`
 - `GET /api/pairing`, `POST /api/pairing/approve|revoke|clear-pending`

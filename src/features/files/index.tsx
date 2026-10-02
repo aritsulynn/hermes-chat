@@ -6,6 +6,7 @@ import {
   ArrowUp,
   Check,
   Copy,
+  Download,
   File,
   Folder,
   FolderPlus,
@@ -371,6 +372,39 @@ export function FilesScreen() {
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
   };
 
+  // Save a file to the device. The gateway hands bytes back as a data URL
+  // (`/api/files/read` → `data_url`), which is what an anchor `download` click
+  // consumes; on a native shell the same anchor uses the WebView's download
+  // handling. Binary-safe: the data URL carries the original base64.
+  const handleDownloadFile = useCallback((file: ManagedFileReadResponse) => {
+    try {
+      const link = document.createElement('a');
+      link.href = file.data_url;
+      link.download = file.name || 'download';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      toast({ title: 'Download Failed', description: errMsg(e), variant: 'destructive' });
+    }
+  }, []);
+
+  const handleDownloadEntry = useCallback(
+    async (entry: ManagedFileEntry) => {
+      if (entry.is_directory) return;
+      const scope = getAuthScope();
+      try {
+        const res = (await opsGet(api.fileRead(entry.path))) as unknown as ManagedFileReadResponse;
+        if (getAuthScope() !== scope) return;
+        handleDownloadFile(res);
+      } catch (e) {
+        if (getAuthScope() === scope)
+          toast({ title: 'Download Failed', description: errMsg(e), variant: 'destructive' });
+      }
+    },
+    [getAuthScope, handleDownloadFile, opsGet],
+  );
+
   // Filter entries — single pass for filter + counts.
   const { filteredEntries, folderCount, fileCount } = useMemo(() => {
     const entries = listing?.entries ?? [];
@@ -605,6 +639,7 @@ export function FilesScreen() {
                   dark={dark}
                   onOpen={handleOpenEntryStable}
                   onDelete={handleDeleteEntry}
+                  onDownload={handleDownloadEntry}
                 />
               ))}
         </div>
@@ -682,6 +717,17 @@ export function FilesScreen() {
                           <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Edit</span>
                         </Button>
                       )
+                    ) : null}
+
+                    {selectedFile && !isEditingFile ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDownloadFile(selectedFile)}
+                        aria-label="Download file"
+                        className="h-8 w-8 rounded-lg active:bg-muted dark:active:bg-muted">
+                        <Download size={18} color={dark ? '#ccc' : '#444'} />
+                      </Button>
                     ) : null}
 
                     {selectedFile && !isEditingFile ? (

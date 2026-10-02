@@ -1,6 +1,6 @@
 // Memoized file/folder row — the old list rebuilt every icon/date/bytes per keystroke.
 import { memo, useCallback, useMemo } from 'react';
-import { ChevronRight, Folder } from 'lucide-react';
+import { ChevronRight, Download, Folder } from 'lucide-react';
 import { useLongPress } from '../../../hooks/use-long-press';
 import { formatBytes, formatDate } from '../../../utils/format';
 import { getFileCategory } from '../helpers';
@@ -11,11 +11,13 @@ export const FileRow = memo(function FileRow({
   dark,
   onOpen,
   onDelete,
+  onDownload,
 }: {
   entry: ManagedFileEntry;
   dark: boolean;
   onOpen: (e: ManagedFileEntry) => void;
   onDelete: (path: string, isDir: boolean, name: string) => void;
+  onDownload: (e: ManagedFileEntry) => void;
 }) {
   const category = getFileCategory(entry.name, entry.mime_type);
   const isDir = entry.is_directory;
@@ -60,7 +62,22 @@ export const FileRow = memo(function FileRow({
           <span className="text-[11px] text-neutral-500 dark:text-neutral-400">{formatDate(entry.mtime)}</span>
         </div>
       </div>
-      {isDir ? <ChevronRight size={17} color={dark ? '#666' : '#aaa'} /> : null}
+      {isDir ? (
+        <ChevronRight size={17} color={dark ? '#666' : '#aaa'} />
+      ) : (
+        <button
+          type="button"
+          aria-label={`Download ${entry.name}`}
+          // Stop the row's onClick from also opening the preview when the tap
+          // was meant for the download control.
+          onClick={(e) => {
+            e.stopPropagation();
+            onDownload(entry);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-accent dark:hover:bg-accent/50">
+          <Download size={17} color={dark ? '#a3a3a3' : '#555'} />
+        </button>
+      )}
     </div>
   );
 });
