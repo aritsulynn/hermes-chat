@@ -26,7 +26,7 @@
 //    default is a desktop density; this app is driven with a thumb.
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Activity, BellRing, ChevronDown, CircleUserRound, Plus, ScrollText, Settings, X } from 'lucide-react';
+import { Activity, BellRing, ChevronDown, CircleUserRound, MessageSquare, Plus, ScrollText, Settings, X } from 'lucide-react';
 import { useApp } from '../../hooks/app-store';
 import { navigate } from '../../store/nav';
 import { useLongPress } from '../../hooks/use-long-press';
@@ -52,6 +52,8 @@ import {
 import { MORE_NAV_ITEMS, NAV_ITEMS } from './nav-config';
 import { formatRelative } from '../../utils/format';
 import { profileSessionKey } from '../../store/helpers';
+import { searchSessions } from '../../services/session-search';
+import type { SessionSearchHit } from '../../services/session-search';
 import type { LiveStatus } from '../../store/live-sessions';
 import type { ScopedSessionSummary } from '../../store/types';
 
@@ -153,6 +155,35 @@ const SessionRow = memo(function SessionRow({
   );
 });
 
+// A deep content-match row: opens the session and shows the matched snippet so
+// the user can tell why it matched. Stored ids may carry a profile that differs
+// from the active one, so the profile is passed to openSession explicitly.
+const SearchHitRow = memo(function SearchHitRow({
+  hit,
+  onOpen,
+}: {
+  hit: SessionSearchHit;
+  onOpen: (hit: SessionSearchHit) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      aria-label={`Open match in ${hit.title || '(untitled)'}`}
+      onClick={() => onOpen(hit)}
+      className="h-auto sm:h-auto w-full flex-col items-start gap-1 rounded-xl px-3 py-2.5 text-left">
+      <span className="flex w-full items-center gap-2">
+        <MessageSquare size={13} className={ICON_DIM} />
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-neutral-950 dark:text-neutral-100">
+          {hit.title || '(untitled)'}
+        </span>
+      </span>
+      <span className="line-clamp-2 w-full text-[12px] text-neutral-500 dark:text-neutral-400">
+        {hit.snippet || hit.preview}
+      </span>
+    </Button>
+  );
+});
+
 export function HermesSidebarContent() {
   const { pathname } = useLocation();
   const {
@@ -177,6 +208,8 @@ export function HermesSidebarContent() {
     liveSessions,
     liveSessionsKnown,
     refreshLiveSessions,
+    opsGet,
+    getAuthScope,
   } = useApp();
   // The frame's own state. On a phone the panel lives in a sheet and
   // `openMobile` is whether that sheet is up; on desktop it is the in-flow
@@ -218,6 +251,37 @@ export function HermesSidebarContent() {
     [sessions, ql],
   );
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  // Server-side content search (FTS5). Runs debounced for any non-empty query,
+  // independently of the local title/preview filter above — a query can match
+  // message text in a session whose title gives no hint. Results land in a
+  // separate section so the local rows and the deep hits never interleave.
+  const [contentHits, setContentHits] = useState<SessionSearchHit[]>([]);
+  const [searchingContent, setSearchingContent] = useState(false);
+  useEffect(() => {
+    const query = q.trim();
+    if (!query) {
+      setContentHits([]);
+      setSearchingContent(false);
+      return;
+    }
+    const scope = getAuthScope();
+    const profile = activeProfile;
+    setSearchingContent(true);
+    const timer = setTimeout(() => {
+      searchSessions(opsGet, query, profile, 20)
+        .then((hits) => {
+          if (getAuthScope() !== scope || activeProfile !== profile) return;
+          setContentHits(hits);
+        })
+        .catch(() => {
+          if (getAuthScope() === scope && activeProfile === profile) setContentHits([]);
+        })
+        .finally(() => {
+          if (getAuthScope() === scope && activeProfile === profile) setSearchingContent(false);
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [q, opsGet, getAuthScope, activeProfile]);
   // New search starts from the top again.
   useEffect(() => {
     setVisibleCount(50);
@@ -253,6 +317,24 @@ export function HermesSidebarContent() {
     (s: ScopedSessionSummary) => {
       dismissIfOverlay();
       void openSession(s);
+    },
+    [dismissIfOverlay, openSession],
+  );
+  // A search hit carries a different shape than a session-list row; adapt it to
+  // the summary openSession expects. `startedAt` falls back to 0 because the
+  // opener only uses identity fields.
+  const handleOpenHit = useCallback(
+    (hit: SessionSearchHit) => {
+      dismissIfOverlay();
+      void openSession({
+        id: hit.sessionId,
+        title: hit.title,
+        preview: hit.preview,
+        messageCount: hit.messageCount,
+        source: hit.source ?? '',
+        startedAt: hit.startedAt ?? 0,
+        ...(hit.profile ? { profile: hit.profile } : {}),
+      });
     },
     [dismissIfOverlay, openSession],
   );
@@ -407,6 +489,27 @@ export function HermesSidebarContent() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Deep content matches (server FTS). Only while searching; sits above
+            the local title/preview matches so the strongest hits come first. */}
+        {!!ql && (contentHits.length > 0 || searchingContent) && (
+          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+            <SidebarGroupLabel className="text-[13px] font-semibold">
+              In messages{contentHits.length > 0 ? ` (${contentHits.length})` : ''}
+            </SidebarGroupLabel>
+            <SidebarGroupContent className="flex flex-col gap-1">
+              {searchingContent && contentHits.length === 0 && (
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <Spinner size={13} className={ICON_DIM} />
+                  <div className="text-[12px] text-neutral-500 dark:text-neutral-400">Searching…</div>
+                </div>
+              )}
+              {contentHits.map((hit) => (
+                <SearchHitRow key={`${hit.profile}:${hit.sessionId}`} hit={hit} onOpen={handleOpenHit} />
+              ))}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {/* Hidden in the icon rail: a session list is not a thing that
             collapses to icons. See the note at the top of the file. */}

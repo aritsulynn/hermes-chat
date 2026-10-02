@@ -65,7 +65,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Toolset config | — | `ToolsetConfigDrawer.tsx` | **done** | M |
 | Files write/delete/download | `/files` | `FilesPage.tsx` | **done** (download added) | M |
 | Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
-| Session search | `/sessions` | `SessionsPage.tsx` | missing | M |
+| Session search | `/sessions` | `SessionsPage.tsx` | **done** (sidebar FTS) | M |
 | Models (aux / MoA) | `/models` | `ModelsPage.tsx` | partial | M–L |
 | MCP | `/mcp` | `McpPage.tsx` | read-only | L |
 | Channels | `/channels` | `ChannelsPage.tsx` | missing | L |
@@ -118,14 +118,14 @@ The mobile app already has helpers, so adding an endpoint is fast:
   persisting to `agent.reasoning_effort`; mobile switches the live session via WS.
   No port needed.
 
-### 3.5 Session search `M`
+### 3.5 Session search `M` — done
 
-- **What:** search message content across sessions (today the sidebar only filters
-  title/preview of already-loaded sessions).
-- **Endpoint:** `GET /api/sessions/search?q=`
-- **Reference:** `SessionsPage.tsx`
-- **Touch:** `src/components/drawer/HermesSidebarContent.tsx`, or a new `/sessions` screen.
-- **Note:** commit `drop conversation search` removed this once — find out why first.
+- **What:** search message content across sessions (the sidebar previously only
+  filtered title/preview of already-loaded sessions).
+- **Endpoint:** `GET /api/sessions/search?q=&limit=`
+- **Shipped:** `src/services/session-search.ts` (typed wrapper) + a debounced
+  "In messages (n)" section in the sidebar that shows matched snippets and opens
+  the hit. Sits above the local title/preview matches.
 
 ---
 
