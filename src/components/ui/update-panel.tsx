@@ -422,7 +422,11 @@ export function UpdatePanel() {
             onClick={() => void refresh(true)}
             variant="outline"
             className="min-w-0 flex-1 shrink gap-1.5 rounded-xl px-3 py-2">
-            {checking ? <Spinner size={14} color="var(--brand-hex)" /> : <RefreshCw size={14} color="var(--brand-hex)" />}
+            {checking ? (
+              <Spinner size={14} color="var(--brand-hex)" />
+            ) : (
+              <RefreshCw size={14} color="var(--brand-hex)" />
+            )}
             <span className="shrink text-[13px] font-semibold truncate">Check for updates</span>
           </Button>
 

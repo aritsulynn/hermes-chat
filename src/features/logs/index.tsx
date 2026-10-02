@@ -209,7 +209,9 @@ export function LogsScreen() {
                       />
                       <span
                         className={`text-xs font-semibold ${
-                          autoRefresh ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'
+                          autoRefresh
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : 'text-neutral-600 dark:text-neutral-400'
                         }`}>
                         {autoRefresh ? 'Live' : 'Paused'}
                       </span>
@@ -220,11 +222,13 @@ export function LogsScreen() {
                       onClick={handleCopy}
                       aria-label="Copy log"
                       className={`h-9 rounded-xl border px-3 ${
-                        copied
-                          ? 'border-emerald-500/40 bg-emerald-500/10'
-                          : 'border-border bg-popover dark:bg-muted'
+                        copied ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-border bg-popover dark:bg-muted'
                       }`}>
-                      {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />}
+                      {copied ? (
+                        <Check size={14} color="#10b981" />
+                      ) : (
+                        <Copy size={14} color={dark ? '#9ca3af' : '#6b7280'} />
+                      )}
                       <span
                         className={`text-xs font-medium ${
                           copied
@@ -254,269 +258,277 @@ export function LogsScreen() {
 
               {/* Filter Toolbar Card */}
               <div className="border-b border-border bg-elevated px-4 py-3 dark:bg-elevated">
-          {/* Top line: Log File Tabs & Filter Toggle */}
-          <div className="flex items-center justify-between" style={{ gap: 10 }}>
-            <div className="overflow-x-auto flex-1">
-              <div className="flex items-center gap-2 pr-1">
-                {LOG_FILES.map((f) => {
-                  const isSelected = file === f;
-                  return (
-                    <Button
-                      key={f}
-                      variant="ghost"
-
-                      aria-pressed={isSelected}
-                      aria-label={`${f} log`}
-                      onClick={() => setFile(f)}
-                      className={`h-auto sm:h-auto rounded-xl border px-3.5 py-2 ${
-                        isSelected
-                          ? 'border-brand bg-brand'
-                          : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
-                      }`}>
-                      <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
-                      <span
-                        className={`text-xs font-semibold ${
-                          isSelected ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
-                        }`}>
-                        {f}
-                      </span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <Button
-              variant="ghost"
-              onClick={() => setShowFilters((v) => !v)}
-              aria-expanded={showFilters}
-              aria-label="Toggle filters"
-              className={`h-9 rounded-xl border px-3 ${
-                showFilters
-                  ? 'border-brand/40 bg-brand/10'
-                  : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
-              }`}>
-              <SlidersHorizontal size={13} color={showFilters ? 'var(--brand-hex)' : dark ? '#9ca3af' : '#6b7280'} />
-              <span
-                className={`text-xs font-medium ${
-                  showFilters ? 'font-semibold text-brand' : 'text-neutral-600 dark:text-neutral-400'
-                }`}>
-                Filter
-              </span>
-            </Button>
-          </div>
-
-          {showFilters && (
-            <div className="mt-3 pt-3 border-t border-border/70 dark:border-border/70" style={{ gap: 12 }}>
-              {/* Search Input — border lives on the Input itself */}
-              <div className="flex items-center gap-2">
-                <Search size={15} color={dark ? '#737373' : '#9ca3af'} />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Filter logs (substring)..."
-                  autoCapitalize="none"
-                  className="flex-1 text-xs text-neutral-950 dark:text-neutral-100 py-0.5"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      void fetchLogs();
-                    }
-                  }}
-                />
-                {Boolean(search) && (
-                  <Button
-                    variant="ghost"
-                    size="iconSm"
-                    onClick={() => {
-                      setSearch('');
-                    }}
-                    aria-label="Clear filter"
-                    className="rounded-md">
-                    <X size={15} color={dark ? '#888' : '#999'} />
-                  </Button>
-                )}
-              </div>
-
-              {/* Level selector & Line count in dedicated rows for breathing space */}
-              <div style={{ gap: 10 }}>
-                {/* Severity Level Chips */}
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
-                    Severity Level
-                  </div>
-                  <div className="overflow-x-auto">
-                    <div className="flex gap-2 pr-1">
-                      {LOG_LEVELS.map((lvl) => {
-                        const isSelected = level === lvl;
-                        const color = LEVEL_COLORS[lvl];
-
+                {/* Top line: Log File Tabs & Filter Toggle */}
+                <div className="flex items-center justify-between" style={{ gap: 10 }}>
+                  <div className="overflow-x-auto flex-1">
+                    <div className="flex items-center gap-2 pr-1">
+                      {LOG_FILES.map((f) => {
+                        const isSelected = file === f;
                         return (
                           <Button
-                            key={lvl}
+                            key={f}
                             variant="ghost"
 
                             aria-pressed={isSelected}
-                            aria-label={`${lvl} level`}
-                            onClick={() => setLevel(lvl)}
-                            className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
+                            aria-label={`${f} log`}
+                            onClick={() => setFile(f)}
+                            className={`h-auto sm:h-auto rounded-xl border px-3.5 py-2 ${
                               isSelected
-                                ? `${color.activeBg} ${color.activeBorder}`
+                                ? 'border-brand bg-brand'
                                 : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
                             }`}>
+                            <FileText size={13} color={isSelected ? '#ffffff' : dark ? '#9ca3af' : '#6b7280'} />
                             <span
                               className={`text-xs font-semibold ${
-                                isSelected ? color.activeText : 'text-neutral-600 dark:text-neutral-400'
+                                isSelected ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
                               }`}>
-                              {lvl}
+                              {f}
                             </span>
                           </Button>
                         );
                       })}
                     </div>
                   </div>
+
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowFilters((v) => !v)}
+                    aria-expanded={showFilters}
+                    aria-label="Toggle filters"
+                    className={`h-9 rounded-xl border px-3 ${
+                      showFilters
+                        ? 'border-brand/40 bg-brand/10'
+                        : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
+                    }`}>
+                    <SlidersHorizontal
+                      size={13}
+                      color={showFilters ? 'var(--brand-hex)' : dark ? '#9ca3af' : '#6b7280'}
+                    />
+                    <span
+                      className={`text-xs font-medium ${
+                        showFilters ? 'font-semibold text-brand' : 'text-neutral-600 dark:text-neutral-400'
+                      }`}>
+                      Filter
+                    </span>
+                  </Button>
                 </div>
 
-                {/* Line Count Chips */}
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
-                    Line Count
+                {showFilters && (
+                  <div className="mt-3 pt-3 border-t border-border/70 dark:border-border/70" style={{ gap: 12 }}>
+                    {/* Search Input — border lives on the Input itself */}
+                    <div className="flex items-center gap-2">
+                      <Search size={15} color={dark ? '#737373' : '#9ca3af'} />
+                      <Input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Filter logs (substring)..."
+                        autoCapitalize="none"
+                        className="flex-1 text-xs text-neutral-950 dark:text-neutral-100 py-0.5"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void fetchLogs();
+                          }
+                        }}
+                      />
+                      {Boolean(search) && (
+                        <Button
+                          variant="ghost"
+                          size="iconSm"
+                          onClick={() => {
+                            setSearch('');
+                          }}
+                          aria-label="Clear filter"
+                          className="rounded-md">
+                          <X size={15} color={dark ? '#888' : '#999'} />
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Level selector & Line count in dedicated rows for breathing space */}
+                    <div style={{ gap: 10 }}>
+                      {/* Severity Level Chips */}
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
+                          Severity Level
+                        </div>
+                        <div className="overflow-x-auto">
+                          <div className="flex gap-2 pr-1">
+                            {LOG_LEVELS.map((lvl) => {
+                              const isSelected = level === lvl;
+                              const color = LEVEL_COLORS[lvl];
+
+                              return (
+                                <Button
+                                  key={lvl}
+                                  variant="ghost"
+
+                                  aria-pressed={isSelected}
+                                  aria-label={`${lvl} level`}
+                                  onClick={() => setLevel(lvl)}
+                                  className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
+                                    isSelected
+                                      ? `${color.activeBg} ${color.activeBorder}`
+                                      : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
+                                  }`}>
+                                  <span
+                                    className={`text-xs font-semibold ${
+                                      isSelected ? color.activeText : 'text-neutral-600 dark:text-neutral-400'
+                                    }`}>
+                                    {lvl}
+                                  </span>
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Line Count Chips */}
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-1.5">
+                          Line Count
+                        </div>
+                        <div className="flex items-center" style={{ gap: 8 }}>
+                          {LINE_COUNTS.map((cnt) => {
+                            const isSelected = lineCount === cnt;
+                            return (
+                              <Button
+                                key={cnt}
+                                variant="ghost"
+
+                                aria-pressed={isSelected}
+                                aria-label={`${cnt} lines`}
+                                onClick={() => setLineCount(cnt)}
+                                className={`h-auto sm:h-auto flex-1 rounded-lg border py-1.5 ${
+                                  isSelected
+                                    ? 'border-neutral-900 bg-neutral-900 dark:bg-neutral-100'
+                                    : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
+                                }`}>
+                                <span
+                                  className={`text-xs font-semibold ${
+                                    isSelected
+                                      ? 'text-white dark:text-neutral-950'
+                                      : 'text-neutral-600 dark:text-neutral-400'
+                                  }`}>
+                                  {cnt}
+                                </span>
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Status Bar info & quick severity toggles */}
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {/* A <span> so the sentence stays inline. */}
+                    Showing <span className="font-semibold text-neutral-700 dark:text-neutral-200">
+                      {stats.total}
+                    </span>{' '}
+                    lines
                   </div>
                   <div className="flex items-center" style={{ gap: 8 }}>
-                    {LINE_COUNTS.map((cnt) => {
-                      const isSelected = lineCount === cnt;
-                      return (
-                        <Button
-                          key={cnt}
-                          variant="ghost"
+                    {stats.errorCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => setLevel((prev) => (prev === 'ERROR' ? 'ALL' : 'ERROR'))}
 
-                          aria-pressed={isSelected}
-                          aria-label={`${cnt} lines`}
-                          onClick={() => setLineCount(cnt)}
-                          className={`h-auto sm:h-auto flex-1 rounded-lg border py-1.5 ${
-                            isSelected
-                              ? 'border-neutral-900 bg-neutral-900 dark:bg-neutral-100'
-                              : 'border-border bg-popover active:bg-muted dark:bg-input/30 dark:active:bg-muted'
-                          }`}>
-                          <span
-                            className={`text-xs font-semibold ${
-                              isSelected ? 'text-white dark:text-neutral-950' : 'text-neutral-600 dark:text-neutral-400'
-                            }`}>
-                            {cnt}
-                          </span>
-                        </Button>
-                      );
-                    })}
+                        aria-checked={level === 'ERROR'}
+                        aria-label={`Show only errors, ${stats.errorCount} found`}
+                        className={`h-auto sm:h-auto rounded-lg border px-2.5 py-1 ${
+                          level === 'ERROR'
+                            ? 'border-rose-500 bg-rose-500/20'
+                            : 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40'
+                        }`}>
+                        <AlertTriangle size={12} color="#e11d48" />
+                        <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">
+                          {stats.errorCount} Error{stats.errorCount > 1 ? 's' : ''}
+                        </span>
+                      </Button>
+                    )}
+                    {stats.warnCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => setLevel((prev) => (prev === 'WARNING' ? 'ALL' : 'WARNING'))}
+
+                        aria-checked={level === 'WARNING'}
+                        aria-label={`Show only warnings, ${stats.warnCount} found`}
+                        className={`h-auto sm:h-auto rounded-lg border px-2.5 py-1 ${
+                          level === 'WARNING'
+                            ? 'border-amber-500 bg-amber-500/20'
+                            : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40'
+                        }`}>
+                        <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                          {stats.warnCount} Warn{stats.warnCount > 1 ? 's' : ''}
+                        </span>
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
-            </div>
+            </>
+          }>
+          {/* Error message banner */}
+          {error && (
+            <UIAlert icon={AlertTriangle} variant="destructive" className="m-3 rounded-xl px-4 pt-2.5 pb-2">
+              <AlertDescription className="text-xs text-red-700 dark:text-red-300">{error}</AlertDescription>
+            </UIAlert>
           )}
 
-          {/* Status Bar info & quick severity toggles */}
-          <div className="mt-3 flex items-center justify-between">
-            <div className="text-xs text-neutral-500 dark:text-neutral-400">
-              {/* A <span> so the sentence stays inline. */}
-              Showing <span className="font-semibold text-neutral-700 dark:text-neutral-200">{stats.total}</span> lines
+          {/* Log Output Area */}
+          {loading && lines.length === 0 ? (
+            <div className="flex flex-col flex-1 items-center justify-center">
+              <Spinner size={24} color="var(--brand-hex)" />
+              <div className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</div>
             </div>
-            <div className="flex items-center" style={{ gap: 8 }}>
-              {stats.errorCount > 0 && (
-                <Button
-                  variant="ghost"
-                  onClick={() => setLevel((prev) => (prev === 'ERROR' ? 'ALL' : 'ERROR'))}
-
-                  aria-checked={level === 'ERROR'}
-                  aria-label={`Show only errors, ${stats.errorCount} found`}
-                  className={`h-auto sm:h-auto rounded-lg border px-2.5 py-1 ${
-                    level === 'ERROR'
-                      ? 'border-rose-500 bg-rose-500/20'
-                      : 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40'
-                  }`}>
-                  <AlertTriangle size={12} color="#e11d48" />
-                  <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">
-                    {stats.errorCount} Error{stats.errorCount > 1 ? 's' : ''}
-                  </span>
-                </Button>
-              )}
-              {stats.warnCount > 0 && (
-                <Button
-                  variant="ghost"
-                  onClick={() => setLevel((prev) => (prev === 'WARNING' ? 'ALL' : 'WARNING'))}
-
-                  aria-checked={level === 'WARNING'}
-                  aria-label={`Show only warnings, ${stats.warnCount} found`}
-                  className={`h-auto sm:h-auto rounded-lg border px-2.5 py-1 ${
-                    level === 'WARNING'
-                      ? 'border-amber-500 bg-amber-500/20'
-                      : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40'
-                  }`}>
-                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                    {stats.warnCount} Warn{stats.warnCount > 1 ? 's' : ''}
-                  </span>
-                </Button>
-              )}
+          ) : lines.length === 0 ? (
+            <div className="flex flex-col flex-1 items-center justify-center p-6">
+              <Terminal size={36} color={dark ? '#555' : '#aaa'} />
+              <div className="mt-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                No log entries found
+              </div>
+              <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                {search ? 'Try clearing the search query or changing log level.' : `${file}.log is empty.`}
+              </div>
             </div>
-          </div>
-        </div>
-            </>
-        }>
-        {/* Error message banner */}
-        {error && (
-          <UIAlert icon={AlertTriangle} variant="destructive" className="m-3 rounded-xl px-4 pt-2.5 pb-2">
-            <AlertDescription className="text-xs text-red-700 dark:text-red-300">{error}</AlertDescription>
-          </UIAlert>
-        )}
-
-        {/* Log Output Area */}
-        {loading && lines.length === 0 ? (
-          <div className="flex flex-col flex-1 items-center justify-center">
-            <Spinner size={24} color="var(--brand-hex)" />
-            <div className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">Reading {file}.log…</div>
-          </div>
-        ) : lines.length === 0 ? (
-          <div className="flex flex-col flex-1 items-center justify-center p-6">
-            <Terminal size={36} color={dark ? '#555' : '#aaa'} />
-            <div className="mt-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-              No log entries found
-            </div>
-            <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-              {search ? 'Try clearing the search query or changing log level.' : `${file}.log is empty.`}
-            </div>
-          </div>
-        ) : (
-          // Plain content now — the scaffold owns the scroller. min-h-full
-          // keeps the dark surface painted even for a short list.
-          <div className="min-h-full bg-[#101014]">
-            <div ref={listRef} className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${logListContentClass}`}>
-              {rows.map((item, index) => {
-                const isErr = item.sev === 'error';
-                const isWarn = item.sev === 'warning';
-                const isDbg = item.sev === 'debug';
-                return (
-                  <div
-                    key={`${index}-${item.line.length}`}
-                    className={`flex items-start rounded px-1 py-0.5 ${
-                      isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
-                    }`}>
-                    <div className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</div>
+          ) : (
+            // Plain content now — the scaffold owns the scroller. min-h-full
+            // keeps the dark surface painted even for a short list.
+            <div className="min-h-full bg-[#101014]">
+              <div ref={listRef} className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${logListContentClass}`}>
+                {rows.map((item, index) => {
+                  const isErr = item.sev === 'error';
+                  const isWarn = item.sev === 'warning';
+                  const isDbg = item.sev === 'debug';
+                  return (
                     <div
-                      className={`flex-1 font-mono text-[11px] leading-4 ${
-                        isErr
-                          ? 'font-medium text-red-400'
-                          : isWarn
-                            ? 'text-amber-300'
-                            : isDbg
-                              ? 'text-neutral-500'
-                              : 'text-neutral-200'
+                      key={`${index}-${item.line.length}`}
+                      className={`flex items-start rounded px-1 py-0.5 ${
+                        isErr ? 'bg-red-950/30' : isWarn ? 'bg-amber-950/20' : ''
                       }`}>
-                      {item.line}
+                      <div className="w-9 select-none font-mono text-[10px] text-neutral-600">{index + 1}</div>
+                      <div
+                        className={`flex-1 font-mono text-[11px] leading-4 ${
+                          isErr
+                            ? 'font-medium text-red-400'
+                            : isWarn
+                              ? 'text-amber-300'
+                              : isDbg
+                                ? 'text-neutral-500'
+                                : 'text-neutral-200'
+                        }`}>
+                        {item.line}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
         </ScreenScaffold>
 
         {/* Quick Jump Buttons (Floating) — outside the scroller so they don't

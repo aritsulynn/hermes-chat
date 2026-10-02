@@ -43,10 +43,7 @@ function strList(v: unknown): string[] {
   return Array.isArray(v) ? v.map(str).filter(Boolean) : [];
 }
 
-export async function getEnvVars(
-  opsGet: OpsGet,
-  profile?: string | null,
-): Promise<Record<string, EnvVarInfo>> {
+export async function getEnvVars(opsGet: OpsGet, profile?: string | null): Promise<Record<string, EnvVarInfo>> {
   const r = rec(await opsGet(envVars(profile)));
   const out: Record<string, EnvVarInfo> = {};
   for (const [key, raw] of Object.entries(r)) {
@@ -70,20 +67,11 @@ export async function getEnvVars(
   return out;
 }
 
-export async function setEnvVar(
-  opsMut: OpsMut,
-  key: string,
-  value: string,
-  profile?: string | null,
-): Promise<void> {
+export async function setEnvVar(opsMut: OpsMut, key: string, value: string, profile?: string | null): Promise<void> {
   await opsMut(envVars(profile), 'PUT', { key, value, ...(profile ? { profile } : {}) });
 }
 
-export async function deleteEnvVar(
-  opsMut: OpsMut,
-  key: string,
-  profile?: string | null,
-): Promise<void> {
+export async function deleteEnvVar(opsMut: OpsMut, key: string, profile?: string | null): Promise<void> {
   await opsMut(envVars(profile), 'DELETE', { key, ...(profile ? { profile } : {}) });
 }
 
@@ -108,7 +96,9 @@ export async function validateProviderKey(opsMut: OpsMut, key: string, value: st
 }
 
 /** Group env rows by category, preserving the desktop's section order. */
-export function groupEnvVars(vars: Record<string, EnvVarInfo>): Array<{ category: string; entries: Array<[string, EnvVarInfo]> }> {
+export function groupEnvVars(
+  vars: Record<string, EnvVarInfo>,
+): Array<{ category: string; entries: Array<[string, EnvVarInfo]> }> {
   const byCategory = new Map<string, Array<[string, EnvVarInfo]>>();
   for (const entry of Object.entries(vars)) {
     const [, info] = entry;

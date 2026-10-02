@@ -26,7 +26,17 @@
 //    default is a desktop density; this app is driven with a thumb.
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Activity, BellRing, ChevronDown, CircleUserRound, MessageSquare, Plus, ScrollText, Settings, X } from 'lucide-react';
+import {
+  Activity,
+  BellRing,
+  ChevronDown,
+  CircleUserRound,
+  MessageSquare,
+  Plus,
+  ScrollText,
+  Settings,
+  X,
+} from 'lucide-react';
 import { useApp } from '../../hooks/app-store';
 import { navigate } from '../../store/nav';
 import { useLongPress } from '../../hooks/use-long-press';
@@ -363,8 +373,7 @@ export function HermesSidebarContent() {
 
   return (
     <>
-      <SidebarHeader
-        className="gap-1 px-3 pt-[max(env(safe-area-inset-top,0px),8px)] group-data-[collapsible=icon]:px-1.5">
+      <SidebarHeader className="gap-1 px-3 pt-[max(env(safe-area-inset-top,0px),8px)] group-data-[collapsible=icon]:px-1.5">
         {/* Title + compose pill (mobile) or just the collapse toggle (desktop).
             New chat moves into Browse on desktop only — there it reads as a
             nav row alongside the places it navigates to, and it leaves the
@@ -381,9 +390,7 @@ export function HermesSidebarContent() {
             </Button>
           )}
           <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-            <div className="truncate px-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">
-              Sessions
-            </div>
+            <div className="truncate px-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Sessions</div>
           </div>
           {/* Tinted compose pill, pinned right like theirs. Icon-only in
               the collapsed rail. */}
@@ -555,8 +562,6 @@ export function HermesSidebarContent() {
             )}
           </SidebarGroupContent>
         </SidebarGroup>
-
-
       </SidebarContent>
 
       <SidebarFooter className="px-3 pb-[max(env(safe-area-inset-bottom,0px),8px)] group-data-[collapsible=icon]:px-2">
@@ -574,9 +579,7 @@ export function HermesSidebarContent() {
                   className="h-auto min-w-0 flex-1 items-center justify-start gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
                   <Avatar className="size-9 shrink-0">
                     <AvatarFallback className="bg-brand">
-                      <span className="text-sm font-bold text-white">
-                        {activeProfile.slice(0, 1).toUpperCase()}
-                      </span>
+                      <span className="text-sm font-bold text-white">{activeProfile.slice(0, 1).toUpperCase()}</span>
                     </AvatarFallback>
                   </Avatar>
                   <span className="min-w-0 flex-1 text-left text-[13px] font-semibold text-neutral-900 dark:text-neutral-100 group-data-[collapsible=icon]:hidden truncate">

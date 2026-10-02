@@ -171,7 +171,10 @@ export function McpScreen() {
         setTests((prev) => ({ ...prev, [server.name]: res }));
       } catch (e) {
         if (getAuthScope() === scope)
-          setTests((prev) => ({ ...prev, [server.name]: { ok: false, error: errMsg(e), tools: [], prompts: 0, resources: 0 } }));
+          setTests((prev) => ({
+            ...prev,
+            [server.name]: { ok: false, error: errMsg(e), tools: [], prompts: 0, resources: 0 },
+          }));
       } finally {
         if (getAuthScope() === scope) setTesting(null);
       }
@@ -252,14 +255,26 @@ export function McpScreen() {
   const visibleServers = useMemo(
     () =>
       ql
-        ? servers.filter((s) => [s.name, s.url, s.command, s.transport].some((v) => String(v ?? '').toLowerCase().includes(ql)))
+        ? servers.filter((s) =>
+            [s.name, s.url, s.command, s.transport].some((v) =>
+              String(v ?? '')
+                .toLowerCase()
+                .includes(ql),
+            ),
+          )
         : servers,
     [servers, ql],
   );
   const visibleCatalog = useMemo(
     () =>
       ql
-        ? catalog.filter((e) => [e.name, e.description, e.source].some((v) => String(v ?? '').toLowerCase().includes(ql)))
+        ? catalog.filter((e) =>
+            [e.name, e.description, e.source].some((v) =>
+              String(v ?? '')
+                .toLowerCase()
+                .includes(ql),
+            ),
+          )
         : catalog,
     [catalog, ql],
   );
@@ -280,7 +295,11 @@ export function McpScreen() {
                     <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
                   <HeaderIconButton aria-label="Refresh MCP" onClick={() => void load(true)}>
-                    <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                    <RefreshCw
+                      size={20}
+                      color={dark ? '#e5e5e5' : '#333'}
+                      className={refreshing ? 'animate-spin' : ''}
+                    />
                   </HeaderIconButton>
                 </div>
               }
@@ -300,7 +319,8 @@ export function McpScreen() {
                   className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
                     mode === m ? 'border-brand bg-brand/10' : 'border-border'
                   }`}>
-                  <span className={`text-xs font-semibold ${mode === m ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
+                  <span
+                    className={`text-xs font-semibold ${mode === m ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
                     {label}
                   </span>
                 </Button>
@@ -454,11 +474,14 @@ function ServerRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">{server.name}</span>
-            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${transportBadgeClass(server.transport)}`}>
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${transportBadgeClass(server.transport)}`}>
               {server.transport}
             </span>
             {server.auth && (
-              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">{server.auth}</span>
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">
+                {server.auth}
+              </span>
             )}
             {isPlugin && (
               <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">
@@ -495,7 +518,9 @@ function ServerRow({
           {test.tools.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
               {test.tools.slice(0, 12).map((t) => (
-                <span key={t.name} className="rounded-md border border-border px-1.5 py-px font-mono text-[10px] text-neutral-500">
+                <span
+                  key={t.name}
+                  className="rounded-md border border-border px-1.5 py-px font-mono text-[10px] text-neutral-500">
                   {t.name}
                 </span>
               ))}
@@ -521,7 +546,11 @@ function ServerRow({
             onClick={() => void onAuth(server)}
             disabled={authenticating}
             className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
-            {authenticating ? <Spinner size={13} color={brandColor(dark)} /> : <Shield size={13} color={brandColor(dark)} />}
+            {authenticating ? (
+              <Spinner size={13} color={brandColor(dark)} />
+            ) : (
+              <Shield size={13} color={brandColor(dark)} />
+            )}
             <span className="text-xs font-semibold">Authenticate</span>
           </Button>
         )}
@@ -541,20 +570,15 @@ function ServerRow({
   );
 }
 
-function CatalogRow({
-  entry,
-  onInstall,
-}: {
-  entry: McpCatalogEntry;
-  onInstall: (e: McpCatalogEntry) => void;
-}) {
+function CatalogRow({ entry, onInstall }: { entry: McpCatalogEntry; onInstall: (e: McpCatalogEntry) => void }) {
   return (
     <Card>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">{entry.name}</span>
-            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${transportBadgeClass(entry.transport)}`}>
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${transportBadgeClass(entry.transport)}`}>
               {entry.transport}
             </span>
             {entry.authType !== 'none' && (
@@ -569,7 +593,9 @@ function CatalogRow({
             )}
           </div>
           {!!entry.description && (
-            <div className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{entry.description}</div>
+            <div className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">
+              {entry.description}
+            </div>
           )}
           {entry.url && <div className="mt-0.5 truncate font-mono text-[11px] text-neutral-400">{entry.url}</div>}
         </div>
@@ -668,12 +694,15 @@ function AddServerSheet({
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <DialogPrimitive.Content className="fixed inset-0 z-[60] flex flex-col bg-popover outline-hidden dark:bg-background">
           <DialogPrimitive.Title className="sr-only">Add MCP server</DialogPrimitive.Title>
-          <DialogPrimitive.Description className="sr-only">
-            Add a stdio or HTTP MCP server.
-          </DialogPrimitive.Description>
+          <DialogPrimitive.Description className="sr-only">Add a stdio or HTTP MCP server.</DialogPrimitive.Description>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close add server" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close add server"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">Add MCP server</div>
@@ -690,7 +719,13 @@ function AddServerSheet({
               <div className="flex flex-col gap-3">
                 <div>
                   <Label className="mb-1 text-xs font-semibold">Name *</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} autoCapitalize="none" placeholder="my-server" className="rounded-xl" />
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoCapitalize="none"
+                    placeholder="my-server"
+                    className="rounded-xl"
+                  />
                 </div>
                 <div className="flex gap-2">
                   {(['http', 'stdio'] as const).map((t) => (
@@ -700,7 +735,8 @@ function AddServerSheet({
                       aria-pressed={transport === t}
                       onClick={() => setTransport(t)}
                       className={`h-auto sm:h-auto flex-1 rounded-xl border px-3 py-2 ${transport === t ? 'border-brand bg-brand/10' : 'border-border'}`}>
-                      <span className={`text-xs font-semibold ${transport === t ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
+                      <span
+                        className={`text-xs font-semibold ${transport === t ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
                         {t}
                       </span>
                     </Button>
@@ -710,7 +746,13 @@ function AddServerSheet({
                   <>
                     <div>
                       <Label className="mb-1 text-xs font-semibold">URL *</Label>
-                      <Input value={url} onChange={(e) => setUrl(e.target.value)} autoCapitalize="none" placeholder="https://mcp.example.com/mcp" className="rounded-xl" />
+                      <Input
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        autoCapitalize="none"
+                        placeholder="https://mcp.example.com/mcp"
+                        className="rounded-xl"
+                      />
                     </div>
                     <div>
                       <Label className="mb-1 text-xs font-semibold">Auth</Label>
@@ -722,7 +764,10 @@ function AddServerSheet({
                             aria-pressed={httpAuth === a}
                             onClick={() => setHttpAuth(a)}
                             className={`h-auto sm:h-auto flex-1 rounded-xl border px-2 py-2 ${httpAuth === a ? 'border-brand bg-brand/10' : 'border-border'}`}>
-                            <span className={`text-xs font-semibold ${httpAuth === a ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>{a}</span>
+                            <span
+                              className={`text-xs font-semibold ${httpAuth === a ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
+                              {a}
+                            </span>
                           </Button>
                         ))}
                       </div>
@@ -730,7 +775,14 @@ function AddServerSheet({
                     {httpAuth === 'header' && (
                       <div>
                         <Label className="mb-1 text-xs font-semibold">Bearer token</Label>
-                        <Input type="password" value={bearer} onChange={(e) => setBearer(e.target.value)} autoCapitalize="none" placeholder="token" className="rounded-xl" />
+                        <Input
+                          type="password"
+                          value={bearer}
+                          onChange={(e) => setBearer(e.target.value)}
+                          autoCapitalize="none"
+                          placeholder="token"
+                          className="rounded-xl"
+                        />
                       </div>
                     )}
                   </>
@@ -738,11 +790,23 @@ function AddServerSheet({
                   <>
                     <div>
                       <Label className="mb-1 text-xs font-semibold">Command *</Label>
-                      <Input value={command} onChange={(e) => setCommand(e.target.value)} autoCapitalize="none" placeholder="npx" className="rounded-xl" />
+                      <Input
+                        value={command}
+                        onChange={(e) => setCommand(e.target.value)}
+                        autoCapitalize="none"
+                        placeholder="npx"
+                        className="rounded-xl"
+                      />
                     </div>
                     <div>
                       <Label className="mb-1 text-xs font-semibold">Args (space-separated)</Label>
-                      <Input value={args} onChange={(e) => setArgs(e.target.value)} autoCapitalize="none" placeholder="-y @modelcontextprotocol/server-filesystem /path" className="rounded-xl" />
+                      <Input
+                        value={args}
+                        onChange={(e) => setArgs(e.target.value)}
+                        autoCapitalize="none"
+                        placeholder="-y @modelcontextprotocol/server-filesystem /path"
+                        className="rounded-xl"
+                      />
                     </div>
                     <div>
                       <Label className="mb-1 text-xs font-semibold">Env (KEY=VALUE per line)</Label>
@@ -790,7 +854,12 @@ function InstallSheet({
           <DialogPrimitive.Title className="sr-only">Install {entry.name}</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close install" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close install"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1">
@@ -828,7 +897,9 @@ function InstallSheet({
 
               {entry.requiredEnv.length > 0 && (
                 <div className="mt-3 flex flex-col gap-2.5">
-                  <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Required credentials</div>
+                  <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                    Required credentials
+                  </div>
                   {entry.requiredEnv.map((e) => (
                     <div key={e.name}>
                       <div className="mb-1 flex items-center gap-1.5">

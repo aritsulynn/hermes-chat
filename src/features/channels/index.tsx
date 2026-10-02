@@ -84,7 +84,13 @@ export function ChannelsScreen() {
   const visible = useMemo(
     () =>
       ql
-        ? platforms.filter((p) => [p.id, p.name, p.description].some((v) => String(v ?? '').toLowerCase().includes(ql)))
+        ? platforms.filter((p) =>
+            [p.id, p.name, p.description].some((v) =>
+              String(v ?? '')
+                .toLowerCase()
+                .includes(ql),
+            ),
+          )
         : platforms,
     [platforms, ql],
   );
@@ -197,7 +203,8 @@ function stateLabel(p: MessagingPlatform): string {
 
 function stateTone(p: MessagingPlatform): string {
   if (!p.enabled || p.state === 'startup_failed') return 'text-red-500';
-  if (!p.configured || p.state === 'pending_restart' || p.state === 'gateway_stopped') return 'text-amber-600 dark:text-amber-400';
+  if (!p.configured || p.state === 'pending_restart' || p.state === 'gateway_stopped')
+    return 'text-amber-600 dark:text-amber-400';
   return 'text-emerald-600 dark:text-emerald-400';
 }
 
@@ -259,11 +266,15 @@ function PlatformRow({
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">{platform.name}</span>
+            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              {platform.name}
+            </span>
             <span className={`text-[11px] font-semibold ${stateTone(platform)}`}>{stateLabel(platform)}</span>
           </div>
           {!!platform.description && (
-            <div className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{platform.description}</div>
+            <div className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">
+              {platform.description}
+            </div>
           )}
           {!!platform.errorMessage && (
             <div className="mt-1 line-clamp-2 text-[11px] text-red-600 dark:text-red-400">{platform.errorMessage}</div>
@@ -359,7 +370,12 @@ function PlatformConfigSheet({
           <DialogPrimitive.Title className="sr-only">{platform.name} credentials</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close config" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close config"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">{platform.name}</div>
@@ -380,7 +396,9 @@ function PlatformConfigSheet({
                   {platform.envVars.map((e) => (
                     <div key={e.key}>
                       <div className="mb-1 flex items-center justify-between gap-2">
-                        <Label className="font-mono text-[11px] text-neutral-600 dark:text-neutral-300">{e.label || e.key}</Label>
+                        <Label className="font-mono text-[11px] text-neutral-600 dark:text-neutral-300">
+                          {e.label || e.key}
+                        </Label>
                         {e.isSet && (
                           <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                             Saved{e.redactedValue ? ` · ${e.redactedValue}` : ''}
@@ -570,7 +588,12 @@ function PairingSheet({
           <DialogPrimitive.Title className="sr-only">Pair {platform.name}</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close pairing" onClick={() => void cancel()} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close pairing"
+                onClick={() => void cancel()}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1">

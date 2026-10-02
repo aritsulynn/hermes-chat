@@ -194,7 +194,15 @@ export const Composer = memo(function Composer({
   // manual asks every time, smart lets the model decide, off runs everything.
   const ApprovalIcon = approvalMode === 'off' ? ShieldOff : approvalMode === 'smart' ? ShieldCheck : ShieldUser;
   const approvalColor =
-    approvalMode === 'off' ? (dark ? '#f0b429' : '#d97706') : approvalMode === 'smart' ? 'var(--brand-hex)' : dark ? '#a3a3a3' : '#555';
+    approvalMode === 'off'
+      ? dark
+        ? '#f0b429'
+        : '#d97706'
+      : approvalMode === 'smart'
+        ? 'var(--brand-hex)'
+        : dark
+          ? '#a3a3a3'
+          : '#555';
   const approvalLabel =
     approvalMode === 'off'
       ? 'Approvals off — run everything'
@@ -258,9 +266,7 @@ export const Composer = memo(function Composer({
                   ) : (
                     <Paperclip size={12} color="var(--brand-hex)" />
                   )}
-                  <span className="min-w-0 shrink text-left text-xs text-brand truncate">
-                    {a.name}
-                  </span>
+                  <span className="min-w-0 shrink text-left text-xs text-brand truncate">{a.name}</span>
                   <X size={12} color="var(--brand-hex)" />
                 </Button>
               );
@@ -272,118 +278,118 @@ export const Composer = memo(function Composer({
         {expanded ? (
           <>
             <Textarea
-          ref={inputRef}
-          aria-label="Message"
-          // The container draws the border and background; the field itself is
-          // transparent, or it reads as a frame inside a frame.
-          className="max-h-[180px] min-h-[64px] resize-none border-0 bg-transparent px-1.5 py-2.5 text-[15px] text-neutral-950 shadow-none focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
-          value={input}
-          onChange={(e) => {
-            const t = e.target.value;
-            // A big paste (multi-line wall) is spilled to a server file so it
-            // doesn't bloat the prompt; the placeholder names the file the agent
-            // can read.
-            if (t.length - input.length > 1500) {
-              onPasteLarge(t);
-              return;
-            }
-            setInput(t);
-          }}
-          placeholder={placeholder}
-          style={{ colorScheme: dark ? 'dark' : 'light' }}
-          onBlur={() => {
-            setFocused(false);
-            handleBlur();
-            // Tapping the transcript dismisses the keyboard (its scroller's own
-            // handler) and the field blurs, but nothing tells the keyboard to go
-            // away — on Android the soft keyboard can stay up with nothing
-            // focused. The pill is meant to come back the moment the field is
-            // dismissed, and the blur is that signal, so drop the latch here too.
-            // Blur from a *sibling control* is filtered out by the delay check:
-            // focus is still inside the box, so the composer is untouched.
-            window.setTimeout(() => {
-              const el = inputRef.current;
-              const active = document.activeElement;
-              if (el && active !== el && !el.closest('.frame-focus')?.contains(active)) setTapExpand(false);
-            }, 120);
-          }}
-          onFocus={() => setFocused(true)}
-        />
-        {/* Narrow screens wrap the model row below the icon row (see
+              ref={inputRef}
+              aria-label="Message"
+              // The container draws the border and background; the field itself is
+              // transparent, or it reads as a frame inside a frame.
+              className="max-h-[180px] min-h-[64px] resize-none border-0 bg-transparent px-1.5 py-2.5 text-[15px] text-neutral-950 shadow-none focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
+              value={input}
+              onChange={(e) => {
+                const t = e.target.value;
+                // A big paste (multi-line wall) is spilled to a server file so it
+                // doesn't bloat the prompt; the placeholder names the file the agent
+                // can read.
+                if (t.length - input.length > 1500) {
+                  onPasteLarge(t);
+                  return;
+                }
+                setInput(t);
+              }}
+              placeholder={placeholder}
+              style={{ colorScheme: dark ? 'dark' : 'light' }}
+              onBlur={() => {
+                setFocused(false);
+                handleBlur();
+                // Tapping the transcript dismisses the keyboard (its scroller's own
+                // handler) and the field blurs, but nothing tells the keyboard to go
+                // away — on Android the soft keyboard can stay up with nothing
+                // focused. The pill is meant to come back the moment the field is
+                // dismissed, and the blur is that signal, so drop the latch here too.
+                // Blur from a *sibling control* is filtered out by the delay check:
+                // focus is still inside the box, so the composer is untouched.
+                window.setTimeout(() => {
+                  const el = inputRef.current;
+                  const active = document.activeElement;
+                  if (el && active !== el && !el.closest('.frame-focus')?.contains(active)) setTapExpand(false);
+                }, 120);
+              }}
+              onFocus={() => setFocused(true)}
+            />
+            {/* Narrow screens wrap the model row below the icon row (see
             stackModel): the action row keeps full width for Queue/Steer/send
             instead of squeezing beside the model name. */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <DropdownMenuTrigger
-            handle={attachMenu}
-            id="attach"
-            render={
-              <Button variant="ghost" size="icon" aria-label="Attach" className="h-8 w-8 shrink-0 shadow-none" />
-            }>
-            <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
-          </DropdownMenuTrigger>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onCycleApproval}
-            aria-label={approvalLabel}
-            title={approvalLabel}
-            className="h-8 w-8 shrink-0 shadow-none">
-            <ApprovalIcon size={20} color={approvalColor} />
-          </Button>
-          {/* basis-full + order pushes model/effort onto their own row when
-              stacked; inline and shrinkable otherwise. */}
-          <div className={`flex min-w-0 items-center gap-1 ${stackModel ? 'order-3 basis-full' : 'shrink'}`}>
-            <ModelRow
-              modelLabel={modelLabel}
-              onOpenModelPicker={onOpenModelPicker}
-              effort={effort}
-              effortWire={effortWire}
-              showEffort={showEffort}
-              effortMenu={effortMenu}
-              dark={dark}
-            />
-          </div>
-          <div className="flex-1" />
-          {generating ? (
-            <>
-              {hasText && !attachments.length && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onQueue(input)}
-                  className="shrink-0 rounded-lg px-2.5 py-1.5 shadow-none">
-                  <span className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</span>
-                </Button>
-              )}
-              {hasText && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onRedirect(input)}
-                  className="shrink-0 rounded-lg px-2 py-1.5 shadow-none">
-                  <span className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</span>
-                </Button>
-              )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <DropdownMenuTrigger
+                handle={attachMenu}
+                id="attach"
+                render={
+                  <Button variant="ghost" size="icon" aria-label="Attach" className="h-8 w-8 shrink-0 shadow-none" />
+                }>
+                <Plus size={20} color={dark ? '#a3a3a3' : '#555'} />
+              </DropdownMenuTrigger>
               <Button
-                variant="destructive"
+                variant="ghost"
                 size="icon"
-                onClick={stop}
-                aria-label="Stop"
-                className="h-9 w-9 shrink-0 rounded-full shadow-none">
-                <Square size={13} color="#fff" fill="#fff" />
+                onClick={onCycleApproval}
+                aria-label={approvalLabel}
+                title={approvalLabel}
+                className="h-8 w-8 shrink-0 shadow-none">
+                <ApprovalIcon size={20} color={approvalColor} />
               </Button>
-            </>
-          ) : (
-            <Button
-              variant="default"
-              size="icon"
-              onClick={send}
-              aria-label="Send"
-              className="h-9 w-9 shrink-0 rounded-full shadow-none">
-              <ArrowUp size={19} color={dark ? '#111' : '#fff'} />
-            </Button>
-          )}
-        </div>
+              {/* basis-full + order pushes model/effort onto their own row when
+              stacked; inline and shrinkable otherwise. */}
+              <div className={`flex min-w-0 items-center gap-1 ${stackModel ? 'order-3 basis-full' : 'shrink'}`}>
+                <ModelRow
+                  modelLabel={modelLabel}
+                  onOpenModelPicker={onOpenModelPicker}
+                  effort={effort}
+                  effortWire={effortWire}
+                  showEffort={showEffort}
+                  effortMenu={effortMenu}
+                  dark={dark}
+                />
+              </div>
+              <div className="flex-1" />
+              {generating ? (
+                <>
+                  {hasText && !attachments.length && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onQueue(input)}
+                      className="shrink-0 rounded-lg px-2.5 py-1.5 shadow-none">
+                      <span className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">Queue</span>
+                    </Button>
+                  )}
+                  {hasText && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onRedirect(input)}
+                      className="shrink-0 rounded-lg px-2 py-1.5 shadow-none">
+                      <span className="text-[13px] font-semibold dark:text-neutral-100">Steer ↪</span>
+                    </Button>
+                  )}
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    onClick={stop}
+                    aria-label="Stop"
+                    className="h-9 w-9 shrink-0 rounded-full shadow-none">
+                    <Square size={13} color="#fff" fill="#fff" />
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="default"
+                  size="icon"
+                  onClick={send}
+                  aria-label="Send"
+                  className="h-9 w-9 shrink-0 rounded-full shadow-none">
+                  <ArrowUp size={19} color={dark ? '#111' : '#fff'} />
+                </Button>
+              )}
+            </div>
           </>
         ) : (
           <>

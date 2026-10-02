@@ -54,9 +54,7 @@ const ToolsetRow = memo(function ToolsetRow({
   return (
     <div
       className={`rounded-2xl border p-3.5 ${
-        enabled
-          ? 'border-border bg-elevated dark:bg-elevated'
-          : 'border-border bg-popover/70 dark:bg-input/30/60'
+        enabled ? 'border-border bg-elevated dark:bg-elevated' : 'border-border bg-popover/70 dark:bg-input/30/60'
       }`}>
       <div className="flex items-center gap-3">
         <div
@@ -228,66 +226,66 @@ export function ToolsetsScreen() {
         }
         contentClassName="px-4 py-4">
         <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
-            <Card className="mb-3">
-              <div className="flex items-start gap-2.5">
-                <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
-                <div className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
-                  Toolsets group the tools Hermes can use. Changes apply to new chats.
-                </div>
+          <Card className="mb-3">
+            <div className="flex items-start gap-2.5">
+              <Boxes size={17} color={dark ? '#a3a3a3' : '#666'} />
+              <div className="flex-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
+                Toolsets group the tools Hermes can use. Changes apply to new chats.
+              </div>
+            </div>
+          </Card>
+
+          {!loading && !unsupported && !error && (
+            <div className="frame-focus mb-3 flex items-center rounded-xl border border-border bg-popover px-3 dark:bg-input/30">
+              <Search size={16} color={dark ? '#888' : '#777'} />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search toolsets…"
+                autoCapitalize="none"
+                aria-label="Search toolsets"
+                // The wrapper draws the field; the base border + background
+                // inside it would read as a frame within a frame. dark: is
+                // needed too — the base sets dark:bg-input/30, which a plain
+                // bg-transparent does not cancel in dark mode.
+                className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
+              />
+            </div>
+          )}
+
+          {loading && !refreshing ? (
+            <div className="flex flex-col items-center py-16">
+              <Spinner size={24} color={brandColor(dark)} />
+            </div>
+          ) : unsupported ? (
+            <Card>
+              <div className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+                Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability toolsets
+                here.
               </div>
             </Card>
-
-            {!loading && !unsupported && !error && (
-              <div className="frame-focus mb-3 flex items-center rounded-xl border border-border bg-popover px-3 dark:bg-input/30">
-                <Search size={16} color={dark ? '#888' : '#777'} />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search toolsets…"
-                  autoCapitalize="none"
-                  aria-label="Search toolsets"
-                  // The wrapper draws the field; the base border + background
-                  // inside it would read as a frame within a frame. dark: is
-                  // needed too — the base sets dark:bg-input/30, which a plain
-                  // bg-transparent does not cancel in dark mode.
-                  className="min-h-11 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-[15px] text-neutral-950 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
+          ) : error ? (
+            <ErrorRetry error={error} onRetry={() => void load()} />
+          ) : filtered.length === 0 ? (
+            <Card>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                {query ? `No toolsets match “${query.trim()}”.` : 'No configurable toolsets were returned.'}
+              </div>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {filtered.map((toolset) => (
+                <ToolsetRow
+                  key={String(toolset.name ?? '')}
+                  toolset={toolset}
+                  dark={dark}
+                  toggling={toggling === String(toolset.name ?? '')}
+                  onToggle={toggle}
+                  onConfigure={setConfiguring}
                 />
-              </div>
-            )}
-
-            {loading && !refreshing ? (
-              <div className="flex flex-col items-center py-16">
-                <Spinner size={24} color={brandColor(dark)} />
-              </div>
-            ) : unsupported ? (
-              <Card>
-                <div className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-                  Toolsets aren&apos;t available on this backend. Update the Hermes gateway to manage capability
-                  toolsets here.
-                </div>
-              </Card>
-            ) : error ? (
-              <ErrorRetry error={error} onRetry={() => void load()} />
-            ) : filtered.length === 0 ? (
-              <Card>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {query ? `No toolsets match “${query.trim()}”.` : 'No configurable toolsets were returned.'}
-                </div>
-              </Card>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {filtered.map((toolset) => (
-                  <ToolsetRow
-                    key={String(toolset.name ?? '')}
-                    toolset={toolset}
-                    dark={dark}
-                    toggling={toggling === String(toolset.name ?? '')}
-                    onToggle={toggle}
-                    onConfigure={setConfiguring}
-                  />
-                ))}
-              </div>
-            )}
+              ))}
+            </div>
+          )}
         </div>
       </ScreenScaffold>
 

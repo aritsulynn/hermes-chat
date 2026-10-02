@@ -6,17 +6,7 @@
 // audit / backup / checkpoints prune, and the redacted credential pool).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
-import {
-  Database,
-  HardDrive,
-  KeyRound,
-  Play,
-  RefreshCw,
-  RotateCw,
-  Shield,
-  Square,
-  Stethoscope,
-} from 'lucide-react';
+import { Database, HardDrive, KeyRound, Play, RefreshCw, RotateCw, Shield, Square, Stethoscope } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
@@ -168,7 +158,8 @@ export function SystemScreen() {
         toast({ title: `Gateway ${verb} requested` });
         // The gateway status is polled by the store's connection state; no reload.
       } catch (e) {
-        if (getAuthScope() === scope) toast({ title: `Gateway ${verb} failed`, description: errMsg(e), variant: 'destructive' });
+        if (getAuthScope() === scope)
+          toast({ title: `Gateway ${verb} failed`, description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope) setGatewayBusy(null);
       }
@@ -210,7 +201,8 @@ export function SystemScreen() {
                   <div className="flex items-center gap-2">
                     <Play size={14} color={brand} />
                     <span className="min-w-0 flex-1 truncate font-mono text-xs">{action}</span>
-                    <span className={`text-[11px] font-semibold ${actionRunning ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    <span
+                      className={`text-[11px] font-semibold ${actionRunning ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {actionRunning ? 'running' : 'done'}
                     </span>
                   </div>
@@ -230,7 +222,10 @@ export function SystemScreen() {
                     <Row label="Host" value={stats.hostname} />
                     <Row label="Python" value={stats.pythonVersion} />
                     <Row label="Hermes" value={stats.hermesVersion} />
-                    <Row label="CPU" value={`${stats.cpuCount} cores${stats.cpuPercent != null ? ` · ${stats.cpuPercent}%` : ''}`} />
+                    <Row
+                      label="CPU"
+                      value={`${stats.cpuCount} cores${stats.cpuPercent != null ? ` · ${stats.cpuPercent}%` : ''}`}
+                    />
                     <Row label="Uptime" value={formatUptime(stats.uptimeSeconds)} />
                     {stats.process && (
                       <Row label="Process" value={`pid ${stats.process.pid} · ${stats.process.threads} threads`} />
@@ -269,7 +264,11 @@ export function SystemScreen() {
                   <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Gateway</div>
                   <span
                     className={`ml-auto text-[11px] font-semibold ${
-                      gatewayReady ? 'text-emerald-600 dark:text-emerald-400' : gatewayConnecting ? 'text-amber-600' : 'text-red-500'
+                      gatewayReady
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : gatewayConnecting
+                          ? 'text-amber-600'
+                          : 'text-red-500'
                     }`}>
                     {gatewayReady ? 'Connected' : gatewayConnecting ? 'Connecting…' : 'Disconnected'}
                   </span>
@@ -334,9 +333,25 @@ export function SystemScreen() {
                   <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Maintenance</div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <ActionButton icon={<Stethoscope size={13} color="#fff" />} label="Run doctor" busy={runningAction === 'doctor'} onClick={() => void runAction('doctor')} primary />
-                  <ActionButton icon={<Shield size={13} />} label="Security audit" busy={runningAction === 'security-audit'} onClick={() => void runAction('security-audit')} />
-                  <ActionButton icon={<HardDrive size={13} />} label="Create backup" busy={runningAction === 'backup'} onClick={() => void runAction('backup')} />
+                  <ActionButton
+                    icon={<Stethoscope size={13} color="#fff" />}
+                    label="Run doctor"
+                    busy={runningAction === 'doctor'}
+                    onClick={() => void runAction('doctor')}
+                    primary
+                  />
+                  <ActionButton
+                    icon={<Shield size={13} />}
+                    label="Security audit"
+                    busy={runningAction === 'security-audit'}
+                    onClick={() => void runAction('security-audit')}
+                  />
+                  <ActionButton
+                    icon={<HardDrive size={13} />}
+                    label="Create backup"
+                    busy={runningAction === 'backup'}
+                    onClick={() => void runAction('backup')}
+                  />
                   <ActionButton
                     icon={<RotateCw size={13} />}
                     label="Prune checkpoints"

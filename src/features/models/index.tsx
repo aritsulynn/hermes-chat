@@ -75,10 +75,7 @@ export function ModelsScreen() {
     if (authed) void load();
   }, [authed, load]);
 
-  const overrideCount = useMemo(
-    () => (aux ? aux.tasks.filter((t) => t.model).length : 0),
-    [aux],
-  );
+  const overrideCount = useMemo(() => (aux ? aux.tasks.filter((t) => t.model).length : 0), [aux]);
 
   const assign = useCallback(
     async (task: string, provider: string, model: string, reasoningEffort?: string | null) => {
@@ -95,7 +92,11 @@ export function ModelsScreen() {
         });
         if (getAuthScope() !== scope) return;
         if (res.confirmRequired) {
-          toast({ title: 'Confirm model', description: res.confirmMessage || 'This model may be expensive.', variant: 'destructive' });
+          toast({
+            title: 'Confirm model',
+            description: res.confirmMessage || 'This model may be expensive.',
+            variant: 'destructive',
+          });
           return;
         }
         toast({ title: model ? 'Task assigned' : 'Task reset', description: `${task} · ${model || 'auto'}` });
@@ -114,7 +115,13 @@ export function ModelsScreen() {
     const scope = getAuthScope();
     setBusyTask('__reset__');
     try {
-      await setModelAssignment(opsMut, { scope: 'auxiliary', provider: 'auto', model: '', task: '__reset__', profile: activeProfile });
+      await setModelAssignment(opsMut, {
+        scope: 'auxiliary',
+        provider: 'auto',
+        model: '',
+        task: '__reset__',
+        profile: activeProfile,
+      });
       if (getAuthScope() !== scope) return;
       toast({ title: 'All tasks reset to auto' });
       await load(true);
@@ -133,13 +140,7 @@ export function ModelsScreen() {
         header={
           <ScreenHeader
             title="Models"
-            subtitle={
-              loading
-                ? 'Loading…'
-                : aux
-                  ? `${overrideCount}/${aux.tasks.length} aux overrides`
-                  : undefined
-            }
+            subtitle={loading ? 'Loading…' : aux ? `${overrideCount}/${aux.tasks.length} aux overrides` : undefined}
             actions={
               <HeaderIconButton aria-label="Refresh models" onClick={() => void load(true)}>
                 <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
@@ -160,11 +161,15 @@ export function ModelsScreen() {
               <Card>
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <Star size={14} color={brand} />
-                  <span className="text-xs font-bold tracking-wide text-neutral-500 uppercase dark:text-neutral-400">Main model</span>
+                  <span className="text-xs font-bold tracking-wide text-neutral-500 uppercase dark:text-neutral-400">
+                    Main model
+                  </span>
                 </div>
                 {info?.model ? (
                   <>
-                    <div className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">{info.model}</div>
+                    <div className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                      {info.model}
+                    </div>
                     <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
                       {[info.provider, info.capabilities.modelFamily].filter(Boolean).join(' · ')}
                     </div>
@@ -219,11 +224,11 @@ export function ModelsScreen() {
                           </span>
                           {t.localEndpoint && <Badge label="local" dark={dark} />}
                         </div>
-                        {!!meta?.hint && (
-                          <div className="mt-0.5 text-[11px] text-neutral-400">{meta.hint}</div>
-                        )}
+                        {!!meta?.hint && <div className="mt-0.5 text-[11px] text-neutral-400">{meta.hint}</div>}
                         {t.model && (
-                          <div className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">{t.model}</div>
+                          <div className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
+                            {t.model}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -289,7 +294,8 @@ type AuxiliarySlot = { task: string; label: string };
 
 function Badge({ label, dark }: { label: string; dark: boolean }) {
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[10px] text-neutral-600 dark:text-neutral-300 ${dark ? 'border-neutral-700' : 'border-neutral-300'}`}>
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[10px] text-neutral-600 dark:text-neutral-300 ${dark ? 'border-neutral-700' : 'border-neutral-300'}`}>
       {label}
     </span>
   );
@@ -351,8 +357,15 @@ function ModelPickerSheet({
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-popover dark:bg-background">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-        <Button variant="ghost" size="icon" aria-label="Close model picker" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+      <div
+        className="flex items-center gap-2 border-b border-border px-4 py-3"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Close model picker"
+          onClick={onClose}
+          className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
           <span className="text-lg" style={{ color: dark ? '#eee' : '#333' }}>
             ✕
           </span>
@@ -383,7 +396,8 @@ function ModelPickerSheet({
                   aria-pressed={activeProvider === p.slug}
                   onClick={() => setActiveProvider(p.slug)}
                   className={`h-auto sm:h-auto rounded-lg border px-2.5 py-1.5 ${activeProvider === p.slug ? 'border-brand bg-brand/10' : 'border-border'}`}>
-                  <span className={`text-[11px] font-semibold ${activeProvider === p.slug ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
+                  <span
+                    className={`text-[11px] font-semibold ${activeProvider === p.slug ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
                     {p.name}
                   </span>
                 </Button>

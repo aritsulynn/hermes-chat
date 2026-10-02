@@ -94,7 +94,11 @@ export function ConfigScreen() {
                     <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
                   <HeaderIconButton aria-label="Save config" onClick={() => void save()} disabled={saving || !dirty}>
-                    {saving ? <Spinner size={18} color={brand} /> : <Check size={20} color={dirty ? brand : dark ? '#555' : '#bbb'} />}
+                    {saving ? (
+                      <Spinner size={18} color={brand} />
+                    ) : (
+                      <Check size={20} color={dirty ? brand : dark ? '#555' : '#bbb'} />
+                    )}
                   </HeaderIconButton>
                 </div>
               }

@@ -237,9 +237,7 @@ export async function searchSkillHub(
   return {
     results: hubResults(r.results),
     sourceCounts:
-      r.source_counts && typeof r.source_counts === 'object'
-        ? (r.source_counts as Record<string, number>)
-        : {},
+      r.source_counts && typeof r.source_counts === 'object' ? (r.source_counts as Record<string, number>) : {},
     timedOut: Array.isArray(r.timed_out) ? r.timed_out.map(String) : [],
     installed: installedMap(r.installed),
   };
@@ -296,20 +294,14 @@ export async function scanSkillHub(
     policyReason: str(r.policy_reason),
     findings,
     severityCounts:
-      r.severity_counts && typeof r.severity_counts === 'object'
-        ? (r.severity_counts as Record<string, number>)
-        : {},
+      r.severity_counts && typeof r.severity_counts === 'object' ? (r.severity_counts as Record<string, number>) : {},
   };
 }
 
 type OpsMut = (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<unknown>;
 
 /** Start installing a hub skill. Returns the spawned action's name for polling. */
-export async function installSkillHub(
-  opsMut: OpsMut,
-  identifier: string,
-  profile?: string | null,
-): Promise<string> {
+export async function installSkillHub(opsMut: OpsMut, identifier: string, profile?: string | null): Promise<string> {
   const res = await opsMut(skillHubInstall(), 'POST', {
     identifier,
     ...(String(profile ?? '').trim() ? { profile: String(profile).trim() } : {}),

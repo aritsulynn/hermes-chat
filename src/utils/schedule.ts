@@ -108,8 +108,7 @@ export function buildScheduleString(state: ScheduleBuilderState): string {
       const parsed = parseTimeOfDay(state.timeOfDay);
       if (!parsed) return '';
       // Empty weekday selection → "*" (every day) rather than a backend 400.
-      const days =
-        state.weekdays.length === 0 ? '*' : [...state.weekdays].sort((a, b) => a - b).join(',');
+      const days = state.weekdays.length === 0 ? '*' : [...state.weekdays].sort((a, b) => a - b).join(',');
       return `${parsed.minute} ${parsed.hour} * * ${days}`;
     }
     case 'monthly': {
@@ -194,9 +193,7 @@ export function parseScheduleString(schedule: string): ScheduleBuilderState {
  */
 function parseSimpleCronExpression(
   expr: string,
-):
-  | { mode: 'daily' | 'weekly' | 'monthly'; time: string; weekdays?: Weekday[]; dayOfMonth?: number }
-  | null {
+): { mode: 'daily' | 'weekly' | 'monthly'; time: string; weekdays?: Weekday[]; dayOfMonth?: number } | null {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [minField, hourField, domField, monField, dowField] = parts;
@@ -264,14 +261,7 @@ function parseTimeOfDay(value: string): { hour: number; minute: number } | null 
   const [hh, mm] = value.split(':');
   const hour = parseInt(hh, 10);
   const minute = parseInt(mm, 10);
-  if (
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute) ||
-    hour < 0 ||
-    hour > 23 ||
-    minute < 0 ||
-    minute > 59
-  ) {
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
     return null;
   }
   return { hour, minute };
@@ -386,9 +376,7 @@ function describeCronExpression(expr: string, strings: ScheduleDescribeStrings):
     return strings.weeklyAt.replace('{days}', labels).replace('{time}', parsed.time);
   }
 
-  return strings.monthlyAt
-    .replace('{day}', strings.ordinal(parsed.dayOfMonth ?? 1))
-    .replace('{time}', parsed.time);
+  return strings.monthlyAt.replace('{day}', strings.ordinal(parsed.dayOfMonth ?? 1)).replace('{time}', parsed.time);
 }
 
 function pad2(n: number): string {

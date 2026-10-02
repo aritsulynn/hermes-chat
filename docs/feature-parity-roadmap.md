@@ -9,16 +9,16 @@ This repo (`hermes-mobile-react-migration`) is the **mobile client** for Hermes 
 The complete desktop dashboard lives at **`~/.hermes/hermes-agent/web/`** and shares
 almost the same stack, so it is the reference implementation:
 
-| | Desktop `~/.hermes/hermes-agent/web/` | Mobile (this repo) |
-| --- | --- | --- |
-| Framework | React 19 + Vite + react-router 8 | React 19 + Vite + react-router-dom 7 |
-| Styling | Tailwind v4 | Tailwind v4 |
-| Design system | `@nous-research/ui` | Base UI + `src/components/ui/*` |
-| Transport | `src/lib/api.ts` (2,882 lines) | `src/services/api.ts` (201) + `services/dashboard.ts` |
-| i18n | 20 locales (`src/i18n/`) — **no Thai** | none |
+|               | Desktop `~/.hermes/hermes-agent/web/`  | Mobile (this repo)                                    |
+| ------------- | -------------------------------------- | ----------------------------------------------------- |
+| Framework     | React 19 + Vite + react-router 8       | React 19 + Vite + react-router-dom 7                  |
+| Styling       | Tailwind v4                            | Tailwind v4                                           |
+| Design system | `@nous-research/ui`                    | Base UI + `src/components/ui/*`                       |
+| Transport     | `src/lib/api.ts` (2,882 lines)         | `src/services/api.ts` (201) + `services/dashboard.ts` |
+| i18n          | 20 locales (`src/i18n/`) — **no Thai** | none                                                  |
 
 **Porting caveat:** you cannot copy files wholesale — the two apps use different
-design systems. Copy the *logic/state* from the reference and re-skin it as mobile UI.
+design systems. Copy the _logic/state_ from the reference and re-skin it as mobile UI.
 Pure logic under `web/src/lib/*.ts` (e.g. `schedule.ts`) is nearly drop-in.
 
 ## How to read this document
@@ -40,44 +40,44 @@ The mobile app already has helpers, so adding an endpoint is fast:
 
 ## 1. Features the mobile app already has
 
-| Route | Screen | Status |
-| --- | --- | --- |
-| `/chat` | Chat (streaming, tools, todos, composer) | done |
-| `/asks` | Ask Inbox | done |
-| `/cron` | Cron CRUD + run history | done (no schedule builder) |
-| `/files` | File browser + preview | partial (read-only) |
-| `/kanban` | Task board | done |
-| `/logs` | Gateway logs | done |
-| `/skills` | Skill inventory + toggle + viewer | partial (cannot edit/install) |
-| `/toolsets` | Enable/disable toggle | partial (cannot configure) |
-| `/usage` | Token/cost by day | done (incomplete) |
-| `/settings` | theme, approvals, profiles, update, notifications | done |
+| Route       | Screen                                            | Status                        |
+| ----------- | ------------------------------------------------- | ----------------------------- |
+| `/chat`     | Chat (streaming, tools, todos, composer)          | done                          |
+| `/asks`     | Ask Inbox                                         | done                          |
+| `/cron`     | Cron CRUD + run history                           | done (no schedule builder)    |
+| `/files`    | File browser + preview                            | partial (read-only)           |
+| `/kanban`   | Task board                                        | done                          |
+| `/logs`     | Gateway logs                                      | done                          |
+| `/skills`   | Skill inventory + toggle + viewer                 | partial (cannot edit/install) |
+| `/toolsets` | Enable/disable toggle                             | partial (cannot configure)    |
+| `/usage`    | Token/cost by day                                 | done (incomplete)             |
+| `/settings` | theme, approvals, profiles, update, notifications | done                          |
 
 ## 2. Parity map vs desktop
 
-| Feature | Desktop route | Reference | Mobile | Size |
-| --- | --- | --- | --- | --- |
-| Session export | `/sessions` | `SessionsPage.tsx` | **done** (chat menu) | S |
-| Schedule builder (cron) | `/cron` | `lib/schedule.ts` + `ScheduleBuilder.tsx` | **done** | S–M |
-| Analytics by model | `/analytics` | `AnalyticsPage.tsx` | **done** | S |
-| Skill editor | `/skills` | `SkillEditorDialog.tsx` | **done** | M |
-| Skill hub (search/install) | `/skills` | `SkillsPage.tsx` | **done** | M |
-| Toolset config | — | `ToolsetConfigDrawer.tsx` | **done** | M |
-| Files write/delete/download | `/files` | `FilesPage.tsx` | **done** (download added) | M |
-| Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
-| Session search | `/sessions` | `SessionsPage.tsx` | **done** (sidebar FTS) | M |
-| Models (aux / MoA) | `/models` | `ModelsPage.tsx` | **done** (aux) | M–L |
-| MCP | `/mcp` | `McpPage.tsx` | **done** (servers + catalog) | L |
-| Channels | `/channels` | `ChannelsPage.tsx` | **done** | L |
-| System / Ops | `/system` | `SystemPage.tsx` | **done** (core) | L |
-| Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | **done** | L |
-| Config | `/config` | `ConfigPage.tsx` | **done** (YAML) | L |
-| Keys / Env | `/keys` | `EnvPage.tsx` | **done** (env vars) | L |
-| Plugins | `/plugins` | `PluginsPage.tsx` | **done** | L |
-| Pairing | `/pairing` | `PairingPage.tsx` | **done** | M |
-| Webhooks | `/webhooks` | `WebhooksPage.tsx` | **done** | M |
-| Timeline / branch view | `/sessions` | `SessionsPage.tsx` | missing | M |
-| i18n + Thai | whole app | `src/i18n/` | missing | L |
+| Feature                     | Desktop route | Reference                                 | Mobile                                             | Size |
+| --------------------------- | ------------- | ----------------------------------------- | -------------------------------------------------- | ---- |
+| Session export              | `/sessions`   | `SessionsPage.tsx`                        | **done** (chat menu)                               | S    |
+| Schedule builder (cron)     | `/cron`       | `lib/schedule.ts` + `ScheduleBuilder.tsx` | **done**                                           | S–M  |
+| Analytics by model          | `/analytics`  | `AnalyticsPage.tsx`                       | **done**                                           | S    |
+| Skill editor                | `/skills`     | `SkillEditorDialog.tsx`                   | **done**                                           | M    |
+| Skill hub (search/install)  | `/skills`     | `SkillsPage.tsx`                          | **done**                                           | M    |
+| Toolset config              | —             | `ToolsetConfigDrawer.tsx`                 | **done**                                           | M    |
+| Files write/delete/download | `/files`      | `FilesPage.tsx`                           | **done** (download added)                          | M    |
+| Reasoning picker            | `/chat`       | `ReasoningPicker.tsx`                     | **done** (chat already has a thinking-effort menu) | —    |
+| Session search              | `/sessions`   | `SessionsPage.tsx`                        | **done** (sidebar FTS)                             | M    |
+| Models (aux / MoA)          | `/models`     | `ModelsPage.tsx`                          | **done** (aux)                                     | M–L  |
+| MCP                         | `/mcp`        | `McpPage.tsx`                             | **done** (servers + catalog)                       | L    |
+| Channels                    | `/channels`   | `ChannelsPage.tsx`                        | **done**                                           | L    |
+| System / Ops                | `/system`     | `SystemPage.tsx`                          | **done** (core)                                    | L    |
+| Profiles (CRUD)             | `/profiles`   | `ProfilesPage.tsx`                        | **done**                                           | L    |
+| Config                      | `/config`     | `ConfigPage.tsx`                          | **done** (YAML)                                    | L    |
+| Keys / Env                  | `/keys`       | `EnvPage.tsx`                             | **done** (env vars)                                | L    |
+| Plugins                     | `/plugins`    | `PluginsPage.tsx`                         | **done**                                           | L    |
+| Pairing                     | `/pairing`    | `PairingPage.tsx`                         | **done**                                           | M    |
+| Webhooks                    | `/webhooks`   | `WebhooksPage.tsx`                        | **done**                                           | M    |
+| Timeline / branch view      | `/sessions`   | `SessionsPage.tsx`                        | missing                                            | M    |
+| i18n + Thai                 | whole app     | `src/i18n/`                               | missing                                            | L    |
 
 ---
 
@@ -97,7 +97,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   (hourly / daily / weekly / interval / custom).
 - **Endpoint:** existing (`POST/PUT /api/cron/jobs`) — no backend change.
 - **Reference:** `web/src/lib/schedule.ts` (465 lines, pure logic, near drop-in)
-  + `web/src/components/ScheduleBuilder.tsx` (273).
+  - `web/src/components/ScheduleBuilder.tsx` (273).
 - **Touch:** `src/features/cron/index.tsx` — today it uses `formSchedule` +
   `SCHEDULE_PRESETS` from `src/features/cron/helpers.ts`; the input is around line 1007.
 - **Note:** there is a test at `lib/schedule.test.ts` — port it too.
@@ -134,12 +134,14 @@ The mobile app already has helpers, so adding an endpoint is fast:
 ## 4. Medium
 
 ### 4.1 Skill editor `M` — done
+
 - `PUT /api/skills/content`, `POST /api/skills`
 - Reference: `SkillEditorDialog.tsx` (216)
 - Shipped: `src/features/skills/components/SkillEditor.tsx`, `New skill` /
   `Edit` actions in `src/features/skills/index.tsx`.
 
 ### 4.2 Skill hub — search/install skills `M` — done
+
 - `GET /api/skills/hub/sources`, `/search`, `/preview`, `/scan`
 - `POST /api/skills/hub/install|uninstall|update`
 - Reference: `SkillsPage.tsx` HubBrowser
@@ -147,6 +149,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   hub method builders in `src/services/api.ts` / `src/services/skills.ts`.
 
 ### 4.3 Toolset config `M` — done
+
 - `GET /api/tools/toolsets/{name}/config`
 - `PUT /api/tools/toolsets/{name}/provider|env`, `POST .../post-setup`
 - Reference: `ToolsetConfigDrawer.tsx` (460)
@@ -154,17 +157,20 @@ The mobile app already has helpers, so adding an endpoint is fast:
   toolsets screen now open the config sheet.
 
 ### 4.4 Files write/delete/download `M` — mostly already present; download added
+
 - Read/create/upload/edit/delete (including folders) already shipped on the
   files screen; the missing piece was **download**, now added to each file row
   and to the preview header.
 - Remaining optional: chunked `upload-stream`, `fs/write-text` spot editor.
 
 ### 4.5 Pairing `M` — done
+
 - `GET /api/pairing`, `POST /api/pairing/approve|revoke|clear-pending`
 - Reference: `PairingPage.tsx` (274)
 - Shipped: `src/features/pairing/index.tsx` (route `/pairing`) + `src/services/pairing.ts`.
 
 ### 4.6 Webhooks `M` — done
+
 - `GET /api/webhooks`, `POST /api/webhooks/enable`, `POST /api/webhooks`,
   `DELETE /api/webhooks/{name}`, `PUT /api/webhooks/{name}/enabled`
 - Reference: `WebhooksPage.tsx` (613)
@@ -172,10 +178,12 @@ The mobile app already has helpers, so adding an endpoint is fast:
   `src/services/webhooks.ts`; create sheet surfaces the one-time HMAC secret.
 
 ### 4.7 Timeline / branch view `M`
+
 - `GET /api/sessions/{id}/timeline`, `/latest-descendant`, `/messages/around`
 - Reference: `SessionsPage.tsx`
 
 ### 4.8 MCP servers + catalog `L` — done
+
 - `GET/POST/PUT/DELETE /api/mcp/servers*`, `/test`, `/auth`, `/enabled`
 - `GET /api/mcp/catalog`, `POST /api/mcp/catalog/install`
 - Reference: `McpPage.tsx` (917)
@@ -183,6 +191,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   with an add-server sheet and a catalog install sheet for declared env vars.
 
 ### 4.9 System / Ops `L` — done (core)
+
 - `GET /api/system/stats`, `/api/health`, `POST /api/gateway/start|stop`,
   `GET /api/credentials/pool`, `/api/curator`, `/api/ops/{doctor,security-audit,backup,checkpoints}`
 - Reference: `SystemPage.tsx` (1649)
@@ -193,6 +202,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   those belong to the not-yet-ported Config/Memory surfaces.
 
 ### 4.10 Channels + pairing `L` — done
+
 - `GET /api/messaging/platforms`, `PUT .../{id}`, `POST .../{id}/test`
 - Telegram/WhatsApp onboarding: `POST /start`, `GET /{pairing_id}`,
   `POST /{pairing_id}/apply`, `DELETE /{pairing_id}`
@@ -203,6 +213,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   pairing link is a tappable deep link rather than a QR (no QR lib bundled).
 
 ### 4.11 Profiles CRUD `L` — done
+
 - `GET/POST /api/profiles`, `PATCH/DELETE /api/profiles/{name}`,
   `PUT .../{name}/soul|description|model`, `POST .../{name}/describe-auto|export`,
   `POST /api/profiles/import`, `POST /api/profiles/active`
@@ -213,6 +224,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   auto-describe. The desktop's separate ProfileBuilderPage is not ported.
 
 ### 4.12 Plugins `L` — done
+
 - `GET /api/dashboard/plugins/hub`, `/catalog`, `/rescan`
 - `POST /api/dashboard/agent-plugins/install`, `/{name}/enable|disable|update`,
   `DELETE /api/dashboard/agent-plugins/{name}`, `POST /api/dashboard/plugins/{name}/visibility`
@@ -225,6 +237,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   desktop's per-field memory-provider config editor belongs with the Memory surface.
 
 ### 4.13 Keys / Env `L` — done (env vars)
+
 - `GET /api/env`, `PUT /api/env`, `DELETE /api/env`, `POST /api/env/reveal`,
   `POST /api/providers/validate`
 - Reference: `EnvPage.tsx` (1109)
@@ -236,6 +249,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   a distinct surface and is not ported here.
 
 ### 4.14 Config `L` — done (raw YAML)
+
 - `GET /api/config/raw`, `PUT /api/config/raw` (full-document replacement)
 - Also wired: `GET /api/config`, `/api/config/schema` (for the form surface)
 - Reference: `ConfigPage.tsx` (680)
@@ -247,6 +261,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   and is not ported.
 
 ### 4.15 Models (auxiliary) `M–L` — done (aux)
+
 - `GET /api/model/info`, `/api/model/auxiliary`, `POST /api/model/set`,
   `GET /api/model/recommended-default`
 - Reference: `ModelsPage.tsx` (1368)
@@ -260,17 +275,17 @@ The mobile app already has helpers, so adding an endpoint is fast:
 
 ## 5. Large — full new screens
 
-| Screen | Reference | Main endpoints | Size |
-| --- | --- | --- | --- |
-| MCP | `McpPage.tsx` (917) | `/api/mcp/servers`, `/api/mcp/catalog`, `/api/mcp/catalog/install`, `/api/mcp/servers/{n}/test`, `/auth` | L |
-| Channels | `ChannelsPage.tsx` (1460) + `PlatformsCard.tsx` | `/api/messaging/platforms`, `.../test`, `telegram/whatsapp/onboarding/*` | L |
-| System / Ops | `SystemPage.tsx` (1649) | `/api/health`, `/api/system/stats`, `/api/gateway/start\|stop`, `/api/credentials/pool`, `/api/ops/*` | L |
-| Profiles | `ProfilesPage.tsx` (1426) + `ProfileBuilderPage.tsx` | `/api/profiles*` (CRUD, soul, export/import) | L |
-| Config | `ConfigPage.tsx` (680) | `/api/config`, `/config/raw`, `/config/schema` | L |
-| Keys / Env | `EnvPage.tsx` (1109) | `/api/env`, `/api/env/reveal`, `/api/providers/validate`, `/api/providers/custom-endpoints*` | L |
-| Plugins | `PluginsPage.tsx` (1401) | `/api/dashboard/plugins*`, `/api/dashboard/agent-plugins/*`, `/api/dashboard/plugin-providers` | L |
-| Full Models | `ModelsPage.tsx` (1368) | `/api/model/info`, `/auxiliary`, `/moa`, `/recommended-default` | M–L |
-| i18n + Thai | `src/i18n/` | — | L |
+| Screen       | Reference                                            | Main endpoints                                                                                           | Size |
+| ------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---- |
+| MCP          | `McpPage.tsx` (917)                                  | `/api/mcp/servers`, `/api/mcp/catalog`, `/api/mcp/catalog/install`, `/api/mcp/servers/{n}/test`, `/auth` | L    |
+| Channels     | `ChannelsPage.tsx` (1460) + `PlatformsCard.tsx`      | `/api/messaging/platforms`, `.../test`, `telegram/whatsapp/onboarding/*`                                 | L    |
+| System / Ops | `SystemPage.tsx` (1649)                              | `/api/health`, `/api/system/stats`, `/api/gateway/start\|stop`, `/api/credentials/pool`, `/api/ops/*`    | L    |
+| Profiles     | `ProfilesPage.tsx` (1426) + `ProfileBuilderPage.tsx` | `/api/profiles*` (CRUD, soul, export/import)                                                             | L    |
+| Config       | `ConfigPage.tsx` (680)                               | `/api/config`, `/config/raw`, `/config/schema`                                                           | L    |
+| Keys / Env   | `EnvPage.tsx` (1109)                                 | `/api/env`, `/api/env/reveal`, `/api/providers/validate`, `/api/providers/custom-endpoints*`             | L    |
+| Plugins      | `PluginsPage.tsx` (1401)                             | `/api/dashboard/plugins*`, `/api/dashboard/agent-plugins/*`, `/api/dashboard/plugin-providers`           | L    |
+| Full Models  | `ModelsPage.tsx` (1368)                              | `/api/model/info`, `/auxiliary`, `/moa`, `/recommended-default`                                          | M–L  |
+| i18n + Thai  | `src/i18n/`                                          | —                                                                                                        | L    |
 
 > **Channels + QR pairing** (Telegram/WhatsApp) is the most mobile-native item in
 > this group — the desktop has to scan a QR code in front of the machine, a phone

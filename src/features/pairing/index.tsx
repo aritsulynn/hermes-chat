@@ -12,7 +12,13 @@ import { Button } from '../../components/ui/button';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import { toast } from '../../components/ui/toast';
 import { brandColor, screenStyle } from '../../theme';
-import { approvePairing, clearPendingPairing, getPairing, revokePairing, type PairingUser } from '../../services/pairing';
+import {
+  approvePairing,
+  clearPendingPairing,
+  getPairing,
+  revokePairing,
+  type PairingUser,
+} from '../../services/pairing';
 
 function keyOf(u: PairingUser): string {
   return `${u.platform}:${u.user_id}`;
@@ -75,7 +81,8 @@ export function PairingScreen() {
         toast({ title: 'Approved', description: user.user_name || user.user_id });
         await load(true);
       } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Approve failed', description: errMsg(e), variant: 'destructive' });
+        if (getAuthScope() === scope)
+          toast({ title: 'Approve failed', description: errMsg(e), variant: 'destructive' });
       } finally {
         if (getAuthScope() === scope) setApproving(null);
       }
@@ -96,7 +103,8 @@ export function PairingScreen() {
             toast({ title: 'Revoked', description: user.user_name || user.user_id });
             await load(true);
           } catch (e) {
-            if (getAuthScope() === scope) toast({ title: 'Revoke failed', description: errMsg(e), variant: 'destructive' });
+            if (getAuthScope() === scope)
+              toast({ title: 'Revoke failed', description: errMsg(e), variant: 'destructive' });
           }
         },
       });
@@ -117,7 +125,8 @@ export function PairingScreen() {
           toast({ title: `Cleared ${cleared} pending request(s)` });
           await load(true);
         } catch (e) {
-          if (getAuthScope() === scope) toast({ title: 'Clear failed', description: errMsg(e), variant: 'destructive' });
+          if (getAuthScope() === scope)
+            toast({ title: 'Clear failed', description: errMsg(e), variant: 'destructive' });
         }
       },
     });

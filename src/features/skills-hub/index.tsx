@@ -177,7 +177,8 @@ export function SkillsHubScreen() {
         setAction(name || `skills-install-${identifier}`);
         setDetail(null);
       } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Install failed', description: errMsg(e), variant: 'destructive' });
+        if (getAuthScope() === scope)
+          toast({ title: 'Install failed', description: errMsg(e), variant: 'destructive' });
       }
     },
     [getAuthScope, opsMut, profile],
@@ -256,10 +257,7 @@ export function SkillsHubScreen() {
                 const down =
                   (s.id === 'hermes-index' && s.available === false) || (s.id === 'github' && s.rate_limited === true);
                 return (
-                  <Badge
-                    key={s.id}
-                    variant="secondary"
-                    className={`rounded-md ${down ? 'opacity-60' : ''}`}>
+                  <Badge key={s.id} variant="secondary" className={`rounded-md ${down ? 'opacity-60' : ''}`}>
                     <span className="text-[11px] text-neutral-600 dark:text-neutral-300">
                       {s.label}
                       {s.id === 'github' && s.rate_limited ? ' (rate-limited)' : ''}
@@ -363,7 +361,8 @@ function HubRow({
             <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               {result.name}
             </span>
-            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${trustBadgeClass(result.trust_level)}`}>
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${trustBadgeClass(result.trust_level)}`}>
               {result.trust_level}
             </span>
             {installed && (
@@ -498,7 +497,8 @@ function SkillDetail({
                   variant={tab === 'readme' ? 'default' : 'outline'}
                   onClick={() => setTab('readme')}
                   className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
-                  <span className={`text-xs font-semibold ${tab === 'readme' ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                  <span
+                    className={`text-xs font-semibold ${tab === 'readme' ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
                     SKILL.md
                   </span>
                 </Button>
@@ -509,7 +509,8 @@ function SkillDetail({
                   disabled={scanning}
                   className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
                   <Shield size={13} color={tab === 'scan' ? '#fff' : brand} />
-                  <span className={`text-xs font-semibold ${tab === 'scan' ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                  <span
+                    className={`text-xs font-semibold ${tab === 'scan' ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
                     {scanning ? 'Scanning…' : scan ? 'Re-scan' : 'Security scan'}
                   </span>
                 </Button>
@@ -588,7 +589,9 @@ function ScanPanel({
       ) : (
         <div className="flex flex-col gap-1.5">
           {scan.findings.map((f, i) => (
-            <div key={`${f.severity}-${f.file ?? ''}-${f.line ?? ''}-${i}`} className="rounded-lg border border-border p-2">
+            <div
+              key={`${f.severity}-${f.file ?? ''}-${f.line ?? ''}-${i}`}
+              className="rounded-lg border border-border p-2">
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-bold uppercase text-neutral-500">{f.severity}</span>
                 {f.category && <span className="text-[10px] text-neutral-400">{f.category}</span>}

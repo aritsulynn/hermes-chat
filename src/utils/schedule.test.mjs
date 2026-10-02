@@ -111,10 +111,7 @@ test('buildScheduleString round-trips parsed state', () => {
 });
 
 test('buildScheduleString returns empty for incomplete interval state', () => {
-  assert.equal(
-    buildScheduleString({ ...DEFAULT_SCHEDULE_STATE, mode: 'interval', intervalValue: 0 }),
-    '',
-  );
+  assert.equal(buildScheduleString({ ...DEFAULT_SCHEDULE_STATE, mode: 'interval', intervalValue: 0 }), '');
 });
 
 const STRINGS = {
@@ -131,10 +128,7 @@ const STRINGS = {
 };
 
 test('describeSchedule humanizes simple cron expressions', () => {
-  assert.equal(
-    describeSchedule({ kind: 'cron', expr: '0 9 * * *' }, undefined, STRINGS),
-    'Daily at 09:00',
-  );
+  assert.equal(describeSchedule({ kind: 'cron', expr: '0 9 * * *' }, undefined, STRINGS), 'Daily at 09:00');
   assert.equal(
     describeSchedule({ kind: 'cron', expr: '30 14 * * 1,3,5' }, undefined, STRINGS),
     'Weekly on Mon, Wed, Fri at 14:30',

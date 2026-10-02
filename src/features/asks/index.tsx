@@ -334,66 +334,59 @@ export function AskInboxScreen() {
 
   return (
     <div style={screenStyle(dark)}>
-      <ScreenScaffold
-        header={<ScreenHeader title="Ask Inbox" />}>
+      <ScreenScaffold header={<ScreenHeader title="Ask Inbox" />}>
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
-            <div className="mb-1 flex items-center gap-3 rounded-2xl border border-brand/30 bg-brand/10 p-4 dark:border-brand/30">
-              <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
-              <div className="flex-1">
-                <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">
-                  {pendingAskCount
-                    ? `${pendingAskCount} request${pendingAskCount === 1 ? '' : 's'} waiting`
-                    : 'No pending requests'}
-                </div>
-                <div className="mt-0.5 text-xs leading-4 text-neutral-600 dark:text-neutral-300">
-                  Answer here and it goes straight to the waiting session — no need to open its chat.
-                </div>
+          <div className="mb-1 flex items-center gap-3 rounded-2xl border border-brand/30 bg-brand/10 p-4 dark:border-brand/30">
+            <BellRing size={21} color={dark ? '#93c5fd' : '#2563eb'} />
+            <div className="flex-1">
+              <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">
+                {pendingAskCount
+                  ? `${pendingAskCount} request${pendingAskCount === 1 ? '' : 's'} waiting`
+                  : 'No pending requests'}
+              </div>
+              <div className="mt-0.5 text-xs leading-4 text-neutral-600 dark:text-neutral-300">
+                Answer here and it goes straight to the waiting session — no need to open its chat.
               </div>
             </div>
+          </div>
 
-            {pending.map((entry) => (
-              <AskCard key={entry.key} entry={entry} onAnswer={handleAnswer} onOpen={handleOpenAsk} />
-            ))}
+          {pending.map((entry) => (
+            <AskCard key={entry.key} entry={entry} onAnswer={handleAnswer} onOpen={handleOpenAsk} />
+          ))}
 
-            {pending.length === 0 && (
-              <div className="flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-12">
-                <Check size={28} color={dark ? '#86efac' : '#16a34a'} />
-                <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">
-                  You are all caught up
-                </div>
-                <div className="mt-1 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                  Approval and clarification requests from background sessions will appear here.
-                </div>
+          {pending.length === 0 && (
+            <div className="flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-12">
+              <Check size={28} color={dark ? '#86efac' : '#16a34a'} />
+              <div className="mt-3 text-base font-semibold text-neutral-800 dark:text-neutral-200">
+                You are all caught up
               </div>
-            )}
+              <div className="mt-1 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                Approval and clarification requests from background sessions will appear here.
+              </div>
+            </div>
+          )}
 
-            {settled.length > 0 && (
-              <div className="flex flex-col mt-4 gap-2">
-                <div className="px-1 text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                  Recent
-                </div>
-                {settled.slice(0, 10).map((entry) => (
-                  <div
-                    key={entry.key}
-                    className="flex items-center gap-2 rounded-xl border border-border px-3 py-2.5">
-                    {entry.status === 'answered' ? (
-                      <Check size={15} color="#16a34a" />
-                    ) : (
-                      <X size={15} color="#94a3b8" />
-                    )}
-                    <div className="flex-1 text-sm text-neutral-700 dark:text-neutral-300 truncate">
-                      {methodLabel(entry.method)}
-                    </div>
-                    <div className="text-[11px] text-neutral-400">{entry.status}</div>
+          {settled.length > 0 && (
+            <div className="flex flex-col mt-4 gap-2">
+              <div className="px-1 text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                Recent
+              </div>
+              {settled.slice(0, 10).map((entry) => (
+                <div key={entry.key} className="flex items-center gap-2 rounded-xl border border-border px-3 py-2.5">
+                  {entry.status === 'answered' ? <Check size={15} color="#16a34a" /> : <X size={15} color="#94a3b8" />}
+                  <div className="flex-1 text-sm text-neutral-700 dark:text-neutral-300 truncate">
+                    {methodLabel(entry.method)}
                   </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-2 flex items-center gap-2 px-1 text-xs text-neutral-400 dark:text-neutral-500">
-              <Clock3 size={13} />
-              <div>Requests are kept until answered, cancelled, or the session is closed.</div>
+                  <div className="text-[11px] text-neutral-400">{entry.status}</div>
+                </div>
+              ))}
             </div>
+          )}
+
+          <div className="mt-2 flex items-center gap-2 px-1 text-xs text-neutral-400 dark:text-neutral-500">
+            <Clock3 size={13} />
+            <div>Requests are kept until answered, cancelled, or the session is closed.</div>
+          </div>
         </div>
       </ScreenScaffold>
     </div>

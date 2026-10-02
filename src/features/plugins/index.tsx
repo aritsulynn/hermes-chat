@@ -124,7 +124,11 @@ export function PluginsScreen() {
               }
               actions={
                 <HeaderIconButton aria-label="Rescan plugins" onClick={() => void onRescan()}>
-                  <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={busy === '__rescan__' || refreshing ? 'animate-spin' : ''} />
+                  <RefreshCw
+                    size={20}
+                    color={dark ? '#e5e5e5' : '#333'}
+                    className={busy === '__rescan__' || refreshing ? 'animate-spin' : ''}
+                  />
                 </HeaderIconButton>
               }
             />
@@ -142,7 +146,8 @@ export function PluginsScreen() {
                   aria-pressed={tab === t}
                   onClick={() => setTab(t)}
                   className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${tab === t ? 'border-brand bg-brand/10' : 'border-border'}`}>
-                  <span className={`text-xs font-semibold ${tab === t ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
+                  <span
+                    className={`text-xs font-semibold ${tab === t ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
                     {label}
                   </span>
                 </Button>
@@ -185,13 +190,7 @@ export function PluginsScreen() {
                   setConfirm={setConfirm}
                 />
               ) : (
-                <CatalogList
-                  catalog={catalog}
-                  query={ql}
-                  dark={dark}
-                  busy={busy}
-                  onInstall={(e) => setInstalling(e)}
-                />
+                <CatalogList catalog={catalog} query={ql} dark={dark} busy={busy} onInstall={(e) => setInstalling(e)} />
               )}
             </>
           )}
@@ -262,7 +261,13 @@ function InstalledList({
   const rows = useMemo(() => {
     const list = hub?.plugins ?? [];
     if (!query) return list;
-    return list.filter((p) => [p.name, p.description, p.source].some((v) => String(v ?? '').toLowerCase().includes(query)));
+    return list.filter((p) =>
+      [p.name, p.description, p.source].some((v) =>
+        String(v ?? '')
+          .toLowerCase()
+          .includes(query),
+      ),
+    );
   }, [hub, query]);
 
   if (rows.length === 0) {
@@ -382,7 +387,8 @@ function PluginRow({
           toast({ title: 'Plugin removed', description: p.name });
           onChanged();
         } catch (e) {
-          if (getAuthScope() === scope) toast({ title: 'Remove failed', description: errMsg(e), variant: 'destructive' });
+          if (getAuthScope() === scope)
+            toast({ title: 'Remove failed', description: errMsg(e), variant: 'destructive' });
         } finally {
           if (getAuthScope() === scope) setBusy(null);
         }
@@ -398,7 +404,9 @@ function PluginRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">{p.name}</span>
             <span className={`text-[11px] font-semibold ${statusTone(p.runtimeStatus)}`}>{p.runtimeStatus}</span>
-            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">{p.source}</span>
+            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">
+              {p.source}
+            </span>
             {p.authRequired && (
               <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
                 auth needed
@@ -411,7 +419,9 @@ function PluginRow({
           {!!p.description && (
             <div className="mt-0.5 line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">{p.description}</div>
           )}
-          {!!p.removedReason && <div className="mt-1 text-[11px] text-red-500">Removed from catalog: {p.removedReason}</div>}
+          {!!p.removedReason && (
+            <div className="mt-1 text-[11px] text-red-500">Removed from catalog: {p.removedReason}</div>
+          )}
           {p.authRequired && !!p.authCommand && (
             <div className="mt-1 truncate font-mono text-[10px] text-neutral-400">{p.authCommand}</div>
           )}
@@ -425,7 +435,13 @@ function PluginRow({
           onClick={() => void toggle()}
           disabled={rowBusy}
           className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
-          {rowBusy ? <Spinner size={13} color={brandColor(dark)} /> : enabled ? <EyeOff size={13} color={brandColor(dark)} /> : <Eye size={13} color={brandColor(dark)} />}
+          {rowBusy ? (
+            <Spinner size={13} color={brandColor(dark)} />
+          ) : enabled ? (
+            <EyeOff size={13} color={brandColor(dark)} />
+          ) : (
+            <Eye size={13} color={brandColor(dark)} />
+          )}
           <span className="text-xs font-semibold">{enabled ? 'Disable' : 'Enable'}</span>
         </Button>
         <Button
@@ -480,7 +496,11 @@ function CatalogList({
   const rows = useMemo(() => {
     if (!query) return catalog;
     return catalog.filter((e) =>
-      [e.name, e.title, e.description, e.category, e.tier].some((v) => String(v ?? '').toLowerCase().includes(query)),
+      [e.name, e.title, e.description, e.category, e.tier].some((v) =>
+        String(v ?? '')
+          .toLowerCase()
+          .includes(query),
+      ),
     );
   }, [catalog, query]);
 
@@ -511,10 +531,14 @@ function CatalogList({
                     update
                   </span>
                 )}
-                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">{e.tier}</span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">
+                  {e.tier}
+                </span>
               </div>
               {!!e.description && (
-                <div className="mt-0.5 line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">{e.description}</div>
+                <div className="mt-0.5 line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">
+                  {e.description}
+                </div>
               )}
               <div className="mt-1 flex flex-wrap gap-1">
                 {e.capabilities.providesTools.length > 0 && (
@@ -581,8 +605,10 @@ function InstallSheet({
     try {
       const res = await installAgentPlugin(opsMut, { catalogName: entry.name, force, enable });
       if (getAuthScope() !== scope) return;
-      if (res.warnings.length > 0) toast({ title: 'Installed with warnings', description: res.warnings.join(' '), variant: 'destructive' });
-      else if (res.missingEnv.length > 0) toast({ title: 'Missing env vars', description: res.missingEnv.join(', '), variant: 'destructive' });
+      if (res.warnings.length > 0)
+        toast({ title: 'Installed with warnings', description: res.warnings.join(' '), variant: 'destructive' });
+      else if (res.missingEnv.length > 0)
+        toast({ title: 'Missing env vars', description: res.missingEnv.join(', '), variant: 'destructive' });
       else toast({ title: 'Plugin installed', description: res.pluginName || entry.name });
       onInstalled();
     } catch (e) {
@@ -600,10 +626,17 @@ function InstallSheet({
           <DialogPrimitive.Title className="sr-only">Install {entry.title}</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close install" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close install"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
-              <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">Install {entry.title}</div>
+              <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">
+                Install {entry.title}
+              </div>
               <Button
                 aria-label="Confirm install"
                 onClick={() => void install()}
@@ -615,7 +648,9 @@ function InstallSheet({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
               <div className="flex flex-col gap-3">
-                {!!entry.description && <p className="text-xs text-neutral-500 dark:text-neutral-400">{entry.description}</p>}
+                {!!entry.description && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">{entry.description}</p>
+                )}
                 <div className="rounded-xl border border-border p-3 text-[11px] text-neutral-500">
                   <div className="truncate font-mono">{entry.repo}</div>
                   <div className="mt-0.5">
@@ -627,7 +662,9 @@ function InstallSheet({
                     <Label className="mb-1 text-[11px] font-semibold">Required env vars</Label>
                     <div className="flex flex-wrap gap-1">
                       {entry.capabilities.requiresEnv.map((k) => (
-                        <span key={k} className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-neutral-500">
+                        <span
+                          key={k}
+                          className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-neutral-500">
                           {k}
                         </span>
                       ))}
@@ -646,22 +683,15 @@ function InstallSheet({
   );
 }
 
-function ToggleRow({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
+function ToggleRow({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
       type="button"
       onClick={() => onChange(!checked)}
       aria-pressed={checked}
       className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left ${checked ? 'border-brand bg-brand/10' : 'border-border'}`}>
-      <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? 'border-brand bg-brand' : 'border-border'}`}>
+      <span
+        className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? 'border-brand bg-brand' : 'border-border'}`}>
         {checked && <Check size={12} color="#fff" />}
       </span>
       <span className="text-xs text-neutral-700 dark:text-neutral-300">{label}</span>
@@ -736,7 +766,8 @@ function ProvidersPanel({
         {selected && (
           <div className="mt-2 text-[11px] text-neutral-500 dark:text-neutral-400">
             {selected.description}
-            <span className={`ml-1 font-semibold ${selected.status === 'ready' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+            <span
+              className={`ml-1 font-semibold ${selected.status === 'ready' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
               ({selected.status})
             </span>
           </div>
@@ -771,7 +802,11 @@ function ProvidersPanel({
 
       {error && <div className="whitespace-pre-wrap px-1 text-xs text-red-600 dark:text-red-400">{error}</div>}
 
-      <Button aria-label="Save providers" onClick={() => void save()} disabled={busy} className="h-auto sm:h-auto rounded-xl px-4 py-2.5">
+      <Button
+        aria-label="Save providers"
+        onClick={() => void save()}
+        disabled={busy}
+        className="h-auto sm:h-auto rounded-xl px-4 py-2.5">
         {busy ? <Spinner size={14} color="#fff" /> : <Check size={14} color="#fff" />}
         <span className="text-sm font-semibold text-white">Save providers</span>
       </Button>

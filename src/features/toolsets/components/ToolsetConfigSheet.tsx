@@ -214,7 +214,11 @@ export function ToolsetConfigSheet({ toolset, onClose }: { toolset: ToolsetInfo;
                 {toggling ? (
                   <Spinner size={14} color={brand} />
                 ) : (
-                  <Switch checked={enabled} onCheckedChange={(v) => void handleToggle(v)} aria-label={`Enable ${label}`} />
+                  <Switch
+                    checked={enabled}
+                    onCheckedChange={(v) => void handleToggle(v)}
+                    aria-label={`Enable ${label}`}
+                  />
                 )}
               </div>
             </div>
@@ -244,7 +248,9 @@ export function ToolsetConfigSheet({ toolset, onClose }: { toolset: ToolsetInfo;
                       <div
                         key={provider.name}
                         className={`rounded-xl border p-3 ${
-                          active ? 'border-emerald-400 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20' : 'border-border'
+                          active
+                            ? 'border-emerald-400 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20'
+                            : 'border-border'
                         }`}>
                         <div className="flex items-center gap-2">
                           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
@@ -274,9 +280,7 @@ export function ToolsetConfigSheet({ toolset, onClose }: { toolset: ToolsetInfo;
                             </Button>
                           )}
                         </div>
-                        {!!provider.badge && (
-                          <div className="mt-1 text-[11px] text-neutral-400">{provider.badge}</div>
-                        )}
+                        {!!provider.badge && <div className="mt-1 text-[11px] text-neutral-400">{provider.badge}</div>}
                         {!!provider.tag && (
                           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{provider.tag}</p>
                         )}
@@ -332,8 +336,8 @@ export function ToolsetConfigSheet({ toolset, onClose }: { toolset: ToolsetInfo;
                         {provider.postSetup && (
                           <div className="mt-3 border-t border-border pt-3">
                             <p className="mb-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                              Needs a one-time install <span className="font-mono">({provider.postSetup})</span>. Runs on
-                              the gateway host.
+                              Needs a one-time install <span className="font-mono">({provider.postSetup})</span>. Runs
+                              on the gateway host.
                             </p>
                             <Button
                               aria-label={`Run setup for ${provider.name}`}

@@ -92,7 +92,12 @@ export async function getSystemStats(opsGet: OpsGet): Promise<SystemStats> {
     uptimeSeconds: num(r.uptime_seconds),
     memory:
       typeof mem.total === 'number'
-        ? { total: Number(mem.total), used: Number(mem.used), available: Number(mem.available), percent: Number(mem.percent) }
+        ? {
+            total: Number(mem.total),
+            used: Number(mem.used),
+            available: Number(mem.available),
+            percent: Number(mem.percent),
+          }
         : null,
     disk:
       typeof disk.total === 'number'
@@ -100,7 +105,12 @@ export async function getSystemStats(opsGet: OpsGet): Promise<SystemStats> {
         : null,
     process:
       typeof proc.pid === 'number'
-        ? { pid: Number(proc.pid), rss: Number(proc.rss), createTime: Number(proc.create_time), threads: Number(proc.num_threads) }
+        ? {
+            pid: Number(proc.pid),
+            rss: Number(proc.rss),
+            createTime: Number(proc.create_time),
+            threads: Number(proc.num_threads),
+          }
         : null,
     psutil: r.psutil === true,
   };

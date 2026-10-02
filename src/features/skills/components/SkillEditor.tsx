@@ -138,9 +138,7 @@ export function SkillEditor({
           <DialogPrimitive.Description className="sr-only">
             {isEdit ? 'Rewrite this skill SKILL.md.' : 'Create a new skill.'}
           </DialogPrimitive.Description>
-          <div
-            className="flex min-h-0 flex-1 flex-col"
-            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+          <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <Button
                 variant="ghost"

@@ -147,9 +147,7 @@ const JobCard = memo(function JobCard({
 
       {/* Schedule badge & next run */}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <div
-          title={scheduleExpr}
-          className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 dark:bg-muted">
+        <div title={scheduleExpr} className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 dark:bg-muted">
           <Clock size={12} color={dark ? '#ccc' : '#444'} />
           <div className="text-xs font-medium text-neutral-800 dark:text-neutral-200">{scheduleDesc}</div>
         </div>
@@ -379,10 +377,12 @@ const RunCard = memo(function RunCard({
 
           aria-label={expanded ? 'Hide messages' : 'View messages'}
           className="h-auto sm:h-auto px-0 py-1">
-          <span className="text-xs font-semibold text-brand">
-            {expanded ? 'Hide Messages' : 'View Messages'}
-          </span>
-          {expanded ? <ChevronUp size={14} color="var(--brand-hex)" /> : <ChevronDown size={14} color="var(--brand-hex)" />}
+          <span className="text-xs font-semibold text-brand">{expanded ? 'Hide Messages' : 'View Messages'}</span>
+          {expanded ? (
+            <ChevronUp size={14} color="var(--brand-hex)" />
+          ) : (
+            <ChevronDown size={14} color="var(--brand-hex)" />
+          )}
         </Button>
 
         <Button
@@ -503,9 +503,7 @@ export function CronScreen() {
   const [formName, setFormName] = useState('');
   // The schedule picker owns structured state; `formSchedule` below is the
   // backend-compatible string derived from it on every render.
-  const [scheduleState, setScheduleState] = useState<ScheduleBuilderState>(() =>
-    parseScheduleString('0 9 * * *'),
-  );
+  const [scheduleState, setScheduleState] = useState<ScheduleBuilderState>(() => parseScheduleString('0 9 * * *'));
   const formSchedule = buildScheduleString(scheduleState);
   const [formPrompt, setFormPrompt] = useState('');
   const [formModel, setFormModel] = useState('');
@@ -974,278 +972,268 @@ export function CronScreen() {
         <ErrorRetry error={error} onRetry={() => void loadJobs()} className="mx-4 mb-3 mt-3" compact />
 
         <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${jobsContentClass}`}>
-            {jobs.length === 0
-              ? jobsEmpty
-              : jobs.map((job, i) => (
-                  <div key={job.id}>
-                    {i > 0 && <div style={{ height: 12 }} />}
-                    <JobCard
-                      job={job}
-                      dark={dark}
-                      busy={actionLoadingId === job.id}
-                      expanded={expandedIds.has(job.id)}
-                      onToggleExpand={toggleExpand}
-                      onOpenRuns={handleOpenRuns}
-                      onTrigger={handleTrigger}
-                      onPause={handlePause}
-                      onResume={handleResume}
-                      onEdit={openEditModal}
-                      onDelete={handleDelete}
-                    />
-                  </div>
-                ))}
+          {jobs.length === 0
+            ? jobsEmpty
+            : jobs.map((job, i) => (
+                <div key={job.id}>
+                  {i > 0 && <div style={{ height: 12 }} />}
+                  <JobCard
+                    job={job}
+                    dark={dark}
+                    busy={actionLoadingId === job.id}
+                    expanded={expandedIds.has(job.id)}
+                    onToggleExpand={toggleExpand}
+                    onOpenRuns={handleOpenRuns}
+                    onTrigger={handleTrigger}
+                    onPause={handlePause}
+                    onResume={handleResume}
+                    onEdit={openEditModal}
+                    onDelete={handleDelete}
+                  />
+                </div>
+              ))}
         </div>
       </ScreenScaffold>
 
       {/* Create / Edit sheet */}
-        <Sheet open={modalOpen} onOpenChange={setModalOpen}>
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-border px-5 pb-3">
-            <div className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
-              {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
+      <Sheet open={modalOpen} onOpenChange={setModalOpen}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 pb-3">
+          <div className="text-lg font-bold text-neutral-950 dark:text-neutral-100">
+            {editingJob ? 'Edit Cron Job' : 'New Cron Job'}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close"
+            disabled={formSaving}
+            onClick={() => setModalOpen(false)}
+            className="h-8 w-8 rounded-lg">
+            <X size={20} color={dark ? '#ccc' : '#444'} />
+          </Button>
+        </div>
+
+        {/* Body form */}
+        <div className="overflow-y-auto bg-background">
+          <div className="flex flex-col gap-3.5 p-4 pb-8">
+            {formError && (
+              <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
+                <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
+                  {formError}
+                </AlertDescription>
+              </UIAlert>
+            )}
+
+            {/* Name */}
+            <div>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Job Name *</Label>
+              <Input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="e.g. morning-brief"
+                autoCapitalize="none"
+                className="rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
+              />
             </div>
+
+            {/* Schedule */}
+            <div>
+              <Label className="mb-1.5 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Schedule *</Label>
+              <ScheduleBuilder value={scheduleState} onChange={setScheduleState} />
+              {/* Quick presets — one tap to a common schedule, parsed back into
+                    the builder so its fields fill in. */}
+              <div className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</div>
+              <div className="overflow-x-auto flex gap-1.5">
+                <div>
+                  {SCHEDULE_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.label}
+                      variant="ghost"
+                      aria-pressed={formSchedule === preset.expr}
+                      aria-label={`${preset.label} schedule, ${preset.expr}`}
+                      onClick={() => setScheduleState(parseScheduleString(preset.expr))}
+                      className={`h-auto sm:h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
+                        formSchedule === preset.expr ? 'border-brand bg-brand/10' : 'border-border dark:border-border'
+                      }`}>
+                      <span
+                        className={`text-[11px] font-medium ${
+                          formSchedule === preset.expr ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'
+                        }`}>
+                        {preset.label}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Prompt / Instructions */}
+            <div>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Prompt (Task for Hermes) *
+              </Label>
+              <Textarea
+                value={formPrompt}
+                onChange={(e) => setFormPrompt(e.target.value)}
+                placeholder="Describe what the agent should execute when this cron job triggers..."
+
+                numberOfLines={4}
+                className="min-h-[100px] rounded-xl border border-border p-3 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
+              />
+            </div>
+
+            {/* Optional: Model override */}
+            <div>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Model Override (optional)
+              </Label>
+              <Input
+                value={formModel}
+                onChange={(e) => setFormModel(e.target.value)}
+                placeholder="e.g. nous/hermes-3-llama-3.1-8b (leave blank for default)"
+                autoCapitalize="none"
+                className="rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
+              />
+            </div>
+
+            {/* Delivery target — options come from the server, never guessed. */}
+            <div>
+              <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Notify</Label>
+              {deliverChoices.length === 1 ? (
+                <div className="rounded-xl border border-dashed border-border px-3.5 py-2.5">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                    This gateway reports no notification targets, so runs are saved without sending anywhere. Connect a
+                    platform on the server to enable delivery.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {deliverChoices.map((option) => {
+                    const selected = formDeliver === option.id;
+                    const disabled = !option.home_target_set;
+                    return (
+                      <Button
+                        key={option.id}
+                        variant="ghost"
+
+                        aria-label={`Deliver to ${option.name}`}
+                        disabled={disabled}
+                        onClick={() => setFormDeliver(option.id)}
+                        className={`h-auto sm:h-auto w-full items-start justify-start rounded-xl border px-3 py-2.5 ${
+                          selected ? 'border-brand bg-brand/10' : 'border-border dark:border-border'
+                        } ${disabled ? 'opacity-50' : ''}`}>
+                        <div className="flex-1">
+                          <div
+                            className={`text-sm font-medium ${
+                              selected ? 'text-brand' : 'text-neutral-800 dark:text-neutral-200'
+                            }`}>
+                            {option.name}
+                          </div>
+                          {disabled ? (
+                            <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                              No home channel set
+                              {option.home_env_var ? ` (${option.home_env_var})` : ''}
+                            </div>
+                          ) : null}
+                        </div>
+                      </Button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="mt-2 flex gap-3">
+              <Button
+                variant="outline"
+                disabled={formSaving}
+                onClick={() => setModalOpen(false)}
+                aria-label="Cancel"
+                className="h-auto sm:h-auto flex-1 rounded-xl py-3">
+                <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</span>
+              </Button>
+
+              <Button
+                disabled={formSaving}
+                onClick={handleSave}
+                aria-label={editingJob ? 'Save changes' : 'Create job'}
+                className="h-auto sm:h-auto flex-1 rounded-xl bg-brand py-3 active:bg-brand">
+                {formSaving ? (
+                  <Spinner size={14} color="#fff" />
+                ) : (
+                  <span className="text-sm font-semibold text-white">{editingJob ? 'Save Changes' : 'Create Job'}</span>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Sheet>
+
+      {/* Runs History sheet */}
+      <Sheet open={runsModalOpen} onOpenChange={setRunsModalOpen}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 pb-3">
+          <div className="flex-1 pr-2">
+            <div className="flex items-center gap-2">
+              <History size={18} color="var(--brand-hex)" />
+              <div className="text-base font-bold text-neutral-950 dark:text-neutral-100">Run History</div>
+            </div>
+            <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
+              {selectedJobForRuns?.name || selectedJobForRuns?.id}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Close"
-              disabled={formSaving}
-              onClick={() => setModalOpen(false)}
-              className="h-8 w-8 rounded-lg">
+              aria-label="Refresh runs"
+              disabled={runsLoading}
+              onClick={() => void handleRefreshRuns()}
+              className="h-9 w-9 rounded-lg">
+              {runsLoading ? (
+                <Spinner size={14} color="var(--brand-hex)" />
+              ) : (
+                <RefreshCw size={18} color={dark ? '#ccc' : '#444'} />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Close run history"
+              onClick={() => setRunsModalOpen(false)}
+              className="h-9 w-9 rounded-lg">
               <X size={20} color={dark ? '#ccc' : '#444'} />
             </Button>
           </div>
+        </div>
 
-          {/* Body form */}
-          <div className="overflow-y-auto bg-background">
-            <div className="flex flex-col gap-3.5 p-4 pb-8">
-              {formError && (
-                <UIAlert icon={AlertCircle} variant="destructive" className="rounded-xl px-4 pt-3">
-                  <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
-                    {formError}
-                  </AlertDescription>
-                </UIAlert>
-              )}
-
-              {/* Name */}
-              <div>
-                <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Job Name *</Label>
-                <Input
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="e.g. morning-brief"
-                  autoCapitalize="none"
-                  className="rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
-                />
-              </div>
-
-              {/* Schedule */}
-              <div>
-                <Label className="mb-1.5 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Schedule *
-                </Label>
-                <ScheduleBuilder value={scheduleState} onChange={setScheduleState} />
-                {/* Quick presets — one tap to a common schedule, parsed back into
-                    the builder so its fields fill in. */}
-                <div className="mt-2 mb-1 text-[11px] text-neutral-400">Quick presets:</div>
-                <div className="overflow-x-auto flex gap-1.5">
-                  <div>
-                    {SCHEDULE_PRESETS.map((preset) => (
-                      <Button
-                        key={preset.label}
-                        variant="ghost"
-                        aria-pressed={formSchedule === preset.expr}
-                        aria-label={`${preset.label} schedule, ${preset.expr}`}
-                        onClick={() => setScheduleState(parseScheduleString(preset.expr))}
-                        className={`h-auto sm:h-auto mr-1.5 rounded-lg border px-2.5 py-1 ${
-                          formSchedule === preset.expr
-                            ? 'border-brand bg-brand/10'
-                            : 'border-border dark:border-border'
-                        }`}>
-                        <span
-                          className={`text-[11px] font-medium ${
-                            formSchedule === preset.expr
-                              ? 'text-brand'
-                              : 'text-neutral-600 dark:text-neutral-300'
-                          }`}>
-                          {preset.label}
-                        </span>
-                      </Button>
-                    ))}
+        {/* Body */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${runsContentClass}`}>
+            {runsHeader}
+            {runsList.length === 0
+              ? runsEmpty
+              : runsList.map((run, i) => (
+                  <div key={run.id}>
+                    {i > 0 && <div style={{ height: 12 }} />}
+                    <RunCard
+                      run={run}
+                      dark={dark}
+                      expanded={expandedRunId === run.id}
+                      messages={
+                        runMessages[scopedRunKey(run.id, run.profile || selectedJobForRuns?.profile || activeProfile)]
+                      }
+                      messagesLoading={runMessagesLoading}
+                      onToggleRun={toggleExpandRun}
+                      onOpenInChat={handleOpenInChat}
+                    />
                   </div>
-                </div>
-              </div>
-
-              {/* Prompt / Instructions */}
-              <div>
-                <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Prompt (Task for Hermes) *
-                </Label>
-                <Textarea
-                  value={formPrompt}
-                  onChange={(e) => setFormPrompt(e.target.value)}
-                  placeholder="Describe what the agent should execute when this cron job triggers..."
-
-                  numberOfLines={4}
-                  className="min-h-[100px] rounded-xl border border-border p-3 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
-                />
-              </div>
-
-              {/* Optional: Model override */}
-              <div>
-                <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Model Override (optional)
-                </Label>
-                <Input
-                  value={formModel}
-                  onChange={(e) => setFormModel(e.target.value)}
-                  placeholder="e.g. nous/hermes-3-llama-3.1-8b (leave blank for default)"
-                  autoCapitalize="none"
-                  className="rounded-xl border border-border px-3.5 py-2.5 text-sm text-neutral-950 dark:bg-input/30 dark:text-neutral-100"
-                />
-              </div>
-
-              {/* Delivery target — options come from the server, never guessed. */}
-              <div>
-                <Label className="mb-1 text-xs font-semibold text-neutral-700 dark:text-neutral-300">Notify</Label>
-                {deliverChoices.length === 1 ? (
-                  <div className="rounded-xl border border-dashed border-border px-3.5 py-2.5">
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      This gateway reports no notification targets, so runs are saved without sending anywhere. Connect
-                      a platform on the server to enable delivery.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {deliverChoices.map((option) => {
-                      const selected = formDeliver === option.id;
-                      const disabled = !option.home_target_set;
-                      return (
-                        <Button
-                          key={option.id}
-                          variant="ghost"
-
-                          aria-label={`Deliver to ${option.name}`}
-                          disabled={disabled}
-                          onClick={() => setFormDeliver(option.id)}
-                          className={`h-auto sm:h-auto w-full items-start justify-start rounded-xl border px-3 py-2.5 ${
-                            selected ? 'border-brand bg-brand/10' : 'border-border dark:border-border'
-                          } ${disabled ? 'opacity-50' : ''}`}>
-                          <div className="flex-1">
-                            <div
-                              className={`text-sm font-medium ${
-                                selected
-                                  ? 'text-brand'
-                                  : 'text-neutral-800 dark:text-neutral-200'
-                              }`}>
-                              {option.name}
-                            </div>
-                            {disabled ? (
-                              <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                                No home channel set
-                                {option.home_env_var ? ` (${option.home_env_var})` : ''}
-                              </div>
-                            ) : null}
-                          </div>
-                        </Button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="mt-2 flex gap-3">
-                <Button
-                  variant="outline"
-                  disabled={formSaving}
-                  onClick={() => setModalOpen(false)}
-                  aria-label="Cancel"
-                  className="h-auto sm:h-auto flex-1 rounded-xl py-3">
-                  <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Cancel</span>
-                </Button>
-
-                <Button
-                  disabled={formSaving}
-                  onClick={handleSave}
-                  aria-label={editingJob ? 'Save changes' : 'Create job'}
-                  className="h-auto sm:h-auto flex-1 rounded-xl bg-brand py-3 active:bg-brand">
-                  {formSaving ? (
-                    <Spinner size={14} color="#fff" />
-                  ) : (
-                    <span className="text-sm font-semibold text-white">
-                      {editingJob ? 'Save Changes' : 'Create Job'}
-                    </span>
-                  )}
-                </Button>
-              </div>
-            </div>
+                ))}
           </div>
-        </Sheet>
-
-        {/* Runs History sheet */}
-        <Sheet open={runsModalOpen} onOpenChange={setRunsModalOpen}>
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-border px-5 pb-3">
-            <div className="flex-1 pr-2">
-              <div className="flex items-center gap-2">
-                <History size={18} color="var(--brand-hex)" />
-                <div className="text-base font-bold text-neutral-950 dark:text-neutral-100">Run History</div>
-              </div>
-              <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
-                {selectedJobForRuns?.name || selectedJobForRuns?.id}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Refresh runs"
-                disabled={runsLoading}
-                onClick={() => void handleRefreshRuns()}
-                className="h-9 w-9 rounded-lg">
-                {runsLoading ? (
-                  <Spinner size={14} color="var(--brand-hex)" />
-                ) : (
-                  <RefreshCw size={18} color={dark ? '#ccc' : '#444'} />
-                )}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Close run history"
-                onClick={() => setRunsModalOpen(false)}
-                className="h-9 w-9 rounded-lg">
-                <X size={20} color={dark ? '#ccc' : '#444'} />
-              </Button>
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${runsContentClass}`}>
-              {runsHeader}
-              {runsList.length === 0
-                ? runsEmpty
-                : runsList.map((run, i) => (
-                    <div key={run.id}>
-                      {i > 0 && <div style={{ height: 12 }} />}
-                      <RunCard
-                        run={run}
-                        dark={dark}
-                        expanded={expandedRunId === run.id}
-                        messages={
-                          runMessages[scopedRunKey(run.id, run.profile || selectedJobForRuns?.profile || activeProfile)]
-                        }
-                        messagesLoading={runMessagesLoading}
-                        onToggleRun={toggleExpandRun}
-                        onOpenInChat={handleOpenInChat}
-                      />
-                    </div>
-                  ))}
-            </div>
-          </div>
-        </Sheet>
+        </div>
+      </Sheet>
 
       <ConfirmDialog
         open={!!confirmDelete}

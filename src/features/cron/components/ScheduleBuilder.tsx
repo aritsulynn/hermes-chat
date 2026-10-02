@@ -12,13 +12,7 @@ import { useCallback } from 'react';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { Button } from '../../../components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import {
   buildScheduleString,
   WEEKDAY_INDEXES,
@@ -77,9 +71,7 @@ export function ScheduleBuilder({
     <div className="flex flex-col gap-3">
       <div>
         <Label className={`mb-1 ${LABEL_CLASS}`}>Repeat</Label>
-        <Select
-          value={value.mode}
-          onValueChange={(v) => update({ mode: v as ScheduleMode })}>
+        <Select value={value.mode} onValueChange={(v) => update({ mode: v as ScheduleMode })}>
           <SelectTrigger className="w-full" aria-label="Schedule mode">
             <SelectValue />
           </SelectTrigger>
@@ -111,9 +103,7 @@ export function ScheduleBuilder({
           </div>
           <div>
             <Label className={`mb-1 ${LABEL_CLASS}`}>Unit</Label>
-            <Select
-              value={value.intervalUnit}
-              onValueChange={(v) => update({ intervalUnit: v as IntervalUnit })}>
+            <Select value={value.intervalUnit} onValueChange={(v) => update({ intervalUnit: v as IntervalUnit })}>
               <SelectTrigger className="w-full" aria-label="Interval unit">
                 <SelectValue />
               </SelectTrigger>
@@ -130,11 +120,7 @@ export function ScheduleBuilder({
       )}
 
       {value.mode === 'daily' && (
-        <TimeOfDayField
-          label="Time"
-          value={value.timeOfDay}
-          onChange={(timeOfDay) => update({ timeOfDay })}
-        />
+        <TimeOfDayField label="Time" value={value.timeOfDay} onChange={(timeOfDay) => update({ timeOfDay })} />
       )}
 
       {value.mode === 'weekly' && (
@@ -161,11 +147,7 @@ export function ScheduleBuilder({
             </div>
             <div className="mt-1 text-[11px] text-neutral-400">No day selected runs every day.</div>
           </div>
-          <TimeOfDayField
-            label="Time"
-            value={value.timeOfDay}
-            onChange={(timeOfDay) => update({ timeOfDay })}
-          />
+          <TimeOfDayField label="Time" value={value.timeOfDay} onChange={(timeOfDay) => update({ timeOfDay })} />
         </>
       )}
 
@@ -185,11 +167,7 @@ export function ScheduleBuilder({
               className={FIELD_CLASS}
             />
           </div>
-          <TimeOfDayField
-            label="Time"
-            value={value.timeOfDay}
-            onChange={(timeOfDay) => update({ timeOfDay })}
-          />
+          <TimeOfDayField label="Time" value={value.timeOfDay} onChange={(timeOfDay) => update({ timeOfDay })} />
         </div>
       )}
 
@@ -226,10 +204,7 @@ export function ScheduleBuilder({
       {/* Inline preview of what gets sent — lets users eyeball the result before
           saving, and keeps the schedule grammar discoverable in custom mode. */}
       <div className="text-[11px] text-neutral-400">
-        Schedule:{' '}
-        <span className="font-mono text-neutral-700 dark:text-neutral-300">
-          {preview || '(incomplete)'}
-        </span>
+        Schedule: <span className="font-mono text-neutral-700 dark:text-neutral-300">{preview || '(incomplete)'}</span>
       </div>
     </div>
   );

@@ -114,12 +114,7 @@ export async function describeProfileAuto(
   return { ok: r.ok !== false, description: str(r.description), reason: str(r.reason ?? r.error) };
 }
 
-export async function updateProfileModel(
-  opsMut: OpsMut,
-  name: string,
-  provider: string,
-  model: string,
-): Promise<void> {
+export async function updateProfileModel(opsMut: OpsMut, name: string, provider: string, model: string): Promise<void> {
   await opsMut(profileModel(name), 'PUT', { provider, model });
 }
 

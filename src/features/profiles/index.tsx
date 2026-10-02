@@ -126,7 +126,8 @@ export function ProfilesScreen() {
             toast({ title: 'Profile deleted', description: p.name });
             await load(true);
           } catch (e) {
-            if (getAuthScope() === scope) toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
+            if (getAuthScope() === scope)
+              toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
           }
         },
       });
@@ -180,7 +181,9 @@ export function ProfilesScreen() {
                           {p.displayName || p.name}
                         </span>
                         {p.isDefault && (
-                          <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">default</span>
+                          <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">
+                            default
+                          </span>
                         )}
                         {isActive && (
                           <span className="rounded-full border border-brand bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand">
@@ -194,7 +197,9 @@ export function ProfilesScreen() {
                         )}
                       </div>
                       {!!p.description && (
-                        <div className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{p.description}</div>
+                        <div className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">
+                          {p.description}
+                        </div>
                       )}
                       <div className="mt-0.5 text-[11px] text-neutral-400">
                         {[p.provider && p.model ? `${p.provider}/${p.model}` : p.model || '', `${p.skillCount} skills`]
@@ -396,7 +401,12 @@ function ProfileEditorSheet({
           <DialogPrimitive.Title className="sr-only">Edit profile {profile.name}</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close editor" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close editor"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">{profile.name}</div>
@@ -423,7 +433,8 @@ function ProfileEditorSheet({
                   aria-pressed={tab === t}
                   onClick={() => setTab(t)}
                   className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${tab === t ? 'border-brand bg-brand/10' : 'border-border'}`}>
-                  <span className={`text-xs font-semibold ${tab === t ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
+                  <span
+                    className={`text-xs font-semibold ${tab === t ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
                     {label}
                   </span>
                 </Button>
@@ -435,7 +446,12 @@ function ProfileEditorSheet({
                 <div className="flex flex-col gap-3">
                   <div>
                     <Label className="mb-1 text-xs font-semibold">Name</Label>
-                    <Input value={name} onChange={(e) => setName(e.target.value)} autoCapitalize="none" className="rounded-xl" />
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      autoCapitalize="none"
+                      className="rounded-xl"
+                    />
                     {profile.isDefault && (
                       <div className="mt-0.5 text-[10px] text-neutral-400">
                         Renaming the default profile only changes its display name.
@@ -521,7 +537,11 @@ function CreateProfileSheet({
     setBusy(true);
     setErr(null);
     try {
-      await createProfile(opsMut, { name: trimmed, cloneFromDefault: clone, description: description.trim() || undefined });
+      await createProfile(opsMut, {
+        name: trimmed,
+        cloneFromDefault: clone,
+        description: description.trim() || undefined,
+      });
       if (getAuthScope() !== scope) return;
       toast({ title: 'Profile created', description: trimmed });
       onCreated();
@@ -540,7 +560,12 @@ function CreateProfileSheet({
           <DialogPrimitive.Title className="sr-only">New profile</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close new profile" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close new profile"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">New profile</div>
@@ -557,19 +582,33 @@ function CreateProfileSheet({
               <div className="flex flex-col gap-3">
                 <div>
                   <Label className="mb-1 text-xs font-semibold">Name *</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} autoCapitalize="none" placeholder="work" className="rounded-xl" />
-                  <div className="mt-0.5 text-[10px] text-neutral-400">Lowercase, no spaces — becomes the profile id.</div>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoCapitalize="none"
+                    placeholder="work"
+                    className="rounded-xl"
+                  />
+                  <div className="mt-0.5 text-[10px] text-neutral-400">
+                    Lowercase, no spaces — becomes the profile id.
+                  </div>
                 </div>
                 <div>
                   <Label className="mb-1 text-xs font-semibold">Description</Label>
-                  <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this profile is for" className="min-h-20 rounded-xl" />
+                  <Textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="What this profile is for"
+                    className="min-h-20 rounded-xl"
+                  />
                 </div>
                 <button
                   type="button"
                   onClick={() => setClone((v) => !v)}
                   aria-pressed={clone}
                   className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left ${clone ? 'border-brand bg-brand/10' : 'border-border'}`}>
-                  <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${clone ? 'border-brand bg-brand' : 'border-border'}`}>
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-md border ${clone ? 'border-brand bg-brand' : 'border-border'}`}>
                     {clone && <Check size={12} color="#fff" />}
                   </span>
                   <span className="text-xs text-neutral-700 dark:text-neutral-300">

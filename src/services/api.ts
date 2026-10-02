@@ -174,8 +174,7 @@ export const customEndpointValidate = (): string => '/api/providers/custom-endpo
 // ── Plugins ─────────────────────────────────────────────────────────────────
 
 /** Agent plugins + dashboard extension metadata (session protected). */
-export const pluginsHub = (profile?: string | null): string =>
-  withProfile('/api/dashboard/plugins/hub', profile);
+export const pluginsHub = (profile?: string | null): string => withProfile('/api/dashboard/plugins/hub', profile);
 /** Curated plugin catalog merged with installed state. */
 export const pluginsCatalog = (): string => '/api/dashboard/plugins/catalog';
 /** Force a rescan of dashboard plugins. */
@@ -193,10 +192,8 @@ export const agentPluginUpdate = (name: string): string => `${agentPlugin(name)}
 export const pluginProviders = (profile?: string | null): string =>
   withProfile('/api/dashboard/plugin-providers', profile);
 /** Backend memory-provider status + provider picker metadata. */
-export const memoryStatus = (profile?: string | null): string =>
-  withProfile('/api/memory', profile);
-export const memoryProviderSetup = (name: string): string =>
-  `/api/memory/providers/${encodeURIComponent(name)}/setup`;
+export const memoryStatus = (profile?: string | null): string => withProfile('/api/memory', profile);
+export const memoryProviderSetup = (name: string): string => `/api/memory/providers/${encodeURIComponent(name)}/setup`;
 
 // ── Kanban (plugin) ─────────────────────────────────────────────────────────
 
@@ -266,7 +263,10 @@ export const skillCreate = (): string => '/api/skills';
 export const skillHubSources = (profile?: string | null): string =>
   withProfile('/api/skills/hub/sources', String(profile ?? '').trim());
 /** GET — search every configured hub source. */
-export const skillHubSearch = (q: string, opts: { source?: string; limit?: number; profile?: string | null } = {}): string =>
+export const skillHubSearch = (
+  q: string,
+  opts: { source?: string; limit?: number; profile?: string | null } = {},
+): string =>
   withProfile(
     `/api/skills/hub/search?q=${encodeURIComponent(q)}&source=${encodeURIComponent(opts.source ?? 'all')}&limit=${opts.limit ?? 20}`,
     String(opts.profile ?? '').trim(),
@@ -287,30 +287,24 @@ export const skillHubUpdate = (): string => '/api/skills/hub/update';
 // ── MCP servers ─────────────────────────────────────────────────────────────
 
 /** GET — configured MCP servers (redacted env, enabled state). */
-export const mcpServers = (profile?: string | null): string =>
-  withProfile('/api/mcp/servers', profile);
+export const mcpServers = (profile?: string | null): string => withProfile('/api/mcp/servers', profile);
 /** POST — add a server; PUT replaces the whole map. */
 export const mcpServersSave = (): string => '/api/mcp/servers';
 export const mcpServer = (name: string): string => `/api/mcp/servers/${encodeURIComponent(name)}`;
 /** PUT — toggle one server's `enabled`. */
-export const mcpServerEnabled = (name: string): string =>
-  `/api/mcp/servers/${encodeURIComponent(name)}/enabled`;
+export const mcpServerEnabled = (name: string): string => `/api/mcp/servers/${encodeURIComponent(name)}/enabled`;
 /** POST — probe a server, returning its tools/prompts/resources. */
-export const mcpServerTest = (name: string): string =>
-  `/api/mcp/servers/${encodeURIComponent(name)}/test`;
+export const mcpServerTest = (name: string): string => `/api/mcp/servers/${encodeURIComponent(name)}/test`;
 /** POST — start MCP OAuth, returning the authorization URL. */
-export const mcpServerAuth = (name: string): string =>
-  `/api/mcp/servers/${encodeURIComponent(name)}/auth`;
+export const mcpServerAuth = (name: string): string => `/api/mcp/servers/${encodeURIComponent(name)}/auth`;
 /** GET — Nous-approved catalog, annotated installed/enabled. */
-export const mcpCatalog = (profile?: string | null): string =>
-  withProfile('/api/mcp/catalog', profile);
+export const mcpCatalog = (profile?: string | null): string => withProfile('/api/mcp/catalog', profile);
 /** POST — install a catalog entry (env secrets, optional background git clone). */
 export const mcpCatalogInstall = (): string => '/api/mcp/catalog/install';
 
 // ── Messaging / channels ────────────────────────────────────────────────────
 
-export const messagingPlatforms = (profile?: string | null): string =>
-  withProfile('/api/messaging/platforms', profile);
+export const messagingPlatforms = (profile?: string | null): string => withProfile('/api/messaging/platforms', profile);
 export const messagingPlatform = (platformId: string): string =>
   `/api/messaging/platforms/${encodeURIComponent(platformId)}`;
 export const messagingPlatformTest = (platformId: string): string =>

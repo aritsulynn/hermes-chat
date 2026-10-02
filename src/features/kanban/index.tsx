@@ -320,12 +320,13 @@ export function KanbanScreen() {
               actions={
                 <div className="flex items-center gap-0.5">
                   <HeaderIconButton aria-label="Refresh board" onClick={() => void reload(true)}>
-                    <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                    <RefreshCw
+                      size={20}
+                      color={dark ? '#e5e5e5' : '#333'}
+                      className={refreshing ? 'animate-spin' : ''}
+                    />
                   </HeaderIconButton>
-                  <HeaderIconButton
-                    onClick={() => setShowCreate(true)}
-                    role="button"
-                    aria-label="New task">
+                  <HeaderIconButton onClick={() => setShowCreate(true)} role="button" aria-label="New task">
                     <span className="text-[20px] leading-[20px]">+</span>
                   </HeaderIconButton>
                 </div>
@@ -378,157 +379,151 @@ export function KanbanScreen() {
             flush against each other, border to border, reading as one tall
             striped object rather than a list. */}
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-2.5 p-3 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
-            {loading && <Spinner size={14} color="currentColor" />}
-            {!loading && !board && !error && (
-              <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
-            )}
-            {!loading && board && totalTasks === 0 && (
-              <div className="text-sm text-neutral-500 dark:text-neutral-400">No tasks yet — tap + to create one.</div>
-            )}
-            {(board?.columns ?? []).map((col) => {
-              const shut = isCollapsed(col.name, col.tasks.length);
-              return (
-                <div
-                  key={col.name}
-                  className="overflow-hidden rounded-2xl border border-border">
-                  <Button
-                    onClick={() => toggleColumn(col.name, !shut)}
-                    variant="ghost"
-                    className="justify-start gap-2 rounded-none bg-elevated px-3 py-2.5">
-                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
-                    <span className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
-                      {col.name}
-                    </span>
-                    <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
-                      {col.tasks.length}
-                    </span>
-                    <span className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</span>
-                  </Button>
-                  {!shut && (
-                    <div className="flex flex-col gap-2 p-2.5">
-                      {col.tasks.length === 0 && (
-                        <div className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</div>
-                      )}
-                      {col.tasks.map((t) => (
-                        <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {loading && <Spinner size={14} color="currentColor" />}
+          {!loading && !board && !error && (
+            <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
+          )}
+          {!loading && board && totalTasks === 0 && (
+            <div className="text-sm text-neutral-500 dark:text-neutral-400">No tasks yet — tap + to create one.</div>
+          )}
+          {(board?.columns ?? []).map((col) => {
+            const shut = isCollapsed(col.name, col.tasks.length);
+            return (
+              <div key={col.name} className="overflow-hidden rounded-2xl border border-border">
+                <Button
+                  onClick={() => toggleColumn(col.name, !shut)}
+                  variant="ghost"
+                  className="justify-start gap-2 rounded-none bg-elevated px-3 py-2.5">
+                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
+                  <span className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
+                    {col.name}
+                  </span>
+                  <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+                    {col.tasks.length}
+                  </span>
+                  <span className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</span>
+                </Button>
+                {!shut && (
+                  <div className="flex flex-col gap-2 p-2.5">
+                    {col.tasks.length === 0 && (
+                      <div className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</div>
+                    )}
+                    {col.tasks.map((t) => (
+                      <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </ScreenScaffold>
 
       {/* Task detail sheet. */}
       <FormSheet open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-          {detail && (
-            <>
-              <Input
-                aria-label="Title"
-                // Input is a fixed 40px single-line field; a title long enough
-                // to wrap has to grow the box and hang from the top, or the
-                // second line spills over the label below.
-                className="h-auto sm:h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="Title"
-              />
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                Move to
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {statusOptions
-                  .filter((s) => s !== 'archived')
-                  .map((s) => {
-                    const on = detail?.status === s;
-                    return (
-                      <Button
-                        key={s}
+        {detail && (
+          <>
+            <Input
+              aria-label="Title"
+              // Input is a fixed 40px single-line field; a title long enough
+              // to wrap has to grow the box and hang from the top, or the
+              // second line spills over the label below.
+              className="h-auto sm:h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Title"
+            />
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Move to
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {statusOptions
+                .filter((s) => s !== 'archived')
+                .map((s) => {
+                  const on = detail?.status === s;
+                  return (
+                    <Button
+                      key={s}
 
-                        aria-pressed={on}
-                        aria-label={`Move to ${s}`}
-                        onClick={() => detail && moveTask(detail, s)}
-                        variant={on ? 'default' : 'outline'}
-                        size="sm"
-                        className="rounded-full px-3 py-1.5">
-                        <span className="text-[13px] font-medium capitalize">{s}</span>
-                      </Button>
-                    );
-                  })}
-              </div>
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                Notes
-              </div>
-              <Textarea
-                aria-label="Notes"
-                className="min-h-[90px] rounded-xl border border-border px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:text-neutral-100"
-                value={editBody}
-                onChange={(e) => setEditBody(e.target.value)}
-                placeholder="Details…"
-              />
-              <CardChips t={detail} dark={dark} />
-              <div className="flex gap-2 pt-1">
+                      aria-pressed={on}
+                      aria-label={`Move to ${s}`}
+                      onClick={() => detail && moveTask(detail, s)}
+                      variant={on ? 'default' : 'outline'}
+                      size="sm"
+                      className="rounded-full px-3 py-1.5">
+                      <span className="text-[13px] font-medium capitalize">{s}</span>
+                    </Button>
+                  );
+                })}
+            </div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Notes
+            </div>
+            <Textarea
+              aria-label="Notes"
+              className="min-h-[90px] rounded-xl border border-border px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:text-neutral-100"
+              value={editBody}
+              onChange={(e) => setEditBody(e.target.value)}
+              placeholder="Details…"
+            />
+            <CardChips t={detail} dark={dark} />
+            <div className="flex gap-2 pt-1">
+              <Button onClick={saveDetail} variant="default" className="flex-1 rounded-xl px-4 py-3" disabled={saving}>
+                <span className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</span>
+              </Button>
+              <Button onClick={deleteDetail} variant="destructive" className="rounded-xl px-4 py-3" disabled={saving}>
+                <span className="text-[15px] font-semibold">Delete</span>
+              </Button>
+            </div>
+          </>
+        )}
+      </FormSheet>
+
+      {/* New task sheet */}
+      <FormSheet open={showCreate} onOpenChange={setShowCreate}>
+        <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</div>
+        <Input
+          aria-label="Title"
+          className="rounded-xl border border-border px-3 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          placeholder="Title"
+        />
+        <Textarea
+          className="min-h-[80px] rounded-xl border border-border px-3 py-2.5 text-[14px] text-neutral-950 dark:text-neutral-100"
+          aria-label="Notes"
+          value={newBody}
+          onChange={(e) => setNewBody(e.target.value)}
+          placeholder="Details (optional)"
+        />
+        <div className="flex flex-wrap gap-1.5">
+          {statusOptions
+            .filter((s) => s !== 'archived')
+            .map((s) => {
+              const on = createStatus === s;
+              return (
                 <Button
-                  onClick={saveDetail}
-                  variant="default"
-                  className="flex-1 rounded-xl px-4 py-3"
-                  disabled={saving}>
-                  <span className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</span>
-                </Button>
-                <Button onClick={deleteDetail} variant="destructive" className="rounded-xl px-4 py-3" disabled={saving}>
-                  <span className="text-[15px] font-semibold">Delete</span>
-                </Button>
-              </div>
-            </>
-          )}
-        </FormSheet>
+                  key={s}
 
-        {/* New task sheet */}
-        <FormSheet open={showCreate} onOpenChange={setShowCreate}>
-          <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</div>
-          <Input
-            aria-label="Title"
-            className="rounded-xl border border-border px-3 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Title"
-          />
-          <Textarea
-            className="min-h-[80px] rounded-xl border border-border px-3 py-2.5 text-[14px] text-neutral-950 dark:text-neutral-100"
-            aria-label="Notes"
-            value={newBody}
-            onChange={(e) => setNewBody(e.target.value)}
-            placeholder="Details (optional)"
-          />
-          <div className="flex flex-wrap gap-1.5">
-            {statusOptions
-              .filter((s) => s !== 'archived')
-              .map((s) => {
-                const on = createStatus === s;
-                return (
-                  <Button
-                    key={s}
-
-                    aria-pressed={on}
-                    aria-label={`Create in ${s}`}
-                    onClick={() => setNewStatus(s)}
-                    variant={on ? 'default' : 'outline'}
-                    size="sm"
-                    className="px-3 py-1.5">
-                    <span className="text-[13px] font-medium capitalize">{s}</span>
-                  </Button>
-                );
-              })}
-          </div>
-          <Button
-            onClick={createTask}
-            variant="default"
-            className="rounded-xl px-4 py-3"
-            disabled={!newTitle.trim() || saving}>
-            <span className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</span>
-          </Button>
-        </FormSheet>
+                  aria-pressed={on}
+                  aria-label={`Create in ${s}`}
+                  onClick={() => setNewStatus(s)}
+                  variant={on ? 'default' : 'outline'}
+                  size="sm"
+                  className="px-3 py-1.5">
+                  <span className="text-[13px] font-medium capitalize">{s}</span>
+                </Button>
+              );
+            })}
+        </div>
+        <Button
+          onClick={createTask}
+          variant="default"
+          className="rounded-xl px-4 py-3"
+          disabled={!newTitle.trim() || saving}>
+          <span className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</span>
+        </Button>
+      </FormSheet>
 
       <ConfirmDialog
         open={!!confirmDelete}

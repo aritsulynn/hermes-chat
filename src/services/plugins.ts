@@ -187,7 +187,9 @@ export async function getPluginsHub(opsGet: OpsGet, profile?: string | null): Pr
 
   return {
     plugins,
-    orphanDashboardPlugins: arr(r.orphan_dashboard_plugins).map(manifestOf).filter((m): m is DashboardManifest => !!m),
+    orphanDashboardPlugins: arr(r.orphan_dashboard_plugins)
+      .map(manifestOf)
+      .filter((m): m is DashboardManifest => !!m),
     providers: {
       memoryProvider: str(providerRec.memory_provider),
       memoryOptions,
@@ -315,6 +317,10 @@ export async function getMemoryStatus(opsGet: OpsGet, profile?: string | null): 
 }
 
 /** Run a memory provider's declared dependency install commands. */
-export async function setupMemoryProvider(opsMut: OpsMut, name: string, values: Record<string, unknown> = {}): Promise<void> {
+export async function setupMemoryProvider(
+  opsMut: OpsMut,
+  name: string,
+  values: Record<string, unknown> = {},
+): Promise<void> {
   await opsMut(memoryProviderSetup(name), 'POST', { values });
 }

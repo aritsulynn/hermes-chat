@@ -124,7 +124,8 @@ export function WebhooksScreen() {
             toast({ title: 'Webhook deleted', description: route.name });
             await load(true);
           } catch (e) {
-            if (getAuthScope() === scope) toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
+            if (getAuthScope() === scope)
+              toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
           }
         },
       });
@@ -227,7 +228,9 @@ export function WebhooksScreen() {
                     {route.events.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {route.events.slice(0, 6).map((ev) => (
-                          <span key={ev} className="rounded-md border border-border px-1.5 py-px font-mono text-[10px] text-neutral-500">
+                          <span
+                            key={ev}
+                            className="rounded-md border border-border px-1.5 py-px font-mono text-[10px] text-neutral-500">
                             {ev}
                           </span>
                         ))}
@@ -322,7 +325,12 @@ function CreateWebhookSheet({
       const res = await createWebhook(opsMut, {
         name: name.trim().toLowerCase().replace(/\s+/g, '-'),
         description: description.trim() || undefined,
-        events: events.trim() ? events.trim().split(/[\s,]+/).filter(Boolean) : [],
+        events: events.trim()
+          ? events
+              .trim()
+              .split(/[\s,]+/)
+              .filter(Boolean)
+          : [],
         prompt: prompt.trim() || undefined,
         deliver,
       });
@@ -349,7 +357,12 @@ function CreateWebhookSheet({
           <DialogPrimitive.Title className="sr-only">New webhook</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close webhook" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close webhook"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">New webhook</div>
@@ -390,15 +403,32 @@ function CreateWebhookSheet({
                 <div className="flex flex-col gap-3">
                   <div>
                     <Label className="mb-1 text-xs font-semibold">Name *</Label>
-                    <Input value={name} onChange={(e) => setName(e.target.value)} autoCapitalize="none" placeholder="github-push" className="rounded-xl" />
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      autoCapitalize="none"
+                      placeholder="github-push"
+                      className="rounded-xl"
+                    />
                   </div>
                   <div>
                     <Label className="mb-1 text-xs font-semibold">Description</Label>
-                    <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this route does" className="rounded-xl" />
+                    <Input
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="What this route does"
+                      className="rounded-xl"
+                    />
                   </div>
                   <div>
                     <Label className="mb-1 text-xs font-semibold">Events (space or comma separated)</Label>
-                    <Input value={events} onChange={(e) => setEvents(e.target.value)} autoCapitalize="none" placeholder="push pull_request" className="rounded-xl font-mono text-xs" />
+                    <Input
+                      value={events}
+                      onChange={(e) => setEvents(e.target.value)}
+                      autoCapitalize="none"
+                      placeholder="push pull_request"
+                      className="rounded-xl font-mono text-xs"
+                    />
                   </div>
                   <div>
                     <Label className="mb-1 text-xs font-semibold">Prompt</Label>
@@ -419,7 +449,10 @@ function CreateWebhookSheet({
                           aria-pressed={deliver === d}
                           onClick={() => setDeliver(d)}
                           className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${deliver === d ? 'border-brand bg-brand/10' : 'border-border'}`}>
-                          <span className={`text-xs font-semibold ${deliver === d ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>{d}</span>
+                          <span
+                            className={`text-xs font-semibold ${deliver === d ? 'text-brand' : 'text-neutral-600 dark:text-neutral-300'}`}>
+                            {d}
+                          </span>
                         </Button>
                       ))}
                     </div>

@@ -53,10 +53,12 @@ export function JobPromptPreview({
           onClick={onToggleExpand}
           aria-expanded={isExpanded}
           className="mt-1.5 flex w-full items-center justify-end gap-1">
-          <span className="text-[10px] font-medium text-brand">
-            {isExpanded ? 'Collapse' : 'Show more'}
-          </span>
-          {isExpanded ? <ChevronUp size={12} color="var(--brand-hex)" /> : <ChevronDown size={12} color="var(--brand-hex)" />}
+          <span className="text-[10px] font-medium text-brand">{isExpanded ? 'Collapse' : 'Show more'}</span>
+          {isExpanded ? (
+            <ChevronUp size={12} color="var(--brand-hex)" />
+          ) : (
+            <ChevronDown size={12} color="var(--brand-hex)" />
+          )}
         </button>
       )}
     </div>

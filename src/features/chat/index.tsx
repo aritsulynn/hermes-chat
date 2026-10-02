@@ -133,7 +133,9 @@ export function ChatScreen() {
   // Approval mode shown on the composer's shield. Unknown yet (session info
   // still loading) reads as manual — the safe side.
   const serverApprovalMode =
-    sessionInfo?.approval_mode === 'smart' || sessionInfo?.approval_mode === 'off' ? sessionInfo.approval_mode : 'manual';
+    sessionInfo?.approval_mode === 'smart' || sessionInfo?.approval_mode === 'off'
+      ? sessionInfo.approval_mode
+      : 'manual';
   // Optimistic local echo. `applyApprovalMode` is a `config.set` RPC that
   // resolves only when the gateway answers, and the shield is a control whose
   // whole feedback loop is "did the glyph change" — reading only the server
@@ -1067,9 +1069,7 @@ export function ChatScreen() {
                                 <div key={s.subagent_id} className="flex items-center gap-2 px-3 py-1">
                                   <div
                                     className={`shrink-0 text-[13px] leading-[18px] ${
-                                      done
-                                        ? 'text-neutral-400 dark:text-neutral-500'
-                                        : 'text-brand'
+                                      done ? 'text-neutral-400 dark:text-neutral-500' : 'text-brand'
                                     }`}>
                                     {done ? '✓' : '◐'}
                                   </div>
@@ -1172,9 +1172,7 @@ export function ChatScreen() {
                             // its overflow on *both* sides, and the left half
                             // can never be scrolled to.
                             className="flex w-full min-w-0 items-center justify-start gap-2 overflow-hidden px-3 py-2 text-left">
-                            <span className="max-w-[45%] text-[14px] font-semibold text-brand truncate">
-                              {label}
-                            </span>
+                            <span className="max-w-[45%] text-[14px] font-semibold text-brand truncate">{label}</span>
                             {item.meta ? (
                               <span className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate">
                                 {item.meta}
@@ -1444,9 +1442,7 @@ export function ChatScreen() {
                                   className="h-auto sm:h-auto min-w-0 flex-1 justify-start">
                                   <span
                                     className={`min-w-0 flex-1 text-left text-[14px] ${
-                                      on
-                                        ? 'font-semibold text-brand'
-                                        : 'text-neutral-950 dark:text-neutral-100'
+                                      on ? 'font-semibold text-brand' : 'text-neutral-950 dark:text-neutral-100'
                                     } truncate`}>
                                     {on ? '● ' : '○ '}
                                     {mm}

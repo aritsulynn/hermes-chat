@@ -3,3 +3,9 @@ node_modules
 package-lock.json
 .openchamber
 public
+
+# Capacitor / Gradle output. `public` above only matches at the repo root, and
+# the bundle also lands in android/**/assets/public + android/**/build.
+android
+**/build
+**/assets/public

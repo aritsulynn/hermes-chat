@@ -29,11 +29,7 @@ export const DayBar = memo(function DayBar({
       className="flex h-full w-7 flex-col items-center justify-end">
       <div
         className={`w-full rounded-t-sm ${
-          selected
-            ? 'bg-brand dark:bg-brand/100'
-            : hasTokens
-              ? 'bg-brand'
-              : 'bg-border'
+          selected ? 'bg-brand dark:bg-brand/100' : hasTokens ? 'bg-brand' : 'bg-border'
         }`}
         style={{ height: `${heightPercent}%` }}
       />

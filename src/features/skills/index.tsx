@@ -184,10 +184,7 @@ export function SkillsScreen() {
             }
             actions={
               <div className="flex items-center gap-1">
-                <HeaderIconButton
-                  aria-label="New skill"
-                  onClick={() => setEditor({ name: null })}
->
+                <HeaderIconButton aria-label="New skill" onClick={() => setEditor({ name: null })}>
                   <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
                 </HeaderIconButton>
                 <HeaderIconButton aria-label="Refresh skills" onClick={() => void load(true)}>

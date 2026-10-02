@@ -86,7 +86,8 @@ function strOrNull(v: unknown): string | null {
 }
 
 function serversOf(payload: unknown): McpServer[] {
-  const rec = payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
+  const rec =
+    payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
   const rows = Array.isArray(rec.servers) ? rec.servers : [];
   const out: McpServer[] = [];
   for (const raw of rows) {
@@ -118,11 +119,7 @@ export async function getMcpServers(opsGet: OpsGet, profile?: string | null): Pr
   return serversOf(await opsGet(mcpServers(profile)));
 }
 
-export async function setMcpServerEnabled(
-  opsMut: OpsMut,
-  name: string,
-  enabled: boolean,
-): Promise<void> {
+export async function setMcpServerEnabled(opsMut: OpsMut, name: string, enabled: boolean): Promise<void> {
   await opsMut(mcpServerEnabled(name), 'PUT', { enabled });
 }
 
@@ -179,7 +176,8 @@ export interface McpCatalogResult {
 }
 
 function catalogEntries(payload: unknown): McpCatalogResult {
-  const rec = payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
+  const rec =
+    payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
   const entries: McpCatalogEntry[] = [];
   if (Array.isArray(rec.entries)) {
     for (const raw of rec.entries) {

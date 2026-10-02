@@ -226,9 +226,7 @@ export function ScreenScaffold({
         // a frame. `contentTopInset` restores the top gap the screens' `py-4`
         // expects — the inline padding replaces that class value.
         style={{
-          paddingTop: headerH
-            ? headerH + contentTopInset
-            : 'calc(var(--safe-area-top, 0px) + var(--header-height))',
+          paddingTop: headerH ? headerH + contentTopInset : 'calc(var(--safe-area-top, 0px) + var(--header-height))',
         }}>
         {children}
       </div>
@@ -242,9 +240,7 @@ export function ScreenScaffold({
 // still wins, which is how the compact `p-3.5` variant stays honest.
 export function Card({ className, children, ...props }: React.ComponentProps<'div'>) {
   return (
-    <div
-      className={cn('rounded-2xl border border-border bg-elevated p-4', className)}
-      {...props}>
+    <div className={cn('rounded-2xl border border-border bg-elevated p-4', className)} {...props}>
       {children}
     </div>
   );

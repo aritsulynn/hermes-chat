@@ -103,10 +103,7 @@ export function EnvScreen() {
       .filter((g) => g.entries.length > 0);
   }, [vars, ql]);
 
-  const configured = useMemo(
-    () => Object.values(vars).filter((v) => v.isSet && !v.channelManaged).length,
-    [vars],
-  );
+  const configured = useMemo(() => Object.values(vars).filter((v) => v.isSet && !v.channelManaged).length, [vars]);
 
   const handleDelete = useCallback(
     (key: string) => {
@@ -121,7 +118,8 @@ export function EnvScreen() {
             toast({ title: 'Key deleted', description: key });
             await load(true);
           } catch (e) {
-            if (getAuthScope() === scope) toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
+            if (getAuthScope() === scope)
+              toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
           }
         },
       });
@@ -145,7 +143,11 @@ export function EnvScreen() {
                     <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
                   <HeaderIconButton aria-label="Refresh keys" onClick={() => void load(true)}>
-                    <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                    <RefreshCw
+                      size={20}
+                      color={dark ? '#e5e5e5' : '#333'}
+                      className={refreshing ? 'animate-spin' : ''}
+                    />
                   </HeaderIconButton>
                 </div>
               }
@@ -297,18 +299,29 @@ function EnvRow({
   return (
     <Card>
       <div className="flex items-start gap-2">
-        <KeyRound size={16} color={info.isSet ? brandColor(dark) : dark ? '#888' : '#999'} className="mt-0.5 shrink-0" />
+        <KeyRound
+          size={16}
+          color={info.isSet ? brandColor(dark) : dark ? '#888' : '#999'}
+          className="mt-0.5 shrink-0"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="truncate font-mono text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">{name}</span>
-            <span className={`text-[10px] font-semibold ${info.isSet ? 'text-emerald-600 dark:text-emerald-400' : 'text-neutral-400'}`}>
+            <span className="truncate font-mono text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">
+              {name}
+            </span>
+            <span
+              className={`text-[10px] font-semibold ${info.isSet ? 'text-emerald-600 dark:text-emerald-400' : 'text-neutral-400'}`}>
               {info.isSet ? 'set' : 'not set'}
             </span>
             {!!info.providerLabel && (
-              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">{info.providerLabel}</span>
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">
+                {info.providerLabel}
+              </span>
             )}
             {info.advanced && (
-              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">advanced</span>
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-neutral-500">
+                advanced
+              </span>
             )}
           </div>
           {!!info.description && (
@@ -336,7 +349,13 @@ function EnvRow({
             onClick={() => void toggleReveal()}
             disabled={revealing}
             className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
-            {revealing ? <Spinner size={13} color={brandColor(dark)} /> : revealed !== null ? <EyeOff size={13} color={brandColor(dark)} /> : <Eye size={13} color={brandColor(dark)} />}
+            {revealing ? (
+              <Spinner size={13} color={brandColor(dark)} />
+            ) : revealed !== null ? (
+              <EyeOff size={13} color={brandColor(dark)} />
+            ) : (
+              <Eye size={13} color={brandColor(dark)} />
+            )}
             <span className="text-xs font-semibold">{revealed !== null ? 'Hide' : 'Reveal'}</span>
           </Button>
         )}
@@ -344,7 +363,11 @@ function EnvRow({
           <Button
             aria-label={`Copy ${name}`}
             variant="outline"
-            onClick={() => void writeClipboard(revealed).then(() => toast({ title: 'Copied' })).catch(() => {})}
+            onClick={() =>
+              void writeClipboard(revealed)
+                .then(() => toast({ title: 'Copied' }))
+                .catch(() => {})
+            }
             className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
             <span className="text-xs font-semibold">Copy</span>
           </Button>
@@ -426,10 +449,17 @@ function EnvEditSheet({
           <DialogPrimitive.Title className="sr-only">Set {name}</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close editor" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close editor"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
-              <div className="min-w-0 flex-1 truncate font-mono text-sm font-bold text-neutral-900 dark:text-white">{name}</div>
+              <div className="min-w-0 flex-1 truncate font-mono text-sm font-bold text-neutral-900 dark:text-white">
+                {name}
+              </div>
               <Button
                 aria-label="Save key"
                 onClick={() => void save()}
@@ -538,7 +568,12 @@ function AddKeySheet({
           <DialogPrimitive.Title className="sr-only">Add custom key</DialogPrimitive.Title>
           <div className="flex min-h-0 flex-1 flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="icon" aria-label="Close add key" onClick={onClose} className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close add key"
+                onClick={onClose}
+                className="h-11 w-11 shrink-0 sm:h-11 sm:w-11">
                 <X size={20} color={dark ? '#eee' : '#333'} />
               </Button>
               <div className="min-w-0 flex-1 text-sm font-bold text-neutral-900 dark:text-white">Add custom key</div>

@@ -421,12 +421,8 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       const profile = normalizeProfileName(activeProfileRef.current);
       const connectionEpoch = connectionEpochRef.current;
       const epoch = profileEpochRef.current;
-      const text = await getSessionExportText(
-        targetHost,
-        cookie.current,
-        storedId,
-        profile,
-        async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
+      const text = await getSessionExportText(targetHost, cookie.current, storedId, profile, async (nextCookie) =>
+        acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
       );
       // A stable, filename-safe stem: the title when there is one, else the id.
       const stem =
