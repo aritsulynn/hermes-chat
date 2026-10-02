@@ -172,6 +172,8 @@ export const logs = (params: { file: string; lines: number | string; level?: str
 // ── Analytics ───────────────────────────────────────────────────────────────
 
 export const usage = (days: number): string => `/api/analytics/usage?days=${days}`;
+/** Per-model breakdown (provider, cost, sessions, capabilities). */
+export const usageModels = (days: number): string => `/api/analytics/models?days=${days}`;
 /** Ops screen's default window. */
 export const usageLast7Days = (): string => usage(7);
 /** Older gateways without the analytics route. */

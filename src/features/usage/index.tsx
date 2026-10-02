@@ -13,8 +13,8 @@ import { brandColor, screenStyle } from '../../theme';
 import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
-import { normalizeToolSkillList } from './helpers';
-import type { ToolSkillItem } from './helpers';
+import { normalizeModelUsage, normalizeToolSkillList } from './helpers';
+import type { ModelUsageItem, ToolSkillItem } from './helpers';
 
 const PERIOD_OPTIONS = [
   { label: '7 Days', days: 7 },
@@ -31,6 +31,7 @@ export function UsageScreen() {
 
   const [days, setDays] = useState<number>(30);
   const [data, setData] = useState<any>(null);
+  const [modelsData, setModelsData] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +52,20 @@ export function UsageScreen() {
       else setLoading(true);
       setError(null);
       try {
-        const res = await opsGet(api.usage(days));
+        // Fire both analytics calls together — the model breakdown is a second
+        // endpoint and there is no reason to serialize them.
+        const [res, modelsRes] = await Promise.all([
+          opsGet(api.usage(days)),
+          opsGet(api.usageModels(days)).catch((e) => {
+            // Older gateways may lack /analytics/models; degrade to the
+            // by_model rows already inside /analytics/usage.
+            console.warn('[usage] models analytics unavailable', e);
+            return null;
+          }),
+        ]);
         if (getAuthScope() !== scope) return;
         setData(res);
+        setModelsData(modelsRes);
       } catch (e) {
         if (getAuthScope() === scope) setError(errMsg(e));
       } finally {
@@ -74,6 +86,10 @@ export function UsageScreen() {
   const totalTokens = (totals?.total_input || 0) + (totals?.total_output || 0) + (totals?.total_reasoning || 0);
   const dailyEntries: any[] = Array.isArray(data?.daily) ? data.daily : [];
   const modelEntries: any[] = Array.isArray(data?.by_model) ? data.by_model : [];
+  // Prefer the richer `/analytics/models` rows (provider, cost, sessions); fall
+  // back to the lighter `by_model` from `/analytics/usage` when either is empty.
+  const modelUsage: ModelUsageItem[] = useMemo(() => normalizeModelUsage(modelsData), [modelsData]);
+  const richModels = modelUsage.length > 0;
   const toolsList: ToolSkillItem[] = useMemo(() => normalizeToolSkillList(data?.tools, 'tool'), [data?.tools]);
   const skillsList: ToolSkillItem[] = useMemo(() => normalizeToolSkillList(data?.skills, 'skill'), [data?.skills]);
 
@@ -375,7 +391,65 @@ export function UsageScreen() {
                 <Card>
                   <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</div>
                   <div className="flex flex-col mt-3 gap-2.5">
-                    {modelEntries.length === 0 ? (
+                    {richModels ? (
+                      modelUsage.map((m, idx) => {
+                        const mTokens = m.inputTokens + m.outputTokens;
+                        return (
+                          <div
+                            key={`${m.provider}:${m.model}-${idx}`}
+                            className="rounded-xl border border-border bg-popover p-3 dark:bg-input/30">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold text-neutral-950 dark:text-neutral-100">
+                                  {m.model}
+                                </div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400">
+                                  {!!m.provider && (
+                                    <span className="rounded-md border border-border px-1.5 py-px font-mono">
+                                      {m.provider}
+                                    </span>
+                                  )}
+                                  {!!m.auxTask && (
+                                    <span className="rounded-md border border-border px-1.5 py-px">
+                                      aux: {m.auxTask}
+                                    </span>
+                                  )}
+                                  <span>
+                                    {m.sessions} sessions · {m.apiCalls} calls
+                                    {m.toolCalls ? ` · ${m.toolCalls} tools` : ''}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 flex-col items-end">
+                                <div className="font-mono text-sm font-bold text-neutral-950 dark:text-neutral-100">
+                                  {compactNumber(mTokens)}
+                                </div>
+                                {m.estimatedCost > 0 && (
+                                  <div className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+                                    {formatCost(m.estimatedCost)}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="mt-2.5 flex items-center justify-between border-t border-border pt-2">
+                              <div className="text-[11px] text-neutral-500">In: {compactNumber(m.inputTokens)}</div>
+                              <div className="text-[11px] text-neutral-500">Out: {compactNumber(m.outputTokens)}</div>
+                              {m.reasoningTokens > 0 && (
+                                <div className="text-[11px] text-neutral-500">
+                                  Think: {compactNumber(m.reasoningTokens)}
+                                </div>
+                              )}
+                              {m.avgTokensPerSession > 0 && (
+                                <div className="text-[11px] text-neutral-500">
+                                  ~{compactNumber(m.avgTokensPerSession)}/sess
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : modelEntries.length === 0 ? (
                       <div className="text-xs text-neutral-400">No model usage data available.</div>
                     ) : (
                       modelEntries.map((m, idx) => {

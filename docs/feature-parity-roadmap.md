@@ -59,7 +59,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | --- | --- | --- | --- | --- |
 | Session export | `/sessions` | `SessionsPage.tsx` | **done** (chat menu) | S |
 | Schedule builder (cron) | `/cron` | `lib/schedule.ts` + `ScheduleBuilder.tsx` | **done** | S–M |
-| Analytics by model | `/analytics` | `AnalyticsPage.tsx` | partial (usage already renders `by_model`) | S |
+| Analytics by model | `/analytics` | `AnalyticsPage.tsx` | **done** | S |
 | Skill editor | `/skills` | `SkillEditorDialog.tsx` | **done** | M |
 | Skill hub (search/install) | `/skills` | `SkillsPage.tsx` | **done** | M |
 | Toolset config | — | `ToolsetConfigDrawer.tsx` | **done** | M |
@@ -103,12 +103,14 @@ The mobile app already has helpers, so adding an endpoint is fast:
 - **Note:** there is a test at `lib/schedule.test.ts` — port it too.
 - **Shipped:** `src/utils/schedule.ts` (+ tests), `src/features/cron/components/ScheduleBuilder.tsx`.
 
-### 3.3 Analytics by model `S`
+### 3.3 Analytics by model `S` — done
 
-- **What:** add a per-model usage breakdown.
+- **What:** a per-model usage breakdown.
 - **Endpoint:** `GET /api/analytics/models?days=`
-- **Note:** the usage screen already renders `by_model` from `/analytics/usage`, so
-  this is an upgrade, not a gap. Lower priority.
+- **Shipped:** `normalizeModelUsage` in `features/usage/helpers.ts`; the usage
+  screen fetches it alongside `/analytics/usage` and renders provider, sessions,
+  calls, tools, reasoning tokens and avg tokens/session, falling back to the
+  lighter `by_model` rows when the endpoint is absent.
 
 ### 3.4 Reasoning picker — already done
 
