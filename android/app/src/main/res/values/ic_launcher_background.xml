@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1A73E7</color>
+    <!-- The app mark is a black disc with a white H (Kablammo). The disc lives
+         on this background layer, not on the foreground: the launcher mask
+         scales and slides the foreground independently, so a full-bleed circle
+         placed there gets its edges clipped by the mask. Only the white H lives
+         in mipmap/ic_launcher_foreground, sized inside the 66dp safe zone. -->
+    <color name="ic_launcher_background">#000000</color>
 </resources>
