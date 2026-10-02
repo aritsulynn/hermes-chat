@@ -32,7 +32,6 @@ import {
   WS_REPLAY_TIMEOUT_MS,
   WS_RPC_TIMEOUT_MS,
   WS_SEQ_MAP_MAX,
-  WS_TOKEN_FLUSH_MS,
 } from './constants.ts';
 
 export type ConnState = 'idle' | 'connecting' | 'ready' | 'reconnecting' | 'closed' | 'auth-expired';
@@ -45,7 +44,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Minimal socket surface used here (RN's WebSocket type lacks readyState). */
+/** Minimal socket surface used here, so a test double only needs these members. */
 interface WsLike {
   readyState?: number;
   close?: () => void;
@@ -244,11 +243,7 @@ export interface WsDebug {
  * An empty sid is connection-scoped (gateway.ready style) — fail open.
  * With no current runtime (profile-switch gap) fail closed on everything.
  */
-export function isCurrentSessionEvent(
-  eventSid: string,
-  runtimeId: string | null,
-  storedKey: string | null,
-): boolean {
+export function isCurrentSessionEvent(eventSid: string, runtimeId: string | null, storedKey: string | null): boolean {
   if (!eventSid) return true;
   if (!runtimeId) return false;
   if (eventSid === runtimeId) return true;
@@ -283,9 +278,10 @@ export class GatewayWs {
       generation: number;
     }
   >();
-  private state: ConnState = 'idle';
   private closed = false;
   private backoff = WS_INITIAL_BACKOFF_MS;
+  /** online/focus/visibility hooks, kept so detach can remove the same fns. */
+  private wakeListeners: { wake: () => void; visible: () => void } | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectScheduled = false;
@@ -303,11 +299,6 @@ export class GatewayWs {
   // generations so a reconnect replay cannot create a second wire response.
   private socketGeneration = 0;
   private askRecords = new Map<string, { generation: number; sent: boolean; cancelled: boolean }>();
-  // Token coalescing — deltas arrive ~30Hz; flushing per frame = setState storm.
-  // Buffer per session and flush at most every 50ms (or on turn end).
-  private tokenBuf = new Map<string, string>();
-  private reasoningBuf = new Map<string, string>();
-  private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Snapshot of handshake diagnostics for error messages / debugging. */
   wsDebug(): WsDebug {
@@ -331,7 +322,6 @@ export class GatewayWs {
   }
 
   private setState(s: ConnState) {
-    this.state = s;
     this.events.onState?.(s);
   }
 
@@ -351,15 +341,13 @@ export class GatewayWs {
       this.readyResolve = finish;
       const timer = setTimeout(() => finish(false), timeoutMs);
       this.dial();
+      this.attachLifecycleHooks();
     });
   }
 
   close() {
     this.closed = true;
-    // Closing a connection invalidates buffered deltas; never flush them into
-    // the next account/session after logout or a reconnect.
-    this.tokenBuf.clear();
-    this.reasoningBuf.clear();
+    this.detachLifecycleHooks();
     this.clearTimers();
     try {
       asWsLike(this.ws)?.close?.();
@@ -373,13 +361,71 @@ export class GatewayWs {
     this.setState('closed');
   }
 
+  /** Cut through the backoff and dial immediately (banner Retry button). */
+  retryNow() {
+    if (this.closed) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectScheduled = false;
+    this.backoff = WS_INITIAL_BACKOFF_MS;
+    this.dial();
+  }
+
+  /**
+   * Wire lifecycle events that let a 1006 recover fast.
+   *
+   * A phone loses its network constantly (screen off, cell handover, wifi →
+   * mobile), and the close that follows is always 1006 — no close frame, so
+   * nothing on the socket says why. Two cases are worth reacting to:
+   *
+   *  - the device just got its network back: waiting out a 15s backoff while
+   *    the socket is perfectly dialable is the whole stall the banner shows.
+   *  - the tab was hidden and is visible again: phones freeze timers while
+   *    backgrounded, so the pending backoff can sit minutes behind reality.
+   *
+   * Both are the same action, and both must stay guarded by `closed` — a
+   * logged-out socket must never come back on its own.
+   */
+  attachLifecycleHooks() {
+    if (typeof globalThis.addEventListener !== 'function') return;
+    if (this.wakeListeners) return;
+    // Cut through the backoff rather than respect it. `scheduleReconnect` has
+    // already set `reconnectScheduled` by the time these fire — that is the
+    // normal state on a resume, and honouring it here would skip the wake on
+    // exactly the frame it exists for.
+    const wake = () => {
+      if (this.closed) return;
+      const sock = asWsLike(this.ws);
+      // An OPEN socket is healthy; a dial already in flight (0/1) will settle
+      // on its own, and retryNow() would only churn it.
+      if (sock && (sock.readyState === 1 || sock.readyState === 0)) return;
+      this.retryNow();
+    };
+    const onVisible = () => {
+      if (this.closed) return;
+      if (document.visibilityState !== 'visible') return;
+      wake();
+    };
+    this.wakeListeners = { wake, visible: onVisible };
+    globalThis.addEventListener('online', wake);
+    globalThis.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+  }
+
+  detachLifecycleHooks() {
+    const entry = this.wakeListeners;
+    if (!entry) return;
+    this.wakeListeners = null;
+    globalThis.removeEventListener('online', entry.wake);
+    globalThis.removeEventListener('focus', entry.visible);
+    document.removeEventListener('visibilitychange', entry.visible);
+  }
+
   private clearTimers() {
     if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    if (this.flushTimer) clearTimeout(this.flushTimer);
     this.pingTimer = null;
     this.reconnectTimer = null;
-    this.flushTimer = null;
     this.reconnectScheduled = false;
   }
 
@@ -395,8 +441,6 @@ export class GatewayWs {
     this.replaying = false;
     this.replayOverflow = false;
     this.replayHold = null;
-    this.tokenBuf.clear();
-    this.reasoningBuf.clear();
     this.setState(this.backoff > WS_INITIAL_BACKOFF_MS ? 'reconnecting' : 'connecting');
     let ws: WebSocket;
     try {
@@ -677,9 +721,7 @@ export class GatewayWs {
   }
 
   private deliverOpenRequests(result: unknown): void {
-    const rows = Array.isArray(asResult(result).open_requests)
-      ? (asResult(result).open_requests as unknown[])
-      : [];
+    const rows = Array.isArray(asResult(result).open_requests) ? (asResult(result).open_requests as unknown[]) : [];
     for (const req of rows) {
       const rec = asResult(req);
       const id = String(rec.id ?? '');
@@ -824,9 +866,7 @@ export class GatewayWs {
         content: text,
         ...(typeof row.row_id === 'number' ? { rowId: row.row_id } : {}),
         ...(typeof row.timestamp === 'number' ? { ts: row.timestamp } : {}),
-        ...(typeof row.display_kind === 'string' && row.display_kind
-          ? { displayKind: row.display_kind }
-          : {}),
+        ...(typeof row.display_kind === 'string' && row.display_kind ? { displayKind: row.display_kind } : {}),
         ...(reasoning ? { reasoning } : {}),
       };
     });
@@ -1140,11 +1180,7 @@ export class GatewayWs {
         const lastSeen = this.lastSeq.get(sid) ?? 0;
         let r: RpcResult | null = null;
         try {
-          r = await this.call(
-            'session.events.since',
-            { session_id: sid, last_seen: lastSeen },
-            WS_REPLAY_TIMEOUT_MS,
-          );
+          r = await this.call('session.events.since', { session_id: sid, last_seen: lastSeen }, WS_REPLAY_TIMEOUT_MS);
         } catch {
           replayFailed = true;
           break;
@@ -1171,12 +1207,16 @@ export class GatewayWs {
         // requests by connection + rpc id.
       }
     } finally {
+      // Early bail from the finally block is how this replay flush skips its
+      // tail; the method returns void, so no value is swallowed.
+      // eslint-disable-next-line no-unsafe-finally
       if (this.replayGeneration !== generation) return;
       const held = this.replayHold ?? [];
       this.replayHold = null;
       this.replaying = false;
       if (replayFailed || this.replayOverflow) {
         for (const sid of named) this.events.onReplayTruncated?.(sid);
+        // eslint-disable-next-line no-unsafe-finally
         return;
       }
       for (const h of held) {
@@ -1222,30 +1262,6 @@ export class GatewayWs {
     this.dispatch(type, sid, asResult(rec.payload ?? rec));
   }
 
-  /** Fan one event out to the registered callbacks (live or replayed). */
-  private flushBuffers() {
-    if (this.tokenBuf.size === 0 && this.reasoningBuf.size === 0) return;
-    const tokens = [...this.tokenBuf.entries()];
-    const reasonings = [...this.reasoningBuf.entries()];
-    this.tokenBuf.clear();
-    this.reasoningBuf.clear();
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-    for (const [sid, t] of tokens) {
-      if (t) this.events.onToken?.(sid, t);
-    }
-    for (const [sid, t] of reasonings) {
-      if (t) this.events.onReasoning?.(sid, t);
-    }
-  }
-
-  private scheduleFlush() {
-    if (this.flushTimer) return;
-    this.flushTimer = setTimeout(() => this.flushBuffers(), WS_TOKEN_FLUSH_MS);
-  }
-
   private dispatch(type: string, sid: string, body: Record<string, unknown>) {
     this.dbg.lastEvent = type;
     this.dbg.lastSid = sid || null;
@@ -1280,29 +1296,24 @@ export class GatewayWs {
       }
       case 'message.delta': {
         const t = strOf(body.text);
-        if (t) {
-          this.tokenBuf.set(sid, (this.tokenBuf.get(sid) ?? '') + t);
-          this.scheduleFlush();
-        }
+        // Straight through: a delta wakes exactly one bubble in the streaming
+        // store, so there is nothing to coalesce here. Time-based coalescing in
+        // the transport is what capped the text at 20 updates a second.
+        if (t) this.events.onToken?.(sid, t);
         break;
       }
       case 'reasoning.delta':
       case 'thinking.delta': {
         const t = strOf(body.text);
-        if (t) {
-          this.reasoningBuf.set(sid, (this.reasoningBuf.get(sid) ?? '') + t);
-          this.scheduleFlush();
-        }
+        if (t) this.events.onReasoning?.(sid, t);
         break;
       }
       case 'message.interim': {
-        this.flushBuffers();
         const t = strOf(body.text);
         if (t) this.events.onInterim?.(sid, t);
         break;
       }
       case 'message.complete':
-        this.flushBuffers();
         this.events.onComplete?.(sid, strOf(body.text), body);
         break;
       case 'tool.start':

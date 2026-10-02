@@ -3,47 +3,37 @@
 # dependencies
 node_modules/
 
-# Expo
-.expo/
+# build output
 dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
+*.tsbuildinfo
 
 # agent tooling output (screenshots from the browser panel)
 .openchamber/
+
+# local agent skills — installed per machine, not part of the app
+.agents/
+skills-lock.json
 
 # debug
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
-.DS_Store
-*.pem
-
-# local env files
+# local env files — the gateway host is entered by the user, not configured here
 .env*
 !.env.example
 !.env.sample
 
-# typescript
-*.tsbuildinfo
+# macOS
+.DS_Store
+*.pem
 
-# generated native folders
-/ios
-/android
-
-# working docs (manual QA plans, audits, refactor plans) — local only
-docs/
+# Android (Capacitor shell is tracked for its custom source — MainActivity,
+# NativeHttpPlugin, manifest flags — but never its local outputs)
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/.idea/
+*.apk

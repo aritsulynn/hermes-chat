@@ -13,7 +13,7 @@ export const LEVEL_COLORS: Record<LogLevelFilter, { activeBg: string; activeText
   ALL: {
     activeBg: 'bg-neutral-900 dark:bg-neutral-100',
     activeText: 'text-white dark:text-neutral-950',
-    activeBorder: 'border-neutral-900 dark:border-neutral-100',
+    activeBorder: 'border-neutral-900 dark:border-border',
   },
   INFO: {
     activeBg: 'bg-blue-600',

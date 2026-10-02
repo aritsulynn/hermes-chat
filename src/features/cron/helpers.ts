@@ -64,22 +64,28 @@ export const LOCAL_DELIVERY = 'local';
  * (scheduler_delivery._resolve_single_delivery_target), so it is always safe to
  * offer.
  */
-export function deliveryOptions(
-  targets: DeliveryTarget[],
-  opts: { hasOrigin?: boolean } = {},
-): DeliveryTarget[] {
-  const local: DeliveryTarget = {
+export function deliveryOptions(targets: DeliveryTarget[], opts: { hasOrigin?: boolean } = {}): DeliveryTarget[] {
+  // The server's own list already carries a `local` row. Prepending a synthetic
+  // one unconditionally produced two options keyed `local` — a React
+  // duplicate-key warning and the same target twice in the form (see the
+  // desktop, which filters `target.id !== "local"`). So prefer the server's
+  // row and only synthesize `local` when the fetch failed and the list is empty.
+  const serverLocal = targets.find((t) => t.id === LOCAL_DELIVERY);
+  const local: DeliveryTarget = serverLocal ?? {
     id: LOCAL_DELIVERY,
     name: 'Save only (no notification)',
     home_target_set: true,
   };
-  if (!opts.hasOrigin) return [local, ...targets];
+  // `origin` is prepended by the server per blueprint, so it is never in the
+  // list; drop a stray one just in case so the key stays unique.
+  const rest = targets.filter((t) => t.id !== LOCAL_DELIVERY && t.id !== 'origin');
+  if (!opts.hasOrigin) return [local, ...rest];
   const origin: DeliveryTarget = {
     id: 'origin',
     name: 'Back to where it was created',
     home_target_set: true,
   };
-  return [local, origin, ...targets];
+  return [local, origin, ...rest];
 }
 
 /** A job's current `deliver`, normalised to something selectable.
@@ -90,10 +96,7 @@ export function deliveryOptions(
  * downgrade a job the user still wants delivered, so the row is shown as-is
  * and the form starts from the closest offered option.
  */
-export function normaliseDelivery(
-  raw: string | null | undefined,
-  options: DeliveryTarget[],
-): string {
+export function normaliseDelivery(raw: string | null | undefined, options: DeliveryTarget[]): string {
   const value = String(raw ?? '').trim();
   if (!value) return LOCAL_DELIVERY;
   // A comma-joined list is a broadcast to several targets; the form edits one

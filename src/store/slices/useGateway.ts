@@ -1,15 +1,14 @@
 // Gateway slice — the gateway WS wiring: the active-list probe, reconnect
 // reconcile, server-ask hydration, and the long-lived openWs() factory.
 // Extracted from store/useAppStore.tsx.
-import { useCallback } from 'react';
-import { router } from 'expo-router';
+import { useCallback, useEffect } from 'react';
+import { navigate } from '../nav';
 import { GatewayWs, isCurrentSessionEvent } from '../../services/gateway-ws';
 import { clearSessionMessagesCache, mintWsTicket, toWsUrl } from '../../services/dashboard';
 import { connectionScope, forgetAll, saveCookie, saveModel } from '../../services/connection';
 import { clearMediaCaches } from '../../services/media-cache';
 import { DEFAULT_PROFILE } from '../../services/constants';
-import { askNotificationCategory, dismissNotification, pushNotification } from '../../services/notifications';
-import { upsertAsk } from '../../services/ask-inbox';
+import { pushNotification } from '../../services/notifications';
 import type { AskOwner } from '../../services/ask-inbox';
 import { changedFilesFromDiff } from '../../utils/diff';
 import { formatToolCommand, formatToolResult } from '../../utils/toolResult';
@@ -24,6 +23,8 @@ export interface GatewaySlice {
   confirmAfterReconnect: () => Promise<void>;
   syncOpenRequests: (g: GatewayWs) => Promise<void>;
   openWs: (h: string, user: string) => Promise<GatewayWs>;
+  /** Cut through the reconnect backoff and dial immediately. */
+  reconnectNow: () => void;
 }
 
 export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
@@ -31,19 +32,15 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
     latest,
     hydrateSessionContext,
     releaseLocalTurnRef,
-    askHydrationRef,
-    notificationDrainRef,
-    pendingNotificationResponsesRef,
-    handledNotificationResponsesRef,
     askInboxRef,
     askRef,
+    ask,
     setAskInbox,
     setAsk,
     bindAskOwner,
     resolveAskOwner,
     applyAskInbox,
     markAskByRpc,
-    dismissAskNotifications,
     draftsRef,
     setInputRaw,
     setAttachments,
@@ -57,8 +54,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
     liveToolAid,
     liveTurnTools,
     liveTurnDiffs,
-    streamingRef,
-    setStreamingTexts,
+    streaming,
     turnOwnerRef,
     parkedLiveRef,
     lastTurnEventAt,
@@ -163,103 +159,118 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
   // older gateways without `session.active_list`.
   const syncOpenRequests = useCallback(async (g: GatewayWs) => {
     const connectionEpoch = connectionEpochRef.current;
-    const hydration = ++askHydrationRef.current;
+    const ids = new Set<string>();
+    if (sessionIdRef.current) ids.add(sessionIdRef.current);
+    for (const entry of askInboxRef.current) {
+      if (
+        (entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent') &&
+        entry.owner.runtimeSessionId
+      ) {
+        ids.add(entry.owner.runtimeSessionId);
+      }
+    }
+    let activeListAvailable = false;
+    const unresolvedRows: Array<{ id: string; sessionKey: string }> = [];
     try {
-      const ids = new Set<string>();
-      if (sessionIdRef.current) ids.add(sessionIdRef.current);
-      for (const entry of askInboxRef.current) {
-        if (
-          (entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent') &&
-          entry.owner.runtimeSessionId
-        ) {
-          ids.add(entry.owner.runtimeSessionId);
-        }
-      }
-      let activeListAvailable = false;
-      const unresolvedRows: Array<{ id: string; sessionKey: string }> = [];
-      try {
-        const active = await g.activeList(sessionIdRef.current ?? undefined);
+      const active = await g.activeList(sessionIdRef.current ?? undefined);
+      if (connectionEpochRef.current !== connectionEpoch) return;
+      activeListAvailable = true;
+      for (const row of active) {
         if (connectionEpochRef.current !== connectionEpoch) return;
-        activeListAvailable = true;
-        for (const row of active) {
-          if (connectionEpochRef.current !== connectionEpoch) return;
-          if (!row.id) continue;
-          const currentStoredKey = latest.current.sessionKey;
-          const hintedProfile = row.profile ? normalizeProfileName(row.profile) : '';
-          const currentProfile = normalizeProfileName(activeProfileRef.current);
-          const profileMatchesCurrent =
-            hintedProfile === currentProfile || (!hintedProfile && profilesRef.current.length <= 1);
-          const isCurrent =
-            row.id === sessionIdRef.current ||
-            (!!sessionIdRef.current &&
-              !!currentStoredKey &&
-              profileMatchesCurrent &&
-              row.sessionKey === currentStoredKey);
-          if (row.status === 'waiting' || isCurrent) ids.add(row.id);
-          if (row.sessionKey) {
-            const profile = hintedProfile || (profilesRef.current.length === 1 ? currentProfile : '');
-            const owner: AskOwner = {
-              connectionId: connectionScope(latest.current.host, latest.current.username),
-              profile: isCurrent ? normalizeProfileName(activeProfileRef.current) : profile,
-              storedSessionId: row.sessionKey,
-              runtimeSessionId: row.id,
-              resolved: Boolean(isCurrent || (profile && row.sessionKey)),
-            };
-            const existing = runtimeAskOwners.current.get(row.id);
-            if (!existing?.resolved) runtimeAskOwners.current.set(row.id, owner);
-            if (!isCurrent && !owner.resolved) unresolvedRows.push({ id: row.id, sessionKey: row.sessionKey });
-            const scopedOwner = owner.resolved ? profileSessionKey(owner.profile, row.sessionKey) : '';
-            if (isCurrent) {
-              runtimeOwners.current.set(row.id, profileSessionKey(activeProfileRef.current, row.sessionKey));
-              if (row.id !== sessionIdRef.current) {
-                // The gateway can remint a live runtime after a process restart.
-                // Adopt the new id only for the same durable room, then rebuild
-                // the foreground transcript from REST.
-                sessionIdRef.current = row.id;
-                setSessionId(row.id);
-                resyncRef.current();
-              }
-            } else if (scopedOwner && parkedLiveRef.current.has(scopedOwner))
-              runtimeOwners.current.set(row.id, scopedOwner);
-          }
-        }
-      } catch {
-        // Keep the known runtime owners when active_list is unavailable.
-      }
-      if (unresolvedRows.length > 0 && profilesRef.current.length > 0) {
-        for (const row of unresolvedRows) {
-          const matches: string[] = [];
-          for (const profile of profilesRef.current) {
-            try {
-              const rows = await g.listSessions(100, profile.name);
-              if (connectionEpochRef.current !== connectionEpoch) return;
-              if (rows.some((item) => item.id === row.sessionKey)) matches.push(profile.name);
-            } catch {
-              // Try the next known profile; never guess from the stored id.
-            }
-          }
-          if (matches.length !== 1) continue;
+        if (!row.id) continue;
+        const currentStoredKey = latest.current.sessionKey;
+        const hintedProfile = row.profile ? normalizeProfileName(row.profile) : '';
+        const currentProfile = normalizeProfileName(activeProfileRef.current);
+        const profileMatchesCurrent =
+          hintedProfile === currentProfile || (!hintedProfile && profilesRef.current.length <= 1);
+        const isCurrent =
+          row.id === sessionIdRef.current ||
+          (!!sessionIdRef.current &&
+            !!currentStoredKey &&
+            profileMatchesCurrent &&
+            row.sessionKey === currentStoredKey);
+        if (row.status === 'waiting' || isCurrent) ids.add(row.id);
+        if (row.sessionKey) {
+          const profile = hintedProfile || (profilesRef.current.length === 1 ? currentProfile : '');
           const owner: AskOwner = {
             connectionId: connectionScope(latest.current.host, latest.current.username),
-            profile: matches[0],
+            profile: isCurrent ? normalizeProfileName(activeProfileRef.current) : profile,
             storedSessionId: row.sessionKey,
             runtimeSessionId: row.id,
-            resolved: true,
+            resolved: Boolean(isCurrent || (profile && row.sessionKey)),
           };
-          runtimeAskOwners.current.set(row.id, owner);
-          bindAskOwner(row.id, owner);
+          const existing = runtimeAskOwners.current.get(row.id);
+          if (!existing?.resolved) runtimeAskOwners.current.set(row.id, owner);
+          if (!isCurrent && !owner.resolved) unresolvedRows.push({ id: row.id, sessionKey: row.sessionKey });
+          const scopedOwner = owner.resolved ? profileSessionKey(owner.profile, row.sessionKey) : '';
+          if (isCurrent) {
+            runtimeOwners.current.set(row.id, profileSessionKey(activeProfileRef.current, row.sessionKey));
+            if (row.id !== sessionIdRef.current) {
+              // The gateway can remint a live runtime after a process restart.
+              // Adopt the new id only for the same durable room, then rebuild
+              // the foreground transcript from REST.
+              sessionIdRef.current = row.id;
+              setSessionId(row.id);
+              resyncRef.current();
+            }
+          } else if (scopedOwner && parkedLiveRef.current.has(scopedOwner))
+            runtimeOwners.current.set(row.id, scopedOwner);
         }
       }
-      if (connectionEpochRef.current !== connectionEpoch) return;
-      if (!activeListAvailable) {
-        for (const runtime of runtimeOwners.current.keys()) ids.add(runtime);
-      }
-      if (ids.size > 0) await g.syncOpenRequests([...ids]);
-    } finally {
-      if (askHydrationRef.current === hydration) askHydrationRef.current = 0;
-      notificationDrainRef.current?.();
+    } catch {
+      // Keep the known runtime owners when active_list is unavailable.
     }
+    if (unresolvedRows.length > 0 && profilesRef.current.length > 0) {
+      for (const row of unresolvedRows) {
+        const matches: string[] = [];
+        for (const profile of profilesRef.current) {
+          try {
+            const rows = await g.listSessions(100, profile.name);
+            if (connectionEpochRef.current !== connectionEpoch) return;
+            if (rows.some((item) => item.id === row.sessionKey)) matches.push(profile.name);
+          } catch {
+            // Try the next known profile; never guess from the stored id.
+          }
+        }
+        if (matches.length !== 1) continue;
+        const owner: AskOwner = {
+          connectionId: connectionScope(latest.current.host, latest.current.username),
+          profile: matches[0],
+          storedSessionId: row.sessionKey,
+          runtimeSessionId: row.id,
+          resolved: true,
+        };
+        runtimeAskOwners.current.set(row.id, owner);
+        bindAskOwner(row.id, owner);
+      }
+    }
+    if (connectionEpochRef.current !== connectionEpoch) return;
+    if (!activeListAvailable) {
+      for (const runtime of runtimeOwners.current.keys()) ids.add(runtime);
+    }
+    if (ids.size > 0) await g.syncOpenRequests([...ids]);
   }, []);
+
+  // While a foreground ask is open, re-check it on a timer. Answering from
+  // another device resolves the request gateway-side, but nothing pushes that
+  // here — without this, the sheet sits open forever asking an answered
+  // question. The same snapshot that clears the sheet also settles the inbox
+  // row (it syncs every pending session, not just the open one). A still-open
+  // ask survives the check untouched: its rpcId is still in the open set.
+  //
+  // Keyed on the rpcId, not the ask object: rehydrations (reconnect, room
+  // switch) hand back a new object for the same request, and that must not
+  // restart the timer.
+  const openAskRpcId = ask?.rpcId;
+  useEffect(() => {
+    if (!openAskRpcId) return;
+    const t = setInterval(() => {
+      const g = gw.current;
+      if (!g) return;
+      void syncOpenRequests(g).catch(() => {});
+    }, 15000);
+    return () => clearInterval(t);
+  }, [openAskRpcId, syncOpenRequests, gw]);
 
   const openWs = useCallback(
     async (h: string, user: string): Promise<GatewayWs> => {
@@ -281,7 +292,11 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
       // resolves, so every session-scoped event is ignored during that gap.
       const isCurrentSession = (sid: string) =>
         isCurrentSessionEvent(sid, sessionIdRef.current, latest.current.sessionKey);
+      // `let` on purpose: the GatewayWs options below close over `ws`, and a
+      // const would put it in the temporal dead zone if the constructor ever
+      // fired a callback synchronously.
       let ws: GatewayWs;
+      // eslint-disable-next-line prefer-const
       ws = new GatewayWs({
         wsUrl: toWsUrl(h, ticket),
         refreshUrl: async () => {
@@ -325,12 +340,8 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
               activeProfileRef.current = DEFAULT_PROFILE;
               setActiveProfile(DEFAULT_PROFILE);
               setError('Gateway session expired — sign in again.');
-              dismissAskNotifications();
               askInboxRef.current = [];
               setAskInbox([]);
-              pendingNotificationResponsesRef.current = [];
-              askHydrationRef.current = 0;
-              handledNotificationResponsesRef.current.clear();
               askRef.current = null;
               setAsk(null);
               sessionIdRef.current = null;
@@ -357,7 +368,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
               })();
               logoutCleanupRef.current = cleanup;
               void cleanup;
-              router.replace('/login');
+              navigate('/login', { replace: true });
               return;
             }
             if (s === 'ready') {
@@ -372,14 +383,9 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             const aid = liveAid.current;
             if (!aid || !delta) return;
             lastTurnEventAt.current = Date.now();
-            // O(1): buffer outside `messages`, no transcript map per delta.
-            // Update the ref synchronously — onComplete may fire before React re-renders.
-            const next = {
-              ...streamingRef.current,
-              [aid]: (streamingRef.current[aid] ?? '') + delta,
-            };
-            streamingRef.current = next;
-            setStreamingTexts(next);
+            // O(1): appended outside `messages`, and it wakes exactly the live
+            // bubble — no transcript map, and no app-wide re-render per delta.
+            streaming.push(aid, delta);
           },
           onReasoning: (sid, delta) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
@@ -401,12 +407,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             const id = aid;
             if (!delta) return;
             lastTurnEventAt.current = Date.now();
-            const next = {
-              ...streamingRef.current,
-              [id]: (streamingRef.current[id] ?? '') + delta,
-            };
-            streamingRef.current = next;
-            setStreamingTexts(next);
+            streaming.push(id, delta);
           },
           onInterim: (sid, text) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
@@ -539,7 +540,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             generatingRef.current = false;
             setToolLine(null);
             // Single merge: fold buffered deltas into the durable transcript once.
-            const deltas = streamingRef.current;
+            const deltas = streaming.snapshot();
             const hasDeltas = (aid && deltas[aid] !== undefined) || (thinkId && deltas[thinkId] !== undefined);
             if (aid || thinkId || settled) {
               const base = messagesRef.current;
@@ -561,16 +562,12 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
                 // A surviving notice is Hermes speaking about the turn, not the
                 // model answering, so it lands as a system notice — the same
                 // role the desktop assigns to a failed-turn boundary row.
-                next = [
-                  ...next,
-                  { id: nid(), role: keepNotice ? 'notice' : 'assistant', text: settled },
-                ];
+                next = [...next, { id: nid(), role: keepNotice ? 'notice' : 'assistant', text: settled }];
               }
               messagesRef.current = next;
               setMessages(next);
             }
-            streamingRef.current = {};
-            setStreamingTexts((prev) => (Object.keys(prev).length ? {} : prev));
+            streaming.clear();
             // End-of-turn file summary: fold every inline diff this turn produced.
             const turnDiffs = liveTurnDiffs.current;
             liveTurnDiffs.current = [];
@@ -623,9 +620,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
           onSessionInfo: (sid, info) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
             const infoRec =
-              info && typeof info === 'object' && !Array.isArray(info)
-                ? (info as Record<string, unknown>)
-                : null;
+              info && typeof info === 'object' && !Array.isArray(info) ? (info as Record<string, unknown>) : null;
             setSessionInfo(infoRec);
             if (infoRec?.usage) setUsageInfo((prev) => mergeUsageState(prev, infoRec.usage));
             if (contextPendingSidRef.current === sid && gw.current) {
@@ -691,8 +686,6 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
                           ? 'Vault unlock required'
                           : 'Hermes needs input';
               void pushNotification('Hermes', what, {
-                identifier: `hermes-ask-${result.entry.rpcId}`,
-                categoryIdentifier: askNotificationCategory(a.method),
                 data: {
                   kind: 'ask',
                   connectionId: result.entry.owner.connectionId,
@@ -707,7 +700,6 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             }
             // A cold-start notification action can arrive before its open request
             // has been rehydrated. Drain it after every ask delivery.
-            notificationDrainRef.current?.();
           },
           onAskCancel: (rpcId, info) => {
             if (connectionEpochRef.current !== connectionEpoch) return;
@@ -735,21 +727,14 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
                   }
                 : entry;
             });
-            for (const before of askInboxRef.current) {
-              const after = next.find(
-                (entry) => entry.rpcId === before.rpcId && entry.owner.connectionId === before.owner.connectionId,
-              );
-              if (
-                after &&
-                (after.status === 'cancelled' || after.status === 'stale') &&
-                before.status !== after.status
-              ) {
-                void dismissNotification(`hermes-ask-${before.rpcId}`);
-              }
-            }
             askInboxRef.current = next;
             setAskInbox(next);
-            if (askRef.current?.sessionId === sid && !open.has(askRef.current.rpcId)) setAsk(null);
+            // A snapshot is per session, so an ask for another room must never
+            // be cleared by it — but a session-less ask was shown as the
+            // current room's, so the current room's snapshot may clear it.
+            const cur = askRef.current;
+            const belongs = cur && (cur.sessionId ? cur.sessionId === sid : sid === sessionIdRef.current);
+            if (cur && belongs && !open.has(cur.rpcId)) setAsk(null);
           },
         },
       });
@@ -758,5 +743,9 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
     [hydrateSessionContext, confirmAfterReconnect, syncOpenRequests, resolveAskOwner, applyAskInbox, markAskByRpc],
   );
 
-  return { probeWorkingSessions, confirmAfterReconnect, syncOpenRequests, openWs };
+  const reconnectNow = useCallback(() => {
+    gw.current?.retryNow();
+  }, []);
+
+  return { probeWorkingSessions, confirmAfterReconnect, syncOpenRequests, openWs, reconnectNow };
 }

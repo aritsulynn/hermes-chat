@@ -1,8 +1,7 @@
 // Connection slice — the connect pipeline: connect / login / logout.
 // Extracted from store/useAppStore.tsx.
 import { useCallback } from 'react';
-import { Platform } from 'react-native';
-import { router } from 'expo-router';
+import { navigate } from '../nav';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { clearSessionMessagesCache, logoutDashboard, probeStatus } from '../../services/dashboard';
 import {
@@ -13,7 +12,6 @@ import {
   getPassword,
   saveActiveProfile,
   saveHost,
-  savePassword,
 } from '../../services/connection';
 import { clearMediaCaches } from '../../services/media-cache';
 import { DEFAULT_PROFILE } from '../../services/constants';
@@ -35,20 +33,15 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     ensureCookie,
     openWs,
     refreshSessions,
-    rememberPw,
+
     passwordScopeRef,
     host,
     username,
     password,
-    dismissAskNotifications,
     setAskInbox,
     setAsk,
     askRef,
     askInboxRef,
-    handledNotificationResponsesRef,
-    pendingNotificationResponsesRef,
-    askHydrationRef,
-    notificationActionInFlightRef,
     turnOwnerRef,
     parkedLiveRef,
     draftsRef,
@@ -84,7 +77,6 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     setSubagents,
     setAttachments,
     setEditingRowId,
-    setInfoOpen,
     gw,
     cookie,
     cookieScope,
@@ -127,11 +119,6 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
         profileEpoch = ++profileEpochRef.current;
         clearMediaCaches();
         clearSessionMessagesCache();
-        dismissAskNotifications();
-        handledNotificationResponsesRef.current.clear();
-        pendingNotificationResponsesRef.current = [];
-        askHydrationRef.current = 0;
-        notificationActionInFlightRef.current = false;
         askInboxRef.current = [];
         setAskInbox([]);
         setAsk(null);
@@ -210,11 +197,14 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
         }
         await saveHost(nextHost, nextUser);
         if (!isCurrent()) return;
-        // Never persist the basic-auth password in browser storage. Native keeps
-        // the existing opt-in SecureStore behaviour.
-        if (rememberPw && pw && Platform.OS !== 'web') {
-          await savePassword(pw, nextHost, nextUser);
-        }
+        // Nothing to persist: the browser already holds the resulting session
+        // cookie in its own jar, where JS cannot read it. Storing the password
+        // would add a real secret to `localStorage` and buy nothing back.
+        //
+        // The old `rememberPw` flag is gone, and with it the last
+        // writer of `savePassword`; see the "Credentials" note in
+        // services/connection.ts for what the boot-time `clearPassword` call is
+        // now asserting.
         // Bounded waits — a wedged dashboard must never trap boot on a
         // spinner: list/open each get a ceiling, then we land on chat.
         let list: SessionSummary[] = [];
@@ -234,20 +224,23 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
             if (found) target = found;
           } catch {}
           try {
-            await withTimeout(openSessionRef.current(target), 25000);
+            // Restore for its side effects only — do not navigate. See the note
+            // in openSession: navigating here is what made every deep link to a
+            // non-chat route land on /chat instead.
+            await withTimeout(openSessionRef.current(target, { navigate: false }), 25000);
           } catch {
-            if (isCurrent()) router.replace('/chat');
+            if (isCurrent()) navigate('/chat', { replace: true });
           }
           return;
         }
-        if (isCurrent()) router.replace('/chat');
+        if (isCurrent()) navigate('/chat', { replace: true });
       } catch (e) {
         if (isCurrent() && errMsg(e) !== 'Connection superseded') setError(errMsg(e));
       } finally {
         if (isCurrent()) setBusy(false);
       }
     },
-    [acceptRotatedCookie, ensureCookie, openWs, rememberPw, refreshSessions],
+    [acceptRotatedCookie, ensureCookie, openWs, refreshSessions],
   );
 
   const login = useCallback(async () => {
@@ -304,12 +297,8 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     setGenerating(false);
     setAsk(null);
     askRef.current = null;
-    dismissAskNotifications();
-    handledNotificationResponsesRef.current.clear();
     askInboxRef.current = [];
     setAskInbox([]);
-    pendingNotificationResponsesRef.current = [];
-    askHydrationRef.current = 0;
     setToolLine(null);
     setTodos([]);
     setSubagents([]);
@@ -321,8 +310,7 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     setAttachments([]);
     editRowRef.current = null;
     setEditingRowId(null);
-    setInfoOpen(false);
-    router.replace('/login');
+    navigate('/login', { replace: true });
 
     const cleanup = (async () => {
       try {

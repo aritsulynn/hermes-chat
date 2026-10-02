@@ -21,13 +21,10 @@ test('fills missing context fields from another usage snapshot', () => {
 });
 
 test('later snapshots override stale values while preserving absent fields', () => {
-  assert.deepEqual(
-    mergeUsage(
-      { context_percent: 21, input: 1200 },
-      { context_percent: 25 },
-    ),
-    { contextPercent: 25, input: 1200 },
-  );
+  assert.deepEqual(mergeUsage({ context_percent: 21, input: 1200 }, { context_percent: 25 }), {
+    contextPercent: 25,
+    input: 1200,
+  });
 });
 
 test('keeps a real zero-percent snapshot', () => {

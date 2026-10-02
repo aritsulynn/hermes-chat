@@ -35,7 +35,11 @@ export function stripAnsi(s: string): string {
 
 /** Drop the `┊ review diff` header Rich prepends, then normalise whitespace. */
 export function stripInlineDiffChrome(value: string): string {
-  return value ? stripAnsi(value).replace(/^\s*┊\s*review diff\s*\n/i, '').trim() : '';
+  return value
+    ? stripAnsi(value)
+        .replace(/^\s*┊\s*review diff\s*\n/i, '')
+        .trim()
+    : '';
 }
 
 export interface DiffLineStats {

@@ -1,203 +1,104 @@
-// Chat top bar — the normal header and the in-transcript search header.
-// Extracted from index.tsx to keep the screen focused on orchestration.
-import { Text, View } from 'react-native';
-import { ChevronDown, ChevronUp, Info, MoreVertical, Search, X } from 'lucide-react-native';
-import { CtxRing, HamburgerBtn } from '../../../components/ui/bits';
+// Chat top bar — a thin wrapper over the shared `ScreenHeader`.
+//
+// The bar was always the same shape as every other screen's: hamburger, title,
+// right-hand actions. It stayed a separate component only because it predates
+// `ScreenHeader` gaining an `actions` node. Now it just supplies chat's own
+// control (the context ring) and drops the subtitle, which is the only real
+// difference left.
+//
+// No `insetTop` prop: the safe area is a CSS variable now.
+import { CtxRingBody, ScreenHeader } from '../../../components/ui/bits';
+import { compactNumber } from '../../../utils/format';
 import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
-import { Text as UIText } from '../../../components/ui/text';
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
-import { placeholderColor } from '../../../theme';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../../components/ui/dropdown-menu';
+import { Download } from 'lucide-react';
 
 export function ChatNormalHeader({
-  insetTop,
   dark,
-  iconColor,
   title,
   contextPercent,
   contextTone,
-  onOpenSearch,
-  onSelectInfo,
-  onOpenInfo,
+  contextUsed,
+  contextMax,
+  input,
+  output,
+  costUsd,
+  subagents,
+  onExport,
 }: {
-  insetTop: number;
   dark: boolean;
-  iconColor: string;
   title: string;
   contextPercent: number | null;
   contextTone: 'ok' | 'warn' | 'hot';
-  onOpenSearch: () => void;
-  onSelectInfo: () => void;
-  onOpenInfo: () => void;
+  /** The token/cost figures for the dropdown; absent on an older gateway. */
+  contextUsed?: number | null;
+  contextMax?: number | null;
+  input?: number | null;
+  output?: number | null;
+  costUsd?: number | null;
+  subagents?: number | null;
+  /** Download the open session as JSON. */
+  onExport?: () => void;
 }) {
-  return (
-    <View
-      style={{
-        height: insetTop + 52,
-        paddingTop: insetTop,
-        backgroundColor: dark ? '#000' : '#fff',
-      }}
-    >
-      <View className="h-[52px] flex-row items-center gap-1 px-2">
-        <View className="w-11 shrink-0 items-start">
-          <HamburgerBtn />
-        </View>
-        <Text
-          numberOfLines={1}
-          className="min-w-0 flex-1 px-1 text-[17px] font-semibold text-neutral-950 dark:text-neutral-100"
-        >
-          {title}
-        </Text>
-        <View className="flex-row items-center gap-1">
-          {contextPercent != null && (
-            <CtxRing pct={contextPercent} tone={contextTone} dark={dark} onPress={onOpenInfo} />
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            testID="search-open"
-            accessibilityRole="button"
-            accessibilityLabel="Search conversation"
-            onPress={onOpenSearch}
-            hitSlop={2}
-          >
-            <Search size={20} color={iconColor} />
-          </Button>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                testID="kebab-btn"
-                accessibilityRole="button"
-                accessibilityLabel="Chat menu"
-                hitSlop={2}
-              >
-                <MoreVertical size={20} color={iconColor} />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent side="bottom" align="end" className="p-1.5">
-              <PopoverClose asChild>
-                <Button
-                  variant="ghost"
-                  testID="menu-info"
-                  onPress={onSelectInfo}
-                  className="flex-row items-center justify-start gap-2.5 px-3 py-2.5"
-                >
-                  <Info size={17} color={iconColor} />
-                  <UIText className="text-[15px]">Session info</UIText>
-                </Button>
-              </PopoverClose>
-            </PopoverContent>
-          </Popover>
-        </View>
-      </View>
-    </View>
+  // The ring is a menu: a header badge is a one-tap summary, and the numbers
+  // behind it are four separate fields that have no other home in the UI.
+  const headerIcon = dark ? '#a3a3a3' : '#555';
+  const ctxLabel = contextPercent != null ? `${parseFloat(contextPercent.toFixed(1))}%` : '';
+  const ctxRow = (k: string, v: string) => (
+    <div className="flex items-center justify-between gap-4 px-3 py-1.5">
+      <span className="text-[13px] text-neutral-500 dark:text-neutral-400">{k}</span>
+      <span className="font-mono text-[13px] font-medium text-neutral-950 dark:text-neutral-100">{v}</span>
+    </div>
   );
-}
-
-export function ChatSearchHeader({
-  insetTop,
-  dark,
-  iconColor,
-  query,
-  matchIndex,
-  matchCount,
-  onChangeQuery,
-  onPrevious,
-  onNext,
-  onClose,
-}: {
-  insetTop: number;
-  dark: boolean;
-  iconColor: string;
-  query: string;
-  matchIndex: number;
-  matchCount: number;
-  onChangeQuery: (value: string) => void;
-  onPrevious: () => void;
-  onNext: () => void;
-  onClose: () => void;
-}) {
-  const hasQuery = query.trim().length > 0;
-  const disabledColor = dark ? '#666' : '#aaa';
   return (
-    <View
-      style={{
-        height: insetTop + 52,
-        paddingTop: insetTop,
-        backgroundColor: dark ? '#000' : '#fff',
-      }}
-    >
-      <View className="h-[52px] flex-row items-center gap-1 px-2">
-        <View className="min-w-0 flex-1 flex-row items-center gap-1">
-          <View className="h-11 min-w-0 flex-1 flex-row items-center rounded-xl border border-neutral-200 bg-[#f4f4f6] px-3 dark:border-neutral-700 dark:bg-[#212121]">
-            <Search size={18} color={dark ? '#aaa' : '#666'} />
-            <Input
-              testID="conversation-search"
-              accessibilityLabel="Search conversation"
-              // The pill around this draws the field; the base border inside it
-              // would read as a frame within a frame, and dark:bg-transparent is
-              // needed because the base sets dark:bg-input/30.
-              className="ml-2 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-[16px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
-              value={query}
-              onChangeText={onChangeQuery}
-              placeholder="Search conversation…"
-              placeholderTextColor={placeholderColor(dark)}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              keyboardAppearance={dark ? 'dark' : 'light'}
-              returnKeyType="search"
-              selectionColor="#1a73e8"
-              onSubmitEditing={onNext}
-            />
-            {hasQuery && (
-              <Text className="ml-1.5 text-xs text-neutral-500 dark:text-neutral-400">
-                {matchCount ? matchIndex + 1 : 0}/{matchCount}
-              </Text>
-            )}
-          </View>
-          <Button
-            variant="ghost"
-            size="icon"
-            testID="search-prev"
-            accessibilityRole="button"
-            accessibilityLabel="Previous search match"
-            onPress={onPrevious}
-            disabled={!matchCount}
-            hitSlop={2}
-            className="h-11 w-10"
-          >
-            <ChevronUp size={20} color={matchCount ? iconColor : disabledColor} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            testID="search-next"
-            accessibilityRole="button"
-            accessibilityLabel="Next search match"
-            onPress={onNext}
-            disabled={!matchCount}
-            hitSlop={2}
-            className="h-11 w-10"
-          >
-            <ChevronDown size={20} color={matchCount ? iconColor : disabledColor} />
-          </Button>
-        </View>
-        <Button
-          variant="ghost"
-          size="icon"
-          testID="search-close"
-          accessibilityRole="button"
-          accessibilityLabel="Close conversation search"
-          onPress={onClose}
-          hitSlop={2}
-          className="h-11 w-10"
-        >
-          <X size={22} color={iconColor} />
-        </Button>
-      </View>
-    </View>
+    <ScreenHeader
+      title={title}
+      actions={
+        <div className="flex items-center gap-1">
+          {contextPercent != null && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    data-testid="ctx-ring"
+                    aria-label={`Context ${ctxLabel} — open usage`}
+                    className="h-9 rounded-full px-2"
+                    style={{ width: 'auto', height: 36 }}
+                  />
+                }>
+                <CtxRingBody pct={contextPercent} tone={contextTone} dark={dark} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end" className="w-60 p-1.5">
+                <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Context
+                </div>
+                {ctxRow('Used', contextUsed != null ? compactNumber(contextUsed) : '—')}
+                {ctxRow('Window', contextMax != null ? compactNumber(contextMax) : '—')}
+                {input != null && ctxRow('Input', compactNumber(input))}
+                {output != null && ctxRow('Output', compactNumber(output))}
+                {costUsd != null && costUsd > 0 && ctxRow('Cost', `$${costUsd.toFixed(2)}`)}
+                {subagents != null && subagents > 0 && ctxRow('Subagents', String(subagents))}
+                {onExport && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onExport} className="gap-2">
+                      <Download size={15} color={headerIcon} />
+                      <span className="text-[13px] text-neutral-800 dark:text-neutral-200">Export session</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      }
+    />
   );
 }

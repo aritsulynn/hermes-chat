@@ -176,9 +176,7 @@ export function receiptOutcomeLabel(receipt: UpdateReceiptSummary | null): strin
   if (!receipt?.outcome) return '';
   const base = RECEIPT_OUTCOMES[receipt.outcome] ?? `Update ${receipt.outcome}`;
   if (receipt.outcome === 'success' && receipt.postVersion) {
-    const version = receipt.postVersion.startsWith('v')
-      ? receipt.postVersion
-      : `v${receipt.postVersion}`;
+    const version = receipt.postVersion.startsWith('v') ? receipt.postVersion : `v${receipt.postVersion}`;
     return `${base} — now ${version}`;
   }
   return base;

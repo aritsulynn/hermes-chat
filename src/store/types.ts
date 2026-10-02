@@ -2,7 +2,6 @@
 // Extracted from hooks/app-store.tsx so the context contract is readable in
 // one place instead of buried above a 4k-line provider.
 import type { AskInboxEntry } from '../services/ask-inbox';
-import type { ResolvedTheme, Theme } from '../services/connection';
 import type { ModelProviderOption } from '../services/dashboard';
 import type { ConnState, GatewayWs, ServerAsk, SessionSummary } from '../services/gateway-ws';
 import type { LiveSessionMap } from './live-sessions';
@@ -32,18 +31,7 @@ export type OpsResult = unknown;
 /** Cookie-authed GET against the dashboard (`services/dashboard`). */
 export type OpsGet = (path: string) => Promise<OpsResult>;
 /** Cookie-authed mutation against the dashboard (`services/dashboard`). */
-export type OpsMut = (
-  path: string,
-  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-  body?: unknown,
-) => Promise<OpsResult>;
-/** One row of the full-history search index (plain data, not a live bubble). */
-export interface TranscriptHit {
-  role: string;
-  text: string;
-  rowId: number | null;
-}
-
+export type OpsMut = (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<OpsResult>;
 export interface AppStore {
   booting: boolean;
   authed: boolean;
@@ -98,12 +86,8 @@ export interface AppStore {
   setAttachments: (v: Attachment[]) => void;
   generating: boolean;
   copiedId: string | null;
-  infoOpen: boolean;
-  setInfoOpen: (v: boolean) => void;
-  infoSeq: number;
   sessionInfo: SessionInfo | null;
   usageInfo: UsageInfo | null;
-  usageLoading: boolean;
   toolLine: string | null;
   ask: ServerAsk | null;
   /** All unresolved/settled server asks, newest first. */
@@ -123,6 +107,8 @@ export interface AppStore {
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  /** Cut through the reconnect backoff and dial immediately. */
+  reconnectNow: () => void;
   refreshSessions: (limit?: number) => Promise<ScopedSessionSummary[]>;
   /** Fetch the next page (limit+100) — used by drawer infinite scroll. */
   loadMoreSessions: () => Promise<ScopedSessionSummary[]>;
@@ -130,9 +116,10 @@ export interface AppStore {
   sessionsLoadingMore: boolean;
   openSession: (s: ScopedSessionSummary) => Promise<void>;
   newSession: () => Promise<void>;
+  /** Download the open session as JSON; returns the filename and raw text. */
+  exportSession: (title?: string) => Promise<{ filename: string; text: string }>;
   send: () => Promise<void>;
   stop: () => void;
-  openInfo: () => Promise<void>;
   getGw: () => GatewayWs | null;
   /** Connection + WS diagnostics snapshot (Settings → Diagnostics). */
   diagnostics: () => Record<string, unknown>;
@@ -182,12 +169,6 @@ export interface AppStore {
   /** Reply to the current foreground ask with its method-specific result. */
   answerAsk: (result: Record<string, unknown>) => boolean;
   dismissAsk: () => void;
-  /** One transcript row in the full-history search index (not a live bubble). */
-  /** Full-history search: match `query` across the server transcript, not just
-   *  the loaded window. Returns hits oldest-first. */
-  searchTranscript: (query: string) => Promise<TranscriptHit[]>;
-  /** Window index of a search hit, or -1 when it is not loaded yet. */
-  findHitIndex: (hit: TranscriptHit) => number;
   // The theme triple (theme / themeMode / setTheme) is deliberately NOT on
   // AppStore — it lives on its own context so a theme toggle does not hand all
   // ~30 useApp() consumers a new object. Read it with useThemeValue().

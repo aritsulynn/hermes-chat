@@ -1,40 +1,23 @@
 import { cn } from '@/utils/cn';
-import * as LabelPrimitive from '@rn-primitives/label';
-import { Platform } from 'react-native';
+import * as React from 'react';
 
-function Label({
-  className,
-  onPress,
-  onLongPress,
-  onPressIn,
-  onPressOut,
-  disabled,
-  ...props
-}: React.ComponentProps<typeof LabelPrimitive.Text>) {
+type LabelProps = React.ComponentProps<'label'>;
+
+/**
+ * A plain `<label>`. Clicking it focuses and toggles its associated control
+ * natively, so no press handler is needed.
+ */
+function Label({ className, ...props }: LabelProps) {
   return (
-    <LabelPrimitive.Root
+    <label
       className={cn(
-        'flex select-none flex-row items-center gap-2',
-        Platform.select({
-          web: 'cursor-default leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50',
-        }),
-        disabled && 'opacity-50'
+        'text-foreground flex select-none items-center gap-2 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50',
+        className,
       )}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      disabled={disabled}>
-      <LabelPrimitive.Text
-        className={cn(
-          'text-foreground text-sm font-medium',
-          Platform.select({ web: 'leading-none' }),
-          className
-        )}
-        {...props}
-      />
-    </LabelPrimitive.Root>
+      {...props}
+    />
   );
 }
 
 export { Label };
+export type { LabelProps };

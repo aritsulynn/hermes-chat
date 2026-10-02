@@ -1,35 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect } from 'expo-router';
-import {
-  Activity,
-  AlertCircle,
-  Coins,
-  Cpu,
-  DollarSign,
-  Layers,
-  MessageSquare,
-  RefreshCw,
-  TrendingUp,
-  Wrench,
-  Zap,
-} from 'lucide-react-native';
+import { Navigate as Redirect } from 'react-router-dom';
+import { AlertCircle, Cpu, DollarSign, MessageSquare, RefreshCw, TrendingUp, Wrench, Zap } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { Card, ScreenHeader } from '../../components/ui/bits';
+import { Card, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { Progress } from '../../components/ui/progress';
-import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { brandColor, screenStyle } from '../../theme';
 import * as api from '../../services/api';
 import { compactNumber, formatCost } from '../../utils/format';
 import { DayBar } from './components/DayBar';
-import { normalizeToolSkillList } from './helpers';
-import type { ToolSkillItem } from './helpers';
+import { normalizeModelUsage, normalizeToolSkillList } from './helpers';
+import type { ModelUsageItem, ToolSkillItem } from './helpers';
 
 const PERIOD_OPTIONS = [
   { label: '7 Days', days: 7 },
@@ -37,17 +22,16 @@ const PERIOD_OPTIONS = [
   { label: '90 Days', days: 90 },
 ] as const;
 
-
 export function UsageScreen() {
   const { authed, opsGet, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Shared by the spinner and the KPI icon — resolve once per scheme.
   const brand = useMemo(() => brandColor(dark), [dark]);
-  const insets = useSafeAreaInsets();
 
   const [days, setDays] = useState<number>(30);
   const [data, setData] = useState<any>(null);
+  const [modelsData, setModelsData] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,9 +52,20 @@ export function UsageScreen() {
       else setLoading(true);
       setError(null);
       try {
-        const res = await opsGet(api.usage(days));
+        // Fire both analytics calls together — the model breakdown is a second
+        // endpoint and there is no reason to serialize them.
+        const [res, modelsRes] = await Promise.all([
+          opsGet(api.usage(days)),
+          opsGet(api.usageModels(days)).catch((e) => {
+            // Older gateways may lack /analytics/models; degrade to the
+            // by_model rows already inside /analytics/usage.
+            console.warn('[usage] models analytics unavailable', e);
+            return null;
+          }),
+        ]);
         if (getAuthScope() !== scope) return;
         setData(res);
+        setModelsData(modelsRes);
       } catch (e) {
         if (getAuthScope() === scope) setError(errMsg(e));
       } finally {
@@ -91,6 +86,10 @@ export function UsageScreen() {
   const totalTokens = (totals?.total_input || 0) + (totals?.total_output || 0) + (totals?.total_reasoning || 0);
   const dailyEntries: any[] = Array.isArray(data?.daily) ? data.daily : [];
   const modelEntries: any[] = Array.isArray(data?.by_model) ? data.by_model : [];
+  // Prefer the richer `/analytics/models` rows (provider, cost, sessions); fall
+  // back to the lighter `by_model` from `/analytics/usage` when either is empty.
+  const modelUsage: ModelUsageItem[] = useMemo(() => normalizeModelUsage(modelsData), [modelsData]);
+  const richModels = modelUsage.length > 0;
   const toolsList: ToolSkillItem[] = useMemo(() => normalizeToolSkillList(data?.tools, 'tool'), [data?.tools]);
   const skillsList: ToolSkillItem[] = useMemo(() => normalizeToolSkillList(data?.skills, 'skill'), [data?.skills]);
 
@@ -150,65 +149,61 @@ export function UsageScreen() {
     [fullDailyEntries],
   );
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screenStyle(dark)}>
-      {/* No 'bottom' edge: ScrollView content pads insets.bottom + 32. */}
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
+    <div style={screenStyle(dark)}>
+      {/* No 'bottom' edge: the scroll content pads the safe area + 32. */}
+      <ScreenScaffold
+        header={
+          <>
+            {/* Header */}
+            <ScreenHeader
+              title="Usage & Analytics"
 
-        {/* Header */}
-        <ScreenHeader
-          title="Usage & Analytics"
-          insetTop={insets.top}
-          actions={
-            <Button
-              variant="outline"
-              size="icon"
-              accessibilityLabel="Refresh usage"
-              disabled={loading || refreshing}
-              onPress={() => void fetchUsage(true)}
-              hitSlop={10}
-              className="h-8 w-8 rounded-lg border border-neutral-300 dark:border-neutral-700"
-            >
-              <RefreshCw size={15} color={dark ? '#ccc' : '#444'} />
-            </Button>
-          }
-        />
+              actions={
+                <HeaderIconButton
+                  variant="outline"
+                  aria-label="Refresh usage"
+                  disabled={loading || refreshing}
+                  onClick={() => void fetchUsage(true)}
+                  className="border border-border">
+                  <RefreshCw size={20} color={dark ? '#ccc' : '#444'} />
+                </HeaderIconButton>
+              }
+            />
 
-        {/* Period Selector Bar */}
-        <View className="flex-row items-center justify-between border-b border-neutral-200 bg-neutral-50/70 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
-          <Text className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</Text>
-          <View className="flex-row gap-1">
-            {PERIOD_OPTIONS.map((opt) => (
-              <Button
-                key={opt.days}
-                variant="ghost"
-                accessibilityRole="radio"
-                accessibilityState={{ selected: days === opt.days }}
-                accessibilityLabel={opt.label}
-                onPress={() => setDays(opt.days)}
-                className={`h-auto rounded-lg border px-3 py-1.5 ${
-                  days === opt.days
-                    ? 'border-[#1a73e8] bg-[#1a73e8]'
-                    : 'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950'
-                }`}
-              >
-                <UIText
-                  className={`text-xs font-semibold ${
-                    days === opt.days ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
-                  }`}
-                >
-                  {opt.label}
-                </UIText>
-              </Button>
-            ))}
-          </View>
-        </View>
+            {/* Period Selector Bar */}
+            <div className="flex items-center justify-between border-b border-border bg-elevated px-4 py-2.5 dark:bg-elevated">
+              <div className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Time Period</div>
+              <div className="flex gap-1">
+                {PERIOD_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.days}
+                    variant="ghost"
 
+                    aria-pressed={days === opt.days}
+                    aria-label={opt.label}
+                    onClick={() => setDays(opt.days)}
+                    className={`h-auto sm:h-auto rounded-lg border px-3 py-1.5 ${
+                      days === opt.days
+                        ? 'border-brand bg-brand'
+                        : 'border-border bg-popover dark:border-border'
+                    }`}>
+                    <span
+                      className={`text-xs font-semibold ${
+                        days === opt.days ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'
+                      }`}>
+                      {opt.label}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </>
+        }>
         {error && (
-          <View className="m-4">
+          <div className="m-4">
             <UIAlert icon={AlertCircle} variant="destructive">
               <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">
                 {error}
@@ -216,308 +211,354 @@ export function UsageScreen() {
               <Button
                 variant="destructive"
                 size="sm"
-                onPress={() => void fetchUsage(true)}
-                className="ml-6 mt-1 self-start"
-              >
-                <UIText className="text-xs font-medium text-white">Retry</UIText>
+                onClick={() => void fetchUsage(true)}
+                className="ml-6 mt-1 self-start">
+                <span className="text-xs font-medium text-white">Retry</span>
               </Button>
             </UIAlert>
-          </View>
+          </div>
         )}
 
-        <ScrollView
-          contentContainerStyle={{
-            padding: 14,
-            paddingBottom: insets.bottom + 32,
-            gap: 16,
-          }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void fetchUsage(true)} />}
-        >
-          {loading && !refreshing ? (
-            <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color={brand} />
-              <Text className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading usage analytics…</Text>
-            </View>
-          ) : (
-            <>
-              {/* KPI Cards Grid */}
-              <View className="flex-row flex-wrap gap-2.5">
-                {/* Total Tokens */}
-                <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
-                    <TrendingUp size={16} color={brand} />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
-                    {compactNumber(totalTokens)}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">in {days} days</Text>
-                </Card>
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-3.5 pb-[calc(env(safe-area-inset-bottom,0px)+32px)]">
+            {loading && !refreshing ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Spinner size={24} color={brand} />
+                <div className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Loading usage analytics…</div>
+              </div>
+            ) : (
+              <>
+                {/* KPI Cards Grid */}
+                <div className="flex flex-wrap gap-2.5">
+                  {/* Total Tokens */}
+                  <Card className="flex-1 min-w-[140px]">
+                    <div className="flex items-center gap-1.5">
+                      <TrendingUp size={16} color={brand} />
+                      <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Total Tokens</div>
+                    </div>
+                    <div className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                      {compactNumber(totalTokens)}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-neutral-400">in {days} days</div>
+                  </Card>
 
-                {/* Estimated Cost */}
-                <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
-                    <DollarSign size={16} color="#16a34a" />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Est. Cost</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
-                    {formatCost(totals?.total_estimated_cost)}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">
-                    Actual: {formatCost(totals?.total_actual_cost)}
-                  </Text>
-                </Card>
+                  {/* Estimated Cost */}
+                  <Card className="flex-1 min-w-[140px]">
+                    <div className="flex items-center gap-1.5">
+                      <DollarSign size={16} color="#16a34a" />
+                      <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Est. Cost</div>
+                    </div>
+                    <div className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                      {formatCost(totals?.total_estimated_cost)}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-neutral-400">
+                      Actual: {formatCost(totals?.total_actual_cost)}
+                    </div>
+                  </Card>
 
-                {/* Sessions */}
-                <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
-                    <MessageSquare size={16} color="#8b5cf6" />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Sessions</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
-                    {totals?.total_sessions?.toLocaleString() || '0'}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">conversations</Text>
-                </Card>
+                  {/* Sessions */}
+                  <Card className="flex-1 min-w-[140px]">
+                    <div className="flex items-center gap-1.5">
+                      <MessageSquare size={16} color="#8b5cf6" />
+                      <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Sessions</div>
+                    </div>
+                    <div className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                      {totals?.total_sessions?.toLocaleString() || '0'}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-neutral-400">conversations</div>
+                  </Card>
 
-                {/* API Calls */}
-                <Card className="flex-1 min-w-[140px]">
-                  <View className="flex-row items-center gap-1.5">
-                    <Zap size={16} color="#f59e0b" />
-                    <Text className="text-xs font-medium text-neutral-500 dark:text-neutral-400">API Calls</Text>
-                  </View>
-                  <Text className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
-                    {totals?.total_api_calls?.toLocaleString() || '0'}
-                  </Text>
-                  <Text className="mt-0.5 text-[11px] text-neutral-400">requests</Text>
-                </Card>
-              </View>
+                  {/* API Calls */}
+                  <Card className="flex-1 min-w-[140px]">
+                    <div className="flex items-center gap-1.5">
+                      <Zap size={16} color="#f59e0b" />
+                      <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">API Calls</div>
+                    </div>
+                    <div className="mt-1.5 text-2xl font-black text-neutral-950 dark:text-neutral-100">
+                      {totals?.total_api_calls?.toLocaleString() || '0'}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-neutral-400">requests</div>
+                  </Card>
+                </div>
 
-              {/* Token Breakdown Card */}
-              <Card>
-                <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Token Breakdown</Text>
-                <View className="mt-3 gap-2.5">
-                  {/* Input Tokens */}
-                  <View>
-                    <View className="flex-row justify-between text-xs mb-1">
-                      <Text className="text-xs text-neutral-600 dark:text-neutral-300">Input Tokens</Text>
-                      <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
-                        {(totals?.total_input || 0).toLocaleString()}
-                      </Text>
-                    </View>
-                    <Progress
-                      value={Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}
-                      indicatorClassName="bg-[#1a73e8]"
-                      className="bg-neutral-200 dark:bg-neutral-800"
-                    />
-                  </View>
-
-                  {/* Output Tokens */}
-                  <View>
-                    <View className="flex-row justify-between text-xs mb-1">
-                      <Text className="text-xs text-neutral-600 dark:text-neutral-300">Output Tokens</Text>
-                      <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
-                        {(totals?.total_output || 0).toLocaleString()}
-                      </Text>
-                    </View>
-                    <Progress
-                      value={Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}
-                      indicatorClassName="bg-[#8b5cf6]"
-                      className="bg-neutral-200 dark:bg-neutral-800"
-                    />
-                  </View>
-
-                  {/* Reasoning Tokens */}
-                  {(totals?.total_reasoning || 0) > 0 && (
-                    <View>
-                      <View className="flex-row justify-between text-xs mb-1">
-                        <Text className="text-xs text-neutral-600 dark:text-neutral-300">Reasoning / Thinking</Text>
-                        <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
-                          {(totals?.total_reasoning || 0).toLocaleString()}
-                        </Text>
-                      </View>
-                      <Progress
-                        value={Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}
-                        indicatorClassName="bg-[#f59e0b]"
-                        className="bg-neutral-200 dark:bg-neutral-800"
-                      />
-                    </View>
-                  )}
-
-                  {/* Cache Read Tokens */}
-                  {(totals?.total_cache_read || 0) > 0 && (
-                    <View>
-                      <View className="flex-row justify-between text-xs mb-1">
-                        <Text className="text-xs text-neutral-600 dark:text-neutral-300">Cache Read Tokens</Text>
-                        <Text className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
-                          {(totals?.total_cache_read || 0).toLocaleString()}
-                        </Text>
-                      </View>
-                      <Progress
-                        value={Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}
-                        indicatorClassName="bg-[#10b981]"
-                        className="bg-neutral-200 dark:bg-neutral-800"
-                      />
-                    </View>
-                  )}
-                </View>
-              </Card>
-
-              {/* Daily Activity Chart */}
-              <Card>
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Daily Activity</Text>
-                  {selectedDay && (
-                    <Text className="text-xs font-mono text-[#1a73e8] dark:text-[#7aa7ff]">
-                      {selectedDay.day}:{' '}
-                      {compactNumber((selectedDay.input_tokens || 0) + (selectedDay.output_tokens || 0))} tokens (
-                      {selectedDay.sessions || 0} sess)
-                    </Text>
-                  )}
-                </View>
-
-                {fullDailyEntries.length === 0 ? (
-                  <Text className="mt-4 text-center text-xs text-neutral-400">
-                    No activity recorded for this period.
-                  </Text>
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-4">
-                    <View className="flex-row items-end gap-2 h-36 pt-4 pb-2 px-1">
-                      {fullDailyEntries.map((d) => (
-                        <DayBar
-                          key={d.day}
-                          day={d.day}
-                          tokens={(d?.input_tokens || 0) + (d?.output_tokens || 0) + (d?.reasoning_tokens || 0)}
-                          maxTokens={maxDayTokens}
-                          selected={selectedDay?.day === d.day}
-                          onSelect={handleSelectDay}
-                        />
-                      ))}
-                    </View>
-                  </ScrollView>
-                )}
-              </Card>
-
-              {/* Usage by Model */}
-              <Card>
-                <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</Text>
-                <View className="mt-3 gap-2.5">
-                  {modelEntries.length === 0 ? (
-                    <Text className="text-xs text-neutral-400">No model usage data available.</Text>
-                  ) : (
-                    modelEntries.map((m, idx) => {
-                      const mTokens = (m?.input_tokens || 0) + (m?.output_tokens || 0);
-                      const modelName = String(m?.model ?? `Model ${idx + 1}`);
-                      return (
-                        <View
-                          key={`${modelName}-${idx}`}
-                          className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950"
-                        >
-                          <View className="flex-row items-start justify-between gap-2">
-                            <View className="flex-1">
-                              <Text
-                                className="text-sm font-semibold text-neutral-950 dark:text-neutral-100"
-                                numberOfLines={1}
-                              >
-                                {modelName}
-                              </Text>
-                              <Text className="text-[11px] text-neutral-400 mt-0.5">
-                                {m?.sessions || 0} sessions · {m?.api_calls || 0} calls
-                              </Text>
-                            </View>
-                            <View className="items-end">
-                              <Text className="text-sm font-bold font-mono text-neutral-950 dark:text-neutral-100">
-                                {compactNumber(mTokens)}
-                              </Text>
-                              {Boolean(m.estimated_cost) && (
-                                <Text className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
-                                  {formatCost(m.estimated_cost)}
-                                </Text>
-                              )}
-                            </View>
-                          </View>
-
-                          <View className="mt-2.5 flex-row items-center justify-between border-t border-neutral-100 pt-2 dark:border-neutral-900">
-                            <Text className="text-[11px] text-neutral-500">In: {compactNumber(m.input_tokens)}</Text>
-                            <Text className="text-[11px] text-neutral-500">Out: {compactNumber(m.output_tokens)}</Text>
-                          </View>
-                        </View>
-                      );
-                    })
-                  )}
-                </View>
-              </Card>
-
-              {/* Tools & Skills Breakdown */}
-              {(toolsList.length > 0 || skillsList.length > 0) && (
+                {/* Token Breakdown Card */}
                 <Card>
-                  <Text className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Tools & Skills</Text>
+                  <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Token Breakdown</div>
+                  <div className="flex flex-col mt-3 gap-2.5">
+                    {/* Input Tokens */}
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <div className="text-xs text-neutral-600 dark:text-neutral-300">Input Tokens</div>
+                        <div className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                          {(totals?.total_input || 0).toLocaleString()}
+                        </div>
+                      </div>
+                      <Progress
+                        value={Math.min(100, totalTokens ? ((totals?.total_input || 0) / totalTokens) * 100 : 0)}
+                        indicatorClassName="bg-brand"
+                        className="bg-border"
+                      />
+                    </div>
 
-                  {/* Tools */}
-                  {toolsList.length > 0 && (
-                    <View className="mt-3">
-                      <View className="flex-row items-center gap-1.5 mb-2">
-                        <Wrench size={13} color={dark ? '#aaa' : '#666'} />
-                        <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
-                          Tools Executed
-                        </Text>
-                      </View>
-                      <View className="flex-row flex-wrap gap-1.5">
-                        {toolsList.map((item) => (
-                          <Badge
-                            key={item.name}
-                            variant="secondary"
-                            className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
-                          >
-                            <UIText className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
-                              {item.name}
-                            </UIText>
-                            <UIText className="font-mono text-[11px] font-bold text-[#1a73e8] dark:text-[#7aa7ff]">
-                              {item.count}
-                            </UIText>
-                            {typeof item.percentage === 'number' && (
-                              <UIText className="text-[10px] text-neutral-400">{item.percentage}%</UIText>
-                            )}
-                          </Badge>
-                        ))}
-                      </View>
-                    </View>
-                  )}
+                    {/* Output Tokens */}
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <div className="text-xs text-neutral-600 dark:text-neutral-300">Output Tokens</div>
+                        <div className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                          {(totals?.total_output || 0).toLocaleString()}
+                        </div>
+                      </div>
+                      <Progress
+                        value={Math.min(100, totalTokens ? ((totals?.total_output || 0) / totalTokens) * 100 : 0)}
+                        indicatorClassName="bg-[#8b5cf6]"
+                        className="bg-border"
+                      />
+                    </div>
 
-                  {/* Skills */}
-                  {skillsList.length > 0 && (
-                    <View className="mt-4">
-                      <View className="flex-row items-center gap-1.5 mb-2">
-                        <Cpu size={13} color={dark ? '#aaa' : '#666'} />
-                        <Text className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
-                          Skills Triggered
-                        </Text>
-                      </View>
-                      <View className="flex-row flex-wrap gap-1.5">
-                        {skillsList.map((item) => (
-                          <Badge
-                            key={item.name}
-                            variant="secondary"
-                            className="gap-1.5 rounded-lg border-transparent px-2.5 py-1"
-                          >
-                            <UIText className="text-xs text-neutral-800 dark:text-neutral-200">{item.name}</UIText>
-                            <UIText className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                              {item.count}
-                            </UIText>
-                            {typeof item.percentage === 'number' && (
-                              <UIText className="text-[10px] text-neutral-400">{item.percentage}%</UIText>
-                            )}
-                          </Badge>
-                        ))}
-                      </View>
-                    </View>
+                    {/* Reasoning Tokens */}
+                    {(totals?.total_reasoning || 0) > 0 && (
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <div className="text-xs text-neutral-600 dark:text-neutral-300">Reasoning / Thinking</div>
+                          <div className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                            {(totals?.total_reasoning || 0).toLocaleString()}
+                          </div>
+                        </div>
+                        <Progress
+                          value={Math.min(100, totalTokens ? ((totals?.total_reasoning || 0) / totalTokens) * 100 : 0)}
+                          indicatorClassName="bg-[#f59e0b]"
+                          className="bg-border"
+                        />
+                      </div>
+                    )}
+
+                    {/* Cache Read Tokens */}
+                    {(totals?.total_cache_read || 0) > 0 && (
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <div className="text-xs text-neutral-600 dark:text-neutral-300">Cache Read Tokens</div>
+                          <div className="text-xs font-semibold text-neutral-950 dark:text-neutral-100 font-mono">
+                            {(totals?.total_cache_read || 0).toLocaleString()}
+                          </div>
+                        </div>
+                        <Progress
+                          value={Math.min(100, totalTokens ? ((totals?.total_cache_read || 0) / totalTokens) * 100 : 0)}
+                          indicatorClassName="bg-[#10b981]"
+                          className="bg-border"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Daily Activity Chart */}
+                <Card>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Daily Activity</div>
+                    {selectedDay && (
+                      <div className="text-xs font-mono text-brand">
+                        {selectedDay.day}:{' '}
+                        {compactNumber((selectedDay.input_tokens || 0) + (selectedDay.output_tokens || 0))} tokens (
+                        {selectedDay.sessions || 0} sess)
+                      </div>
+                    )}
+                  </div>
+
+                  {fullDailyEntries.length === 0 ? (
+                    <div className="mt-4 text-center text-xs text-neutral-400">
+                      No activity recorded for this period.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto mt-4">
+                      <div>
+                        <div className="flex items-end gap-2 h-36 pt-4 pb-2 px-1">
+                          {fullDailyEntries.map((d) => (
+                            <DayBar
+                              key={d.day}
+                              day={d.day}
+                              tokens={(d?.input_tokens || 0) + (d?.output_tokens || 0) + (d?.reasoning_tokens || 0)}
+                              maxTokens={maxDayTokens}
+                              selected={selectedDay?.day === d.day}
+                              onSelect={handleSelectDay}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </Card>
-              )}
-            </>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+
+                {/* Usage by Model */}
+                <Card>
+                  <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage by Model</div>
+                  <div className="flex flex-col mt-3 gap-2.5">
+                    {richModels ? (
+                      modelUsage.map((m, idx) => {
+                        const mTokens = m.inputTokens + m.outputTokens;
+                        return (
+                          <div
+                            key={`${m.provider}:${m.model}-${idx}`}
+                            className="rounded-xl border border-border bg-popover p-3 dark:bg-input/30">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold text-neutral-950 dark:text-neutral-100">
+                                  {m.model}
+                                </div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400">
+                                  {!!m.provider && (
+                                    <span className="rounded-md border border-border px-1.5 py-px font-mono">
+                                      {m.provider}
+                                    </span>
+                                  )}
+                                  {!!m.auxTask && (
+                                    <span className="rounded-md border border-border px-1.5 py-px">
+                                      aux: {m.auxTask}
+                                    </span>
+                                  )}
+                                  <span>
+                                    {m.sessions} sessions · {m.apiCalls} calls
+                                    {m.toolCalls ? ` · ${m.toolCalls} tools` : ''}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 flex-col items-end">
+                                <div className="font-mono text-sm font-bold text-neutral-950 dark:text-neutral-100">
+                                  {compactNumber(mTokens)}
+                                </div>
+                                {m.estimatedCost > 0 && (
+                                  <div className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+                                    {formatCost(m.estimatedCost)}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="mt-2.5 flex items-center justify-between border-t border-border pt-2">
+                              <div className="text-[11px] text-neutral-500">In: {compactNumber(m.inputTokens)}</div>
+                              <div className="text-[11px] text-neutral-500">Out: {compactNumber(m.outputTokens)}</div>
+                              {m.reasoningTokens > 0 && (
+                                <div className="text-[11px] text-neutral-500">
+                                  Think: {compactNumber(m.reasoningTokens)}
+                                </div>
+                              )}
+                              {m.avgTokensPerSession > 0 && (
+                                <div className="text-[11px] text-neutral-500">
+                                  ~{compactNumber(m.avgTokensPerSession)}/sess
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : modelEntries.length === 0 ? (
+                      <div className="text-xs text-neutral-400">No model usage data available.</div>
+                    ) : (
+                      modelEntries.map((m, idx) => {
+                        const mTokens = (m?.input_tokens || 0) + (m?.output_tokens || 0);
+                        const modelName = String(m?.model ?? `Model ${idx + 1}`);
+                        return (
+                          <div
+                            key={`${modelName}-${idx}`}
+                            className="rounded-xl border border-border bg-popover p-3 dark:bg-input/30">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="text-sm font-semibold text-neutral-950 dark:text-neutral-100 truncate">
+                                  {modelName}
+                                </div>
+                                <div className="text-[11px] text-neutral-400 mt-0.5">
+                                  {m?.sessions || 0} sessions · {m?.api_calls || 0} calls
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <div className="text-sm font-bold font-mono text-neutral-950 dark:text-neutral-100">
+                                  {compactNumber(mTokens)}
+                                </div>
+                                {Boolean(m.estimated_cost) && (
+                                  <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
+                                    {formatCost(m.estimated_cost)}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="mt-2.5 flex items-center justify-between border-t border-border pt-2">
+                              <div className="text-[11px] text-neutral-500">In: {compactNumber(m.input_tokens)}</div>
+                              <div className="text-[11px] text-neutral-500">Out: {compactNumber(m.output_tokens)}</div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </Card>
+
+                {/* Tools & Skills Breakdown */}
+                {(toolsList.length > 0 || skillsList.length > 0) && (
+                  <Card>
+                    <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Tools & Skills</div>
+
+                    {/* Tools */}
+                    {toolsList.length > 0 && (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Wrench size={13} color={dark ? '#aaa' : '#666'} />
+                          <div className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+                            Tools Executed
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {toolsList.map((item) => (
+                            <Badge
+                              key={item.name}
+                              variant="secondary"
+                              className="gap-1.5 rounded-lg border-transparent px-2.5 py-1">
+                              <span className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
+                                {item.name}
+                              </span>
+                              <span className="font-mono text-[11px] font-bold text-brand">
+                                {item.count}
+                              </span>
+                              {typeof item.percentage === 'number' && (
+                                <span className="text-[10px] text-neutral-400">{item.percentage}%</span>
+                              )}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Skills */}
+                    {skillsList.length > 0 && (
+                      <div className="mt-4">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Cpu size={13} color={dark ? '#aaa' : '#666'} />
+                          <div className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+                            Skills Triggered
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {skillsList.map((item) => (
+                            <Badge
+                              key={item.name}
+                              variant="secondary"
+                              className="gap-1.5 rounded-lg border-transparent px-2.5 py-1">
+                              <span className="text-xs text-neutral-800 dark:text-neutral-200">{item.name}</span>
+                              <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                {item.count}
+                              </span>
+                              {typeof item.percentage === 'number' && (
+                                <span className="text-[10px] text-neutral-400">{item.percentage}%</span>
+                              )}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                )}
+              </>
+            )}
+        </div>
+      </ScreenScaffold>
+    </div>
   );
 }

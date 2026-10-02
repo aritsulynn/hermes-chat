@@ -67,8 +67,6 @@ export const WS_CONNECT_TIMEOUT_MS = 15000;
 export const WS_RPC_TIMEOUT_MS = 120000;
 /** session.events.since — a slow replay shouldn't trip the RPC ceiling. */
 export const WS_REPLAY_TIMEOUT_MS = 20000;
-/** Deltas arrive ~30Hz; coalesce into one setState per window. */
-export const WS_TOKEN_FLUSH_MS = 50;
 /** Cap on live frames parked while a replay fetch is in flight. */
 export const WS_REPLAY_HOLD_MAX = 500;
 /** Cap on the per-session seq watermark map. */

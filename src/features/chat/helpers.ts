@@ -1,6 +1,5 @@
 // Pure helpers for the chat screen (no React/JSX).
 import type { SlashCompletionItem } from '../../services/gateway-ws';
-import type { UiMessage } from '../../utils/messages';
 
 // Offline fallback for the "/" wheel when the gateway predates `complete.slash`.
 // The live catalog (built-ins + quick_commands + skills) supersedes this whenever
@@ -21,9 +20,3 @@ export const FALLBACK_SLASH: SlashCompletionItem[] = [
   { text: '/review', display: '/review', meta: 'Run a reviewer subagent' },
   { text: '/goal', display: '/goal', meta: 'Set a standing goal' },
 ];
-
-export function messageMatchesSearch(message: UiMessage, streamingText: string | undefined, query: string) {
-  if (message.role === 'thinking') return false;
-  const text = streamingText ? message.text + streamingText : message.text;
-  return text.toLowerCase().includes(query);
-}

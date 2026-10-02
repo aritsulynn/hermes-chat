@@ -1,11 +1,6 @@
-import { NativeOnlyAnimatedView } from '@/components/ui/native-only-animated-view';
-import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/utils/cn';
-import * as PopoverPrimitive from '@rn-primitives/popover';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
 import * as React from 'react';
-import { Platform, StyleSheet } from 'react-native';
-import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
-import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
 const Popover = PopoverPrimitive.Root;
 
@@ -13,51 +8,28 @@ const PopoverTrigger = PopoverPrimitive.Trigger;
 
 const PopoverClose = PopoverPrimitive.Close;
 
-const FullWindowOverlay = Platform.OS === 'ios' ? RNFullWindowOverlay : React.Fragment;
-
 function PopoverContent({
   className,
   align = 'center',
   sideOffset = 4,
-  portalHost,
+  side,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
-    portalHost?: string;
-  }) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
-    <PopoverPrimitive.Portal hostName={portalHost}>
-      <FullWindowOverlay>
-        <PopoverPrimitive.Overlay
-          style={Platform.select({ native: StyleSheet.absoluteFill })}
-          asChild={Platform.OS !== 'web'}>
-          <NativeOnlyAnimatedView
-            entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
-            exiting={FadeOut.reduceMotion(ReduceMotion.System)}
-            as="Pressable">
-            <TextClassContext.Provider value="text-popover-foreground">
-              <PopoverPrimitive.Content
-                align={align}
-                sideOffset={sideOffset}
-                className={cn(
-                  // No base width: menus size to their content. A base w-* here
-                  // silently wins over `min-w-*` tweaks at call sites, so the
-                  // popover stays wide no matter what the caller passes.
-                  'bg-popover border-border outline-hidden z-50 rounded-md border p-4 shadow-md shadow-black/5',
-                  Platform.select({
-                    web: cn(
-                      'animate-in fade-in-0 zoom-in-95 origin-(--radix-popover-content-transform-origin) cursor-auto',
-                      props.side === 'bottom' && 'slide-in-from-top-2',
-                      props.side === 'top' && 'slide-in-from-bottom-2'
-                    ),
-                  }),
-                  className
-                )}
-                {...props}
-              />
-            </TextClassContext.Provider>
-          </NativeOnlyAnimatedView>
-        </PopoverPrimitive.Overlay>
-      </FullWindowOverlay>
+    <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Content
+        align={align}
+        sideOffset={sideOffset}
+        side={side}
+        // No base width: menus size to their content. A base w-* here silently
+        // wins over `min-w-*` tweaks at call sites, so the popover stays wide
+        // no matter what the caller passes.
+        className={cn(
+          'bg-popover text-popover-foreground border-border data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-fit origin-(--radix-popover-content-transform-origin) cursor-auto rounded-md border p-4 shadow-md shadow-black/5 outline-hidden',
+          className,
+        )}
+        {...props}
+      />
     </PopoverPrimitive.Portal>
   );
 }

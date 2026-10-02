@@ -14,7 +14,6 @@
 // from a profile this client never opened, and is left unmapped rather than
 // guessed at.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
 import { profileSessionKey } from '../helpers';
 import { isLiveStatus } from '../live-sessions';
 import type { LiveSessionMap, LiveStatus } from '../live-sessions';
@@ -29,7 +28,12 @@ export interface LiveSessionsSlice {
   refreshLiveSessions: () => Promise<void>;
 }
 
-export function useLiveSessionsSlice({ gw, runtimeOwners, activeProfileRef, profileEpochRef }: StoreCtx): LiveSessionsSlice {
+export function useLiveSessionsSlice({
+  gw,
+  runtimeOwners,
+  activeProfileRef,
+  profileEpochRef,
+}: StoreCtx): LiveSessionsSlice {
   const [liveSessions, setLiveSessions] = useState<LiveSessionMap>({});
   const [liveSessionsKnown, setLiveSessionsKnown] = useState(false);
   // A ref, not state: the poll loop reads it on every tick, and a state write
@@ -87,14 +91,18 @@ export function useLiveSessionsSlice({ gw, runtimeOwners, activeProfileRef, prof
       // screen already runs.
       timer = setInterval(() => void refreshLiveSessions(), 4000);
     };
+    // Polling only while the tab is visible: browsers throttle background
+    // timers heavily anyway, and a 4s REST poll against a gateway that runs
+    // many concurrent sessions is not something to leave running in a tab the
+    // user is not looking at.
     const sync = () => {
-      if (AppState.currentState === 'background' || AppState.currentState === 'inactive') stop();
+      if (document.hidden) stop();
       else start();
     };
     sync();
-    const sub = AppState.addEventListener('change', sync);
+    document.addEventListener('visibilitychange', sync);
     return () => {
-      sub.remove();
+      document.removeEventListener('visibilitychange', sync);
       stop();
     };
   }, [refreshLiveSessions]);

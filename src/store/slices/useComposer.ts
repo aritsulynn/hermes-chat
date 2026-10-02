@@ -3,8 +3,8 @@
 // open/resume/new/switch and the send path also write drafts and input.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import * as Clipboard from 'expo-clipboard';
 import { profileSessionKey } from '../helpers';
+import { writeClipboard } from '../../services/clipboard';
 import type { StoreCtx } from '../ctx';
 import type { Attachment } from '../../utils/messages';
 
@@ -21,11 +21,7 @@ export interface ComposerSlice {
   copyText: (id: string, text: string) => Promise<void>;
 }
 
-export function useComposerSlice({
-  activeProfile,
-  sessionKey,
-  sessionId,
-}: StoreCtx): ComposerSlice {
+export function useComposerSlice({ activeProfile, sessionKey, sessionId }: StoreCtx): ComposerSlice {
   const [inputRaw, setInputRaw] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -56,12 +52,10 @@ export function useComposerSlice({
     [],
   );
   const copyText = useCallback(async (id: string, text: string) => {
-    try {
-      await Clipboard.setStringAsync(text);
-      setCopiedId(id);
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => setCopiedId(null), 1500);
-    } catch {}
+    if (!(await writeClipboard(text))) return;
+    setCopiedId(id);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopiedId(null), 1500);
   }, []);
 
   return {

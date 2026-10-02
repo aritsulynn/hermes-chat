@@ -25,12 +25,7 @@ export interface SessionsSlice {
   loadMoreSessions: () => Promise<ScopedSessionSummary[]>;
 }
 
-export function useSessionsSlice({
-  setError,
-  gw,
-  activeProfileRef,
-  profileEpochRef,
-}: StoreCtx): SessionsSlice {
+export function useSessionsSlice({ setError, gw, activeProfileRef, profileEpochRef }: StoreCtx): SessionsSlice {
   const [sessions, setSessions] = useState<ScopedSessionSummary[]>([]);
   const [sessionsLimit, setSessionsLimit] = useState(100);
   const [sessionsHasMore, setSessionsHasMore] = useState(true);

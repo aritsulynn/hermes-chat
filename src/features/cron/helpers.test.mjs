@@ -45,7 +45,28 @@ test('deliveryOptions always offers local first and gates origin on a known orig
 
   // Fetch failed / gateway reports nothing: local is the one option that always
   // works, and the caller keys its "no targets" message off that length.
-  assert.deepEqual(deliveryOptions([]).map((o) => o.id), ['local']);
+  assert.deepEqual(
+    deliveryOptions([]).map((o) => o.id),
+    ['local'],
+  );
+});
+
+test('deliveryOptions de-dupes a server-provided local target', () => {
+  // The gateway reports `local` among its targets; the synthetic row must not be
+  // prepended too, or the form renders the same option twice (React duplicate key).
+  const withServerLocal = deliveryOptions(
+    [
+      { id: 'local', name: 'Local (save only)', home_target_set: true },
+      { id: 'telegram', name: 'Telegram', home_target_set: true },
+    ],
+    { hasOrigin: true },
+  );
+  assert.deepEqual(
+    withServerLocal.map((o) => o.id),
+    ['local', 'origin', 'telegram'],
+  );
+  // The server's own row wins, so its display name is preserved.
+  assert.equal(withServerLocal[0].name, 'Local (save only)');
 });
 
 test('normaliseDelivery keeps a known target, opens a broadcast on its first entry', () => {

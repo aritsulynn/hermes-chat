@@ -26,6 +26,8 @@ export const THEME = {
     border: 'hsl(0 0% 89.8%)',
     input: 'hsl(0 0% 89.8%)',
     ring: 'hsl(0 0% 63%)',
+    elevated: 'hsl(240 10% 96.1%)',
+    elevatedForeground: 'hsl(0 0% 3.9%)',
     radius: '0.625rem',
     chart1: 'hsl(12 76% 61%)',
     chart2: 'hsl(173 58% 39%)',
@@ -38,7 +40,7 @@ export const THEME = {
     foreground: 'hsl(0 0% 98%)',
     card: 'hsl(0 0% 3.9%)',
     cardForeground: 'hsl(0 0% 98%)',
-    popover: 'hsl(0 0% 3.9%)',
+    popover: 'hsl(0 0% 13%)',
     popoverForeground: 'hsl(0 0% 98%)',
     primary: 'hsl(0 0% 98%)',
     primaryForeground: 'hsl(0 0% 9%)',
@@ -52,6 +54,8 @@ export const THEME = {
     border: 'hsl(0 0% 14.9%)',
     input: 'hsl(0 0% 14.9%)',
     ring: 'hsl(300 0% 45%)',
+    elevated: 'hsl(0 0% 13%)',
+    elevatedForeground: 'hsl(0 0% 98%)',
     radius: '0.625rem',
     chart1: 'hsl(220 70% 50%)',
     chart2: 'hsl(160 60% 45%)',
@@ -65,21 +69,56 @@ export type ThemeColors = (typeof THEME)['light'];
 
 // ── Shared runtime colours ─────────────────────────────────────────────────
 // Central tokens for the hex values previously copy-pasted across screens.
-// NOTE: Tailwind `className` strings (e.g. `text-[#1a73e8]`) must stay literal
-// — NativeWind extracts them statically — so these tokens cover only runtime
-// values: `color`/`placeholderTextColor` props and `style` objects.
+// NOTE: Tailwind `className` strings (e.g. `text-[#1a7f37]`) must stay literal
+// so the scanner extracts them, so these tokens cover only runtime values:
+// `color`/`placeholderTextColor` props and `style` objects.
 
 /** Primary brand blue (light) / its dark-mode counterpart. */
 export const BRAND_BLUE = '#1a73e8';
 export const BRAND_BLUE_DARK = '#7aa7ff';
-/** Brand blue for the current scheme (icon `color` props, inline styles). */
-export const brandColor = (dark: boolean): string => (dark ? BRAND_BLUE_DARK : BRAND_BLUE);
+export const CHAMBER_BRAND = '#b35017';
+export const CHAMBER_BRAND_DARK = '#da7c47';
+
+function currentAccent(): string {
+  try {
+    return document.documentElement.getAttribute('data-accent') ?? 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+/** Brand color for the current scheme (icon `color` props, inline styles). */
+export const brandColor = (dark: boolean): string => {
+  if (currentAccent() === 'openchamber') return dark ? CHAMBER_BRAND_DARK : CHAMBER_BRAND;
+  return dark ? BRAND_BLUE_DARK : BRAND_BLUE;
+};
 
 /** Full-screen surface behind every tab (`flex: 1` + scheme background). */
-export const screenBg = (dark: boolean): string => (dark ? '#000' : '#fff');
-/** Style object for a full-screen surface (`style={screenStyle(dark)}`). */
-export const screenStyle = (dark: boolean): { flex: 1; backgroundColor: string } => ({
+export const screenBg = (dark: boolean): string => {
+  if (currentAccent() === 'openchamber') return dark ? '#120f0e' : '#fdfcfa';
+  return dark ? '#000' : '#fff';
+};
+/**
+ * Style object for a full-screen surface (`style={screenStyle(dark)}`).
+ *
+ * `display: flex; flex-direction: column` matters: every screen's root holds
+ * a header, a scrolling body and (for chat) an overlaid composer, and every
+ * level below says `flex-1`. A plain `<div>` is `display: block`, so `flex-1`
+ * would be inert and the body would grow to its full content height instead of
+ * scrolling. Chat is the visible symptom — the transcript's scroller measures
+ * clientHeight === scrollHeight, so there is nothing to scroll.
+ *
+ * `minHeight: 0` is the other half. A flex item defaults to `min-height: auto`,
+ * which means it refuses to shrink below its content; without this the root
+ * still outgrows the shell no matter which display it has.
+ */
+export const screenStyle = (
+  dark: boolean,
+): { flex: 1; display: 'flex'; flexDirection: 'column'; minHeight: 0; backgroundColor: string } => ({
   flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  minHeight: 0,
   backgroundColor: screenBg(dark),
 });
 
@@ -101,4 +140,3 @@ export function placeholderColor(dark: boolean, kind: PlaceholderKind = 'standar
 export const MARKDOWN_INK = '#111';
 /** Code-block surface, shared by every markdown theme (light and dark). */
 export const CODE_SURFACE = '#1e1e24';
-

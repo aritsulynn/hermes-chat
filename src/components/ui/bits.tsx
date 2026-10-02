@@ -1,30 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
-import { Animated, Keyboard, Platform, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
-import { AlertCircle, LoaderCircle, Menu as MenuIcon } from 'lucide-react-native';
-import { useNavigation } from 'expo-router';
-import { useApp, useThemeValue } from '../../hooks/app-store';
-import { placeholderColor } from '../../theme';
+import { useCallback, useSyncExternalStore, useState } from 'react';
+import { AlertCircle, List, LoaderCircle } from 'lucide-react';
+import { useThemeValue } from '../../hooks/app-store';
 import { cn } from '../../utils/cn';
+import { getSidebarShown, openNavDrawer, subscribeSidebarShown } from '../../store/nav';
 import { Alert as UIAlert, AlertDescription } from './alert';
 import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
-import { Text as UIText } from './text';
 
-// Circular context-window ring for the chat header — sits left of the kebab,
-// taps into Session info for the exact numbers.
-export function CtxRing({
-  pct,
-  tone,
-  dark,
-  onPress,
-}: {
-  pct: number;
-  tone: 'ok' | 'warn' | 'hot';
-  dark: boolean;
-  onPress: () => void;
-}) {
+// The ring + readout as content, with no button of its own — the chat header
+// wraps it in a DropdownMenu trigger, so the button (and its aria-label) belongs
+// to the menu, not here. Kept separate from `CtxRing` so a caller that only
+// wants the tap-to-open behaviour can still have it.
+export function CtxRingBody({ pct, tone, dark }: { pct: number; tone: 'ok' | 'warn' | 'hot'; dark: boolean }) {
   const size = 24;
   const stroke = 3;
   const r = (size - stroke) / 2;
@@ -42,19 +30,18 @@ export function CtxRing({
         : dark
           ? '#5fd28a'
           : '#1a7f37';
+  const label = `${parseFloat(pct.toFixed(1))}%`;
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      testID="ctx-ring"
-      accessibilityRole="button"
-      accessibilityLabel={`Context ${clamped}% — open session info`}
-      onPress={onPress}
-      className="h-9 w-9 items-center justify-center"
-      hitSlop={6}
-    >
-      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <Circle
+    <span className="flex items-center gap-1.5">
+      <svg
+        width={size}
+        height={size}
+        // Inline style on purpose: Button's `[&_svg]:size-4` rule clamps every
+        // class-less svg to 16px and beats width/height attributes, so without
+        // this the ring renders 16px no matter what `size` says.
+        style={{ width: size, height: size }}
+        viewBox={`0 0 ${size} ${size}`}>
+        <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
@@ -62,7 +49,7 @@ export function CtxRing({
           strokeWidth={stroke}
           fill="none"
         />
-        <Circle
+        <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
@@ -71,37 +58,69 @@ export function CtxRing({
           fill="none"
           strokeDasharray={`${(clamped / 100) * c} ${c}`}
           strokeLinecap="round"
-          // `rotation` + `origin` props make react-native-svg emit a
-          // `transform-origin` DOM attribute on web (React warning) — the
-          // equivalent `transform` attribute is valid SVG on both platforms.
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
-      </Svg>
+      </svg>
+      <span className="text-ui-label font-medium tabular-nums text-neutral-600 dark:text-neutral-300">{label}</span>
+    </span>
+  );
+}
+
+// Shared sizing for a header icon control: the hamburger, the chat menu button
+// and every screen's right-hand actions.
+//
+//   40px tap target (`h-10 w-10`), matching OpenChamber's compact bar. The
+//   `sm:h-9 sm:w-9` half of `size="icon"` still shrinks it to 36px from 640px
+//   up, which is the intent for a pointer. This is below the 44pt iOS target —
+//   a deliberate trade for the 56px bar; widen it back if the bar grows.
+//
+//   20px glyph (`[&_svg]:size-5!`). The Button base clamps any class-less <svg>
+//   to 16px (`[&_svg:not([class*='size-'])]:size-4`), which silently overrode
+//   every `size={15|18|19}` these call sites passed — the icons rendered 16px
+//   whatever the prop said. The `!` is load-bearing: it outranks that clamp,
+//   so the glyph is 20px, matching the hamburger and the header title.
+//
+// It is exported as a class rather than only a component because the chat kebab
+// is a Base UI `render` target, and the class drops straight onto the <Button>
+// that `render` swaps in.
+export const headerIconButtonClass = 'h-10 w-10 rounded-lg [&_svg]:size-5!';
+
+/** A header icon button: 40px target, 20px glyph. See `headerIconButtonClass`. */
+export function HeaderIconButton({ className, children, ...props }: React.ComponentProps<typeof Button>) {
+  return (
+    <Button variant="ghost" size="icon" className={cn(headerIconButtonClass, className)} {...props}>
+      {children}
     </Button>
   );
 }
 
-// One shared drawer hamburger so every screen looks and behaves the same.
+// One shared drawer toggle so every screen looks and behaves the same.
+//
+// It steps aside while the wide-screen sidebar is showing. The sidebar has its
+// own PanelLeft for collapsing, and two of the same glyph on one screen — one in
+// the sidebar header, one in the screen header — read as a bug rather than as a
+// control. So this button exists exactly when there is no sidebar on screen to
+// carry the toggle, which on a narrow screen is always, and on a wide screen is
+// whenever the sidebar has been collapsed.
 export function HamburgerBtn() {
   const { theme } = useThemeValue();
-  const navigation = useNavigation();
+  const sidebarShown = useSyncExternalStore(subscribeSidebarShown, getSidebarShown, () => false);
+  if (sidebarShown) return null;
   return (
     <Button
       variant="ghost"
       size="icon"
-      testID="hamburger-btn"
-      accessibilityRole="button"
-      accessibilityLabel="Open navigation menu"
-      onPress={() => {
-        // Drop the keyboard first so the drawer isn't stuck behind it while
-        // the user was mid-message.
-        Keyboard.dismiss();
-        (navigation as any).openDrawer?.();
+      data-testid="hamburger-btn"
+      aria-label="Open navigation menu"
+      onClick={() => {
+        // Drop focus first so the drawer isn't left behind the keyboard the
+        // user was mid-sentence in. On the web this means blurring the active
+        // element, which is the whole of what Keyboard.dismiss() did.
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        openNavDrawer();
       }}
-      className="justify-center px-2 py-2"
-      hitSlop={12}
-    >
-      <MenuIcon size={24} color={theme === 'dark' ? '#f5f5f5' : '#111'} />
+      className={cn(headerIconButtonClass, 'justify-center')}>
+      <List size={20} className="size-5" color={theme === 'dark' ? '#f5f5f5' : '#111'} />
     </Button>
   );
 }
@@ -114,38 +133,106 @@ export function HamburgerBtn() {
 export function ScreenHeader({
   title,
   subtitle,
-  insetTop,
   actions,
 }: {
   title: string;
   subtitle?: React.ReactNode;
-  /** Pass insets.top; the +10 keeps the bar off the status bar. */
-  insetTop: number;
   actions?: React.ReactNode;
 }) {
   return (
-    <View
-      className="flex-row items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-black"
-      style={{ paddingTop: insetTop + 10 }}
-    >
-      <View className="min-w-0 flex-1 flex-row items-center gap-3">
-        <HamburgerBtn />
-        <View className="min-w-0 flex-1">
-          <UIText
-            numberOfLines={1}
-            className="text-xl font-bold text-neutral-950 dark:text-neutral-100"
-          >
-            {title}
-          </UIText>
-          {!!subtitle && (
-            <UIText numberOfLines={1} className="text-xs text-neutral-500 dark:text-neutral-400">
-              {subtitle}
-            </UIText>
-          )}
-        </View>
-      </View>
-      {actions}
-    </View>
+    <header
+      // No background or border of its own: the glass surface belongs to the
+      // frame (`ScreenScaffold`, or the chat screen's own overlay), which spans
+      // the whole header region including any sub-bar. Painting it here would
+      // put a second, opaque surface under those sub-bars.
+      //
+      // `insetTop` was a prop every call site had to thread a number into. The
+      // browser already knows the safe area, so the variable in global.css
+      // resolves it once and every header reads the same value.
+      style={{ paddingTop: 'var(--safe-area-top, 0px)' }}>
+      {/* Fixed inner bar height, not padding: the icon control is centred in
+          `--header-height` so every screen's header lands on the same line. */}
+      <div className="flex h-(--header-height) items-center justify-between px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <HamburgerBtn />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-ui-header font-bold text-neutral-950 dark:text-neutral-100 truncate">{title}</h1>
+            {!!subtitle && (
+              <div className="text-ui-meta text-neutral-500 dark:text-neutral-400 truncate">{subtitle}</div>
+            )}
+          </div>
+        </div>
+        {actions}
+      </div>
+    </header>
+  );
+}
+
+// Shared screen frame. The header floats over one scrolling body, so the body's
+// content passes *under* it — that overlap is the whole point. The header's
+// `backdrop-blur` blurs whatever is painted behind it, and with the header in
+// normal flow above the scroller there is nothing behind it but the opaque page
+// background, so the glass reads as a plain solid bar. Here the wrapper is
+// `relative`, the header region is `absolute`, and the body is padded down by
+// the region's measured height.
+//
+// `header` is the whole top region — the `ScreenHeader` plus any sub-bar the
+// screen draws under it (usage's period picker, files' breadcrumbs). Measuring
+// the region, rather than assuming `--header-height`, is what lets those
+// screens keep their sub-bar without a second layout pass.
+export function ScreenScaffold({
+  header,
+  children,
+  contentClassName,
+  contentTopInset = 16,
+}: {
+  header: React.ReactNode;
+  children: React.ReactNode;
+  contentClassName?: string;
+  /**
+   * Gap between the measured header region and the first content row. The
+   * inline `paddingTop` below overrides whatever `py-*` the `contentClassName`
+   * sets, so without this the content would sit flush against the header's
+   * bottom border (the sub-bar screens were the visible case).
+   */
+  contentTopInset?: number;
+}) {
+  const [headerH, setHeaderH] = useState(0);
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const read = () => setHeaderH(Math.round(el.getBoundingClientRect().height));
+    read();
+    const ro = new ResizeObserver(read);
+    // `border-box`, not the default `content-box`: the safe-area pad and any
+    // sub-bar change the region's border box, and the measured height is what
+    // the body is padded by. (Same gotcha as the chat footer's dock observer —
+    // a default observer never fires when only padding changes.)
+    ro.observe(el, { box: 'border-box' });
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+      <div
+        ref={measure}
+        // The glass. 80% opaque + blur behind it; no border — the blur is what
+        // separates the header from the content, the way OpenChamber does it.
+        className="absolute inset-x-0 top-0 z-30 bg-popover/80 backdrop-blur dark:bg-background/80">
+        {header}
+      </div>
+      <div
+        className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain', contentClassName)}
+        // The measured height, with the static safe-area + bar height as the
+        // first-paint value so the content does not start under the header for
+        // a frame. `contentTopInset` restores the top gap the screens' `py-4`
+        // expects — the inline padding replaces that class value.
+        style={{
+          paddingTop: headerH
+            ? headerH + contentTopInset
+            : 'calc(var(--safe-area-top, 0px) + var(--header-height))',
+        }}>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -153,17 +240,13 @@ export function ScreenHeader({
 // class string was pasted into 19 places and had already started drifting
 // (two padding sizes, one background variant), so it lives here now. `className`
 // still wins, which is how the compact `p-3.5` variant stays honest.
-export function Card({ className, children, ...props }: React.ComponentProps<typeof View>) {
+export function Card({ className, children, ...props }: React.ComponentProps<'div'>) {
   return (
-    <View
-      className={cn(
-        'rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-900/60',
-        className
-      )}
-      {...props}
-    >
+    <div
+      className={cn('rounded-2xl border border-border bg-elevated p-4', className)}
+      {...props}>
       {children}
-    </View>
+    </div>
   );
 }
 
@@ -189,17 +272,10 @@ export function ErrorRetry({
     <UIAlert
       icon={AlertCircle}
       variant="destructive"
-      className={cn(compact ? 'rounded-xl px-4 pt-3' : 'rounded-2xl', className)}
-    >
+      className={cn(compact ? 'rounded-xl px-4 pt-3' : 'rounded-2xl', className)}>
       <AlertDescription className="text-xs font-medium text-red-700 dark:text-red-300">{error}</AlertDescription>
-      <Button
-        variant="destructive"
-        size="sm"
-        onPress={onRetry}
-        className="ml-6 mt-1 self-start"
-        accessibilityLabel={retryLabel}
-      >
-        <UIText className="text-xs font-semibold">{retryLabel}</UIText>
+      <Button variant="destructive" size="sm" onClick={onRetry} className="mt-1 self-start" aria-label={retryLabel}>
+        <span className="text-xs font-semibold">{retryLabel}</span>
       </Button>
     </UIAlert>
   );
@@ -218,122 +294,123 @@ export function Field({
   onChange: (v: string) => void;
   placeholder?: string;
   secure?: boolean;
-  /** Keyboard action (e.g. password Enter = Connect). */
+  /** Enter key action (e.g. password Enter = Connect). */
   onSubmit?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
   const { theme } = useThemeValue();
-  const dark = theme === 'dark';
+  // Makes the browser draw the input (and its autofill dropdown, and
+  // the on-screen keyboard) in the app's palette rather than the OS default.
+  const scheme = { colorScheme: theme === 'dark' ? ('dark' as const) : ('light' as const) };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && onSubmit) {
+      e.preventDefault();
+      onSubmit();
+    }
+  };
   if (!secure) {
     return (
-      <View className="mb-2.5">
-        <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
+      <div className="mb-2.5">
+        <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400" htmlFor={idFor(label)}>
+          {label}
+        </Label>
         <Input
-          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black px-2.5 py-2 text-[15px] text-neutral-950 dark:text-neutral-100"
+          id={idFor(label)}
+          style={scheme}
+          className="rounded-lg border border-border bg-popover px-2.5 py-2 text-[15px] text-neutral-950 dark:bg-background dark:text-neutral-100"
           value={value}
-          onChangeText={onChange}
+          onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          placeholderTextColor={placeholderColor(dark)}
-          keyboardAppearance={dark ? 'dark' : 'light'}
           autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType={onSubmit ? 'go' : 'default'}
-          onSubmitEditing={() => onSubmit?.()}
+          autoCorrect="off"
+          enterKeyHint={onSubmit ? 'go' : 'enter'}
+          onKeyDown={onKeyDown}
         />
-      </View>
+      </div>
     );
   }
   return (
-    <View className="mb-2.5">
-      <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400">{label}</Label>
-      <View className="flex-row items-center rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black pr-1">
+    <div className="mb-2.5">
+      <Label className="mb-0.5 text-xs text-neutral-500 dark:text-neutral-400" htmlFor={idFor(label)}>
+        {label}
+      </Label>
+      <div className="frame-focus flex items-center rounded-lg border border-border bg-popover pr-1 dark:bg-background">
         <Input
+          id={idFor(label)}
+          style={scheme}
           // The row around this draws the field; the base border + background
           // inside it would read as a frame within a frame. dark:bg-transparent
           // is required — the base sets dark:bg-input/30.
-          className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 dark:bg-transparent dark:text-neutral-100"
+          className="flex-1 border-0 bg-transparent px-2.5 py-2 text-[15px] text-neutral-950 focus-visible:ring-0 dark:bg-transparent dark:text-neutral-100"
           value={value}
-          onChangeText={onChange}
-          secureTextEntry={!visible}
-          keyboardAppearance={dark ? 'dark' : 'light'}
+          onChange={(e) => onChange(e.target.value)}
+          type={visible ? 'text' : 'password'}
           autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType={onSubmit ? 'go' : 'default'}
-          onSubmitEditing={() => onSubmit?.()}
+          autoCorrect="off"
+          enterKeyHint={onSubmit ? 'go' : 'enter'}
+          onKeyDown={onKeyDown}
         />
-        <Button variant="link" onPress={() => setVisible((v) => !v)} className="px-2.5 py-2" hitSlop={8}>
-          <UIText className="text-sm font-semibold">{visible ? 'Hide' : 'Show'}</UIText>
+        <Button variant="link" onClick={() => setVisible((v) => !v)} className="px-2.5 py-2">
+          <span className="text-sm font-semibold">{visible ? 'Hide' : 'Show'}</span>
         </Button>
-      </View>
-    </View>
+      </div>
+    </div>
   );
+}
+
+/** A stable DOM id per label, so <Label htmlFor> can point at its field. */
+function idFor(label: string): string {
+  return `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 }
 
 /**
  * A small rotating ring for "this is running right now".
  *
- * Deliberately an icon rather than ActivityIndicator: a spinner next to a title
- * has to sit on the text baseline without nudging the row's height, and the
- * user reads it as a state of that chat, not as a screen-wide loading state.
- * Stops on unmount so a row that scrolls out of the windowed list doesn't leave
- * an animation running.
+ * Deliberately an icon rather than a bare spinner box: next to a title it has
+ * to sit on the text baseline without nudging the row's height, and the user
+ * reads it as a state of that chat, not as a screen-wide loading state.
+ * `animate-spin` needs no mount/unmount bookkeeping — the CSS animation stops
+ * with the element, so a row that leaves the viewport cannot leave an animation
+ * running.
  */
-export function Spinner({ size = 14, color }: { size?: number; color: string }) {
-  const spin = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: 900,
-        // Rotation is a transform, so the native driver can carry it off-thread.
-        // react-native-web has no native driver for transforms and warns on
-        // true, so it animates on the JS thread there instead.
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [spin]);
+export function Spinner({
+  size = 14,
+  color,
+  className,
+}: {
+  size?: number;
+  /**
+   * A raw colour string for the places that cannot use a class — inline styles,
+   * a value read off the theme in JS. Prefer `className` with a `text-*`
+   * utility (and `dark:text-*` for the other scheme): it keeps the colour in
+   * CSS, so switching theme is a class swap rather than a re-render.
+   */
+  color?: string;
+  className?: string;
+}) {
   return (
-    <Animated.View
-      style={{
-        transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
-      }}
-    >
+    // No `color` prop on the icon means `currentColor`, which is what lets
+    // `className` drive it.
+    <span className={cn('inline-flex animate-spin', className)} style={color ? { color } : undefined}>
       <LoaderCircle size={size} color={color} />
-    </Animated.View>
+    </span>
   );
 }
 
 export function TypingDots({ dim }: { dim?: boolean }) {
-  const d1 = useRef(new Animated.Value(0)).current;
-  const d2 = useRef(new Animated.Value(0)).current;
-  const d3 = useRef(new Animated.Value(0)).current;
   const { theme } = useThemeValue();
-  const dark = theme === 'dark';
-  useEffect(() => {
-    const pulse = (d: Animated.Value, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(d, { toValue: 1, duration: 350, useNativeDriver: true }),
-          Animated.timing(d, { toValue: 0, duration: 350, useNativeDriver: true }),
-        ]),
-      );
-    const loops = [pulse(d1, 0), pulse(d2, 150), pulse(d3, 300)];
-    loops.forEach((l) => l.start());
-    return () => loops.forEach((l) => l.stop());
-  }, [d1, d2, d3]);
-  const color = dim ? (dark ? '#888' : '#bbb') : (dark ? '#aaa' : '#999');
+  const color = dim ? (theme === 'dark' ? '#888' : '#bbb') : theme === 'dark' ? '#aaa' : '#999';
   return (
-    <View className="flex-row items-center gap-[5px] px-0.5 py-1.5">
-      {[d1, d2, d3].map((d, i) => (
-        <Animated.View
+    <div className="flex items-center gap-[5px] px-0.5 py-1.5">
+      {[0, 1, 2].map((i) => (
+        <span
           key={i}
-          className="h-[7px] w-[7px] rounded-full"
-          style={{ backgroundColor: color, opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }}
+          className="h-[7px] w-[7px] animate-[dot-pulse_700ms_ease-in-out_infinite] rounded-full"
+          // Staggered start so the three dots rise in sequence rather than
+          // pulsing as one bar.
+          style={{ backgroundColor: color, animationDelay: `${i * 150}ms` }}
         />
       ))}
-    </View>
+    </div>
   );
 }

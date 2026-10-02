@@ -1,11 +1,9 @@
 // Card metadata chips: assignee, priority, progress, comments, warnings.
 import { memo } from 'react';
-import { View } from 'react-native';
 import { Badge } from '../../../components/ui/badge';
-import { Text as UIText } from '../../../components/ui/text';
 import type { KanbanTask } from '../types';
 
-export const CardChips = memo(function CardChips({ t, dark }: { t: KanbanTask; dark: boolean }) {
+export const CardChips = memo(function CardChips({ t }: { t: KanbanTask; dark: boolean }) {
   const chips: string[] = [];
   if (t.assignee) chips.push(`@${t.assignee}`);
   if (t.priority != null) chips.push(`P${t.priority}`);
@@ -13,17 +11,17 @@ export const CardChips = memo(function CardChips({ t, dark }: { t: KanbanTask; d
   if (t.comment_count) chips.push(`◷ ${t.comment_count}`);
   if (!chips.length && !t.warnings?.count) return null;
   return (
-    <View className="mt-1.5 flex-row flex-wrap gap-1.5">
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
       {chips.map((c) => (
         <Badge key={c} variant="secondary" className="rounded-md border-transparent px-1.5 py-0.5">
-          <UIText className="text-[11px] text-neutral-600 dark:text-neutral-300">{c}</UIText>
+          <span className="text-[11px] text-neutral-600 dark:text-neutral-300">{c}</span>
         </Badge>
       ))}
       {!!t.warnings?.count && (
         <Badge variant="destructive" className="rounded-md border-transparent px-1.5 py-0.5">
-          <UIText className="text-[11px] font-semibold">! {t.warnings.count}</UIText>
+          <span className="text-[11px] font-semibold">! {t.warnings.count}</span>
         </Badge>
       )}
-    </View>
+    </div>
   );
 });

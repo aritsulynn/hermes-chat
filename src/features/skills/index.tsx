@@ -2,31 +2,20 @@
 // Capabilities pane (`apps/desktop/src/api/skills.ts` + `store/agent-plugins.ts`).
 // Same backend REST contract over the mobile app's authed ops helpers.
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Redirect } from 'expo-router';
-import { AlertCircle, RefreshCw, X } from 'lucide-react-native';
-import * as Clipboard from 'expo-clipboard';
+import { Navigate as Redirect } from 'react-router-dom';
+import { RefreshCw, Plus, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
-import { Card, ErrorRetry, ScreenHeader } from '../../components/ui/bits';
+import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
-import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
+import { Input } from '../../components/ui/input';
 import { toast } from '../../components/ui/toast';
-import { Text as UIText } from '../../components/ui/text';
+import { Spinner } from '../../components/ui/bits';
 import { brandColor, screenStyle } from '../../theme';
-import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
+import { getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
+import { SkillEditor } from './components/SkillEditor';
 
 // Memoized row: the installed-skills list is small and bounded, so no
 // virtualized list is needed — but toggling one switch must not re-render
@@ -49,29 +38,33 @@ const SkillRow = memo(function SkillRow({
   const canToggle = typeof skill.enabled === 'boolean';
   return (
     <Card>
-      <View className="flex-row items-center gap-2">
-        <Pressable className="min-w-0 flex-1" onPress={() => void onOpen(name)}>
-          <Text className="text-sm font-semibold text-neutral-900 dark:text-neutral-100" numberOfLines={1}>
-            {name}
-          </Text>
+      <div className="flex items-center gap-2">
+        {/* text-left: buttons centre their text by UA default, which is why
+            every row read centred despite the stretched column. */}
+        <button
+          type="button"
+          aria-label={`Edit ${name}`}
+          className="flex min-w-0 flex-1 flex-col text-left"
+          onClick={() => void onOpen(name)}>
+          <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">{name}</span>
           {!!skill.description && (
-            <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={2}>
+            <span className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
               {String(skill.description)}
-            </Text>
+            </span>
           )}
-          <Text className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
+          <span className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500">
             {[skill.origin ? String(skill.origin) : '', typeof skill.usage === 'number' ? `${skill.usage} uses` : '']
               .filter(Boolean)
-              .join(' · ') || 'Tap to view SKILL.md'}
-          </Text>
-        </Pressable>
+              .join(' · ') || 'Tap to edit SKILL.md'}
+          </span>
+        </button>
         {canToggle &&
           (toggling ? (
-            <ActivityIndicator size="small" color={brandColor(dark)} />
+            <Spinner size={14} color={brandColor(dark)} />
           ) : (
             <Switch checked={enabled} onCheckedChange={(v) => void onToggle(name, v)} />
           ))}
-      </View>
+      </div>
     </Card>
   );
 });
@@ -82,7 +75,6 @@ export function SkillsScreen() {
   const dark = theme === 'dark';
   // Two spinners on this screen (list load + SKILL.md viewer) — resolve once.
   const brand = useMemo(() => brandColor(dark), [dark]);
-  const insets = useSafeAreaInsets();
 
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,15 +82,31 @@ export function SkillsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
-  const [content, setContent] = useState('');
-  const [contentLoading, setContentLoading] = useState(false);
+  // Editor: `null` while closed, `{ name: string | null }` while open — `name:
+  // null` means create mode, matching the desktop dialog's `editName` contract.
+  const [editor, setEditor] = useState<{ name: string | null } | null>(null);
+  // Filter-as-you-type over name + description + origin. Memoized so a toggle
+  // (which rewrites one row) doesn't refilter the whole inventory.
+  const [q, setQ] = useState('');
+  const ql = q.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      ql
+        ? (skills ?? []).filter((s) =>
+            [s.name, s.description, s.origin].some((f) =>
+              String(f ?? '')
+                .toLowerCase()
+                .includes(ql),
+            ),
+          )
+        : (skills ?? []),
+    [skills, ql],
+  );
 
   useEffect(() => {
     if (authed) return;
     setSkills(null);
-    setViewing(null);
-    setContent('');
+    setEditor(null);
     setError(null);
   }, [authed]);
 
@@ -155,130 +163,112 @@ export function SkillsScreen() {
     [getAuthScope, opsMut],
   );
 
-  const openContent = useCallback(
-    async (name: string) => {
-      const scope = getAuthScope();
-      setViewing(name);
-      setContent('');
-      setContentLoading(true);
-      try {
-        const res = await getSkillContent(opsGet, name);
-        if (getAuthScope() === scope) setContent(res.content || '(empty)');
-      } catch (e) {
-        if (getAuthScope() === scope) setContent(`Couldn't load SKILL.md: ${errMsg(e)}`);
-      } finally {
-        if (getAuthScope() === scope) setContentLoading(false);
-      }
-    },
-    [getAuthScope, opsGet],
-  );
+  const openEditor = useCallback((name: string) => {
+    setEditor({ name });
+  }, []);
 
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   return (
-    <View style={screenStyle(dark)}>
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
-
-        {/* Header */}
-        <ScreenHeader
-          title="Skills"
-          insetTop={insets.top}
-          subtitle={loading ? 'Loading...' : `${skills?.length ?? 0} installed`}
-          actions={
-            <Button
-              variant="ghost"
-              size="icon"
-              accessibilityLabel="Refresh skills"
-              onPress={() => void load(true)}
-              hitSlop={8}
-              className="h-9 w-9 rounded-lg"
-            >
-              <RefreshCw size={18} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-            </Button>
-          }
-        />
-
-        <ScrollView
-          className="flex-1 px-4 py-4"
-          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
-        >
+    <div style={screenStyle(dark)}>
+      <ScreenScaffold
+        header={
+          <ScreenHeader
+            title="Skills"
+            subtitle={
+              loading
+                ? 'Loading...'
+                : ql
+                  ? `${filtered.length} of ${skills?.length ?? 0} installed`
+                  : `${skills?.length ?? 0} installed`
+            }
+            actions={
+              <div className="flex items-center gap-1">
+                <HeaderIconButton
+                  aria-label="New skill"
+                  onClick={() => setEditor({ name: null })}
+>
+                  <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
+                </HeaderIconButton>
+                <HeaderIconButton aria-label="Refresh skills" onClick={() => void load(true)}>
+                  <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                </HeaderIconButton>
+              </div>
+            }
+          />
+        }
+        contentClassName="px-4 py-4">
+        <div className="mx-auto w-full max-w-4xl pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
           {loading && !refreshing ? (
-            <View className="items-center py-16">
-              <ActivityIndicator size="large" color={brand} />
-            </View>
+            <div className="flex flex-col items-center py-16">
+              <Spinner size={24} color={brand} />
+            </div>
           ) : unsupported ? (
             <Card>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">
                 Skills aren&apos;t available on this backend — run skills from the chat with /name instead.
-              </Text>
+              </div>
             </Card>
           ) : error ? (
             <ErrorRetry error={error} onRetry={() => void load()} />
           ) : !skills?.length ? (
             <Card>
-              <Text className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</Text>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">No skills installed.</div>
             </Card>
           ) : (
-            <View className="gap-2">
-              {skills.map((s) => (
-                <SkillRow
-                  key={String(s.name ?? '(unnamed)')}
-                  skill={s}
-                  dark={dark}
-                  toggling={toggling === String(s.name)}
-                  onToggle={toggle}
-                  onOpen={openContent}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-1">
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search skills…"
+                  aria-label="Search skills"
+                  className="min-w-0 flex-1 rounded-lg border border-border px-3 py-2 text-[14px] text-neutral-950 dark:text-neutral-100"
                 />
-              ))}
-            </View>
-          )}
-        </ScrollView>
-
-        {/* SKILL.md viewer */}
-        <Modal
-          visible={viewing !== null}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => setViewing(null)}
-        >
-          <View className="flex-1 bg-white dark:bg-neutral-950" style={{ paddingTop: 48 }}>
-            <View className="flex-row items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <Text className="flex-1 font-mono text-sm font-bold text-neutral-900 dark:text-white" numberOfLines={1}>
-                {viewing ?? ''}
-              </Text>
-              <Button
-                variant="ghost"
-                onPress={() => void Clipboard.setStringAsync(content).catch(() => {})}
-                accessibilityLabel="Copy skill file"
-                className="h-auto px-2 py-1.5"
-              >
-                <UIText className="text-xs font-semibold text-[#1a73e8] dark:text-[#7aa7ff]">Copy</UIText>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onPress={() => setViewing(null)}
-                accessibilityLabel="Close skill file"
-                hitSlop={8}
-                className="h-8 w-8 rounded-md"
-              >
-                <X size={20} color={dark ? '#eee' : '#333'} />
-              </Button>
-            </View>
-            <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
-              {contentLoading ? (
-                <ActivityIndicator size="small" color={brand} />
+                {!!q && (
+                  <Button variant="ghost" size="icon" aria-label="Clear search" onClick={() => setQ('')}>
+                    <X size={18} color={dark ? '#a3a3a3' : '#555'} />
+                  </Button>
+                )}
+              </div>
+              {filtered.length === 0 ? (
+                <Card>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">No matches.</div>
+                </Card>
               ) : (
-                <Text selectable className="font-mono text-xs leading-5 text-neutral-900 dark:text-neutral-100">
-                  {content}
-                </Text>
+                filtered.map((s) => (
+                  <SkillRow
+                    key={String(s.name ?? '(unnamed)')}
+                    skill={s}
+                    dark={dark}
+                    toggling={toggling === String(s.name)}
+                    onToggle={toggle}
+                    onOpen={openEditor}
+                  />
+                ))
               )}
-            </ScrollView>
-          </View>
-        </Modal>
-      </SafeAreaView>
-    </View>
+            </div>
+          )}
+        </div>
+      </ScreenScaffold>
+
+      {/* Create/edit SKILL.md. Mounted only while open so React state resets on
+          each fresh open (see SkillEditor's note on why it is not a `key`). */}
+      {editor && (
+        <SkillEditor
+          open
+          editName={editor.name}
+          dark={dark}
+          opsGet={opsGet}
+          opsMut={opsMut}
+          getAuthScope={getAuthScope}
+          onClose={() => setEditor(null)}
+          onSaved={(name) => {
+            toast({ title: editor.name ? 'Skill saved' : 'Skill created', description: name });
+            void load(true);
+          }}
+        />
+      )}
+    </div>
   );
 }

@@ -2,32 +2,22 @@
 // board switcher, collapsible columns, cards, create/move/edit/delete tasks.
 // Talks to the plugin's own REST router (see hermes-agent
 // plugins/kanban/dashboard/plugin_api.py + apps/desktop/src/plugins/kanban).
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Redirect, useNavigation } from 'expo-router';
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { TriangleAlert } from 'lucide-react-native';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { Navigate as Redirect } from 'react-router-dom';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
 import { errMsg } from '../../utils/messages';
-import { HamburgerBtn } from '../../components/ui/bits';
+import { HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
+import { Input } from '../../components/ui/input';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
 import { ConfirmDialog } from '../../components/ui/dialog';
-import { FormSheet, useSheet } from '../../components/ui/sheets';
-import { Text as UIText } from '../../components/ui/text';
+import { FormSheet } from '../../components/ui/sheets';
 import { CardChips } from './components/CardChips';
-import { placeholderColor, screenStyle } from '../../theme';
+import { screenStyle } from '../../theme';
 import { asTask, dotOf } from './helpers';
 import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';
 
@@ -45,23 +35,16 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
 }) {
   return (
     <Button
-      onPress={() => onOpen(task)}
+      onClick={() => onOpen(task)}
       variant="outline"
-      className="h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-neutral-200 bg-white p-2.5 dark:border-neutral-800 dark:bg-[#1c1c1c]"
-    >
-      <UIText
-        className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100"
-        numberOfLines={2}
-      >
+      className="h-auto sm:h-auto flex-col items-stretch justify-start gap-0 rounded-xl border-border bg-popover p-2.5 ">
+      <span className="text-[14px] font-medium leading-[19px] text-neutral-950 dark:text-neutral-100 line-clamp-2">
         {task.title}
-      </UIText>
+      </span>
       {!!task.body && (
-        <UIText
-          className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400"
-          numberOfLines={2}
-        >
+        <span className="mt-0.5 text-[12px] leading-[17px] text-neutral-500 dark:text-neutral-400 line-clamp-2">
           {task.body}
-        </UIText>
+        </span>
       )}
       <CardChips t={task} dark={dark} />
     </Button>
@@ -72,10 +55,6 @@ export function KanbanScreen() {
   const { booting, authed, host, username, opsGet, opsMut, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
-  // One placeholder colour per scheme — the create/edit sheets pass it to
-  // four inputs, so it must not be recomputed on every render.
-  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
-  const navigation = useNavigation();
 
   const [boards, setBoards] = useState<BoardMeta[]>([]);
   const [slug, setSlug] = useState('');
@@ -97,12 +76,8 @@ export function KanbanScreen() {
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newStatus, setNewStatus] = useState('');
-  // Bottom sheets: FormSheet drives present/dismiss from these two booleans.
-  const detailSheet = useSheet(!!detail);
-  const createSheet = useSheet(showCreate);
-  // Last opened task, kept for the duration of the dismiss animation.
-  const detailRef = useRef<KanbanTask | null>(null);
-  if (detail) detailRef.current = detail;
+  // Bottom sheets. Plain controlled booleans: the sheets are Radix dialogs,
+  // so there is no imperative present/dismiss to marshal.
   useEffect(() => {
     if (authed) return;
     setBoards([]);
@@ -113,13 +88,12 @@ export function KanbanScreen() {
     setError(null);
   }, [authed]);
 
-  useEffect(() => {
-    (navigation as any).setOptions?.({
-      headerLeft: () => <HamburgerBtn />,
-      headerTintColor: dark ? '#f5f5f5' : '#111',
-      title: 'Kanban',
-    });
-  }, [navigation, dark]);
+  // A `navigation.setOptions({ headerLeft, title })` effect used to live here.
+  // Under React Navigation the *navigator* drew the screen's title bar, so this
+  // screen never rendered one of its own — and `navigation` does not exist in
+  // the web build, so nothing drew it there either. Kanban had no header at all,
+  // which meant no title and, on a phone, no way to open the sidebar.
+  // It is a `ScreenHeader` now, like every other screen.
 
   const boardQuery = useCallback(
     (extra = '') => {
@@ -227,13 +201,9 @@ export function KanbanScreen() {
     [host, username],
   );
 
-  const isCollapsed = (name: string, count: number) =>
-    collapsed[name] ?? (name === 'archived' || count === 0);
+  const isCollapsed = (name: string, count: number) => collapsed[name] ?? (name === 'archived' || count === 0);
 
-  const totalTasks = useMemo(
-    () => (board?.columns ?? []).reduce((n, c) => n + c.tasks.length, 0),
-    [board],
-  );
+  const totalTasks = useMemo(() => (board?.columns ?? []).reduce((n, c) => n + c.tasks.length, 0), [board]);
   const activeBoard = boards.find((b) => b.slug === slug);
 
   const openDetail = useCallback((t: KanbanTask) => {
@@ -303,7 +273,13 @@ export function KanbanScreen() {
     const title = newTitle.trim();
     if (!title) return;
     const cols = board?.columns.map((c) => c.name) ?? [];
-    const status = (newStatus || cols.find((c) => c === 'todo') || cols.find((c) => c !== 'archived') || cols[0] || '').trim();
+    const status = (
+      newStatus ||
+      cols.find((c) => c === 'todo') ||
+      cols.find((c) => c !== 'archived') ||
+      cols[0] ||
+      ''
+    ).trim();
     void mutate(
       () =>
         opsMut(api.kanbanTasks(boardQuery()), 'POST', {
@@ -322,263 +298,237 @@ export function KanbanScreen() {
 
   if (booting) {
     return (
-      <SafeAreaView className="flex-1 bg-white dark:bg-black items-center justify-center gap-3">
-        <StatusBar style="auto" />
-        <ActivityIndicator size="large" />
-      </SafeAreaView>
+      <div className="flex flex-col flex-1 bg-background items-center justify-center gap-3">
+        <Spinner size={24} color="currentColor" />
+      </div>
     );
   }
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   const statusOptions = board?.columns.map((c) => c.name) ?? [];
   const createStatus =
     newStatus || statusOptions.find((c) => c === 'todo') || statusOptions.find((c) => c !== 'archived') || '';
 
   return (
-    <View style={screenStyle(dark)}>
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
-        <StatusBar style="auto" />
-        {/* Board switcher + new-task button */}
-        <View className="flex-row items-center gap-2 px-3 pt-2">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, flexGrow: 1 }}>
-            {boards.map((b) => {
-              const active = b.slug === slug || (!slug && b.is_current);
-              return (
-                <Button
-                  key={b.slug}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={b.name || b.slug}
-                  onPress={() => pickSlug(b.slug)}
-                  variant={active ? 'default' : 'outline'}
-                  size="sm"
-                  className="rounded-full px-3 py-1.5"
-                >
-                  <UIText className="text-[13px] font-semibold">
-                    {b.name || b.slug}
-                    {typeof b.total === 'number' ? ` · ${b.total}` : ''}
-                  </UIText>
-                </Button>
-              );
-            })}
-            {boards.length === 0 && !loading && (
-              <Text className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
-                {activeBoard?.name || 'default board'}
-              </Text>
-            )}
-          </ScrollView>
-          <Button
-            onPress={() => setShowCreate(true)}
-            accessibilityRole="button"
-            accessibilityLabel="New task"
-            variant="default"
-            size="icon"
-            className="h-9 w-9 rounded-full"
-          >
-            <UIText className="text-[20px] leading-[20px]">+</UIText>
-          </Button>
-        </View>
+    <div style={screenStyle(dark)}>
+      <ScreenScaffold
+        header={
+          <>
+            <ScreenHeader
+              title="Kanban"
+              subtitle={activeBoard?.name}
+              actions={
+                <div className="flex items-center gap-0.5">
+                  <HeaderIconButton aria-label="Refresh board" onClick={() => void reload(true)}>
+                    <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                  </HeaderIconButton>
+                  <HeaderIconButton
+                    onClick={() => setShowCreate(true)}
+                    role="button"
+                    aria-label="New task">
+                    <span className="text-[20px] leading-[20px]">+</span>
+                  </HeaderIconButton>
+                </div>
+              }
+            />
+            {/* Board switcher. The refresh and new-task buttons moved up into the
+                header, so this row is chips only and can scroll the full width. */}
+            <div className="flex items-center gap-2 px-3 pt-2">
+              <div className="overflow-x-auto">
+                <div className="grow flex gap-2">
+                  {boards.map((b) => {
+                    const active = b.slug === slug || (!slug && b.is_current);
+                    return (
+                      <Button
+                        key={b.slug}
+
+                        aria-pressed={active}
+                        aria-label={b.name || b.slug}
+                        onClick={() => pickSlug(b.slug)}
+                        variant={active ? 'default' : 'outline'}
+                        size="sm"
+                        className="rounded-full px-3 py-1.5">
+                        <span className="text-[13px] font-semibold">
+                          {b.name || b.slug}
+                          {typeof b.total === 'number' ? ` · ${b.total}` : ''}
+                        </span>
+                      </Button>
+                    );
+                  })}
+                  {boards.length === 0 && !loading && (
+                    <div className="py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                      {activeBoard?.name || 'default board'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        }>
         {!!error && (
-          <View className="px-3.5 pt-2">
+          <div className="px-3.5 pt-2">
             <UIAlert icon={TriangleAlert} variant="destructive">
               <AlertDescription className="text-[#c5221f] dark:text-[#ff7b72]">{error}</AlertDescription>
             </UIAlert>
-          </View>
+          </div>
         )}
-        <ScrollView
-          contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void reload(true)} />}
-        >
-          {loading && <ActivityIndicator />}
-          {!loading && !board && !error && (
-            <Text className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</Text>
-          )}
-          {!loading && board && totalTasks === 0 && (
-            <Text className="text-sm text-neutral-500 dark:text-neutral-400">
-              No tasks yet — tap + to create one.
-            </Text>
-          )}
-          {(board?.columns ?? []).map((col) => {
-            const shut = isCollapsed(col.name, col.tasks.length);
-            return (
-              <View
-                key={col.name}
-                className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800"
-              >
-                <Button
-                  onPress={() => toggleColumn(col.name, !shut)}
-                  variant="ghost"
-                  className="justify-start gap-2 rounded-none bg-[#f4f4f6] px-3 py-2.5 dark:bg-[#161616]"
-                >
-                  <View className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
-                  <UIText className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
-                    {col.name}
-                  </UIText>
-                  <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
-                    {col.tasks.length}
-                  </UIText>
-                  <UIText className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</UIText>
-                </Button>
-                {!shut && (
-                  <View className="gap-2 p-2.5">
-                    {col.tasks.length === 0 && (
-                      <Text className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</Text>
-                    )}
-                    {col.tasks.map((t) => (
-                      <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
-                    ))}
-                  </View>
-                )}
-              </View>
-            );
-          })}
-        </ScrollView>
+        {/* `flex flex-col` because `gap-2.5` is inert on a block box — this is
+            the same trap the old drawer's recents list carried a note about.
+            As a block container the gap did nothing and the column cards sat
+            flush against each other, border to border, reading as one tall
+            striped object rather than a list. */}
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-2.5 p-3 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
+            {loading && <Spinner size={14} color="currentColor" />}
+            {!loading && !board && !error && (
+              <div className="text-sm text-neutral-500 dark:text-neutral-400">No board data.</div>
+            )}
+            {!loading && board && totalTasks === 0 && (
+              <div className="text-sm text-neutral-500 dark:text-neutral-400">No tasks yet — tap + to create one.</div>
+            )}
+            {(board?.columns ?? []).map((col) => {
+              const shut = isCollapsed(col.name, col.tasks.length);
+              return (
+                <div
+                  key={col.name}
+                  className="overflow-hidden rounded-2xl border border-border">
+                  <Button
+                    onClick={() => toggleColumn(col.name, !shut)}
+                    variant="ghost"
+                    className="justify-start gap-2 rounded-none bg-elevated px-3 py-2.5">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotOf(col.name) }} />
+                    <span className="flex-1 text-[14px] font-bold capitalize text-neutral-900 dark:text-neutral-100">
+                      {col.name}
+                    </span>
+                    <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">
+                      {col.tasks.length}
+                    </span>
+                    <span className="text-[12px] text-neutral-400 dark:text-neutral-500">{shut ? '▸' : '▾'}</span>
+                  </Button>
+                  {!shut && (
+                    <div className="flex flex-col gap-2 p-2.5">
+                      {col.tasks.length === 0 && (
+                        <div className="px-1 py-1 text-[13px] text-neutral-400 dark:text-neutral-500">empty</div>
+                      )}
+                      {col.tasks.map((t) => (
+                        <KanbanTaskRow key={t.id} task={t} dark={dark} onOpen={openDetail} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+      </ScreenScaffold>
 
-        {/* Task detail sheet. `detailRef` keeps the last task rendered through
-            the dismiss animation - clearing `detail` first would flash an
-            empty sheet on the way out. */}
-        <FormSheet
-          ref={detailSheet.ref}
-          onDismiss={detailSheet.onDismiss}
-          onClose={() => setDetail(null)}
-          snapPoints={['70%']}
-        >
-          {detailRef.current && (
+      {/* Task detail sheet. */}
+      <FormSheet open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+          {detail && (
             <>
               <Input
-                accessibilityLabel="Title"
+                aria-label="Title"
                 // Input is a fixed 40px single-line field; a title long enough
                 // to wrap has to grow the box and hang from the top, or the
                 // second line spills over the label below.
-                className="h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
+                className="h-auto sm:h-auto min-h-10 items-start py-2 text-[17px] font-bold text-neutral-950 dark:text-neutral-100"
                 value={editTitle}
-                onChangeText={setEditTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
                 placeholder="Title"
-                placeholderTextColor={placeholder}
-                keyboardAppearance={dark ? 'dark' : 'light'}
-                multiline
               />
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Move to
-              </Text>
-              <View className="flex-row flex-wrap gap-1.5">
-                {statusOptions.filter((s) => s !== 'archived').map((s) => {
-                  const on = detailRef.current?.status === s;
-                  return (
-                    <Button
-                      key={s}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: on }}
-                      accessibilityLabel={`Move to ${s}`}
-                      onPress={() => detailRef.current && moveTask(detailRef.current, s)}
-                      variant={on ? 'default' : 'outline'}
-                      size="sm"
-                      className="rounded-full px-3 py-1.5"
-                    >
-                      <UIText className="text-[13px] font-medium capitalize">
-                        {s}
-                      </UIText>
-                    </Button>
-                  );
-                })}
-              </View>
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {statusOptions
+                  .filter((s) => s !== 'archived')
+                  .map((s) => {
+                    const on = detail?.status === s;
+                    return (
+                      <Button
+                        key={s}
+
+                        aria-pressed={on}
+                        aria-label={`Move to ${s}`}
+                        onClick={() => detail && moveTask(detail, s)}
+                        variant={on ? 'default' : 'outline'}
+                        size="sm"
+                        className="rounded-full px-3 py-1.5">
+                        <span className="text-[13px] font-medium capitalize">{s}</span>
+                      </Button>
+                    );
+                  })}
+              </div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Notes
-              </Text>
+              </div>
               <Textarea
-                accessibilityLabel="Notes"
-                className="min-h-[90px] rounded-xl border border-neutral-300 px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+                aria-label="Notes"
+                className="min-h-[90px] rounded-xl border border-border px-3 py-2 text-[14px] leading-[20px] text-neutral-950 dark:text-neutral-100"
                 value={editBody}
-                onChangeText={setEditBody}
+                onChange={(e) => setEditBody(e.target.value)}
                 placeholder="Details…"
-                placeholderTextColor={placeholder}
-                keyboardAppearance={dark ? 'dark' : 'light'}
-                multiline
-                textAlignVertical="top"
               />
-              <CardChips t={detailRef.current} dark={dark} />
-              <View className="flex-row gap-2 pt-1">
+              <CardChips t={detail} dark={dark} />
+              <div className="flex gap-2 pt-1">
                 <Button
-                  onPress={saveDetail}
+                  onClick={saveDetail}
                   variant="default"
                   className="flex-1 rounded-xl px-4 py-3"
-                  disabled={saving}
-                >
-                  <UIText className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</UIText>
+                  disabled={saving}>
+                  <span className="text-[15px] font-semibold">{saving ? 'Saving…' : 'Save'}</span>
                 </Button>
-                <Button
-                  onPress={deleteDetail}
-                  variant="destructive"
-                  className="rounded-xl px-4 py-3"
-                  disabled={saving}
-                >
-                  <UIText className="text-[15px] font-semibold">Delete</UIText>
+                <Button onClick={deleteDetail} variant="destructive" className="rounded-xl px-4 py-3" disabled={saving}>
+                  <span className="text-[15px] font-semibold">Delete</span>
                 </Button>
-              </View>
+              </div>
             </>
           )}
         </FormSheet>
 
         {/* New task sheet */}
-        <FormSheet
-          ref={createSheet.ref}
-          onDismiss={createSheet.onDismiss}
-          onClose={() => setShowCreate(false)}
-          snapPoints={['70%']}
-        >
-          <Text className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</Text>
+        <FormSheet open={showCreate} onOpenChange={setShowCreate}>
+          <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">New task</div>
           <Input
-            accessibilityLabel="Title"
-            className="rounded-xl border border-neutral-300 px-3 py-2.5 text-[15px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+            aria-label="Title"
+            className="rounded-xl border border-border px-3 py-2.5 text-[15px] text-neutral-950 dark:text-neutral-100"
             value={newTitle}
-            onChangeText={setNewTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
             placeholder="Title"
-            placeholderTextColor={placeholder}
-            keyboardAppearance={dark ? 'dark' : 'light'}
-            returnKeyType="next"
           />
           <Textarea
-            className="min-h-[80px] rounded-xl border border-neutral-300 px-3 py-2.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-            accessibilityLabel="Notes"
+            className="min-h-[80px] rounded-xl border border-border px-3 py-2.5 text-[14px] text-neutral-950 dark:text-neutral-100"
+            aria-label="Notes"
             value={newBody}
-            onChangeText={setNewBody}
+            onChange={(e) => setNewBody(e.target.value)}
             placeholder="Details (optional)"
-            placeholderTextColor={placeholder}
-            keyboardAppearance={dark ? 'dark' : 'light'}
-            multiline
-            textAlignVertical="top"
           />
-          <View className="flex-row flex-wrap gap-1.5">
-            {statusOptions.filter((s) => s !== 'archived').map((s) => {
-              const on = createStatus === s;
-              return (
-                <Button
-                  key={s}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`Create in ${s}`}
-                  onPress={() => setNewStatus(s)}
-                  variant={on ? 'default' : 'outline'}
-                  size="sm"
-                  className="px-3 py-1.5"
-                >
-                  <UIText className="text-[13px] font-medium capitalize">
-                    {s}
-                  </UIText>
-                </Button>
-              );
-            })}
-          </View>
+          <div className="flex flex-wrap gap-1.5">
+            {statusOptions
+              .filter((s) => s !== 'archived')
+              .map((s) => {
+                const on = createStatus === s;
+                return (
+                  <Button
+                    key={s}
+
+                    aria-pressed={on}
+                    aria-label={`Create in ${s}`}
+                    onClick={() => setNewStatus(s)}
+                    variant={on ? 'default' : 'outline'}
+                    size="sm"
+                    className="px-3 py-1.5">
+                    <span className="text-[13px] font-medium capitalize">{s}</span>
+                  </Button>
+                );
+              })}
+          </div>
           <Button
-            onPress={createTask}
+            onClick={createTask}
             variant="default"
             className="rounded-xl px-4 py-3"
-            disabled={!newTitle.trim() || saving}
-          >
-            <UIText className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</UIText>
+            disabled={!newTitle.trim() || saving}>
+            <span className="text-[15px] font-semibold">{saving ? 'Creating…' : 'Create task'}</span>
           </Button>
         </FormSheet>
-      </SafeAreaView>
 
       <ConfirmDialog
         open={!!confirmDelete}
@@ -591,6 +541,6 @@ export function KanbanScreen() {
           if (!o) setConfirmDelete(null);
         }}
       />
-    </View>
+    </div>
   );
 }

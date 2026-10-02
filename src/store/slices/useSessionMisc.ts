@@ -1,7 +1,7 @@
 // Session-misc slice — renameSession / deleteSessionById / redirectLive /
 // setGlobalModel.
 import { useCallback } from 'react';
-import { router } from 'expo-router';
+import { navigate } from '../nav';
 import { setMainModel } from '../../services/dashboard';
 import { connectionScope, saveModel } from '../../services/connection';
 import { errMsg, nid } from '../../utils/messages';
@@ -91,7 +91,6 @@ export function useSessionMiscSlice(ctx: StoreCtx): SessionMiscSlice {
       const g = gw.current;
       const profile = activeProfileRef.current;
       const epoch = profileEpochRef.current;
-      const connectionEpoch = connectionEpochRef.current;
       if (!g) return;
       try {
         await g.deleteSession(storedId, profile);
@@ -150,7 +149,7 @@ export function useSessionMiscSlice(ctx: StoreCtx): SessionMiscSlice {
         setEditingRowId(null);
         setAsk(null);
         setToolLine(null);
-        router.replace('/chat');
+        navigate('/chat', { replace: true });
       }
     },
     [sessionKey],

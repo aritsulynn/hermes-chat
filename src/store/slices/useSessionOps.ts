@@ -1,18 +1,39 @@
 // Session-ops slice — openSession (resume) and newSession (create).
 import { useCallback } from 'react';
-import { router } from 'expo-router';
+import { navigate } from '../nav';
 import type { HistoryMessage } from '../../services/gateway-ws';
-import { getSessionMessages } from '../../services/dashboard';
+import { getSessionMessages, getSessionExportText } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
-import { historyToItems, mergeUsageState, normalizeProfileName, profileSessionKey, serverAskFromInbox } from '../helpers';
+import {
+  historyToItems,
+  mergeUsageState,
+  normalizeProfileName,
+  profileSessionKey,
+  serverAskFromInbox,
+} from '../helpers';
 import type { ScopedSessionSummary } from '../types';
 import type { StoreCtx } from '../ctx';
 
 export interface SessionOpsSlice {
-  openSession: (s: ScopedSessionSummary) => Promise<void>;
+  /**
+   * @param navigate  Set false when the caller is restoring rather than
+   *                 navigating — see the note at the call site. Defaults true.
+   */
+  openSession: (s: ScopedSessionSummary, options?: { navigate?: boolean }) => Promise<void>;
   newSession: () => Promise<void>;
+  /**
+   * Download the open session as JSON (`GET /api/sessions/{id}/export`).
+   *
+   * Returns the raw export text rather than saving it, so the caller owns the
+   * platform-specific save (an anchor download on web, the WebView's handler in
+   * the native shell). Uses the STORED id (`sessionKey`), not the live runtime
+   * id — the export route resolves the durable row.
+   *
+   * @param title  Optional session title, used for the download filename.
+   */
+  exportSession: (title?: string) => Promise<{ filename: string; text: string }>;
 }
 
 export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
@@ -78,7 +99,13 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
   } = ctx;
 
   const openSession = useCallback(
-    async (s: ScopedSessionSummary) => {
+    async (s: ScopedSessionSummary, options?: { navigate?: boolean }) => {
+      // Landing on /chat is right when the user picked this session from the
+      // drawer, and wrong when boot is restoring the last one. The boot path
+      // calls this for its side effects only, and the unconditional navigate
+      // turned every deep link into /chat — a /logs reload would end up showing
+      // the transcript.
+      const shouldNavigate = options?.navigate !== false;
       const g = gw.current;
       if (!g) {
         setError('Not connected — please login again');
@@ -233,7 +260,7 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
         editRowRef.current = null;
         setEditingRowId(null);
         setSubagents([]);
-        router.push('/chat');
+        if (shouldNavigate) navigate('/chat');
       } catch (e) {
         if (
           !isLatestOpen() ||
@@ -350,7 +377,10 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       setUsageInfo(null);
       liveTools.current.clear();
       liveToolAid.current = null;
-      router.push('/chat');
+      // Unconditional, unlike the two in openSession: starting a new session is
+      // itself a request to go to the chat, so there is no restore-vs-navigate
+      // distinction to make.
+      navigate('/chat');
     } catch (e) {
       if (
         isLatestOpen() &&
@@ -382,5 +412,33 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
   }, [model, modelProvider, effort, bindAskOwner, resetHistoryWindow]);
   newSessionRef.current = newSession;
 
-  return { openSession, newSession };
+  const exportSession = useCallback(
+    async (title?: string): Promise<{ filename: string; text: string }> => {
+      const storedId = latest.current.sessionKey;
+      if (!storedId) throw new Error('No session to export');
+      const targetHost = latest.current.host;
+      const targetUser = latest.current.username;
+      const profile = normalizeProfileName(activeProfileRef.current);
+      const connectionEpoch = connectionEpochRef.current;
+      const epoch = profileEpochRef.current;
+      const text = await getSessionExportText(
+        targetHost,
+        cookie.current,
+        storedId,
+        profile,
+        async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
+      );
+      // A stable, filename-safe stem: the title when there is one, else the id.
+      const stem =
+        String(title ?? '')
+          .trim()
+          .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 60) || storedId.replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 60);
+      return { filename: `${stem || 'session'}.json`, text };
+    },
+    [acceptRotatedCookie, connectionEpochRef, cookie, profileEpochRef],
+  );
+
+  return { openSession, newSession, exportSession };
 }

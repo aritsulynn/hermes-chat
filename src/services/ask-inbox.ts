@@ -1,5 +1,4 @@
-export type AskInboxStatus =
-  'pending' | 'answering' | 'sent' | 'answered' | 'cancelled' | 'stale';
+export type AskInboxStatus = 'pending' | 'answering' | 'sent' | 'answered' | 'cancelled' | 'stale';
 
 export interface AskOwner {
   /** Stable identity for the dashboard origin + authenticated account. */
@@ -42,25 +41,12 @@ export interface AskInboxInput {
  * if the client later supports more than one connection.
  */
 export function askKey(owner: AskOwner, rpcId: string): string {
-  return JSON.stringify([
-    owner.connectionId,
-    owner.profile,
-    owner.storedSessionId,
-    owner.runtimeSessionId,
-    rpcId,
-  ]);
+  return JSON.stringify([owner.connectionId, owner.profile, owner.storedSessionId, owner.runtimeSessionId, rpcId]);
 }
 
 /** A request replayed after reconnect is the same request even if runtime changed. */
-function sameRequest(
-  entries: AskInboxEntry[],
-  input: AskInboxInput,
-): AskInboxEntry | undefined {
-  return entries.find(
-    (entry) =>
-      entry.owner.connectionId === input.owner.connectionId &&
-      entry.rpcId === input.rpcId,
-  );
+function sameRequest(entries: AskInboxEntry[], input: AskInboxInput): AskInboxEntry | undefined {
+  return entries.find((entry) => entry.owner.connectionId === input.owner.connectionId && entry.rpcId === input.rpcId);
 }
 
 export interface UpsertAskResult {
@@ -74,10 +60,7 @@ export interface UpsertAskResult {
  * Upsert a live or replayed ask. A settled request is never resurrected by a
  * late replay; the caller can safely use `added` to decide whether to notify.
  */
-export function upsertAsk(
-  entries: AskInboxEntry[],
-  input: AskInboxInput,
-): UpsertAskResult {
+export function upsertAsk(entries: AskInboxEntry[], input: AskInboxInput): UpsertAskResult {
   const now = input.receivedAt ?? Date.now();
   const existing = sameRequest(entries, input);
   const incoming: AskInboxEntry = {
@@ -94,11 +77,7 @@ export function upsertAsk(
   };
 
   if (existing) {
-    if (
-      existing.status === 'answered' ||
-      existing.status === 'cancelled' ||
-      existing.status === 'stale'
-    ) {
+    if (existing.status === 'answered' || existing.status === 'cancelled' || existing.status === 'stale') {
       return { entries, entry: existing, added: false, changed: false };
     }
     const next: AskInboxEntry = {
@@ -111,9 +90,7 @@ export function upsertAsk(
       owner: incoming.owner,
       receivedAt: existing.receivedAt || now,
       replayed: incoming.replayed,
-      ...(incoming.notificationId
-        ? { notificationId: incoming.notificationId }
-        : {}),
+      ...(incoming.notificationId ? { notificationId: incoming.notificationId } : {}),
     };
     const changed =
       JSON.stringify({
@@ -128,9 +105,7 @@ export function upsertAsk(
         receivedAt: undefined,
         replayed: undefined,
       });
-    const nextEntries = entries.map((entry) =>
-      entry.key === existing.key ? next : entry,
-    );
+    const nextEntries = entries.map((entry) => (entry.key === existing.key ? next : entry));
     return { entries: nextEntries, entry: next, added: false, changed };
   }
 
@@ -142,14 +117,8 @@ export function upsertAsk(
   };
 }
 
-export function setAskStatus(
-  entries: AskInboxEntry[],
-  key: string,
-  status: AskInboxStatus,
-): AskInboxEntry[] {
-  return entries.map((entry) =>
-    entry.key === key ? { ...entry, status } : entry,
-  );
+export function setAskStatus(entries: AskInboxEntry[], key: string, status: AskInboxStatus): AskInboxEntry[] {
+  return entries.map((entry) => (entry.key === key ? { ...entry, status } : entry));
 }
 
 export function setAskStatusByRpc(
@@ -159,33 +128,21 @@ export function setAskStatusByRpc(
   status: AskInboxStatus,
 ): AskInboxEntry[] {
   return entries.map((entry) =>
-    entry.owner.connectionId === connectionId && entry.rpcId === rpcId
-      ? { ...entry, status }
-      : entry,
+    entry.owner.connectionId === connectionId && entry.rpcId === rpcId ? { ...entry, status } : entry,
   );
 }
 
 export function pendingAsks(entries: AskInboxEntry[]): AskInboxEntry[] {
   return entries.filter(
-    (entry) =>
-      entry.status === 'pending' ||
-      entry.status === 'answering' ||
-      entry.status === 'sent',
+    (entry) => entry.status === 'pending' || entry.status === 'answering' || entry.status === 'sent',
   );
 }
 
-export function findAsk(
-  entries: AskInboxEntry[],
-  key: string,
-): AskInboxEntry | undefined {
+export function findAsk(entries: AskInboxEntry[], key: string): AskInboxEntry | undefined {
   return entries.find((entry) => entry.key === key);
 }
 
-export function findAskByRpc(
-  entries: AskInboxEntry[],
-  connectionId: string,
-  rpcId: string,
-): AskInboxEntry | undefined {
+export function findAskByRpc(entries: AskInboxEntry[], connectionId: string, rpcId: string): AskInboxEntry | undefined {
   return sameRequest(entries, {
     rpcId,
     method: '',

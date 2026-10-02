@@ -3,7 +3,6 @@
 // state so handlers frozen inside openWs can read it without re-subscribing.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
-import { AppState } from 'react-native';
 import { getNotifyEnabled, saveNotifyEnabled } from '../../services/connection';
 import { notifyPermissionGranted, requestNotifyPermission } from '../../services/notifications';
 
@@ -20,16 +19,18 @@ export function useNotificationsSlice(): NotificationsSlice {
   const notifyRef = useRef(false);
   notifyRef.current = notifyEnabled;
 
-  // While a turn runs in the background, re-check that permission is still
-  // granted whenever the app returns to the foreground.
+  // While a turn runs in another tab, re-check that permission is still granted
+  // whenever this one comes back to the foreground — the user can revoke it
+  // from the browser's own UI at any time, with no event we can observe.
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' || !notifyRef.current) return;
+    const recheck = () => {
+      if (document.hidden || !notifyRef.current) return;
       void notifyPermissionGranted().then((granted) => {
         if (!granted && notifyRef.current) setNotifyEnabled(false);
       });
-    });
-    return () => sub.remove();
+    };
+    document.addEventListener('visibilitychange', recheck);
+    return () => document.removeEventListener('visibilitychange', recheck);
   }, []);
 
   // Local notifications: request permission on enable (web needs the gesture).

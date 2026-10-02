@@ -4,9 +4,7 @@
 
 /** The payload as a string-keyed object, or {} when it isn't one. */
 export function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 /** The payload as an array, or [] when it isn't one. */

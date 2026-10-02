@@ -14,11 +14,7 @@ export interface LiveRosterSlice {
   setSubagents: Dispatch<SetStateAction<SubagentRow[]>>;
 }
 
-export function useLiveRosterSlice({
-  generating,
-  sessionId,
-  gw,
-}: StoreCtx): LiveRosterSlice {
+export function useLiveRosterSlice({ generating, sessionId, gw }: StoreCtx): LiveRosterSlice {
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [subagents, setSubagents] = useState<SubagentRow[]>([]);
 

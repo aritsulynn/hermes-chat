@@ -37,9 +37,7 @@ test('requests a context snapshot that can be computed from restored history', a
 
   const result = await gateway.contextBreakdown('runtime-1');
 
-  assert.deepEqual(calls, [
-    { method: 'session.context_breakdown', params: { session_id: 'runtime-1' } },
-  ]);
+  assert.deepEqual(calls, [{ method: 'session.context_breakdown', params: { session_id: 'runtime-1' } }]);
   assert.equal(result.context_percent, 21);
 });
 
@@ -76,7 +74,9 @@ test('marks a cancelled ask as non-replayable', () => {
     method: 'clarify',
     reason: 'timeout',
   });
-  gateway.deliverOpenRequests({ open_requests: [{ id: 'srq-1', method: 'clarify', params: { session_id: 'runtime-1' } }] });
+  gateway.deliverOpenRequests({
+    open_requests: [{ id: 'srq-1', method: 'clarify', params: { session_id: 'runtime-1' } }],
+  });
 
   assert.equal(asks.length, 1);
   assert.equal(gateway.replyToAsk('srq-1', { answer: 'late' }), false);
@@ -105,7 +105,9 @@ test('re-arms a sent request only when open_requests says it is still open', () 
   assert.equal(gateway.replyToAsk('srq-1', { choice: 'once' }), true);
   assert.equal(gateway.replyToAsk('srq-1', { choice: 'deny' }), false);
 
-  gateway.deliverOpenRequests({ open_requests: [{ id: 'srq-1', method: 'approval', params: { session_id: 'runtime-1' } }] });
+  gateway.deliverOpenRequests({
+    open_requests: [{ id: 'srq-1', method: 'approval', params: { session_id: 'runtime-1' } }],
+  });
   assert.equal(asks.length, 2);
   assert.equal(asks[1].replayed, true);
   assert.equal(gateway.replyToAsk('srq-1', { choice: 'deny' }), true);
@@ -130,7 +132,9 @@ test('re-delivers open requests from an RPC response as replayed', async () => {
       open_requests: [{ id: 'srq-replay', method: 'approval', params: { session_id: 'runtime-1', command: 'pwd' } }],
     },
   });
-  assert.deepEqual(await result, { open_requests: [{ id: 'srq-replay', method: 'approval', params: { session_id: 'runtime-1', command: 'pwd' } }] });
+  assert.deepEqual(await result, {
+    open_requests: [{ id: 'srq-replay', method: 'approval', params: { session_id: 'runtime-1', command: 'pwd' } }],
+  });
   assert.equal(asks.length, 1);
   assert.equal(asks[0].replayed, true);
 });
@@ -162,11 +166,13 @@ test('fails unsupported server asks instead of showing a generic secret form', (
   gateway.route({ id: 'srq-unknown', method: 'vault.save_login', params: { session_id: 'runtime-1' } });
 
   assert.equal(asks.length, 0);
-  assert.deepEqual(frames, [{
-    jsonrpc: '2.0',
-    id: 'srq-unknown',
-    error: { code: -32601, message: 'unsupported server request: vault.save_login' },
-  }]);
+  assert.deepEqual(frames, [
+    {
+      jsonrpc: '2.0',
+      id: 'srq-unknown',
+      error: { code: -32601, message: 'unsupported server request: vault.save_login' },
+    },
+  ]);
 });
 
 test('isCurrentSessionEvent accepts the runtime id or the stored id of the open room', () => {

@@ -1,27 +1,15 @@
-// Chat route — transcript + composer (was the 'chat' screen in App.tsx).
-// Header back opens the drawer; the native Drawer replaces NavDrawer/EdgeSwipe.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Keyboard,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import type { FlashListRef } from '@shopify/flash-list';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
-import { Redirect, useNavigation } from 'expo-router';
-import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ChevronDown, ChevronUp, Check, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil, Search } from 'lucide-react-native';
-import { useApp, useStreaming, useThemeValue } from '../../hooks/app-store';
+// Chat route — transcript + composer.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { pickFiles } from '../../services/file-picker';
+import { Navigate as Redirect } from 'react-router-dom';
+import { ChevronDown, ChevronUp, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
+import { useApp, useStreamingRead, useThemeValue } from '../../hooks/app-store';
+import { Transcript } from '../../components/chat/transcript';
+import { MessageScrollerItem } from '../../components/ui/message-scroller';
+import { toast } from '../../components/ui/toast';
+import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
+import type { TranscriptHandle } from '../../components/chat/transcript';
+import { useScrollbarGutter, useViewportSize } from '../../hooks/use-viewport';
 import {
   FALLBACK_PROVIDERS,
   applySlashCompletion,
@@ -33,29 +21,38 @@ import {
   todoActive,
   todoDone,
   todoLabel,
+  errMsg,
 } from '../../utils/messages';
 import { REASONING_EFFORT_VALUES, reasoningCapability, reasoningLabel } from '../../utils/reasoning';
 import { fuzzyScoreMultiTokens } from '../../utils/fuzzy';
 import { contextTone, mergeUsage } from '../../utils/usage';
 import { isSlashSuggestion, skillUsage } from '../../utils/slash-commands';
-import { placeholderColor, screenBg, screenStyle } from '../../theme';
+import { screenBg, screenStyle } from '../../theme';
 import type { UiMessage } from '../../utils/messages';
 import type { SlashCompletionItem } from '../../services/gateway-ws';
 import { Composer } from '../../components/chat/composer';
 import type { AnchorMeasure, AnchorRect } from '../../components/chat/composer';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  createDropdownMenuHandle,
+} from '../../components/ui/dropdown-menu';
 import { MessageBubble, formatBubbleTime } from '../../components/chat/message-bubble';
-import { AskSheet, InfoSheet } from '../../components/ui/sheets';
-import { CtxRing, HamburgerBtn } from '../../components/ui/bits';
+import { AskSheet } from '../../components/ui/sheets';
+import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Text as UIText } from '../../components/ui/text';
-import { ChatNormalHeader, ChatSearchHeader } from './components/ChatHeader';
-import { FALLBACK_SLASH, messageMatchesSearch } from './helpers';
+import { Spinner } from '../../components/ui/bits';
+import { ChatNormalHeader } from './components/ChatHeader';
+import { FALLBACK_SLASH } from './helpers';
 import { CHAT_WINDOW_SOFT_CAP } from '../../services/constants';
-import type { TranscriptHit } from '../../store/types';
-
-// FlashList v2 sizes rows itself (no estimatedItemSize / getItemLayout).
-// Heterogeneous bubbles recycle per role via getItemType below.
 
 export function ChatScreen() {
   const {
@@ -81,21 +78,15 @@ export function ChatScreen() {
     setAttachments,
     generating,
     copiedId,
-    infoOpen,
-    setInfoOpen,
-    infoSeq,
     sessionInfo,
     usageInfo,
-    usageLoading,
     toolLine,
     ask,
     send,
     stop,
     redirectLive,
-    renameSession,
     setGlobalModel,
     newSession,
-    openInfo,
     loadProviders,
     loadCommandsCatalog,
     queued,
@@ -116,28 +107,55 @@ export function ChatScreen() {
     trimmedOlder,
     loadOlderMessages,
     trimHead,
-    searchTranscript,
-    findHitIndex,
     todos,
     subagents,
     refreshToolResults,
     pickModel,
     copyText,
+    exportSession,
     answerValue,
     answerApproval,
     answerAsk,
     dismissAsk,
     getGw,
+    applyApprovalMode,
   } = useApp();
-  // High-frequency token deltas live in their own context (see useStreaming):
-  // subscribing here keeps per-token re-renders inside the chat screen while
-  // the rest of the app stays put.
-  const streamingTexts = useStreaming();
+  // Reading the live stream is deliberately NON-reactive here. Following it is
+  // the bubble's job, per message id (see useStreamingText); this screen wants
+  // streamed text in exactly two places — the long-press menu's Copy target and
+  // the session-info token estimate — and both read it on demand instead.
+  const readStreamedText = useStreamingRead();
   // Theme lives on its own context for the same reason: a toggle would
   // otherwise hand every useApp() consumer a new object.
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const headerIcon = dark ? '#f5f5f5' : '#111';
+  // Approval mode shown on the composer's shield. Unknown yet (session info
+  // still loading) reads as manual — the safe side.
+  const serverApprovalMode =
+    sessionInfo?.approval_mode === 'smart' || sessionInfo?.approval_mode === 'off' ? sessionInfo.approval_mode : 'manual';
+  // Optimistic local echo. `applyApprovalMode` is a `config.set` RPC that
+  // resolves only when the gateway answers, and the shield is a control whose
+  // whole feedback loop is "did the glyph change" — reading only the server
+  // value made every tap look dead on a slow socket, and permanently dead on a
+  // gateway that does not push `session.info` back after the write. The ref
+  // holds the pending value so the next tap cycles from what the user last chose
+  // rather than from a stale server read, and `sessionInfo` takes over again as
+  // soon as it catches up.
+  const [pendingApproval, setPendingApproval] = useState<'manual' | 'smart' | 'off' | null>(null);
+  const approvalMode = pendingApproval ?? serverApprovalMode;
+  useEffect(() => {
+    if (pendingApproval !== null && pendingApproval === serverApprovalMode) setPendingApproval(null);
+  }, [pendingApproval, serverApprovalMode]);
+  const cycleApproval = useCallback(() => {
+    const next = approvalMode === 'manual' ? 'smart' : approvalMode === 'smart' ? 'off' : 'manual';
+    setPendingApproval(next);
+    void applyApprovalMode(next).catch(() => {
+      // The write failed, so the server value still stands — drop the echo and
+      // let the glyph snap back rather than showing a mode that is not set.
+      setPendingApproval(null);
+    });
+  }, [approvalMode, applyApprovalMode]);
 
   // Thinking-effort control follows the MODEL's published capability: hide it
   // when the route reports `reasoning: false` (an unknown/older gateway keeps it
@@ -155,57 +173,59 @@ export function ChatScreen() {
   // gateway publishes these under session.info.usage (and session.usage answers
   // the same numbers); tap opens the full Session info sheet.
   const usage = mergeUsage(sessionInfo?.usage, usageInfo);
-  const ctxPct =
-    usage?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(usage.contextPercent))) : null;
+  const ctxPct = usage?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(usage.contextPercent))) : null;
   const ctxTone = ctxPct == null ? 'ok' : contextTone(ctxPct);
 
-  // Numeric bubble cap: percent maxWidth resolves too late for Yoga to wrap
-  // row-nested markdown (lists) — a pixel value constrains measurement itself.
-  const { width: winW, height: winH } = useWindowDimensions();
-  const bubbleMax = Math.round(winW * 0.85);
-  const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = useViewportSize();
 
   // Theme tokens resolved once per scheme: this screen re-renders on every
-  // streamed token, and a fresh style object per render would re-push the
-  // surface colours to native each time.
+  // streamed token, and a fresh style object per render would rebuild the
+  // surface colours each time.
   const screen = useMemo(() => screenStyle(dark), [dark]);
+  // The 52px bar plus the OS inset. `env()` in a class would be tidier, but this
+  // one also reports a height the layout below reads, so it stays a value.
   const noSessionHeader = useMemo(
     () => ({
-      height: insets.top + 52,
-      paddingTop: insets.top,
-      backgroundColor: screenBg(dark),
+      height: 'calc(env(safe-area-inset-top, 0px) + 52px)',
+      paddingTop: 'env(safe-area-inset-top, 0px)',
+      background: screenBg(dark),
     }),
-    [insets.top, dark],
+    [dark],
   );
-  const placeholder = useMemo(() => placeholderColor(dark), [dark]);
 
   // Screen-level anchored popovers ("+" attach, model picker, thinking effort),
   // anchored to the composer controls that opened them. Rendered here, not in
   // the composer, so they can float above the list and still receive taps — on
   // Android touches outside a parent's bounds are dropped, so a popover inside
   // the composer wouldn't work.
-  const [popover, setPopover] = useState<
-    { kind: 'effort' | 'attach' | 'model'; x: number; y: number; w: number; h: number } | null
-  >(null);
+  // Only the model picker is still a measured, screen-level panel — see the note
+  // on it where it renders. The attach and effort menus used to share this
+  // mechanism; they are Base UI menus now, anchored by Base UI to triggers that
+  // live in the composer.
+  const [popover, setPopover] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
   const popoverMeasure = useRef<AnchorMeasure | null>(null);
+  // Detached menu handles. A `useRef` keeps the identity stable: the handle is a
+  // mutable object that Base UI attaches to, not a value to re-create per render.
+  const attachMenu = useRef(createDropdownMenuHandle()).current;
+  const effortMenu = useRef(createDropdownMenuHandle()).current;
   const [modelQuery, setModelQuery] = useState('');
   const [modelExpanded, setModelExpanded] = useState<Record<string, boolean>>({});
-  const rootRef = useRef<View>(null);
-  const rootWin = useRef({ y: 0, h: 0 });
+  const rootRef = useRef<HTMLDivElement>(null);
+  const rootWin = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
   const openPopover = useCallback(
-    (kind: 'effort' | 'attach' | 'model', measure: AnchorMeasure) => {
+    (measure: AnchorMeasure) => {
       popoverMeasure.current = measure;
-      if (kind === 'model') {
-        setModelQuery('');
-        void loadProviders();
-      }
-      if (kind === 'effort') {
-        void loadReasoningDisplay();
-      }
-      measure((a) => setPopover({ kind, ...a }));
+      setModelQuery('');
+      void loadProviders();
+      measure((a) => setPopover(a));
     },
-    [loadProviders, loadReasoningDisplay],
+    [loadProviders],
   );
   // Re-anchor after the keyboard slides in/out and lifts the composer.
   const remeasurePopover = useCallback(() => {
@@ -215,6 +235,31 @@ export function ChatScreen() {
     popoverMeasure.current = null;
     setPopover(null);
   }, []);
+
+  // The screen's box, in viewport coordinates.
+  //
+  // This replaces an `onLoad` handler on the root div, which never fired — React
+  // only dispatches `load` for elements that load a resource, so `rootWin` sat
+  // at all-zeroes. That went unnoticed while the root began at the viewport
+  // origin: `y` of 0 was correct, and `x` was never read. The sidebar gave the
+  // root an x, and the model panel then landed a sidebar-width right of the chip
+  // it is anchored to.
+  //
+  // A ResizeObserver rather than a one-off read because the root's box is what
+  // moves when the on-screen keyboard lifts the composer.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const read = () => {
+      const r = el.getBoundingClientRect();
+      rootWin.current = { x: r.x, y: r.y, w: r.width, h: r.height };
+      remeasurePopover();
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [remeasurePopover]);
 
   // Composer completion panel — shows above the input for two triggers:
   //   `/token`  → slash commands (built-ins + quick_commands + skills, curated
@@ -292,9 +337,7 @@ export function ChatScreen() {
       usage: it.kind === 'skill' ? (skillUsage(it.text) ?? -1) : -1,
     }));
     if (!withUsage.some((r) => r.usage >= 0)) return filtered;
-    return withUsage
-      .sort((a, b) => b.usage - a.usage || a.i - b.i)
-      .map((r) => r.it);
+    return withUsage.sort((a, b) => b.usage - a.usage || a.i - b.i).map((r) => r.it);
   }, [completionKind, completions]);
 
   const applyCompletion = useCallback(
@@ -316,103 +359,74 @@ export function ChatScreen() {
     [input, completionKind, completionFrom, setInput],
   );
 
-  const listRef = useRef<FlashListRef<UiMessage>>(null);
+  const listRef = useRef<TranscriptHandle>(null);
+  // The reserved scrollbar gutter, and the ref that measures it. The composer is
+  // layered over the scroller's right edge, so it has to stop short of the
+  // gutter or it hides the scroll control.
+  const { scrollerRef, gutter } = useScrollbarGutter();
   // Latest transcript for stable callbacks (tool expand → REST result fill).
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   // Long-press fired: swallow the onPress that fires on release (else a
   // long-press on thinking/tool bubbles toggles them instead of selecting).
   const longFired = useRef(false);
-  // True while the user sits at the bottom (following the live turn).
-  // Content-size growth (stream tokens, expand thinking) auto-scrolls only
-  // then — expanding an old bubble mid-list no longer yanks to the bottom.
-  const stickEnd = useRef(true);
-  // px from the true end that still counts as "at the bottom" (jump button
-  // hides, transcript auto-follows). Shared by onScroll and snapToEnd below.
-  const AT_END_PX = 120;
-  // True briefly while the keyboard/dock padding changes — suppresses the
-  // content-size auto-scroll so opening the keyboard doesn't shift the transcript.
-  const kbResizeRef = useRef(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Agent todo checklist above the composer — collapsed to a one-line summary.
   const [todosOpen, setTodosOpen] = useState(false);
-  // False while the list is scrolled up — shows the jump-to-bottom button.
+  // Mirrored out of MessageScroller's `scrollable.end` (see Transcript). Used
+  // for exactly one thing now: gating the head-trim below, so reading history
+  // up top is never yanked. The jump-to-bottom button reads the same state
+  // directly inside the transcript.
   const [atBottom, setAtBottom] = useState(true);
-  // True while the transcript actually overflows the viewport. Gates the jump
-  // button so short chats never show it, and so a stale "not at bottom"
-  // reading on a non-scrollable list can't pin the button on screen.
-  const [canScroll, setCanScroll] = useState(false);
   // Height of the bottom footer (panels + composer), keyboard lift included.
   // Feeds the scroll-to-bottom button anchor above it. The footer overlays
   // the transcript (absolute, transparent), so the list reserves room for it
   // via content padding (see listContentStyle) instead of flex space.
   const [dockH, setDockH] = useState(0);
+  // The overlay footer's own box, measured. This is the composer clearance the
+  // transcript's bottom padding is built from. A ResizeObserver rather than a
+  // layout callback, and it watches the footer
+  // rather than the composer card, because the footer's box is what the
+  // transcript has to clear: it includes the `paddingBottom: kbH + kbGap` that
+  // lifts the card above the keyboard, so one number covers both cases.
+  //
+  // A *callback* ref, not a ref plus a mount effect. The footer only exists in
+  // the active-session branch of the render, so the first render is the booting
+  // or no-session branch, an effect with `[]` deps runs there, finds a null ref,
+  // and never runs again — which is exactly the bug the first attempt at this
+  // fix had.
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  const observeDock = useCallback((el: HTMLDivElement | null) => {
+    dockRef.current = el;
+    if (!el) return;
+    const read = () => setDockH(el.getBoundingClientRect().height);
+    read();
+    const ro = new ResizeObserver(read);
+    // `box: 'border-box'` is load-bearing. The observer defaults to
+    // content-box, and the keyboard lift reaches this element only as
+    // `paddingBottom` — which grows the border box without touching the
+    // content box, so a default observer never fires. `dockH` then stayed at
+    // its keyboard-closed value and the transcript never reserved room for the
+    // lifted composer: the composer rose, the chat did not. `read` measures
+    // the border box, so observe the same box.
+    ro.observe(el, { box: 'border-box' });
+    return () => ro.disconnect();
+  }, []);
   // Keyboard height — the footer is lifted by hand with bottom padding. The
   // list stays full-height underneath the transparent footer zone.
   const [kbH, setKbH] = useState(0);
   // Gap between the lifted dock and the keyboard so the composer doesn't sit
   // flush on it. Only while the keyboard is open.
   const kbGap = kbH > 0 ? 8 : 0;
-  const contentH = useRef(0);
-  const layoutH = useRef(0);
-  const endPad = useRef(0);
-  // Tail gap lives in the list content padding (= dockH, see
-  // listContentStyle) so the last bubble can scroll above the overlaid
-  // footer instead of hiding behind it.
-  endPad.current = 0;
-  // Fresh-load pin: after F5 / session switch / resume, land at the bottom
-  // explicitly (instant, one shot). The content-size follow alone can lose the
-  // race against MVCP stabilization on a cold load and strand the viewport at
-  // the top. Detects reloads by session/first-message/length signature —
-  // plain appends (new messages while reading history) deliberately do NOT
-  // pin; stickEnd governs those.
-  const pinTrack = useRef({ sid: null as string | null, first: null as string | null, len: 0 });
-  // Y where the current drag started — snap only fires on net-downward moves.
-  const dragStartY = useRef(0);
-  // Consecutive non-touch, non-bottom scroll frames (see handleScroll) —
-  // transients must persist before they may cancel following.
-  const missEnd = useRef(0);
-  // Fresh-load intent: set on reload signature, cleared on landing, on user
-  // positioning (drag/momentum release), or never — it survives transient
-  // system events that must not strand a cold load mid-list. Plain appends
-  // never set it, so reading history is never yanked.
-  const pinWanted = useRef(false);
-  // True between momentum-begin/end — the only reliable "user flung,
-  // finger already up" signal. Programmatic scrolls don't emit these.
-  const momentum = useRef(false);
-  // Latest scroll offset (mirrored in onScroll) — the jump button instant-jumps
-  // when far instead of smooth-scrolling ten thousand pixels sluggishly.
-  const scrollY = useRef(0);
-  // True while the user's finger is down — onScroll only flips follow state on
-  // user-driven scrolls, never mid-flight of a programmatic scrollEnd.
-  const touching = useRef(false);
-  // True while a programmatic scrollEnd is in flight (cleared on arrival or by
-  // timeout). Without this, onScroll mid-flight flips stickEnd=false, and any
-  // growth during the flight (stream tokens, a loading image resolving) lands
-  // the list short with nobody left to finish the trip.
-  const flying = useRef(false);
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
-  const tokenEstimate = useMemo(() => {
-    let n = 0;
-    for (const m of messages) n += Math.ceil(m.text.length / 4);
-    for (const k in streamingTexts) n += Math.ceil(streamingTexts[k].length / 4);
-    return n;
-  }, [messages, streamingTexts]);
   // Regenerate targets the last assistant bubble; the rewind target is the last
   // user row that carries a durable id.
-  const lastAssistantId = useMemo(
-    () => [...messages].reverse().find((m) => m.role === 'assistant')?.id,
-    [messages],
-  );
+  const lastAssistantId = useMemo(() => [...messages].reverse().find((m) => m.role === 'assistant')?.id, [messages]);
   const hasRegenTarget = useMemo(
     () => messages.some((m) => m.role === 'user' && m.rowId != null && m.text.trim()),
     [messages],
   );
-  // In-conversation search.
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [matchIdx, setMatchIdx] = useState(0);
 
   const onRedirect = useCallback(
     (text: string) => {
@@ -435,11 +449,9 @@ export function ChatScreen() {
   );
 
   // Stable handlers — MessageBubble and Composer are memo()'d, so inline arrows
-  // here would re-render every bubble (markdown re-parse + native tree rebuild)
+  // here would re-render every bubble (markdown re-parse + DOM rebuild)
   // and the focused TextInput on each streamed token.
-  const openModelPicker = useCallback((m: AnchorMeasure) => openPopover('model', m), [openPopover]);
-  const openEffortPicker = useCallback((m: AnchorMeasure) => openPopover('effort', m), [openPopover]);
-  const openAttachPicker = useCallback((m: AnchorMeasure) => openPopover('attach', m), [openPopover]);
+  const openModelPicker = useCallback((m: AnchorMeasure) => openPopover(m), [openPopover]);
   const onToggleExpand = useCallback(
     (id: string) => {
       // Expanding a tool with no result/diff yet → pull it from the transcript.
@@ -451,12 +463,37 @@ export function ChatScreen() {
   );
   const onCopy = useCallback((id: string, text: string) => void copyText(id, text), [copyText]);
   const onRegenerate = useCallback(() => regenerate(), [regenerate]);
+
+  // Export the whole session as JSON. The store returns the raw text; the save
+  // is an anchor download, which works on web and in the native shell (the
+  // WebView routes the `download` attribute to the platform downloader).
+  const [exporting, setExporting] = useState(false);
+  const handleExportSession = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { filename, text } = await exportSession(
+        sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : undefined,
+      );
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast({ title: 'Session exported', description: filename });
+    } catch (e) {
+      toast({ title: 'Export failed', description: errMsg(e), variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
+  }, [exportSession, exporting, sessionTitle]);
   // Long-press menu on our own messages (Copy / Edit) — same popover pattern.
   const [userMenu, setUserMenu] = useState<{ anchor: AnchorRect; id: string } | null>(null);
-  const openUserMenu = useCallback(
-    (m: AnchorMeasure, id: string) => m((a) => setUserMenu({ anchor: a, id })),
-    [],
-  );
+  const openUserMenu = useCallback((m: AnchorMeasure, id: string) => m((a) => setUserMenu({ anchor: a, id })), []);
   const closeUserMenu = useCallback(() => setUserMenu(null), []);
   // Icon tooltips (bubble footer buttons) — a floating label that never
   // captures touches, auto-dismissed. No Modal: a modal would eat the release
@@ -477,63 +514,6 @@ export function ChatScreen() {
     });
   }, []);
 
-  const scrollEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Trailing throttle for the per-token auto-follow (see
-  // handleContentSizeChange): without it every streamed token fires a native
-  // scroll command (~30/s) — layout thrash and a viewport that fights back.
-  const followTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Backstop for the fresh-load pin below (cleared + reset per reload).
-  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollEnd = useCallback((animated?: unknown) => {
-    const anim = animated === false ? false : true;
-    // Double-tick: one frame for layout shrink (keyboard resize), one for content.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        // Exact offset, not scrollToEnd(): the measured end is deterministic
-        // (contentH/layoutH track the same geometry the padding is built from).
-        const end = Math.max(0, contentH.current - layoutH.current);
-        if (end <= 0) return;
-        flying.current = true;
-        // Safety: never strand the follow state if the flight never lands.
-        if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
-        scrollEndTimer.current = setTimeout(() => {
-          flying.current = false;
-        }, 1200);
-        listRef.current?.scrollToOffset({ offset: end, animated: anim });
-      });
-    });
-  }, []);
-  useEffect(
-    () => () => {
-      if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
-      if (followTimer.current) clearTimeout(followTimer.current);
-      if (pinTimer.current) clearTimeout(pinTimer.current);
-    },
-    [],
-  );
-
-  // Small snap-through near the end on downward releases only — an upward
-  // release is the user reading back, and must never be stolen.
-  const snapToEnd = useCallback(
-    (e: { nativeEvent?: { contentOffset?: { y?: number } } }) => {
-      touching.current = false;
-      const y = e?.nativeEvent?.contentOffset?.y ?? 0;
-      // Settle follow state from the release position itself (don't wait for
-      // scroll events that may never come on a static list): released at the
-      // bottom → following; released mid-list → user parked deliberately.
-      const here = contentH.current - (y + layoutH.current) < AT_END_PX;
-      stickEnd.current = here;
-      pinWanted.current = false;
-      if (y < dragStartY.current - 4) return;
-      const rest = contentH.current - (y + layoutH.current);
-      if (rest <= 2 || rest > endPad.current + 8) return;
-      stickEnd.current = true;
-      setAtBottom(true);
-      scrollEnd();
-    },
-    [scrollEnd, setAtBottom],
-  );
-
   // When the keyboard slides up the list height shrinks but content offset
   // stays — explicitly scroll so the latest message sits above the keyboard,
   // like every normal chat app. Delay covers the keyboard animation (~250ms).
@@ -541,71 +521,24 @@ export function ChatScreen() {
   // keyboard (matters for the model search field).
   useEffect(() => {
     let t1: ReturnType<typeof setTimeout> | null = null;
-    let t2: ReturnType<typeof setTimeout> | null = null;
-    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e: any) => {
-      setKbH(Math.max(0, Math.round(e?.endCoordinates?.height ?? 0)));
+    const t2: ReturnType<typeof setTimeout> | null = null;
+    // `winH` is the layout viewport; the visual viewport is what shrinks when
+    // the keyboard opens, and the difference between them is its height.
+    const vv = window.visualViewport;
+    const onKeyboard = () => {
+      setKbH(vv ? Math.max(0, Math.round(window.innerHeight - vv.height - (vv.offsetTop ?? 0))) : 0);
       t1 = setTimeout(() => {
-        scrollEnd(true);
+        listRef.current?.scrollToEnd({ behavior: 'smooth' });
         remeasurePopover();
       }, 50);
-    });
-    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
-      setKbH(0);
-      t2 = setTimeout(() => {
-        scrollEnd(true);
-        remeasurePopover();
-      }, 50);
-    });
+    };
+    vv?.addEventListener('resize', onKeyboard);
     return () => {
-      show.remove();
-      hide.remove();
+      vv?.removeEventListener('resize', onKeyboard);
       if (t1) clearTimeout(t1);
       if (t2) clearTimeout(t2);
     };
-  }, [scrollEnd, remeasurePopover]);
-
-  // Keyboard/footer resize does NOT auto-scroll: other chat apps leave the
-  // transcript where it is and let the user scroll down to the newest message.
-  // (kbResizeRef guards the follow during the resize transition.)
-  useEffect(() => {
-    if (kbH === 0 && dockH === 0) return;
-    kbResizeRef.current = true;
-    const t = setTimeout(() => {
-      kbResizeRef.current = false;
-    }, 450);
-    return () => clearTimeout(t);
-  }, [kbH, dockH]);
-
-  useEffect(() => {
-    const prev = pinTrack.current;
-    const first = messages.length ? messages[0].id : null;
-    pinTrack.current = { sid: sessionId, first, len: messages.length };
-    if (!sessionId || messages.length === 0) return;
-    const reloaded =
-      sessionId !== prev.sid || first !== prev.first || prev.len === 0;
-    if (!reloaded) return;
-    // Declare intent immediately; the actual pin rides the content-size
-    // follow (correct measurements post-layout), NOT a direct scrollEnd here:
-    // on a cold load contentH/layoutH are still stale when this effect runs,
-    // so an immediate scroll computes a bogus small offset, strands the
-    // viewport up top, and reads exactly like "went down then bounced back".
-    stickEnd.current = true;
-    setAtBottom(true);
-    // Backstop: if no content-size event ever arrives to trigger the follow
-    // (static transcript, kb-suppressed window), pin once, late. Survives
-    // appends (only a new reload resets it); holding a finger down re-arms
-    // instead of firing into an actively-driven list.
-    if (pinTimer.current) clearTimeout(pinTimer.current);
-    pinWanted.current = true;
-    pinTimer.current = setTimeout(function tick() {
-      pinTimer.current = null;
-      if (touching.current) {
-        pinTimer.current = setTimeout(tick, 600);
-        return;
-      }
-      if (stickEnd.current || pinWanted.current) scrollEnd(false);
-    }, 600);
-  }, [sessionId, messages, scrollEnd]);
+  }, [remeasurePopover]);
 
   // Fetch picker inventory when entering a chat (WS model.options, REST fallback).
   useEffect(() => {
@@ -615,159 +548,51 @@ export function ChatScreen() {
   }, [sessionId, providers, providersLoading, loadProviders]);
 
   const onSend = useCallback(() => {
-    stickEnd.current = true;
     void send();
-    scrollEnd();
-  }, [send, scrollEnd]);
+    // Sending has to re-engage following, not just scroll: if the user had
+    // scrolled up into history, MessageScroller is in free-scrolling mode and
+    // the reply would stream in off-screen. scrollToEnd puts it back in follow
+    // mode, which is what the old `stickEnd = true` did.
+    listRef.current?.scrollToEnd({ behavior: 'smooth' });
+  }, [send]);
 
   // Attach actions live here (not in the composer) because their UI — the "+"
   // popover — is rendered at screen level. See pickImage/pickFile callers below.
+  // Images go through the same <input type="file"> as everything else, with an
+  // `accept` filter. Note what is *not* here: there is no downscale-to-quality
+  // step. A browser cannot re-encode an image it did not decode, and the upload
+  // has a size ceiling that rejects anything too large anyway, so the original
+  // file goes up as-is.
   const pickImage = useCallback(async () => {
     setPopover(null);
-    try {
-      const r = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.8,
-      });
-      if (!r.canceled && r.assets?.length) {
-        const picked = r.assets.map((a, i) => ({
-          uri: a.uri,
-          name: a.fileName ?? `image-${Date.now()}-${i}.jpg`,
-          mime: a.mimeType,
-        }));
-        setAttachments([...attachments, ...picked]);
-      }
-    } catch {}
+    const picked = await pickFiles({ accept: 'image/*', multiple: true });
+    if (picked.length) {
+      setAttachments([
+        ...attachments,
+        ...picked.map((f) => ({ uri: f.uri, name: f.name || `image-${Date.now()}.jpg`, mime: f.mime })),
+      ]);
+    }
   }, [attachments, setAttachments]);
 
   const pickFile = useCallback(async () => {
     setPopover(null);
-    try {
-      const r = await DocumentPicker.getDocumentAsync({ multiple: true });
-      if (!r.canceled && r.assets?.length) {
-        const picked = r.assets.map((a) => ({
-          uri: a.uri,
-          name: a.name ?? 'file',
-          mime: a.mimeType,
-        }));
-        setAttachments([...attachments, ...picked]);
-      }
-    } catch {}
+    const picked = await pickFiles({ multiple: true });
+    if (picked.length) {
+      setAttachments([...attachments, ...picked.map((f) => ({ uri: f.uri, name: f.name || 'file', mime: f.mime }))]);
+    }
   }, [attachments, setAttachments]);
 
-  // Bottom sheets are programmatic: present/dismiss as store state changes.
-  // NEVER dismiss a modal that was never presented: gorhom's dismiss() on a
-  // fresh modal flips its internal status to DISMISSING, after which the
-  // portal refuses to render anything — silently, forever. Track presented.
-  const infoRef = useRef<BottomSheetModal>(null);
-  const infoPresented = useRef(false);
-  useEffect(() => {
-    if (infoSeq > 0) {
-      infoRef.current?.present();
-      infoPresented.current = true;
-    }
-  }, [infoSeq]);
-  useEffect(() => {
-    if (!infoOpen && infoPresented.current) {
-      // Programmatic close only — a user-swiped sheet already closed itself
-      // (onDismiss reset the flag); dismissing it again repoisons the modal.
-      infoPresented.current = false;
-      infoRef.current?.dismiss();
-    }
-  }, [infoOpen]);
-  const askRef = useRef<BottomSheetModal>(null);
-  const askPresented = useRef(false);
-  // A dismiss animation in flight — presenting during it strands the backdrop
-  // (stuck dark screen). A new ask waits for onDismiss instead of barging in.
-  const askDismissing = useRef(false);
-  const askQueued = useRef(false);
-  // Fresh `ask` for the dismiss handler (the effect closure would see stale).
-  const askMirror = useRef(ask);
-  askMirror.current = ask;
-  useEffect(() => {
-    if (ask) {
-      if (askPresented.current) return; // already open — content flows via props
-      if (askDismissing.current) {
-        askQueued.current = true; // show once the close animation lands
-        return;
-      }
-      askRef.current?.present();
-      askPresented.current = true;
-    } else {
-      askQueued.current = false;
-      if (askPresented.current) {
-        askPresented.current = false;
-        askDismissing.current = true;
-        askRef.current?.dismiss();
-      }
-    }
-  }, [ask]);
-  // A close landing must not kill a newer ask: if one arrived mid-dismiss,
-  // re-present instead of clearing it (the old path cleared it AND dismissed
-  // under it — the stuck dark backdrop).
+  // The ask and info sheets are controlled Radix dialogs: `open` is the store
+  // state, full stop.
+  // React re-renders from `open`, so "presenting again" and "staying open" are
+  // the same statement.
+  //
+  // `ask` is the whole contract. The sheet cannot be dismissed
+  // by the user at all (AskSheet prevents Escape and outside-press), so
+  // onOpenChange only ever fires for a programmatic close we asked for.
   const onAskSheetDismiss = useCallback(() => {
-    askDismissing.current = false;
-    if (askMirror.current) {
-      askQueued.current = false;
-      askRef.current?.present();
-      askPresented.current = true;
-      return;
-    }
-    askQueued.current = false;
     dismissAsk();
   }, [dismissAsk]);
-
-  // In-conversation search — full-transcript hits (server rows, not just the
-  // loaded window), with jumps that page older history in until the hit is
-  // mounted. Window highlight stays query-local (see highlightIds below).
-  const sq = searchQuery.trim().toLowerCase();
-  const [searchHits, setSearchHits] = useState<TranscriptHit[]>([]);
-  const jumpToHit = useCallback(
-    async (n: number, hits: TranscriptHit[]) => {
-      if (hits.length === 0) return;
-      const k = ((n % hits.length) + hits.length) % hits.length;
-      setMatchIdx(k);
-      stickEnd.current = false;
-      let idx = findHitIndex(hits[k]);
-      // Page older history in until the hit mounts (bounded; exhausted stops).
-      let guard = 0;
-      while (idx < 0 && guard++ < 8 && !historyExhausted) {
-        const ran = await loadOlderMessages();
-        if (!ran) break;
-        idx = findHitIndex(hits[k]);
-      }
-      if (idx < 0) return;
-      try {
-        void listRef.current
-          ?.scrollToIndex({ index: idx, viewPosition: 0.5, animated: true })
-          ?.catch(() => {});
-      } catch {}
-    },
-    [findHitIndex, historyExhausted, loadOlderMessages],
-  );
-  const jumpToHitRef = useRef(jumpToHit);
-  jumpToHitRef.current = jumpToHit;
-  // Debounced so a burst of keystrokes makes one index filter (the full fetch
-  // itself is cached per transcript revision inside searchTranscript).
-  useEffect(() => {
-    if (!searchOpen || !sq) {
-      setSearchHits([]);
-      setMatchIdx(0);
-      return;
-    }
-    let live = true;
-    const t = setTimeout(() => {
-      void searchTranscript(sq).then((hits) => {
-        if (!live) return;
-        setSearchHits(hits);
-        void jumpToHitRef.current(0, hits);
-      });
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [searchOpen, sq, searchTranscript]);
 
   // Model picker + list memos must live before the early returns below
   // (hooks can't run after a conditional return). They only read state/props.
@@ -793,123 +618,28 @@ export function ChatScreen() {
       })
       .filter((p) => (q ? (p.models?.length ?? 0) > 0 : true));
   }, [modelProviders, mq]);
-  // Search highlight: precompute matched ids once instead of toLowerCase per bubble per render.
-  // Includes buffered streaming text for searchable conversation messages.
-  const highlightIds = useMemo(() => {
-    if (!searchOpen || !sq) return null;
-    const s = new Set<string>();
-    for (const m of messages) {
-      if (messageMatchesSearch(m, streamingTexts[m.id], sq)) s.add(m.id);
-    }
-    return s;
-  }, [searchOpen, sq, messages, streamingTexts]);
-  const listContentStyle = useMemo(
-    () => ({ padding: 12, paddingBottom: dockH }),
-    [dockH],
-  );
-  // FlashList วาง cell แบบ absolute — `gap` ใน contentContainerStyle โดนเมิน
-  // ข้อความเลยติดกัน ใช้ separator คั่น 8px แทน (เท่า gap เดิม)
-  const listSeparator = useCallback(() => <View style={{ height: 8 }} />, []);
+  // The composer clearance is passed to Transcript as `clearance`, not as
+  // `padding-bottom` here: the scroller watches the content with a
+  // ResizeObserver, which observes the content BOX, and with `h-max` +
+  // `box-sizing: border-box` growing the bottom padding shrinks that box by
+  // exactly as much — so the observer never fires and the transcript settles one
+  // composer-height short of the bottom. Transcript renders the clearance as a
+  // real trailing child instead; see the note on TranscriptProps.clearance. The
+  // row gap is Transcript's too, for the same reason.
+  // The column and the content box are separate because Transcript puts the jump
+  // button on a rail that matches the column, so the button lands on the
+  // bubbles' right edge — see TranscriptProps.columnClassName.
+  const listColumnClass = 'mx-auto w-full max-w-3xl';
+  // The header is in normal flow above the scroller (see the JSX below), so the
+  // scroller's own top edge is already below it — the content needs no top pad
+  // to clear a floating bar. Just the safe area the header does not cover, and
+  // a small gap so the first row is not flush against the bar.
+  const listContentClass = 'flex flex-col px-3 pt-3';
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
-  // Recycle per bubble role (user/assistant/tool/thinking/…) — a tall tool
-  // Armed while an older page loads: offset + content height captured after
-  // the fetch resolves, consumed by the next content-size growth (see
-  // handleContentSizeChange). Without it a prepend yanks the viewport upward.
-  const prependAdj = useRef<{ prevY: number; prevContentH: number } | null>(null);
-  // row never reuses a short user cell, so no measure-then-jump on scroll.
-  const listGetItemType = useCallback((m: UiMessage) => m.role, []);
-  // FlashList v2 maintains visible position itself; auto-scroll to bottom is
-  // owned by the stickEnd follow system below, so keep the native helper off.
-  const listMaintainVisible = useMemo(() => ({ disabled: true }), []);
-  const handleContentSizeChange = useCallback(
-    (_w: number, h: number) => {
-      const prevH = contentH.current;
-      contentH.current = h;
-      setCanScroll(h > layoutH.current + 40);
-      // Prepended an older page above the viewport: shift the offset down by
-      // the growth so the row under the finger stays put (no yank to top).
-      if (prependAdj.current) {
-        const { prevY, prevContentH } = prependAdj.current;
-        prependAdj.current = null;
-        const dh = h - (prevContentH ?? prevH);
-        if (dh > 8) {
-          flying.current = true;
-          if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
-          scrollEndTimer.current = setTimeout(() => {
-            flying.current = false;
-          }, 1200);
-          listRef.current?.scrollToOffset({ offset: Math.max(0, prevY + dh), animated: false });
-        }
-        return;
-      }
-      if (touching.current) return;
-      if (!stickEnd.current || kbResizeRef.current) return;
-      // Coalesce: at most one follow per window no matter how many tokens
-      // land inside it. Discrete follows (send, keyboard, session open) call
-      // scrollEnd directly and are unaffected.
-      if (followTimer.current) return;
-      followTimer.current = setTimeout(() => {
-        followTimer.current = null;
-        if ((!stickEnd.current && !pinWanted.current) || touching.current) return;
-        // Skip micro-gaps: the bottom is already on screen, and firing a
-        // native scroll per tick for a few pixels is what made following look
-        // steppy. Glide (animated) for short hops, jump (instant) for long
-        // hauls — same rule as the scroll-to-bottom button (a full-transcript
-        // animated glide reads as a slow descent).
-        const end = Math.max(0, contentH.current - layoutH.current);
-        const dist = end - scrollY.current;
-        if (dist < 12) return;
-        scrollEnd(dist < 3000);
-      }, 250);
-    },
-    [scrollEnd],
-  );
-  const handleListLayout = useCallback(
-    (e: any) => {
-      layoutH.current = e.nativeEvent.layout.height;
-      setCanScroll(contentH.current > e.nativeEvent.layout.height + 40);
-      if (stickEnd.current) scrollEnd(false);
-    },
-    [scrollEnd],
-  );
-  const handleScrollBeginDrag = useCallback((e: any) => {
-    touching.current = true;
-    dragStartY.current = e.nativeEvent.contentOffset.y;
-  }, []);
-  const handleScroll = useCallback((e: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    scrollY.current = contentOffset.y;
-    const atEnd = contentSize.height - (contentOffset.y + layoutMeasurement.height) < AT_END_PX;
-    if (flying.current && !touching.current) {
-      if (atEnd) flying.current = false;
-      else return;
-    }
-    if (atEnd) {
-      // Landing near the bottom (re)engages following and retires any fresh-
-      // load intent — self-healing after programmatic scrolls, layout shifts
-      // and keyboard transitions. A fling that lands here is over by definition.
-      missEnd.current = 0;
-      momentum.current = false;
-      stickEnd.current = true;
-      pinWanted.current = false;
-    } else if (touching.current || momentum.current) {
-      // Genuine user driving (finger down, or fling in flight): disengage
-      // immediately and retire load intent — the user positioned deliberately.
-      missEnd.current = 0;
-      stickEnd.current = false;
-      pinWanted.current = false;
-    } else {
-      // No touch, no momentum: MVCP adjustments, layout shifts and stray
-      // events. A lone transient must never cancel following (it strands the
-      // viewport mid-list with no further follow queued) — require it to
-      // persist across frames. pinWanted deliberately survives this branch.
-      missEnd.current += 1;
-      if (missEnd.current >= 3) {
-        stickEnd.current = false;
-      }
-    }
-    setAtBottom((p) => (p === atEnd ? p : atEnd));
-  }, []);
+  // Following the tail, holding position across a prepend, and settling the
+  // follow state on a release all used to live here as ~150 lines of scroll
+  // arithmetic over a known content height. MessageScroller owns all three now;
+  // see components/chat/transcript.tsx for what is left on this side.
   const onBranchChat = useCallback(() => void branchSession(), [branchSession]);
   const renderMessage = useCallback(
     ({ item }: { item: UiMessage }) => {
@@ -920,10 +650,8 @@ export function ChatScreen() {
       return (
         <MessageBubble
           item={item}
-          bubbleMax={bubbleMax}
           dark={dark}
           expanded={!!expanded[item.id]}
-          highlight={highlightIds?.has(item.id) ?? false}
           longFired={longFired}
           onToggleExpand={onToggleExpand}
           copied={copiedId === item.id}
@@ -937,40 +665,37 @@ export function ChatScreen() {
         />
       );
     },
-    [bubbleMax, dark, expanded, highlightIds, onToggleExpand, copiedId, onCopy, generating, lastAssistantId, hasRegenTarget, onRegenerate, onBranchChat, openUserMenu, showTip],
+    [
+      dark,
+      expanded,
+      onToggleExpand,
+      copiedId,
+      onCopy,
+      generating,
+      lastAssistantId,
+      hasRegenTarget,
+      onRegenerate,
+      onBranchChat,
+      openUserMenu,
+      showTip,
+    ],
   );
-  const listExtraData = useMemo(
-    // Minimal: only per-row affordances that data-item identity alone won't
-    // refresh (old/new last-assistant rows for regenerate, expand/highlight/
-    // copy flags, generating). Theme/width flow through renderMessage's
-    // closure; streaming deltas flow via StreamingContext in the bubble.
-    () => ({ expanded, highlightIds, copiedId, generating, lastAssistantId }),
-    [expanded, highlightIds, copiedId, generating, lastAssistantId],
-  );
-
-  const closeSearch = useCallback(() => {
-    Keyboard.dismiss();
-    setSearchOpen(false);
-    setSearchQuery('');
-  }, []);
-
-  // A room switch should not carry another conversation's search term/results.
-  useEffect(() => {
-    closeSearch();
-  }, [closeSearch, sessionId]);
 
   // ── Transcript window ────────────────────────────────────────────────
-  // Older pages prepend above the viewport: capture the offset AFTER the
-  // fetch resolves (pre-flush, so contentH still excludes the new rows) and
-  // let handleContentSizeChange shift it down by the growth.
+  // Older pages prepend above the viewport. The offset shift that keeps the
+  // row under the finger put is MessageScroller's (`preserveScrollOnPrepend`),
+  // so there is nothing to capture here any more.
   const onLoadOlder = useCallback(() => {
-    void loadOlderMessages().then((ran) => {
-      if (ran) prependAdj.current = { prevY: scrollY.current, prevContentH: contentH.current };
-    });
+    void loadOlderMessages();
   }, [loadOlderMessages]);
   const handleStartReached = useCallback(() => {
     onLoadOlder();
   }, [onLoadOlder]);
+  // The scroller reports whether there is anything below the fold; `end` is the
+  // negation of "at the bottom". The head-trim below is the only reader.
+  const handleScrollableChange = useCallback((s: { start: boolean; end: boolean }) => {
+    setAtBottom(!s.end);
+  }, []);
   // Head trim past the soft cap: only while pinned at the bottom, idle, and
   // not paging — reading history up top is never yanked. Trimmed rows stay
   // server-side and come back through onLoadOlder.
@@ -982,168 +707,131 @@ export function ChatScreen() {
   const ListHeader = useCallback(() => {
     if (historyLoadingMore) {
       return (
-        <View className="items-center py-3">
-          <ActivityIndicator size="small" />
-          <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</Text>
-        </View>
+        <div className="flex flex-col items-center py-3">
+          <Spinner size={14} color="currentColor" />
+          <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</div>
+        </div>
       );
     }
     if (trimmedOlder > 0 || !historyExhausted) {
       return (
-        <View className="items-center py-1.5">
-          <Button variant="ghost" onPress={onLoadOlder} hitSlop={8} className="px-3 py-1.5">
-            <UIText className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
-              ↑ Load older messages
-            </UIText>
+        <div className="flex flex-col items-center py-1.5">
+          <Button variant="ghost" onClick={onLoadOlder} className="px-3 py-1.5">
+            <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">↑ Load older messages</span>
           </Button>
-        </View>
+        </div>
       );
     }
     return null;
   }, [historyLoadingMore, historyExhausted, trimmedOlder, onLoadOlder]);
 
-  const searchVisible = Boolean(sessionId && searchOpen);
-
-  // The screen owns the full header row. Keeping React Navigation's native
-  // header mounted as well would overlay its session title and hamburger on
-  // top of the search row, especially on iOS.
-  const navigation = useNavigation();
-  useLayoutEffect(() => {
-    navigation.setOptions({ headerShown: false });
-  }, [navigation]);
-
   if (booting) {
     return (
-      <View style={screen}>
-        <SafeAreaView className="flex-1 bg-white items-center justify-center gap-3 dark:bg-black" edges={['top', 'left', 'right', 'bottom']}>
-          <StatusBar style="auto" />
-          <ActivityIndicator size="large" />
-          <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</Text>
-        </SafeAreaView>
-      </View>
+      <div style={screen}>
+        <div className="flex flex-col flex-1 bg-popover items-center justify-center gap-3 dark:bg-background">
+          <Spinner size={24} color="currentColor" />
+          <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">connecting…</div>
+        </div>
+      </div>
     );
   }
-  if (!authed) return <Redirect href="/login" />;
+  if (!authed) return <Redirect to="/login" replace />;
 
   if (!sessionId) {
     return (
-      <View style={screen}>
-        <View style={noSessionHeader}>
-          <View className="h-[52px] flex-row items-center px-2">
-            <View className="w-11 items-start">
+      <div style={screen}>
+        <div style={noSessionHeader}>
+          <div className="h-[52px] flex items-center px-2">
+            <div className="flex flex-col w-11 items-start">
               <HamburgerBtn />
-            </View>
-          </View>
-        </View>
-        <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right', 'bottom']}>
-          <StatusBar style="auto" />
-          <View className="flex-1 items-center justify-center p-6">
-            <Text className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">No active session — start a new one.</Text>
-            <Button variant="default" onPress={() => void newSession()} className="mt-2 items-center px-[18px] py-[11px]">
-              <UIText className="text-[15px] font-semibold">+ New chat</UIText>
+            </div>
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col bg-popover dark:bg-background">
+          <div className="flex flex-col flex-1 items-center justify-center p-6">
+            <div className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+              No active session — start a new one.
+            </div>
+            <Button
+              variant="default"
+              onClick={() => void newSession()}
+              className="mt-2 items-center px-[18px] py-[11px]">
+              <span className="text-[15px] font-semibold">+ New chat</span>
             </Button>
-          </View>
-        </SafeAreaView>
-      </View>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  // Popover geometry: anchor above the tapped control (window → root coords).
-  // (modelVisibleProviders/highlight/list memos live above the early returns.)
-  const popW = popover
-    ? popover.kind === 'model'
-      ? Math.min(winW - 24, 340)
-      : popover.kind === 'attach'
-        ? 184
-        : 168
-    : 0;
+  // Popover geometry for the model picker only. Anchor above the tapped control
+  // (window → root coords).
+  const popW = popover ? Math.min(winW - 24, 340) : 0;
   const popRootH = rootWin.current.h || Math.max(0, winH - rootWin.current.y);
+  const popRootW = rootWin.current.w || winW;
   const popRelY = popover ? popover.y - rootWin.current.y : 0;
   const popBottom = popover ? Math.max(8, popRootH - popRelY + 6) : 0;
-  const popLeft = popover
-    ? popover.kind === 'model'
-      // Wide panel: dock to the left screen margin instead of the mid-screen
-      // anchor chip, so it never floats mid-air or clips past the right edge.
-      ? 12
-      : Math.max(8, Math.min(popover.x, winW - popW - 8))
-    : 0;
+  // Anchored to the chip that opened it, then clamped to the panel's own width.
+  // This used to be a hardcoded `12` — docked to the left screen margin on the
+  // theory that a 340px panel under a mid-screen chip would clip. It does not:
+  // `min` against `rootW - popW - 8` handles a phone (390 - 340 - 8 = 42, still
+  // on screen), so the hardcoding bought nothing and cost the panel its anchor.
+  const popRelX = popover ? popover.x - rootWin.current.x : 0;
+  const popLeft = popover ? Math.max(8, Math.min(popRelX, popRootW - popW - 8)) : 0;
   // Height budget = the space between the anchor and the top of the screen
   // content, minus the 6px anchor gap and an 8px top margin. The popover grows
   // upward from the composer, so without this the model list (which gets long
   // as soon as a search auto-expands every matching provider) slides up under
-  // the native header and hides the search field being typed into.
+  // the header and hides the search field being typed into.
   const popSpaceAbove = popover ? Math.max(0, popRelY - 14) : 0;
-  const popMaxH =
-    popover?.kind === 'model'
-      ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove))
-      : undefined;
+  const popMaxH = popover ? Math.min(Math.round(popRootH * 0.55), Math.max(160, popSpaceAbove)) : undefined;
 
   return (
-    <View
-      ref={rootRef}
-      onLayout={() =>
-        rootRef.current?.measureInWindow((_x, y, _w, h) => {
-          rootWin.current = { y, h };
-          // Keyboard resize moves the composer; keep the popover glued to it.
-          remeasurePopover();
-        })
-      }
-      style={screen}
-    >
-      {searchVisible ? (
-        <ChatSearchHeader
-          insetTop={insets.top}
-          dark={dark}
-          iconColor={headerIcon}
-          query={searchQuery}
-          matchIndex={matchIdx}
-          matchCount={searchHits.length}
-          onChangeQuery={setSearchQuery}
-          onPrevious={() => void jumpToHit(matchIdx - 1, searchHits)}
-          onNext={() => void jumpToHit(matchIdx + 1, searchHits)}
-          onClose={closeSearch}
-        />
-      ) : (
+    <div ref={rootRef} style={screen} className="relative">
+      {/* Header in normal flow, not floating. A floating bar overlapped the
+          scroller, which meant the scroller owned the full column height and
+          its scrollbar ran *under* the header — visible on platforms whose
+          scrollbar is an overlay (Android, macOS), where it painted on top of
+          the glass with nothing to reserve: `scrollbar-gutter` reserves space
+          for a classic scrollbar only, and an overlay one measures zero. In
+          flow, the scroller simply starts below the bar, so the scrollbar's
+          top edge is the bar's bottom edge. This is also what every other screen
+          in the app does via ScreenScaffold, and what OpenChamber does.
+          The cost: rows no longer scroll under the bar, so there is no
+          backdrop-blur overlap to blur. */}
+      <div className="shrink-0 bg-popover dark:bg-background">
         <ChatNormalHeader
-          insetTop={insets.top}
           dark={dark}
-          iconColor={headerIcon}
           title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
           contextPercent={ctxPct}
           contextTone={ctxTone}
-          onOpenSearch={() => {
-            setSearchOpen(true);
-          }}
-          onSelectInfo={() => void openInfo()}
-          onOpenInfo={() => void openInfo()}
+          contextUsed={usage?.contextUsed ?? null}
+          contextMax={usage?.contextMax ?? null}
+          input={usage?.input ?? null}
+          output={usage?.output ?? null}
+          costUsd={usage?.costUsd ?? null}
+          subagents={subagents.length}
+          onExport={() => void handleExportSession()}
         />
-      )}
+      </div>
 
       {/* No 'bottom' edge here: Composer already pads with insets.bottom
           itself when the keyboard is closed, and KeyboardAvoidingView lifts
           it when open. Keeping 'bottom' would double the gap above the
           gesture bar (and float the composer above the keyboard). */}
-      <SafeAreaView className="flex-1 bg-white dark:bg-black" edges={['left', 'right']}>
-        <StatusBar style="auto" />
-
-      {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
-      <Modal
-        visible={!!userMenu}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={closeUserMenu}
-      >
-        <View style={{ flex: 1 }}>
-          <Pressable
-            style={{ position: 'absolute', inset: 0 }}
-            onPress={closeUserMenu}
-          />
-          {!!userMenu &&
+      <div className="flex min-h-0 flex-1 flex-col bg-popover dark:bg-background">
+        {/* Long-press popover on our own messages — Copy / Edit, same pattern. */}
+        <UserMenuDialog
+          open={!!userMenu}
+          onOpenChange={(o) => !o && closeUserMenu()}
+          anchor={userMenu?.anchor}
+          viewportWidth={winW}>
+          {userMenu &&
             (() => {
               const target = messages.find((m) => m.id === userMenu.id);
-              const delta = target ? streamingTexts[target.id] : undefined;
-              const fullText = target ? target.text + (delta ?? '') : '';
+              // Read on demand, not followed: the menu only ever offers Copy on a
+              // settled row, so there is no live delta worth re-rendering for.
+              const fullText = target ? target.text + readStreamedText(target.id) : '';
               const showCopy = !!target && !!fullText && !target.pending;
               const showEdit = !!target && target.role === 'user' && target.rowId != null && !generating;
               if (!target || (!showCopy && !showEdit)) return null;
@@ -1151,611 +839,573 @@ export function ChatScreen() {
               const left = Math.max(8, Math.min(userMenu.anchor.x + userMenu.anchor.w - menuW, winW - menuW - 8));
               const above = userMenu.anchor.y > 128;
               return (
-                <View
-                  className="absolute w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-[#212121]"
+                <div
+                  className="absolute w-48 rounded-xl border border-border bg-popover p-1.5 shadow-lg"
                   style={
                     above
                       ? { bottom: winH - userMenu.anchor.y + 8, left }
-                      : { top: userMenu.anchor.y + userMenu.anchor.h + 8 + insets.top, left }
-                  }
-                >
+                      : { top: userMenu.anchor.y + userMenu.anchor.h + 8, left }
+                  }>
                   {!!target.ts && (
-                    <View className="flex-row items-center gap-2.5 px-3 py-2">
+                    <div className="flex items-center gap-2.5 px-3 py-2">
                       <Clock size={17} color={dark ? '#888' : '#999'} />
-                      <Text className="text-[13px] text-neutral-500 dark:text-neutral-400">
+                      <div className="text-[13px] text-neutral-500 dark:text-neutral-400">
                         {formatBubbleTime(target.ts)}
-                      </Text>
-                    </View>
+                      </div>
+                    </div>
                   )}
                   {showCopy && (
                     <Button
                       variant="ghost"
-                      onPress={() => {
+                      onClick={() => {
                         closeUserMenu();
                         void copyText(target.id, fullText);
                       }}
-                      className="flex-row items-center gap-2.5 px-3 py-2.5"
-                    >
+                      className="flex items-center gap-2.5 px-3 py-2.5">
                       <Copy size={17} color={headerIcon} />
-                      <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</UIText>
+                      <span className="text-[15px] text-neutral-950 dark:text-neutral-100">Copy</span>
                     </Button>
                   )}
                   {showEdit && (
                     <Button
                       variant="ghost"
-                      onPress={() => {
+                      onClick={() => {
                         closeUserMenu();
                         editMessage(target.id);
                       }}
-                      className="flex-row items-center gap-2.5 px-3 py-2.5"
-                    >
+                      className="flex items-center gap-2.5 px-3 py-2.5">
                       <Pencil size={17} color={headerIcon} />
-                      <UIText className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</UIText>
+                      <span className="text-[15px] text-neutral-950 dark:text-neutral-100">Edit</span>
                     </Button>
                   )}
-                </View>
+                </div>
               );
             })()}
-        </View>
-      </Modal>
+        </UserMenuDialog>
 
-      {/* Plain View, not KeyboardAvoidingView: the composer is an absolute
+        {/* Plain View, not KeyboardAvoidingView: the composer is an absolute
           overlay at the bottom of the transcript container with a transparent
           background, so scrolled messages show through around the card — an
           absolute child ignores the view's padding, and the keyboard is
           handled explicitly via kbH (footer padding lifts the card). */}
-      <View className="flex-1">
-        <FlashList
-          ref={listRef}
-          data={messages}
-          style={{ flex: 1 }}
-          keyExtractor={listKeyExtractor}
-          getItemType={listGetItemType}
-          extraData={listExtraData}
-          drawDistance={800}
-          contentContainerStyle={listContentStyle}
-          ItemSeparatorComponent={listSeparator}
-          ListHeaderComponent={ListHeader}
-          onStartReached={handleStartReached}
-          onStartReachedThreshold={0.4}
-          onContentSizeChange={handleContentSizeChange}
-          onLayout={handleListLayout}
-          onMomentumScrollBegin={() => {
-            momentum.current = true;
-          }}
-          onMomentumScrollEnd={(e: any) => {
-            momentum.current = false;
-            snapToEnd(e);
-          }}
-          onScrollEndDrag={snapToEnd}
-          onScrollBeginDrag={handleScrollBeginDrag}
-          onScroll={handleScroll}
-          scrollEventThrottle={32}
-          maintainVisibleContentPosition={listMaintainVisible}
-          automaticallyAdjustKeyboardInsets={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="none"
-          renderItem={renderMessage}
-        />
-        {/* Overlay footer: absolute + transparent, so the transcript scrolls
+        {/* `min-h-0` and `flex flex-col` for the same reason as every other level
+          of this chain: it is a column flex item, and `min-height: auto` would
+          let it grow to the transcript's full height instead of letting the
+          scroller inside it scroll. */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {/* Rows are MessageScrollerItem and must stay direct children of the
+            content box: the prepend correction restores position by measuring
+            the first visible row, and it skips any child without a message id.
+            The old `contents` wrapper is gone with it — a display:contents box
+            has no rect, and the row alignment it existed for now lives inside
+            Message (see components/ui/message.tsx).
+            `key` on the scroller is the session: a switch has to remount the
+            scroll state, or a transcript opened while scrolled up in the
+            previous session would land at the top. */}
+          <Transcript
+            key={sessionId}
+            ref={listRef}
+            scrollerRef={scrollerRef}
+            columnClassName={listColumnClass}
+            contentClassName={listContentClass}
+            clearance={dockH}
+            gutter={gutter}
+            jumpBottom={dockH + 12}
+            onScrollableChange={handleScrollableChange}
+            onStartReached={handleStartReached}>
+            {ListHeader()}
+            {messages.map((item) => (
+              // `scrollAnchor` on your own messages is what makes a new turn
+              // settle near the top of the viewport with a peek of the previous
+              // one above it, instead of starting at the bottom edge — the reply
+              // then grows into the room below. Once it fills the viewport the
+              // scroller is back at the live edge and following takes over, so
+              // this composes with `autoScroll` rather than fighting it.
+              <MessageScrollerItem key={listKeyExtractor(item)} messageId={item.id} scrollAnchor={item.role === 'user'}>
+                {renderMessage({ item })}
+              </MessageScrollerItem>
+            ))}
+          </Transcript>
+          {/* Overlay footer: absolute + transparent, so the transcript scrolls
             underneath and shows through around the composer card. The list
             keeps the last bubble reachable via bottom content padding
             (= dockH). Same JSX position as before, so the focused input
-            never remounts. box-none: taps on the transparent margins fall
-            through to the list (which dismisses the keyboard); the card and
-            panels stay fully tappable. */}
-        <View
-          pointerEvents="box-none"
-          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: kbH + kbGap, backgroundColor: 'transparent' }}
-          onLayout={(e) => setDockH(e.nativeEvent.layout.height)}
-        >
-        {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
+            never remounts.
+            `pointer-events-none` is what lets a tap on the transparent margin
+            fall through to the list (which dismisses the keyboard). Every
+            interactive child below opts back in with `pointer-events-auto` —
+            the Composer already did; the Tasks / Subagents / Queued /
+            completion panels did not, so they inherited `none` and were
+            completely inert: no tap, no wheel, no touch-drag. `none` is
+            inherited, so a panel that forgets it is not "mostly working", it
+            is dead. */}
+          <div
+            ref={observeDock}
+            className="pointer-events-none"
+            // `right: gutter` keeps the composer, the status strip and the panels
+            // out of the scrollbar's reserved lane. Measured rather than assumed:
+            // it is 0 on macOS overlay scrollbars and ~15px on a classic one.
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: gutter,
+              bottom: 0,
+              paddingBottom: kbH + kbGap,
+              backgroundColor: 'transparent',
+            }}>
+            <div className="mx-auto w-full max-w-3xl">
+              {/* Composer status strip — context %, tokens, subagents, cost. Tap opens
             the full Session info sheet. */}
-        {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling
+              {/* Kept mounted (hidden, not unmounted) while idle: on web a sibling
             that appears/disappears next to a focused input is one more chance
             for the browser to drop the caret out of the composer. */}
-        <Text
-          className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400"
-          numberOfLines={1}
-          style={toolLine ? undefined : { display: 'none' }}
-        >
-          {toolLine ?? ''}
-        </Text>
-        {/* Agent todo checklist (`todo.updated`) — one collapsed summary line,
+              <div
+                className="px-3.5 pb-1 text-xs text-neutral-500 dark:text-neutral-400 truncate"
+                style={toolLine ? undefined : { display: 'none' }}>
+                {toolLine ?? ''}
+              </div>
+              {/* Agent todo checklist (`todo.updated`) — one collapsed summary line,
             tap to expand the full list. */}
-        {todos.length > 0 &&
-          (() => {
-            const done = todos.filter(todoDone).length;
-            const active = todos.find(todoActive);
-            return (
-              <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Button
-                  variant="ghost"
-                  onPress={() => setTodosOpen((v) => !v)}
-                  className="flex-row items-center gap-2 px-3 py-2"
-                >
-                  <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Tasks
-                  </UIText>
-                  <UIText className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
-                    {done}/{todos.length}
-                  </UIText>
-                  {!todosOpen && active && (
-                    <UIText
-                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
-                      numberOfLines={1}
-                    >
-                      · {todoLabel(active)}
-                    </UIText>
-                  )}
-                  {todosOpen && <View className="flex-1" />}
-                  {todosOpen ? (
-                    <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  ) : (
-                    <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  )}
-                </Button>
-                {todosOpen && (
-                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
-                    {todos.map((t, i) => {
-                      const d = todoDone(t);
-                      const a = todoActive(t);
-                      return (
-                        <View key={`${i}-${todoLabel(t)}`} className="flex-row items-start gap-2 px-3 py-1">
-                          <Text
-                            className={`shrink-0 text-[13px] leading-[18px] ${
-                              d
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : a
-                                  ? 'text-[#1a73e8] dark:text-[#7aa7ff]'
-                                  : 'text-neutral-400 dark:text-neutral-500'
-                            }`}
-                          >
-                            {d ? '✓' : a ? '◐' : '○'}
-                          </Text>
-                          <Text
-                            className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
-                              d
-                                ? 'text-neutral-400 line-through dark:text-neutral-500'
-                                : 'text-neutral-800 dark:text-neutral-200'
-                            }`}
-                          >
-                            {todoLabel(t)}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-            );
-          })()}
-        {/* Live subagents (polled from subagent.list while a turn runs). */}
-        {subagents.length > 0 &&
-          (() => {
-            const running = subagents.filter((s) => !subagentDone(s)).length;
-            const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
-            return (
-              <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-                <Button
-                  variant="ghost"
-                  onPress={() => setSubagentsOpen((v) => !v)}
-                  className="flex-row items-center gap-2 px-3 py-2"
-                >
-                  <UIText className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Subagents
-                  </UIText>
-                  <UIText className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
-                    {running}/{subagents.length}
-                  </UIText>
-                  {!subagentsOpen && first && (
-                    <UIText
-                      className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
-                      numberOfLines={1}
-                    >
-                      · {first.goal || first.last_tool || first.subagent_id}
-                    </UIText>
-                  )}
-                  {subagentsOpen && <View className="flex-1" />}
-                  {subagentsOpen ? (
-                    <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  ) : (
-                    <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
-                  )}
-                </Button>
-                {subagentsOpen && (
-                  <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled>
-                    {subagents.map((s) => {
-                      const done = subagentDone(s);
-                      return (
-                        <View key={s.subagent_id} className="flex-row items-center gap-2 px-3 py-1">
-                          <Text
-                            className={`shrink-0 text-[13px] leading-[18px] ${
-                              done ? 'text-neutral-400 dark:text-neutral-500' : 'text-[#1a73e8] dark:text-[#7aa7ff]'
-                            }`}
-                          >
-                            {done ? '✓' : '◐'}
-                          </Text>
-                          <Text
-                            className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
-                              done ? 'text-neutral-400 dark:text-neutral-500' : 'text-neutral-800 dark:text-neutral-200'
-                            }`}
-                            numberOfLines={1}
-                          >
-                            {s.goal || s.last_tool || s.subagent_id}
-                          </Text>
-                          {s.tool_count != null && (
-                            <Text className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
-                              {s.tool_count} calls
-                            </Text>
-                          )}
-                        </View>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-            );
-          })()}
-        {/* Prompt queue — drafts held while a turn runs, drained one per turn
+              {todos.length > 0 &&
+                (() => {
+                  const done = todos.filter(todoDone).length;
+                  const active = todos.find(todoActive);
+                  return (
+                    <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                      <Button
+                        variant="ghost"
+                        onClick={() => setTodosOpen((v) => !v)}
+                        className="flex items-center gap-2 px-3 py-2">
+                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                          Tasks
+                        </span>
+                        <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                          {done}/{todos.length}
+                        </span>
+                        {!todosOpen && active && (
+                          <span className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate">
+                            · {todoLabel(active)}
+                          </span>
+                        )}
+                        {todosOpen && <div className="flex-1" />}
+                        {todosOpen ? (
+                          <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        ) : (
+                          <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        )}
+                      </Button>
+                      {todosOpen && (
+                        <div className="overflow-y-auto max-h-[200px]">
+                          <div>
+                            {todos.map((t, i) => {
+                              const d = todoDone(t);
+                              const a = todoActive(t);
+                              return (
+                                <div key={`${i}-${todoLabel(t)}`} className="flex items-start gap-2 px-3 py-1">
+                                  <div
+                                    className={`shrink-0 text-[13px] leading-[18px] ${
+                                      d
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : a
+                                          ? 'text-brand'
+                                          : 'text-neutral-400 dark:text-neutral-500'
+                                    }`}>
+                                    {d ? '✓' : a ? '◐' : '○'}
+                                  </div>
+                                  <div
+                                    className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
+                                      d
+                                        ? 'text-neutral-400 line-through dark:text-neutral-500'
+                                        : 'text-neutral-800 dark:text-neutral-200'
+                                    }`}>
+                                    {todoLabel(t)}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              {/* Live subagents (polled from subagent.list while a turn runs). */}
+              {subagents.length > 0 &&
+                (() => {
+                  const running = subagents.filter((s) => !subagentDone(s)).length;
+                  const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
+                  return (
+                    <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                      <Button
+                        variant="ghost"
+                        onClick={() => setSubagentsOpen((v) => !v)}
+                        className="flex items-center gap-2 px-3 py-2">
+                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                          Subagents
+                        </span>
+                        <span className="shrink-0 text-[11px] font-semibold text-neutral-400 dark:text-neutral-500">
+                          {running}/{subagents.length}
+                        </span>
+                        {!subagentsOpen && first && (
+                          <span className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate">
+                            · {first.goal || first.last_tool || first.subagent_id}
+                          </span>
+                        )}
+                        {subagentsOpen && <div className="flex-1" />}
+                        {subagentsOpen ? (
+                          <ChevronUp size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        ) : (
+                          <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
+                        )}
+                      </Button>
+                      {subagentsOpen && (
+                        <div className="overflow-y-auto max-h-[160px]">
+                          <div>
+                            {subagents.map((s) => {
+                              const done = subagentDone(s);
+                              return (
+                                <div key={s.subagent_id} className="flex items-center gap-2 px-3 py-1">
+                                  <div
+                                    className={`shrink-0 text-[13px] leading-[18px] ${
+                                      done
+                                        ? 'text-neutral-400 dark:text-neutral-500'
+                                        : 'text-brand'
+                                    }`}>
+                                    {done ? '✓' : '◐'}
+                                  </div>
+                                  <div
+                                    className={`min-w-0 flex-1 text-[13px] leading-[18px] ${
+                                      done
+                                        ? 'text-neutral-400 dark:text-neutral-500'
+                                        : 'text-neutral-800 dark:text-neutral-200'
+                                    } truncate`}>
+                                    {s.goal || s.last_tool || s.subagent_id}
+                                  </div>
+                                  {s.tool_count != null && (
+                                    <div className="shrink-0 text-[11px] text-neutral-400 dark:text-neutral-500">
+                                      {s.tool_count} calls
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              {/* Prompt queue — drafts held while a turn runs, drained one per turn
             end. Sits above the completion panel so completions stay nearest the
             input. */}
-        {queued.length > 0 && (
-          <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-            <View className="flex-row items-center justify-between px-3 pb-0.5 pt-2">
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
-              </Text>
-              {queueParked ? (
-                <Button variant="link" onPress={resumeQueue} hitSlop={8} className="px-1.5 py-0.5">
-                  <UIText className="text-[11px] font-semibold">Resume</UIText>
-                </Button>
-              ) : (
-                <Button variant="link" onPress={clearQueue} hitSlop={8} className="px-1.5 py-0.5">
-                  <UIText className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</UIText>
-                </Button>
+              {queued.length > 0 && (
+                <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                  <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
+                    </div>
+                    {queueParked ? (
+                      <Button variant="link" onClick={resumeQueue} className="px-1.5 py-0.5">
+                        <span className="text-[11px] font-semibold">Resume</span>
+                      </Button>
+                    ) : (
+                      <Button variant="link" onClick={clearQueue} className="px-1.5 py-0.5">
+                        <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">Clear</span>
+                      </Button>
+                    )}
+                  </div>
+                  <div className="overflow-y-auto max-h-[160px]">
+                    <div>
+                      {queued.map((q) => (
+                        <div key={q.id} className="flex items-center gap-2 px-3 py-1.5">
+                          <div className="min-w-0 flex-1 text-[13px] text-neutral-800 dark:text-neutral-200 truncate">
+                            {q.text}
+                          </div>
+                          <Button
+                            variant="outline"
+                            onClick={() => sendQueuedNow(q.id)}
+                            className="shrink-0 px-1.5 py-0.5">
+                            <span className="text-[11px] font-semibold">Send</span>
+                          </Button>
+                          <Button variant="link" onClick={() => removeQueued(q.id)} className="shrink-0 px-1.5 py-0.5">
+                            <span className="text-[15px] leading-[15px] text-neutral-400">×</span>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               )}
-            </View>
-            <ScrollView style={{ maxHeight: 160 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-              {queued.map((q) => (
-                <View key={q.id} className="flex-row items-center gap-2 px-3 py-1.5">
-                  <Text
-                    className="min-w-0 flex-1 text-[13px] text-neutral-800 dark:text-neutral-200"
-                    numberOfLines={1}
-                  >
-                    {q.text}
-                  </Text>
-                  <Button
-                    variant="outline"
-                    onPress={() => sendQueuedNow(q.id)}
-                    hitSlop={8}
-                    className="shrink-0 px-1.5 py-0.5"
-                  >
-                    <UIText className="text-[11px] font-semibold">Send</UIText>
-                  </Button>
-                  <Button variant="link" onPress={() => removeQueued(q.id)} hitSlop={10} className="shrink-0 px-1.5 py-0.5">
-                    <UIText className="text-[15px] leading-[15px] text-neutral-400">×</UIText>
-                  </Button>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-        {/* Composer completion panel (slash commands / @ references) — floats
+              {/* Composer completion panel (slash commands / @ references) — floats
             above the composer as a normal flex child (not an absolute overlay),
             so its rows stay tappable on Android and the input keeps focus while
             the user keeps typing. */}
-        {visibleCompletions.length > 0 && (
-          <View className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#212121]">
-            <View className="flex-row items-center justify-between px-3 pb-0.5 pt-2">
-              <Text className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                {completionKind === 'slash' ? 'Commands' : 'References'}
-              </Text>
-              <Text className="text-[11px] text-neutral-400 dark:text-neutral-500">{visibleCompletions.length}</Text>
-            </View>
-            <ScrollView style={{ maxHeight: 248 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-              {visibleCompletions.slice(0, 40).map((item, i) => {
-                const label = item.display || item.text;
-                return (
-                  <Button
-                    variant="ghost"
-                    key={`${item.text}-${i}`}
-                    testID={`completion-option-${i}`}
-                    onPress={() => applyCompletion(item)}
-                    className="flex-row items-center gap-2 px-3 py-2"
-                  >
-                    <UIText
-                      className="shrink-0 text-[14px] font-semibold text-[#1a73e8] dark:text-[#7aa7ff]"
-                      numberOfLines={1}
-                    >
-                      {label}
-                    </UIText>
-                    {item.meta ? (
-                      <UIText
-                        className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400"
-                        numberOfLines={1}
-                      >
-                        {item.meta}
-                      </UIText>
-                    ) : (
-                      <View className="flex-1" />
-                    )}
-                    {item.kind === 'skill' && (
-                      <UIText className="shrink-0 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                        skill
-                      </UIText>
-                    )}
+              {visibleCompletions.length > 0 && (
+                <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                  <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      {completionKind === 'slash' ? 'Commands' : 'References'}
+                    </div>
+                    <div className="text-[11px] text-neutral-400 dark:text-neutral-500">
+                      {visibleCompletions.length}
+                    </div>
+                  </div>
+                  {/* `overflow-x-hidden` is load-bearing: a row is a `Button`, whose base
+                    carries `whitespace-nowrap`, so a long command description
+                    made the panel wider than its box and gave it a horizontal
+                    scrollbar beside the vertical one. `overscroll-contain` stops
+                    a swipe that runs out of rows from chaining to the
+                    transcript behind. */}
+                  <div className="max-h-[248px] overflow-x-hidden overflow-y-auto overscroll-contain">
+                    <div>
+                      {visibleCompletions.slice(0, 40).map((item, i) => {
+                        const label = item.display || item.text;
+                        return (
+                          <Button
+                            variant="ghost"
+                            key={`${item.text}-${i}`}
+                            data-testid={`completion-option-${i}`}
+                            onClick={() => applyCompletion(item)}
+                            // `w-full justify-start min-w-0` override the
+                            // button base's `shrink-0` + `justify-center`: a
+                            // shrink-to-fit row centred in a narrower box puts
+                            // its overflow on *both* sides, and the left half
+                            // can never be scrolled to.
+                            className="flex w-full min-w-0 items-center justify-start gap-2 overflow-hidden px-3 py-2 text-left">
+                            <span className="max-w-[45%] text-[14px] font-semibold text-brand truncate">
+                              {label}
+                            </span>
+                            {item.meta ? (
+                              <span className="min-w-0 flex-1 text-[12px] text-neutral-500 dark:text-neutral-400 truncate">
+                                {item.meta}
+                              </span>
+                            ) : (
+                              <div className="flex-1" />
+                            )}
+                            {item.kind === 'skill' && (
+                              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-muted dark:text-neutral-300">
+                                skill
+                              </span>
+                            )}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {editingRowId != null && (
+                <div className="pointer-events-auto mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/5 px-3 py-1.5/40/10">
+                  <div className="min-w-0 flex-1 text-[12px] text-brand">
+                    Editing — resend to rewind and rerun from here
+                  </div>
+                  <Button variant="link" onClick={cancelEdit} className="shrink-0 px-1.5 py-0.5">
+                    <span className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</span>
                   </Button>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-        {editingRowId != null && (
-          <View className="mx-2.5 mb-1 flex-row items-center gap-2 rounded-xl border border-[#1a73e8]/40 bg-[#1a73e8]/5 px-3 py-1.5 dark:border-[#7aa7ff]/40 dark:bg-[#7aa7ff]/10">
-            <Text className="min-w-0 flex-1 text-[12px] text-[#1a73e8] dark:text-[#7aa7ff]">
-              Editing — resend to rewind and rerun from here
-            </Text>
-            <Button variant="link" onPress={cancelEdit} hitSlop={8} className="shrink-0 px-1.5 py-0.5">
-              <UIText className="text-[12px] font-semibold text-neutral-500 dark:text-neutral-400">Cancel</UIText>
-            </Button>
-          </View>
-        )}
-        <Composer
-          input={input}
-          setInput={setInput}
-          send={onSend}
-          stop={stop}
-          onRedirect={onRedirect}
-          onQueue={onQueue}
-          onPasteLarge={pasteLarge}
-          generating={generating}
-          model={model}
-          modelProvider={modelProvider}
-          onOpenModelPicker={openModelPicker}
-          effort={effort}
-          effortWire={effortWire}
-          showEffort={showEffort}
-          onOpenEffortPicker={openEffortPicker}
-          onOpenAttachPicker={openAttachPicker}
-          attachments={attachments}
-          setAttachments={setAttachments}
-          dark={dark}
+                </div>
+              )}
+              <Composer
+                input={input}
+                setInput={setInput}
+                send={onSend}
+                stop={stop}
+                onRedirect={onRedirect}
+                onQueue={onQueue}
+                onPasteLarge={pasteLarge}
+                generating={generating}
+                model={model}
+                modelProvider={modelProvider}
+                onOpenModelPicker={openModelPicker}
+                effort={effort}
+                effortWire={effortWire}
+                showEffort={showEffort}
+                attachMenu={attachMenu}
+                effortMenu={effortMenu}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                dark={dark}
+                stackModel={winW < 768}
+                keyboardUp={kbH > 0}
+                approvalMode={approvalMode}
+                onCycleApproval={cycleApproval}
+              />
+            </div>
+          </div>
+        </div>
+        {/* The jump-to-newest button lives inside <Transcript> now — it is the
+          visual half of the scroller's own `scrollable.end` state, and it has
+          to be rendered under the same provider to read it. */}
+        <AskSheet
+          open={!!ask}
+          ask={ask}
+          onValue={answerValue}
+          onApproval={answerApproval}
+          onAskResult={answerAsk}
+          onOpenChange={(o) => !o && onAskSheetDismiss()}
+          gw={getGw()}
+          contextLabel={sessionTitle || undefined}
         />
-        </View>
-      </View>
-      {/* Jump to the newest message — shown only when the transcript
-          overflows and the user has scrolled up. */}
-      {canScroll && !atBottom && (
-        <Button
-          variant="ghost"
-          size="icon"
-          testID="scroll-to-bottom"
-          onPress={() => {
-            stickEnd.current = true;
-            // Far away: jump instantly (smooth-scrolling ~10k px is the sludge);
-            // nearby: keep the short smooth glide.
-            const dist = contentH.current - (scrollY.current + layoutH.current);
-            scrollEnd(dist < 3000);
-          }}
-          className="absolute right-3 z-40 h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-[#2a2a2a]"
-          // Floats just above the footer, whose measured height already
-          // includes the keyboard lift.
-          style={{ bottom: dockH + 12, elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6 }}
-        >
-          <ChevronDown size={18} color={dark ? '#e5e5e5' : '#333'} />
-        </Button>
-      )}
-      <AskSheet
-        ref={askRef}
-        ask={ask}
-        onValue={answerValue}
-        onApproval={answerApproval}
-        onAskResult={answerAsk}
-        onDismiss={onAskSheetDismiss}
-        gw={getGw()}
-        contextLabel={sessionTitle || undefined}
-      />
-      <InfoSheet
-        ref={infoRef}
-        onClose={() => {
-          infoPresented.current = false;
-          setInfoOpen(false);
-        }}
-        title={sessionTitle}
-        model={model}
-        provider={modelProvider}
-        info={sessionInfo}
-        usage={usageInfo}
-        usageLoading={usageLoading}
-        tokenEstimate={tokenEstimate}
-        onRename={(t) => void renameSession(t)}
-      />
 
-      {/* Screen-level anchored popovers: "+" attach, model picker, thinking
-          effort. Rendered here (not in the composer) so they float above the
-          list and still receive taps — Android drops touches outside a
-          parent's bounds. */}
-      {popover && (
-        <>
-          <Pressable
-            testID="popover-backdrop"
-            style={{ position: 'absolute', inset: 0, zIndex: 60 }}
-            onPress={closePopover}
-          />
-          <View
-            testID="anchor-popover"
-            className="absolute z-[70] rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-[#212121]"
-            style={{
-              width: popW,
-              left: popLeft,
-              bottom: popBottom,
-              maxHeight: popMaxH,
-            }}
-          >
-            {popover.kind === 'effort' && showEffort && (
-              <>
-                <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Thinking effort
-                </Text>
-                {effortOptions.map((e) => {
-                  const on = e === effort.trim().toLowerCase();
-                  return (
-                    <Button
-                      variant="ghost"
-                      key={e}
-                      testID={`effort-option-${e}`}
-                      onPress={() => {
-                        void applyEffort(e);
-                        closePopover();
-                      }}
-                      className={`flex-row items-center gap-2 px-2.5 py-2 ${
-                        on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                      }`}
-                    >
-                      <UIText
-                        className={`min-w-0 flex-1 text-[14px] ${
-                          on
-                            ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                            : 'text-neutral-900 dark:text-neutral-100'
-                        }`}
-                      >
-                        {reasoningLabel(e)}
-                      </UIText>
-                      {on && <Check size={15} color="#1a73e8" />}
-                    </Button>
-                  );
-                })}
-                {/* Fast mode — separate from reasoning (`config.set fast`). */}
-                <View className="my-1 h-[1px] bg-neutral-100 dark:bg-neutral-800" />
-                <Button
-                  variant="ghost"
-                  testID="fast-toggle"
-                  onPress={() => {
-                    void applyFast(!(sessionInfo?.fast === true));
-                    closePopover();
-                  }}
-                  className="flex-row items-center gap-2 px-2.5 py-2"
-                >
-                  <UIText
-                    className={`min-w-0 flex-1 text-[14px] ${
-                      sessionInfo?.fast === true
-                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                        : 'text-neutral-900 dark:text-neutral-100'
-                    }`}
-                  >
-                    Fast mode
-                  </UIText>
-                  {sessionInfo?.fast === true && <Check size={15} color="#1a73e8" />}
-                </Button>
-                {/* Reasoning display — the switch behind live tool + reasoning
-                    streaming (`config.set reasoning show|hide`). `hide` persists
-                    tool calls to history without live events; `show` streams
-                    everything. Shared display setting (desktop included).
-                    Never disabled: with an unknown value a tap turns live
-                    streaming ON (the useful direction — this is the switch that
-                    fixes "bubbles only appear after the turn ends"). */}
-                <Button
-                  variant="ghost"
-                  testID="show-reasoning-toggle"
-                  onPress={() => void applyShowReasoning(showReasoning !== true)}
-                  className="flex-row items-center gap-2 px-2.5 py-2"
-                >
-                  <UIText
-                    className={`min-w-0 flex-1 text-[14px] ${
-                      showReasoning === true
-                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
-                        : 'text-neutral-900 dark:text-neutral-100'
-                    }`}
-                  >
-                    Show reasoning
-                  </UIText>
-                  {showReasoning === true && <Check size={15} color="#1a73e8" />}
-                </Button>
-                <Text className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
-                  {showReasoning === null
-                    ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
-                    : 'Streams tool calls + reasoning live (shared display setting).'}
-                </Text>
-              </>
-            )}
+        {/* Thinking effort, as a menu. It was a hand-drawn list in the panel
+            below; as a menu it gains arrow-key roving and typeahead, and the
+            effort choice becomes a real radio group rather than eight buttons
+            each re-deriving its own selected state. */}
+        <DropdownMenu
+          handle={effortMenu}
+          onOpenChange={(o) => {
+            // Only on open: the same call the old `openPopover('effort')` made.
+            if (o) void loadReasoningDisplay();
+          }}>
+          <DropdownMenuContent side="top" align="start" className="w-[190px]">
+            {/* The label has to sit inside a group: Base UI's GroupLabel reads
+                its context and throws without one ("MenuGroupContext is
+                missing"), where Radix's Label was happy on its own. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide uppercase">
+                Thinking effort
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={effort.trim().toLowerCase()}
+                onValueChange={(v) => void applyEffort(String(v))}>
+                {effortOptions.map((e) => (
+                  <DropdownMenuRadioItem
+                    key={e}
+                    value={e}
+                    data-testid={`effort-option-${e}`}
+                    className="px-2.5 py-2 pr-8 text-[14px]">
+                    {reasoningLabel(e)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+            {/* Fast mode — separate from reasoning (`config.set fast`). */}
+            <DropdownMenuSeparator className="my-1 h-[1px] bg-muted dark:bg-muted" />
+            <DropdownMenuCheckboxItem
+              data-testid="fast-toggle"
+              checked={sessionInfo?.fast === true}
+              onCheckedChange={() => void applyFast(!(sessionInfo?.fast === true))}
+              className="px-2.5 py-2 pr-8 text-[14px]">
+              Fast mode
+            </DropdownMenuCheckboxItem>
+            {/* Reasoning display — the switch behind live tool + reasoning
+                streaming (`config.set reasoning show|hide`). `hide` persists
+                tool calls to history without live events; `show` streams
+                everything. Shared display setting (desktop included).
+                Never disabled: with an unknown value a tap turns live
+                streaming ON (the useful direction — this is the switch that
+                fixes "bubbles only appear after the turn ends"). */}
+            <DropdownMenuCheckboxItem
+              data-testid="show-reasoning-toggle"
+              checked={showReasoning === true}
+              onCheckedChange={() => void applyShowReasoning(showReasoning !== true)}
+              className="px-2.5 py-2 pr-8 text-[14px]">
+              Show reasoning
+            </DropdownMenuCheckboxItem>
+            <div className="px-2.5 pb-1 text-[11px] leading-[15px] text-neutral-500 dark:text-neutral-400">
+              {showReasoning === null
+                ? 'Streams tool calls + reasoning live. Unknown on this gateway — tap to turn on.'
+                : 'Streams tool calls + reasoning live (shared display setting).'}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-            {popover.kind === 'attach' && (
-              <>
-                <Text className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Attach
-                </Text>
-                <Button
-                  variant="ghost"
-                  testID="attach-photo"
-                  onPress={() => void pickImage()}
-                  className="flex-row items-center gap-2.5 px-2.5 py-2"
-                >
-                  <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
-                  <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">Photo</UIText>
-                </Button>
-                <Button
-                  variant="ghost"
-                  testID="attach-file"
-                  onPress={() => void pickFile()}
-                  className="flex-row items-center gap-2.5 px-2.5 py-2"
-                >
-                  <FileText size={17} color={dark ? '#ccc' : '#444'} />
-                  <UIText className="text-[14px] text-neutral-900 dark:text-neutral-100">File</UIText>
-                </Button>
-              </>
-            )}
+        {/* Attach, as a menu. The two actions close the menu themselves now. */}
+        <DropdownMenu handle={attachMenu}>
+          <DropdownMenuContent side="top" align="start" className="w-[184px]">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide uppercase">
+                Attach
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                data-testid="attach-photo"
+                onClick={() => void pickImage()}
+                className="gap-2.5 px-2.5 py-2 text-[14px]">
+                <ImageIcon size={17} color={dark ? '#ccc' : '#444'} />
+                <span className="text-neutral-900 dark:text-neutral-100">Photo</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-testid="attach-file"
+                onClick={() => void pickFile()}
+                className="gap-2.5 px-2.5 py-2 text-[14px]">
+                <FileText size={17} color={dark ? '#ccc' : '#444'} />
+                <span className="text-neutral-900 dark:text-neutral-100">File</span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-            {popover.kind === 'model' && (
-              <>
-                <Text className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                  Switch model (this chat)
-                </Text>
-                <View className="px-1.5 pb-1.5">
-                  <Input
-                    className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[14px] text-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
-                    value={modelQuery}
-                    onChangeText={setModelQuery}
-                    placeholder="Search models…"
-                    placeholderTextColor={placeholder}
-                    keyboardAppearance={dark ? 'dark' : 'light'}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-                {providersLoading && (
-                  <Text className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</Text>
-                )}
-                {!!providersError && (
-                  <Text
-                    accessibilityRole="alert"
-                    className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]"
-                  >
-                    {providersError}
-                  </Text>
-                )}
-                <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+        {/* The model picker, deliberately NOT a menu.
+            It reads as one, but it is a search + browse + act surface: a filter
+            field over ~300 models across a dozen providers, providers that
+            expand in place, and *two* actions per model (use for this chat, and
+            set as the global default). A menu item is a single action, and a
+            menu owns focus — typing into the search field would be fighting the
+            menu's own typeahead. Its natural home is a combobox, not a menu.
+            So it keeps the measured screen-level panel.
+            This is also why the panel is still rendered at screen level rather
+            than in the composer: that split was for Android's touch bounds,
+            which Base UI's portal makes moot for the two menus above, but this
+            panel is measured and positioned by hand. */}
+        {popover && (
+          <>
+            <button
+              type="button"
+              data-testid="popover-backdrop"
+              style={{ position: 'absolute', inset: 0, zIndex: 60 }}
+              onClick={closePopover}
+            />
+            <div
+              data-testid="anchor-popover"
+              // `flex flex-col` is load-bearing, not decoration: the body below
+              // is `flex-1 min-h-0 overflow-y-auto` and the panel's own height is
+              // capped by `maxHeight`. With a block parent all three of those
+              // are inert — the scroller takes its content height (a few
+              // thousand px once a provider is expanded) and spills straight out
+              // of the capped panel instead of scrolling inside it.
+              className="absolute z-[70] flex flex-col rounded-xl border border-border bg-popover p-1"
+              style={{
+                width: popW,
+                left: popLeft,
+                bottom: popBottom,
+                maxHeight: popMaxH,
+              }}>
+              <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Switch model (this chat)
+              </div>
+              <div className="px-1.5 pb-1.5">
+                <Input
+                  className="rounded-lg border border-border px-2.5 py-1.5 text-[14px] text-neutral-950 dark:text-neutral-100"
+                  value={modelQuery}
+                  onChange={(e) => setModelQuery(e.target.value)}
+                  placeholder="Search models…"
+                  autoCapitalize="none"
+                />
+              </div>
+              {providersLoading && (
+                <div className="px-3 py-1 text-[13px] text-neutral-500 dark:text-neutral-400">loading models…</div>
+              )}
+              {!!providersError && (
+                <div role="alert" className="px-3 py-1 text-[13px] text-[#c5221f] dark:text-[#ff7b72]">
+                  {providersError}
+                </div>
+              )}
+              <div className="overflow-y-auto min-h-0 flex-1">
+                <div>
                   {modelVisibleProviders.map((p) => {
                     const count = p.models?.length ?? p.totalModels;
                     const open = mq ? true : (modelExpanded[p.slug] ?? false);
                     return (
-                      <View key={p.slug || p.name}>
+                      <div key={p.slug || p.name}>
                         <Button
                           variant="ghost"
-                          onPress={() =>
-                            setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))
-                          }
-                          className="flex-row items-center gap-2 px-2.5 py-2"
-                        >
-                          <UIText
-                            className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100"
-                            numberOfLines={1}
-                          >
+                          onClick={() => setModelExpanded((e) => ({ ...e, [p.slug]: !(e[p.slug] ?? false) }))}
+                          className="flex items-center gap-2 px-2.5 py-2">
+                          <span className="min-w-0 flex-1 text-[14px] font-bold text-neutral-950 dark:text-neutral-100 truncate">
                             {p.name}
-                          </UIText>
-                          <UIText className="text-[12px] text-neutral-500 dark:text-neutral-400">
+                          </span>
+                          <span className="text-[12px] text-neutral-500 dark:text-neutral-400">
                             {count} model{count === 1 ? '' : 's'}
-                          </UIText>
+                          </span>
                           {open ? (
                             <ChevronDown size={15} color={dark ? '#a3a3a3' : '#666'} />
                           ) : (
@@ -1766,17 +1416,23 @@ export function ChatScreen() {
                           (p.models ?? []).map((mm) => {
                             const on = mm === model && p.slug === modelProvider;
                             return (
-                              <View
+                              <div
                                 key={mm}
-                                className={`flex-row items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
-                                  on ? 'bg-[#1a73e8]/10 dark:bg-[#1a73e8]/20' : ''
-                                }`}
-                              >                                <Button
+                                // `pl-1.5` to match the provider rows above and the
+                                // panel's own `px-3` — the model rows used to start
+                                // further in (`pl-3` plus the gap between this
+                                // button and Global), which read as a second indent
+                                // level under a list that is already flat.
+                                className={`flex items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-1.5 ${
+                                  on ? 'bg-brand/10 dark:bg-brand/20' : ''
+                                }`}>
+                                {' '}
+                                <Button
                                   variant="ghost"
-                                  accessibilityRole="radio"
-                                  accessibilityState={{ selected: on }}
-                                  accessibilityLabel={mm}
-                                  onPress={() => {
+
+                                  aria-pressed={on}
+                                  aria-label={mm}
+                                  onClick={() => {
                                     void pickModel(p.slug, mm);
                                     closePopover();
                                   }}
@@ -1785,70 +1441,61 @@ export function ChatScreen() {
                                   // Left-align here and let the label take the
                                   // slack so a long model id ellipsizes against
                                   // the Global button instead of pushing it out.
-                                  className="h-auto min-w-0 flex-1 justify-start"
-                                >
-                                  <UIText
-                                    numberOfLines={1}
-                                    ellipsizeMode="tail"
+                                  className="h-auto sm:h-auto min-w-0 flex-1 justify-start">
+                                  <span
                                     className={`min-w-0 flex-1 text-left text-[14px] ${
                                       on
-                                        ? 'font-semibold text-[#1a73e8] dark:text-[#7aa7ff]'
+                                        ? 'font-semibold text-brand'
                                         : 'text-neutral-950 dark:text-neutral-100'
-                                    }`}
-                                  >
+                                    } truncate`}>
                                     {on ? '● ' : '○ '}
                                     {mm}
-                                  </UIText>
+                                  </span>
                                 </Button>
                                 <Button
                                   variant="outline"
-                                  accessibilityLabel={`Set ${mm} as the global default`}
-                                  onPress={() => {
+                                  aria-label={`Set ${mm} as the global default`}
+                                  onClick={() => {
                                     void setGlobalModel(p.slug, mm);
                                     closePopover();
                                   }}
-                                  className="h-auto shrink-0 px-2 py-1"
-                                  hitSlop={8}
-                                >
-                                  <UIText className="text-[13px]">Global</UIText>
+                                  className="h-auto sm:h-auto shrink-0 px-2 py-1">
+                                  <span className="text-[13px]">Global</span>
                                 </Button>
-                              </View>
+                              </div>
                             );
                           })}
                         {open && !p.models && (
-                          <Text className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
+                          <div className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400">
                             list unavailable — pull to refresh on server
-                          </Text>
+                          </div>
                         )}
-                      </View>
+                      </div>
                     );
                   })}
                   {modelVisibleProviders.length === 0 && !providersLoading && (
-                    <Text className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</Text>
+                    <div className="px-3 py-2 text-[13px] text-neutral-500 dark:text-neutral-400">no matches</div>
                   )}
-                </ScrollView>
-              </>
-            )}
-          </View>
-        </>
-      )}
-    </SafeAreaView>
-      {/* Icon tooltip — pointerEvents="none" so it never steals taps. */}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      {/* Icon tooltip — so it never steals taps. */}
       {!!tip &&
         (() => {
           const relY = tip.anchor.y - rootWin.current.y;
           const rootH = rootWin.current.h || winH;
           const left = Math.max(8, Math.min(tip.anchor.x + tip.anchor.w / 2 - 48, winW - 104));
           return (
-            <View
-              pointerEvents="none"
-              className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-white/90"
-              style={{ bottom: Math.max(8, rootH - relY + 8), left }}
-            >
-              <Text className="text-[12px] text-white dark:text-black">{tip.label}</Text>
-            </View>
+            <div
+              className="absolute z-50 rounded-lg bg-black/85 px-2.5 py-1.5 dark:bg-popover/90"
+              style={{ bottom: Math.max(8, rootH - relY + 8), left }}>
+              <div className="text-[12px] text-white dark:text-black">{tip.label}</div>
+            </div>
           );
         })()}
-    </View>
+    </div>
   );
 }

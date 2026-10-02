@@ -10,10 +10,15 @@
 //   2. POST /api/auth/ws-ticket {} (cookie-attached) → {ticket, ttl_seconds}
 //   3. WS upgrade /api/ws?ticket=<ticket> — mint fresh per (re)connect, never reuse.
 //
-// RN fetch/XHR has no shared cookie jar on all platforms the way OkHttp does,
-// so this module keeps `Cookie` headers explicitly and passes them per request.
-import { Platform } from 'react-native';
+// The browser does have a real cookie jar, but a `Set-Cookie` from a plain-HTTP
+// host on a LAN address is only kept if the request asked for it — hence the
+// `credentials: 'include'` on every call below. The explicit `Cookie` header
+// path is retained because `getSetCookies` is still the only way to observe
+// what the gateway handed back, and because `SameSite`/`Domain` mismatches
+// between an `http://192.168.x.x` host and the app's own origin are easier to
+// debug when the header is visible in the request.
 import { normalizeConnectionBase } from './connection-scope';
+import { nativeHttpAvailable, nativeRequest, nativeSetCookies } from './native-http';
 import { formatToolCommand } from '../utils/toolResult';
 import { asList, asRecord } from '../utils/ops';
 import {
@@ -48,22 +53,72 @@ export function normalizeBase(baseUrl: string): string {
   return normalized;
 }
 
+/** Transport-neutral response for every dashboard REST call.
+ *
+ *  On web this wraps `fetch`; inside a native shell it wraps the NativeHttp
+ *  plugin (see native-http.ts), which bypasses the WebView's SameSite/CORS
+ *  rules. Either way callers see the same shape — and, crucially, the same
+ *  `setCookies`, because the browser hides `Set-Cookie` from JS while the
+ *  native pipe hands every value back for the JS jar (`mergeCookies`).
+ */
+export interface GwResponse {
+  ok: boolean;
+  status: number;
+  setCookies: string[];
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
+
+function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {};
+  const entries: [string, string][] =
+    headers instanceof Headers
+      ? [...headers.entries()]
+      : Array.isArray(headers)
+        ? headers.map(([k, v]) => [k, String(v)] as [string, string])
+        : Object.entries(headers).map(([k, v]) => [k, String(v)] as [string, string]);
+  const out: Record<string, string> = {};
+  for (const [k, v] of entries) {
+    // Absent beats empty: pre-login there is no cookie yet, and an explicit
+    // `Cookie: ''` header buys nothing but risks picky servers.
+    if (v === '') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 /** fetch with a hard timeout so the UI never hangs forever on an
  *  unreachable host (wrong WiFi / changed LAN IP / dashboard down).
- *  RN supports AbortController. `credentials: include` lets the session
- *  cookie flow on web once the dashboard CORS-allows our origin
- *  (no-op for same-origin and native). */
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit = {},
-  ms = HTTP_TIMEOUT_MS,
-): Promise<Response> {
+ *  `credentials: include` lets the session cookie flow once the dashboard
+ *  CORS-allows our origin (a no-op for same-origin). */
+async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = HTTP_TIMEOUT_MS): Promise<GwResponse> {
+  // Native shells bypass the WebView network stack (SameSite=lax cookies are
+  // never attached cross-origin, and error responses without CORS headers get
+  // masked as TypeErrors). String bodies cover every dashboard REST call —
+  // attachments travel over the WebSocket, not here.
+  if (nativeHttpAvailable() && (init.body === undefined || init.body === null || typeof init.body === 'string')) {
+    const res = await nativeRequest({
+      url,
+      method: init.method ?? 'GET',
+      headers: headersToRecord(init.headers),
+      body: typeof init.body === 'string' ? init.body : null,
+      timeoutMs: ms,
+    });
+    const text = res.body;
+    return {
+      ok: res.status >= 200 && res.status < 300,
+      status: res.status,
+      setCookies: nativeSetCookies(res.headers),
+      text: async () => text,
+      json: async () => JSON.parse(text) as unknown,
+    };
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
     // no-store: a cached /api/status hit would fake a passing probe while
     // the network is actually down, sending POSTs into a raw TypeError.
-    return await fetch(url, {
+    const res = await fetch(url, {
       credentials: 'include',
       cache: 'no-store',
       // Never follow an authenticated redirect to another origin with the
@@ -72,6 +127,15 @@ async function fetchWithTimeout(
       ...init,
       signal: ctrl.signal,
     });
+    return {
+      ok: res.ok,
+      status: res.status,
+      // [] on web by design — the browser hides Set-Cookie from JS but keeps
+      // it in its own jar, which `credentials: 'include'` then sends.
+      setCookies: getSetCookies(res),
+      text: () => res.text(),
+      json: () => res.json() as Promise<unknown>,
+    };
   } catch (e: unknown) {
     if (e && typeof e === 'object' && (e as { name?: unknown }).name === 'AbortError')
       throw new Error(`Request timed out (${ms / 1000}s): ${url}`);
@@ -103,7 +167,7 @@ export function mergeCookies(prev: string, setCookieHeaders: string[]): string {
   return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-/** Collect every Set-Cookie value from a fetch Response (RN/undici/web shapes). */
+/** Collect every Set-Cookie value from a fetch Response (covers the runtime shapes browsers expose). */
 export function getSetCookies(res: Response): string[] {
   const out: string[] = [];
   try {
@@ -117,7 +181,7 @@ export function getSetCookies(res: Response): string[] {
     if (typeof hdrs?.getSetCookie === 'function') {
       for (const c of asList(hdrs.getSetCookie())) out.push(String(c));
     } else if (typeof hdrs?.raw === 'function') {
-      for (const c of (hdrs.raw()['set-cookie'] ?? [])) out.push(String(c));
+      for (const c of hdrs.raw()['set-cookie'] ?? []) out.push(String(c));
     } else {
       const single = hdrs?.get?.('set-cookie');
       if (single) out.push(...String(single).split(/,(?=[^;,]+=[^;,]*)/));
@@ -130,37 +194,31 @@ export function getSetCookies(res: Response): string[] {
 
 export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
   const base = normalizeBase(baseUrl);
-  let res: Response;
+  let res: GwResponse;
   try {
     res = await fetchWithTimeout(`${base}${api.status()}`, {}, HTTP_PROBE_TIMEOUT_MS);
   } catch (e) {
-    // Browsers hide the reason (CORS vs TCP) behind TypeError. A no-cors
-    // probe distinguishes them: opaque response = reachable but CORS-blocked.
-    if (Platform.OS === 'web') {
-      try {
-        const probe = await fetchWithTimeout(
-          `${base}${api.status()}`,
-          { mode: 'no-cors' } as RequestInit,
-          HTTP_PROBE_TIMEOUT_MS,
-        );
-        if (asRecord(probe).type === 'opaque') {
-          throw new Error(
-            'Dashboard reachable but the browser blocked the request (CORS) — allow this origin on the dashboard, or use the Expo Go native app instead',
-          );
-        }
-      } catch (e2) {
-        if (e2 instanceof Error && /CORS/.test(e2.message)) throw e2;
-      }
-    }
-    const raw = e instanceof Error ? e.message : String(e);
-    // Stale native shell (built before the cleartext config) surfaces as a
-    // CLEARTEXT policy rejection — tell the user it's the app build, not the
-    // server, and that only a fresh native build fixes it (OTA can't).
-    if (/CLEARTEXT/i.test(raw)) {
-      throw new Error(
-        `Android blocked plain-HTTP to this host (CLEARTEXT policy). This build is too old — rebuild the native APK after the network-security fix and reinstall, then retry. Detail: ${raw}`,
+    // The browser hides the reason (CORS vs TCP) behind a bare TypeError. A
+    // no-cors probe tells them apart: an opaque response means the host is
+    // reachable and it is the dashboard's CORS policy that refused us.
+    try {
+      const probe = await fetchWithTimeout(
+        `${base}${api.status()}`,
+        { mode: 'no-cors' } as RequestInit,
+        HTTP_PROBE_TIMEOUT_MS,
       );
+      if (asRecord(probe).type === 'opaque') {
+        throw new Error(
+          "Dashboard reachable but the browser blocked the request (CORS) — this client's origin has to be allowed on the dashboard",
+        );
+      }
+    } catch (e2) {
+      if (e2 instanceof Error && /CORS/.test(e2.message)) throw e2;
     }
+    // No CLEARTEXT branch any more: that was Android's network-security policy
+    // rejecting plain HTTP, and a browser has no equivalent. A plain-HTTP
+    // gateway on a LAN address is reachable from here as-is.
+    const raw = e instanceof Error ? e.message : String(e);
     throw new Error(`Unreachable: ${raw}`);
   }
   if (!res.ok) throw new Error(`Dashboard probe failed: HTTP ${res.status}`);
@@ -174,7 +232,7 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
 /** Step 1: password login → session cookie string. Throws with server message. */
 export async function passwordLogin(baseUrl: string, username: string, password: string): Promise<string> {
   const base = normalizeBase(baseUrl);
-  let res: Response;
+  let res: GwResponse;
   try {
     res = await fetchWithTimeout(
       `${base}${api.passwordLogin()}`,
@@ -199,12 +257,12 @@ export async function passwordLogin(baseUrl: string, username: string, password:
     if (res.status === 404) throw new Error('Password provider not enabled on this dashboard (404)');
     throw new Error(`Login failed: HTTP ${res.status}`);
   }
-  const cookies = mergeCookies('', getSetCookies(res));
-  // Web browsers hide Set-Cookie from JS (forbidden header) but store it in
-  // the built-in jar — subsequent credentials:include requests carry it
-  // automatically. Only native needs the explicit cookie string.
-  if (!cookies && Platform.OS !== 'web') throw new Error('Login ok but no session cookie was set');
-  return cookies;
+  // The browser hides Set-Cookie from JS (it is a forbidden header) but stores
+  // it in the built-in jar, and subsequent `credentials: 'include'` requests
+  // carry it automatically. So an empty string here is the *expected* web
+  // result, not a failure — `saveCookie` turns it into a 'web-jar' marker and
+  // boot validates the session against `me`.
+  return mergeCookies('', res.setCookies);
 }
 
 /** Step 2: mint a single-use WS ticket (must be consumed within ~30s). */
@@ -214,7 +272,7 @@ export async function mintWsTicket(
   onCookie?: (nextCookie: string) => void,
 ): Promise<string> {
   const base = normalizeBase(baseUrl);
-  let res: Response;
+  let res: GwResponse;
   try {
     res = await fetchWithTimeout(
       `${base}${api.wsTicket()}`,
@@ -229,7 +287,7 @@ export async function mintWsTicket(
     throw new Error(`Ticket request failed: ${e instanceof Error ? e.message : String(e)}`);
   }
   // Cookie may have rotated — caller should merge any Set-Cookie it carries.
-  const rotated = mergeCookies(cookie, getSetCookies(res));
+  const rotated = mergeCookies(cookie, res.setCookies);
   if (rotated !== cookie) onCookie?.(rotated);
   if (!res.ok) {
     const err = new Error(`WS ticket mint failed: HTTP ${res.status}`) as Error & {
@@ -254,9 +312,9 @@ async function fetchAuthed(
   cookie: string,
   ms: number,
   onCookie?: CookieUpdater,
-): Promise<Response> {
+): Promise<GwResponse> {
   const res = await fetchWithTimeout(url, init, ms);
-  const rotated = mergeCookies(cookie, getSetCookies(res));
+  const rotated = mergeCookies(cookie, res.setCookies);
   if (rotated !== cookie) await onCookie?.(rotated);
   return res;
 }
@@ -435,6 +493,30 @@ export async function apiGet(
   }
 }
 
+/** Raw text of a session export (`GET /api/sessions/{id}/export`).
+ *
+ *  The endpoint streams JSON, so the body is returned as text and the caller
+ *  saves it verbatim — parsing then re-serialising would lose the streaming
+ *  fidelity and could choke on a very large transcript. */
+export async function getSessionExportText(
+  baseUrl: string,
+  cookie: string,
+  storedId: string,
+  profile?: string,
+  onCookie?: CookieUpdater,
+): Promise<string> {
+  const base = normalizeBase(baseUrl);
+  const res = await fetchAuthed(
+    `${base}${api.sessionExport(storedId, profile)}`,
+    { headers: { Cookie: cookie } },
+    cookie,
+    HTTP_SESSION_MESSAGES_TIMEOUT_MS,
+    onCookie,
+  );
+  if (!res.ok) throw new Error(`Session export failed: HTTP ${res.status}`);
+  return res.text();
+}
+
 export async function apiMut(
   baseUrl: string,
   cookie: string,
@@ -482,7 +564,7 @@ export const opsMut = apiMut;
 // ── Full transcript ──────────────────────────────────────────────────────
 // GET /api/sessions/{id}/messages → full rows incl. tool RESULT content +
 // reasoning sidecars. WS session.history is only a compact projection —
-// this is what the native app renders (Tool cards with full JSON).
+// this is the full payload the UI renders (tool cards with full JSON).
 // Slashes in stored ids stay literal (backend mints ids containing '/').
 
 export interface RestHistoryItem {
@@ -566,8 +648,7 @@ export async function getSessionMessages(
 ): Promise<RestHistoryItem[]> {
   // The numeric fourth argument remains accepted for older callers.
   const selectedProfile =
-    (typeof profileOrLimit === 'number' ? DEFAULT_PROFILE : String(profileOrLimit ?? '')).trim() ||
-    DEFAULT_PROFILE;
+    (typeof profileOrLimit === 'number' ? DEFAULT_PROFILE : String(profileOrLimit ?? '')).trim() || DEFAULT_PROFILE;
   const selectedLimit = typeof profileOrLimit === 'number' ? profileOrLimit : limit;
   // Short in-memory TTL — toolRefresh + stampRowIds + resync often fire
   // back-to-back for the same session and each refetches 200 rows.

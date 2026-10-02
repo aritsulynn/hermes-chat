@@ -1,111 +1,100 @@
-import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/utils/cn';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Platform, Pressable } from 'react-native';
+import { forwardRef, type ComponentProps } from 'react';
 
 const buttonVariants = cva(
-  cn(
-    // min-h-[auto]: content-sized floor. The fixed heights below (h-10 etc.)
-    // combine with per-call-site py-* into a content box smaller than the
-    // content on NATIVE (Yoga defaults min-height to 0, unlike CSS auto) —
-    // text then overflows its row. min-height:auto restores grow-when-needed
-    // on both platforms; fixed heights still hold when content fits.
-    'group min-h-[auto] shrink-0 flex-row items-center justify-center gap-2 rounded-md shadow-none',
-    Platform.select({
-      web: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
-    })
-  ),
+  "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap outline-hidden transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 group inline-flex shrink-0 items-center justify-center gap-2 rounded-md shadow-none",
   {
     variants: {
       variant: {
-        default: cn(
-          'bg-primary active:bg-primary/90 shadow-sm shadow-black/5',
-          Platform.select({ web: 'hover:bg-primary/90' })
-        ),
-        destructive: cn(
-          'bg-destructive active:bg-destructive/90 dark:bg-destructive/60 shadow-sm shadow-black/5',
-          Platform.select({
-            web: 'hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
-          })
-        ),
-        outline: cn(
-          'border-border bg-background active:bg-accent dark:bg-input/30 dark:border-input dark:active:bg-input/50 border shadow-sm shadow-black/5',
-          Platform.select({
-            web: 'hover:bg-accent dark:hover:bg-input/50',
-          })
-        ),
-        secondary: cn(
-          'bg-secondary active:bg-secondary/80 shadow-sm shadow-black/5',
-          Platform.select({ web: 'hover:bg-secondary/80' })
-        ),
-        ghost: cn(
-          'active:bg-accent dark:active:bg-accent/50',
-          Platform.select({ web: 'hover:bg-accent dark:hover:bg-accent/50' })
-        ),
-        link: '',
+        default: 'bg-primary shadow-xs shadow-black/5 hover:bg-primary/90',
+        destructive:
+          'bg-destructive shadow-xs shadow-black/5 hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
+        outline:
+          'border-border bg-background shadow-xs shadow-black/5 hover:bg-accent dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+        secondary: 'bg-secondary shadow-xs shadow-black/5 hover:bg-secondary/80',
+        ghost: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
+        link: 'text-primary underline-offset-4 hover:underline group-hover:underline',
       },
       size: {
-        default: cn('h-10 px-4 py-2 sm:h-9', Platform.select({ web: 'has-[>svg]:px-3' })),
-        sm: cn('h-9 gap-1.5 rounded-md px-3 sm:h-8', Platform.select({ web: 'has-[>svg]:px-2.5' })),
-        lg: cn('h-11 rounded-md px-6 sm:h-10', Platform.select({ web: 'has-[>svg]:px-4' })),
+        default: 'h-10 px-4 py-2 has-[>svg]:px-3 sm:h-9',
+        sm: 'h-9 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5 sm:h-8',
+        lg: 'h-11 rounded-md px-6 has-[>svg]:px-4 sm:h-10',
+        // `sm:`-stepped on purpose: a phone gets the larger target, a pointer the
+        // tighter one. It is also why a call site cannot shrink this size with a
+        // plain `className="h-6 w-6"` — that only overrides the unprefixed half,
+        // and `sm:h-9 sm:w-9` still wins from 640px up, so on a desktop the button
+        // silently stays 36px. Use `iconSm` (or spell both breakpoints) instead.
         icon: 'h-10 w-10 sm:h-9 sm:w-9',
+        iconSm: 'h-6 w-6',
       },
     },
     defaultVariants: {
       variant: 'default',
       size: 'default',
     },
-  }
+  },
 );
 
-const buttonTextVariants = cva(
-  cn(
-    'text-foreground text-sm font-medium',
-    Platform.select({ web: 'pointer-events-none transition-colors' })
-  ),
-  {
-    variants: {
-      variant: {
-        default: 'text-primary-foreground',
-        destructive: 'text-white',
-        outline: cn(
-          'group-active:text-accent-foreground',
-          Platform.select({ web: 'group-hover:text-accent-foreground' })
-        ),
-        secondary: 'text-secondary-foreground',
-        ghost: 'group-active:text-accent-foreground',
-        link: cn(
-          'text-primary group-active:underline',
-          Platform.select({ web: 'underline-offset-4 hover:underline group-hover:underline' })
-        ),
-      },
-      size: {
-        default: '',
-        sm: '',
-        lg: '',
-        icon: '',
-      },
+// The button's text colour, merged into the button's own className so it
+// reaches the label and any icon by inheritance. `active:` styling is carried
+// by `active:opacity-*` in the base below rather than per-variant colour swaps,
+// because a mouse-down on a real button does not reliably fire `active:`.
+//
+// It must NOT carry `pointer-events-none`: that would disable the button
+// itself, making the whole app inert while typecheck, tests and build stayed
+// green. The descendant equivalent lives in `buttonVariants` as
+// `[&_svg]:pointer-events-none`, where it belongs — an icon must not be the
+// event target for its own button, but the button itself must stay clickable.
+const buttonTextVariants = cva('text-foreground text-sm font-medium transition-colors', {
+  variants: {
+    variant: {
+      default: 'text-primary-foreground',
+      destructive: 'text-white',
+      outline: 'group-active:text-accent-foreground group-hover:text-accent-foreground',
+      secondary: 'text-secondary-foreground',
+      ghost: 'group-active:text-accent-foreground',
+      link: 'text-primary group-active:underline',
     },
-    defaultVariants: {
-      variant: 'default',
-      size: 'default',
+    size: {
+      default: '',
+      sm: '',
+      lg: '',
+      icon: '',
+      iconSm: '',
     },
-  }
-);
+  },
+  defaultVariants: {
+    variant: 'default',
+    size: 'default',
+  },
+});
 
-type ButtonProps = React.ComponentProps<typeof Pressable> & React.RefAttributes<typeof Pressable> & VariantProps<typeof buttonVariants>;
+type ButtonProps = ComponentProps<'button'> & VariantProps<typeof buttonVariants>;
 
-function Button({ className, variant, size, ...props }: ButtonProps) {
+/**
+ * Forwards its ref to the underlying <button>. The composer and the chat
+ * bubbles anchor popovers and long-press menus to specific controls, so what
+ * they need to measure is the button itself, not an inner wrapper.
+ */
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant, size, type = 'button', ...props },
+  ref,
+) {
   return (
-    <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
-      <Pressable
-        className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
-        role="button"
-        {...props}
-      />
-    </TextClassContext.Provider>
+    <button
+      ref={ref}
+      type={type}
+      className={cn(
+        props.disabled && 'opacity-50',
+        buttonVariants({ variant, size }),
+        buttonTextVariants({ variant, size }),
+        className,
+      )}
+      {...props}
+    />
   );
-}
+});
 
 export { Button, buttonTextVariants, buttonVariants };
 export type { ButtonProps };

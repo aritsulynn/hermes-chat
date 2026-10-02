@@ -7,7 +7,6 @@ import { askKey, setAskStatus, setAskStatusByRpc, upsertAsk } from '../../servic
 import type { AskInboxEntry, AskInboxInput, AskInboxStatus, AskOwner } from '../../services/ask-inbox';
 import { connectionScope } from '../../services/connection';
 import type { ServerAsk } from '../../services/gateway-ws';
-import { dismissNotification } from '../../services/notifications';
 import { normalizeProfileName, parseProfileSessionKey } from '../helpers';
 import type { StoreCtx } from '../ctx';
 
@@ -20,7 +19,6 @@ export interface AskInboxSlice {
   askInboxRef: MutableRefObject<AskInboxEntry[]>;
   resolveAskOwner: (sessionIdValue?: string, params?: Record<string, unknown>) => AskOwner;
   applyAskInbox: (input: AskInboxInput) => ReturnType<typeof upsertAsk>;
-  dismissAskNotifications: (entries?: AskInboxEntry[]) => void;
   markAskStatus: (key: string, status: AskInboxStatus) => void;
   markAskByRpc: (rpcId: string, status: AskInboxStatus) => void;
   bindAskOwner: (runtimeSessionId: string, owner: AskOwner) => void;
@@ -112,17 +110,12 @@ export function useAskInboxSlice({
     return result;
   }, []);
 
-  const dismissAskNotifications = useCallback((entries: AskInboxEntry[] = askInboxRef.current) => {
-    for (const entry of entries) void dismissNotification(`hermes-ask-${entry.rpcId}`);
-  }, []);
-
   const markAskStatus = useCallback((key: string, status: AskInboxStatus) => {
     const next = setAskStatus(askInboxRef.current, key, status);
     askInboxRef.current = next;
     setAskInbox(next);
     if (status === 'sent' || status === 'answered' || status === 'cancelled' || status === 'stale') {
       const entry = next.find((item) => item.key === key);
-      if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
       if (askRef.current && askRef.current.rpcId === entry?.rpcId) {
         setAsk(null);
       }
@@ -130,15 +123,14 @@ export function useAskInboxSlice({
   }, []);
 
   const markAskByRpc = useCallback((rpcId: string, status: AskInboxStatus) => {
-    const next = setAskStatusByRpc(askInboxRef.current, connectionScope(latest.current.host, latest.current.username), rpcId, status);
+    const next = setAskStatusByRpc(
+      askInboxRef.current,
+      connectionScope(latest.current.host, latest.current.username),
+      rpcId,
+      status,
+    );
     askInboxRef.current = next;
     setAskInbox(next);
-    if (status === 'cancelled' || status === 'answered' || status === 'stale') {
-      const entry = next.find(
-        (item) => item.owner.connectionId === connectionScope(latest.current.host, latest.current.username) && item.rpcId === rpcId,
-      );
-      if (entry) void dismissNotification(`hermes-ask-${entry.rpcId}`);
-    }
     if (status !== 'pending' && status !== 'answering' && askRef.current?.rpcId === rpcId) {
       setAsk(null);
     }
@@ -164,7 +156,6 @@ export function useAskInboxSlice({
     askInboxRef,
     resolveAskOwner,
     applyAskInbox,
-    dismissAskNotifications,
     markAskStatus,
     markAskByRpc,
     bindAskOwner,

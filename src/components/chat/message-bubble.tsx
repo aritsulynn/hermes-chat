@@ -1,70 +1,45 @@
 import type * as React from 'react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Pressable, Text, View } from 'react-native';
-import { Image } from 'expo-image';
-import Markdown from 'react-native-markdown-display';
-import { Brain, Check, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react-native';
-import { cleanThinking, flattenLists, renderMediaTags } from '../../utils/messages';
-import type { UiMessage } from '../../utils/messages';
-import { countDiffLineStats, diffLineKind, inlineDiffFromDetail, looksLikeDiff, stripInlineDiffChrome } from '../../utils/diff';
+import { memo, useCallback, useMemo, useRef } from 'react';
+import { Brain, Check, ChevronDown, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react';
+import { cleanThinking, renderMediaTags, splitSettled } from '../../utils/messages';
+import type { Role, UiMessage } from '../../utils/messages';
+import {
+  countDiffLineStats,
+  diffLineKind,
+  inlineDiffFromDetail,
+  looksLikeDiff,
+  stripInlineDiffChrome,
+} from '../../utils/diff';
 import { TypingDots } from '../ui/bits';
 import { Button } from '../ui/button';
-import { Text as UIText } from '../ui/text';
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Bubble, BubbleContent } from '../ui/bubble';
+import { Message, MessageContent } from '../ui/message';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import { useLongPress } from '../../hooks/use-long-press';
 import type { AnchorMeasure } from './composer';
-import { useStreaming } from '../../hooks/app-store';
-import { mdAi, mdAiDark, mdUser, mdUserDark, makeSelectableRules } from './markdown';
+import { useStreamingText } from '../../hooks/app-store';
+import { brandColor } from '../../theme';
+import { ChatMarkdown } from './markdown';
+import { useSmoothText } from './use-smooth-text';
 
-// Tokens arrive far faster than markdown needs to re-render. Leading + trailing
-// throttle: show the first token immediately, then at most one re-parse per
-// `ms`, with a guaranteed final flush when the turn settles.
-function useThrottledText(text: string, pending: boolean | undefined, ms = 250) {
-  const [shown, setShown] = useState(text);
-  const latest = useRef(text);
-  latest.current = text;
-  const flush = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const last = useRef(0);
-  useEffect(() => {
-    if (!pending) {
-      if (flush.current) clearTimeout(flush.current);
-      flush.current = null;
-      last.current = Date.now();
-      setShown(text);
-      return;
-    }
-    if (Date.now() - last.current >= ms) {
-      last.current = Date.now();
-      setShown(text);
-      return;
-    }
-    if (flush.current) return; // a trailing flush is already queued
-    flush.current = setTimeout(() => {
-      flush.current = null;
-      last.current = Date.now();
-      setShown(latest.current);
-    }, ms);
-  }, [text, pending, ms]);
-  useEffect(
-    () => () => {
-      if (flush.current) clearTimeout(flush.current);
-    },
-    [],
-  );
-  return shown;
-}
-
-// memo(): the transcript re-renders on every streamed token. Without this,
-// every bubble's <Markdown> re-parses, and react-native-markdown-display mints
-// fresh random keys per parse — so the whole native text tree of every bubble
-// was being torn down and rebuilt ~30×/s. That churn is what was yanking focus
-// out of the composer mid-sentence. Props must stay referentially stable
-// (see the useCallback'd handlers in ChatScreen).
+// The streamed body is revealed on a steady cadence rather than as it arrives —
+// see components/chat/use-smooth-text.ts. That is what makes streaming look like
+// a normal chat instead of arriving in clumps.
 const DIFF_MAX_LINES = 160;
 
 // System monospace on some OEM Android builds (notably Xiaomi/HyperOS) ships
 // without Thai glyphs and with broken fallback — Thai text set in `font-mono`
 // renders as tofu squares. Detect Thai and fall back to the default UI font
 // for those lines (ASCII diffs/tables keep their alignment everywhere else).
+// Kept on the web for the same reason: it is a font-availability guess, not a
+// platform quirk, and the fallback is harmless where the font is complete.
 const hasThai = (s: string) => /[\u0E00-\u0E7F]/.test(s);
 
 // Cached time formatter — `toLocaleTimeString` (Intl) per bubble per render is slow.
@@ -80,9 +55,18 @@ export function formatBubbleTime(ts: number): string {
   }
 }
 
-// Inline unified diff (one RN Text per line so +/- can be tinted; a single
-// <Text> can't carry a per-line background). Rows are capped — a huge patch on a
-// phone is unreadable anyway; the full diff is still on the tool result.
+/** Viewport rect of an element, in the shape the anchor consumers expect. */
+function measureOf(el: HTMLElement | null) {
+  return (cb: (a: { x: number; y: number; w: number; h: number }) => void) => {
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0) cb({ x: r.x, y: r.y, w: r.width, h: r.height });
+  };
+}
+
+// Inline unified diff (one row per line so +/- can be tinted; a single element
+// can't carry a per-line background). Rows are capped — a huge patch on a
+// narrow column is unreadable anyway; the full diff is still on the tool result.
 const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: boolean }) {
   const lines = useMemo(() => diff.split('\n'), [diff]);
   const shown = lines.length > DIFF_MAX_LINES ? lines.slice(0, DIFF_MAX_LINES) : lines;
@@ -96,9 +80,7 @@ const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: bo
           ? '#ff8a8a'
           : '#c5221f'
         : kind === 'hunk'
-          ? dark
-            ? '#7aa7ff'
-            : '#1a73e8'
+          ? brandColor(dark)
           : kind === 'meta'
             ? dark
               ? '#8b8b8b'
@@ -107,114 +89,121 @@ const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: bo
               ? '#cfcfcf'
               : '#3f3f46';
   const bgOf = (kind: ReturnType<typeof diffLineKind>): string | undefined =>
-    kind === 'add' ? (dark ? 'rgba(95,210,138,0.12)' : '#e6ffec') : kind === 'del' ? (dark ? 'rgba(255,138,138,0.12)' : '#ffebe9') : undefined;
+    kind === 'add'
+      ? dark
+        ? 'rgba(95,210,138,0.12)'
+        : '#e6ffec'
+      : kind === 'del'
+        ? dark
+          ? 'rgba(255,138,138,0.12)'
+          : '#ffebe9'
+        : undefined;
   return (
-    <View className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 dark:border-neutral-700/70">
+    <div className="mt-1 overflow-hidden rounded-lg border border-border/70 dark:border-border/70">
       {shown.map((line, i) => {
         const kind = diffLineKind(line);
         return (
-          <View key={i} style={bgOf(kind) ? { backgroundColor: bgOf(kind) } : undefined}>
-            <Text
-              selectable
-              className={hasThai(line) ? 'px-1.5 text-[11px] leading-[15px]' : 'px-1.5 font-mono text-[11px] leading-[15px]'}
-              style={{ color: colorOf(kind) }}
-            >
+          <div key={i} style={bgOf(kind) ? { backgroundColor: bgOf(kind) } : undefined}>
+            <div
+              className={`px-1.5 text-[11px] leading-[15px] ${hasThai(line) ? '' : 'font-mono'}`}
+              style={{ color: colorOf(kind) }}>
               {line || ' '}
-            </Text>
-          </View>
+            </div>
+          </div>
         );
       })}
       {lines.length > DIFF_MAX_LINES && (
-        <Text className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
+        <div className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
           … {lines.length - DIFF_MAX_LINES} more lines
-        </Text>
+        </div>
       )}
-    </View>
+    </div>
   );
 });
 
 // Plain monospace block for a tool RESULT (terminal output, file body, …).
-// Capped: a giant dump on a phone is unreadable and expensive to lay out.
+// Capped: a giant dump in a narrow column is unreadable and expensive to lay out.
 const OUTPUT_MAX_LINES = 200;
 
 const ToolOutput = memo(function ToolOutput({ text }: { text: string }) {
   const lines = useMemo(() => text.split('\n'), [text]);
   const shown = lines.length > OUTPUT_MAX_LINES ? lines.slice(0, OUTPUT_MAX_LINES) : lines;
   return (
-    <View className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 bg-black/[0.03] dark:border-neutral-700/70 dark:bg-white/[0.05]">
+    <div className="mt-1 overflow-hidden rounded-lg border border-border/70 bg-black/[0.03] dark:border-border/70 dark:bg-popover/[0.05]">
       {shown.map((l, i) => (
-        <Text
+        <div
           key={i}
-          selectable
-          className={
-            hasThai(l)
-              ? 'px-1.5 text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300'
-              : 'px-1.5 font-mono text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300'
-          }
-        >
+          className={`px-1.5 text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300 ${
+            hasThai(l) ? '' : 'font-mono'
+          }`}>
           {l || ' '}
-        </Text>
+        </div>
       ))}
       {lines.length > OUTPUT_MAX_LINES && (
-        <Text className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
+        <div className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
           … {lines.length - OUTPUT_MAX_LINES} more lines
-        </Text>
+        </div>
       )}
-    </View>
+    </div>
   );
 });
 
-// Stable thumbnail — inline `source={{uri}}` per render gives <Image> a new
-// identity every token and forces a native re-resolve/flicker.
+// Stable thumbnail — a plain <img> with a fixed src has no identity churn, so
+// the memo() below is all that is needed.
 const BubbleThumb = memo(function BubbleThumb({ uri, name }: { uri: string; name: string }) {
-  const source = useMemo(() => ({ uri }), [uri]);
   return (
-    <Image
-      key={uri + name}
-      source={source}
-      contentFit="cover"
-      cachePolicy="memory-disk"
-      // Rows are recycled by FlashList, so pin the view to this attachment —
-      // without it a reused row can flash the previous message's thumbnail.
-      recyclingKey={uri + name}
-      // Decorative 80px chips must never outrank a real chat image in the
-      // load queue.
-      priority="low"
+    <img
+      src={uri}
       alt={name}
-      className="h-20 w-20 rounded-lg bg-black/10"
+      className="h-20 w-20 rounded-lg bg-black/10 object-cover"
+      loading="lazy"
+      decoding="async"
     />
   );
 });
 
-// Stable tap-to-dismiss for plain bubbles — module-level so the memo()'d
-// bubble keeps a referentially stable onPress (see the note on ChatScreen's
-// stable handlers). The list uses keyboardShouldPersistTaps="handled", so a
-// tap on selectable text/a link would otherwise count as "handled" and leave
-// the keyboard up.
-const dismissKeyboard = () => Keyboard.dismiss();
+// Stable tap-to-dismiss for plain bubbles — module-level so the memo()'d bubble
+// keeps a referentially stable handler.
+const dismissKeyboard = () => {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+};
 
+// Transcript role -> Bubble variant. The two vocabularies are the same on
+// purpose: the colours themselves live in the vendored bubble.tsx beside
+// shadcn's own palette, and this Record is what stops a role being added to
+// `Role` without a surface to draw it on.
+const BUBBLE_VARIANT: Record<Role, 'user' | 'assistant' | 'thinking' | 'interim' | 'notice' | 'tool' | 'summary'> = {
+  user: 'user',
+  assistant: 'assistant',
+  thinking: 'thinking',
+  interim: 'interim',
+  notice: 'notice',
+  tool: 'tool',
+  summary: 'summary',
+};
+
+// memo(): the transcript re-renders on every streamed token. Without this,
+// every bubble's <Markdown> re-parses, so the whole subtree of every bubble was
+// torn down and rebuilt ~30x/s. Props must stay referentially stable (see the
+// useCallback'd handlers in ChatScreen).
 export const MessageBubble = memo(function MessageBubble({
   item,
-  bubbleMax,
   dark,
   expanded,
-  highlight,
   longFired,
   onToggleExpand,
   copied,
   onCopy,
   canRegenerate,
   canBranch,
-  onRegenerate,
   onBranchChat,
   onUserMenu,
   onTip,
+  onRegenerate,
 }: {
   item: UiMessage;
-  bubbleMax: number;
   dark: boolean;
   expanded: boolean;
-  highlight?: boolean;
   longFired: React.MutableRefObject<boolean>;
   onToggleExpand: (id: string) => void;
   /** Boolean, not the copied id: an id prop would re-render every bubble. */
@@ -232,37 +221,33 @@ export const MessageBubble = memo(function MessageBubble({
   onTip: (measure: AnchorMeasure, label: string) => void;
   onRegenerate: () => void;
 }) {
-  const rules = useMemo(() => makeSelectableRules(dark), [dark]);
-  // Streaming deltas arrive via StreamingContext (not a merged `item` prop),
-  // so the list's renderMessage/extraData stay stable per token and only the
-  // live bubble's text changes. Other rows keep stable props for memo().
-  const streamingTexts = useStreaming();
-  const streamDelta = streamingTexts[item.id] ?? '';
+  // Streaming deltas arrive from the streaming store, per id, so a delta wakes
+  // this bubble and no other — the list stays stable per token and only the live
+  // bubble's text changes.
+  const streamDelta = useStreamingText(item.id);
   const mergedText = streamDelta ? item.text + streamDelta : item.text;
-  // The streaming bubble changes on every token — see useThrottledText().
-  const liveText = useThrottledText(mergedText, item.pending);
+  // The streaming bubble advances on the reveal ticker — see useSmoothText().
+  const liveText = useSmoothText(mergedText, item.pending);
   // `MEDIA:<path>` is the agent's attachment contract — assistant replies only
   // (a user quoting the tag shouldn't turn into an image).
-  const body = useMemo(
-    () => flattenLists(item.role === 'assistant' ? renderMediaTags(liveText) : liveText),
-    [liveText, item.role],
-  );
-  // While streaming, render plain Text: a full markdown re-parse per token
-  // tears down and rebuilds the native text tree (~30x/s) — the main jank
-  // source. Plain updates are cheap prop changes; markdown is parsed once
-  // when the turn settles. Same 15px/21px metrics, so no size jump.
-  // Exception: replies carrying MEDIA: tags keep the markdown path so
-  // attachments render as images instead of raw tags mid-stream.
-  const streamPlain =
-    item.role === 'assistant' && !!item.pending && !liveText.includes('MEDIA:');
+  //
+  // Lists are NOT flattened on the way in. They used to be, because a list item
+  // drawn as a marker + text flex row measures as unbounded inside an auto-width
+  // bubble and spilled out of it — but `li` is a plain block again, so that is a
+  // property of a renderer this no longer has. Flattening cost every answer its
+  // bullets and numbering, and collapsed a list into a run-on paragraph.
+  const body = useMemo(() => (item.role === 'assistant' ? renderMediaTags(liveText) : liveText), [liveText, item.role]);
+  // Only the tail of a streaming reply can still change, so the settled prefix is
+  // memoised and the tail renders as plain text until it settles — see
+  // splitSettled. That keeps the markdown re-parse per frame flat however long
+  // the answer gets, without the old behaviour of showing the whole reply as raw
+  // markdown and then reformatting all of it in one go when the turn ended.
+  const streaming = item.role === 'assistant' && !!item.pending;
+  const [settled, tail] = useMemo(() => (streaming ? splitSettled(body) : [body, '']), [body, streaming]);
   const think = item.role === 'thinking';
   const typing = !think && item.pending && !mergedText;
   const markdown =
-    !think &&
-    item.role !== 'notice' &&
-    item.role !== 'interim' &&
-    item.role !== 'tool' &&
-    item.role !== 'summary';
+    !think && item.role !== 'notice' && item.role !== 'interim' && item.role !== 'tool' && item.role !== 'summary';
   const copyable = (item.role === 'user' || item.role === 'assistant') && !!mergedText && !item.pending;
   // A file-editing tool: the gateway renders the diff onto the live bubble, or
   // it rides inside the REST tool result JSON (history). Render either inline.
@@ -276,49 +261,53 @@ export const MessageBubble = memo(function MessageBubble({
     [item.role, item.diff, item.output, item.detail],
   );
   const toolStats = useMemo(() => countDiffLineStats(toolDiff), [toolDiff]);
+  // First meaningful line of the tool's input/output (e.g. the skill name for
+  // skill_view) so the collapsed row says what ran without expanding.
+  const toolSubtitle = useMemo(() => {
+    if (item.role !== 'tool') return '';
+    const src = item.command || item.detail || item.output || '';
+    const line = src
+      .split('\n')
+      .map((s) => s.trim())
+      .find((s) => s.length > 0);
+    if (!line) return '';
+    return line.length > 60 ? `${line.slice(0, 60)}…` : line;
+  }, [item.role, item.command, item.detail, item.output]);
   // Anchors for the long-press tooltips on the copy/regenerate footer icons
   // (same measurer shape as Composer).
-  const copyAnchorRef = useRef<View>(null);
-  const regenAnchorRef = useRef<View>(null);
-  // Tooltip peek fired on a footer icon: swallow the onPress that fires on
+  const copyAnchor = useRef<HTMLSpanElement | null>(null);
+  const regenAnchor = useRef<HTMLSpanElement | null>(null);
+  // Tooltip peek fired on a footer icon: swallow the click that fires on
   // release, so peeking at the label doesn't also trigger the action.
   const tipFired = useRef(false);
   const fireTip = useCallback(
-    (ref: { current: View | null }, label: string) => {
+    (el: HTMLElement | null, label: string) => {
       tipFired.current = true;
-      onTip((cb) =>
-        ref.current?.measureInWindow((x, y, w, h) => {
-          if (w > 0) cb({ x, y, w, h });
-        }),
-        label,
-      );
+      onTip(measureOf(el), label);
     },
     [onTip],
   );
   // Stable press handlers — inline arrows here would break memo() and force a
-  // markdown re-parse + native tree rebuild on every streamed token.
-  const handleCopyPress = useCallback(() => {
+  // markdown re-parse on every streamed token.
+  const handleCopyClick = useCallback(() => {
     if (tipFired.current) {
       tipFired.current = false;
       return;
     }
     onCopy(item.id, mergedText);
   }, [onCopy, item.id, mergedText]);
-  const handleRegenPress = useCallback(() => {
+  const handleRegenClick = useCallback(() => {
     if (tipFired.current) {
       tipFired.current = false;
       return;
     }
     onRegenerate();
   }, [onRegenerate]);
-  const handleCopyTip = useCallback(
-    () => fireTip(copyAnchorRef, copied ? 'Copied!' : 'Copy'),
-    [fireTip, copied],
-  );
-  const handleRegenTip = useCallback(() => fireTip(regenAnchorRef, 'Regenerate'), [fireTip]);
+  const handleCopyTip = useCallback(() => fireTip(copyAnchor.current, copied ? 'Copied!' : 'Copy'), [fireTip, copied]);
+  const handleRegenTip = useCallback(() => fireTip(regenAnchor.current, 'Regenerate'), [fireTip]);
   // Whole-bubble anchor for the long-press menu on our own messages.
-  const bubbleRef = useRef<View>(null);
-  const handleTogglePress = useCallback(() => {
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const handleToggleClick = useCallback(() => {
     if (longFired.current) {
       longFired.current = false;
       return;
@@ -329,257 +318,282 @@ export const MessageBubble = memo(function MessageBubble({
     longFired.current = true;
   }, [longFired]);
   const handleUserLongPress = useCallback(() => {
-    bubbleRef.current?.measureInWindow((x, y, w, h) => {
-      if (w > 0) onUserMenu((cb) => cb({ x, y, w, h }), item.id);
-    });
+    onUserMenu(measureOf(bubbleRef.current), item.id);
   }, [onUserMenu, item.id]);
-  const bubbleStyle = useMemo(() => ({ maxWidth: bubbleMax }), [bubbleMax]);
-  // Expand/collapse lives on the root for thinking + tool output: the press
-  // must sit on an ANCESTOR of the text so taps anywhere (text included)
-  // toggle — a behind-sibling overlay never sees them (touches bubble up the
-  // target's own ancestor chain). These two roles never render footer
-  // pressables, so there is no nested-pressable conflict; other roles get an
-  // inert root (no handlers) and keep their inner pressables untouched.
-  const toggleable = think || item.role === 'tool';
-  return (
-    <Pressable
-      ref={bubbleRef}
-      className={`rounded-[14px] px-3 py-2 ${
-        item.role === 'user'
-          ? 'self-end bg-[#e5e7eb] dark:bg-[#3f3f46]'
-          : think
-            ? 'self-start border border-[#e2e2e6] bg-[#f7f7f9] dark:border-neutral-700 dark:bg-[#212121] active:bg-accent dark:active:bg-accent/50'
-            : item.role === 'interim'
-              ? 'self-start border border-[#f0e0a0] bg-[#fff8e1] dark:border-[#6b5a1e] dark:bg-[#3a2f10]'
-              : item.role === 'notice'
-                ? 'self-center bg-[#fdecea] dark:bg-[#3d2020]'
-                : item.role === 'tool'
-                  ? 'self-start border border-[#d3e1f8] bg-[#eef3fd] dark:border-neutral-700 dark:bg-[#272727] active:bg-accent dark:active:bg-accent/50'
-                  : item.role === 'summary'
-                    ? 'self-start bg-transparent'
-                    : 'self-start bg-[#f0f0f2] dark:bg-[#272727]'
-      }${highlight ? ' border-2 border-[#b45309] dark:border-[#fbbf24]' : ''}`}
-      style={bubbleStyle}
-      onPress={toggleable ? handleTogglePress : dismissKeyboard}
-      onLongPress={toggleable ? handleToggleLongPress : undefined}
-      accessibilityRole={toggleable ? 'button' : undefined}
-      accessibilityLabel={toggleable ? `${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}` : undefined}
-    >
-      {typing ? (
-        <TypingDots />
-      ) : think ? (
-        mergedText ? (
-          <>
-          <View className="flex-row gap-1.5">
-              {/* Icon is 14px but a text line is 18px tall — center it inside a
-                  line-height box so it lines up with the first line's glyphs
-                  instead of riding the top of the line box. */}
-              <View className="h-[18px] justify-center">
-                <Brain size={14} color={dark ? '#999' : '#777'} />
-              </View>
-              <UIText
-                selectable={!!expanded}
-                className="shrink text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400"
-                numberOfLines={expanded ? undefined : 1}
-              >
-                {cleanThinking(mergedText)}
-              </UIText>
-            </View>
-          </>
-        ) : (
-          <TypingDots dim />
-        )
-      ) : item.role === 'tool' ? (
-        <>
-          <View className="flex-row gap-1.5">
-            {/* Same line-height box as the thinking bubble: the 14px icon
-                centers against the first 18px text line. */}
-            <View className="h-[18px] justify-center">
-              {item.pending ? (
-                <Cog size={14} color={dark ? '#8fa8ff' : '#3b5bdb'} />
+  // Expand/collapse moved to the flat timeline rows above (thinking + tool
+  // output); the remaining bubble roles never toggle, so the surface stays
+  // inert and keeps its inner pressables untouched.
+  const toggleable = false;
+  // All four gestures are wired up here, unconditionally and before any of the
+  // conditional branches in the JSX below. `useLongPress` was originally spread
+  // straight into the footer buttons, which put a hook call inside a
+  // `{copyable && ...}` branch — fine until one bubble renders a footer and the
+  // next does not, and then hook order changes between renders of the same
+  // component.
+  const userLongPress = useLongPress(handleUserLongPress, { delay: 400 });
+  const toggleLongPress = useLongPress(handleToggleLongPress, { delay: 400 });
+  const copyLongPress = useLongPress(handleCopyTip, { delay: 400 });
+  const regenLongPress = useLongPress(handleRegenTip, { delay: 400 });
+  // Our own messages sit on the other side of the row from everything else. The
+  // centring is a className rather than an `align` value because shadcn's
+  // Message only has start/end — and `self-center` works here precisely because
+  // MessageContent is a flex column, where the old transcript's `self-center`
+  // silently did nothing (a plain block parent ignores align-self).
+  const align = item.role === 'user' ? 'end' : 'start';
+
+  // Tool calls and thinking render as flat timeline rows, not bubbles: a
+  // chevron header line (status icon + summary + diff stats) that expands in
+  // place. Tapping anywhere toggles, same contract the bubble surface had.
+  if (think || item.role === 'tool') {
+    return (
+      <Message align="start">
+        <MessageContent>
+          <div
+            className="w-full py-0.5"
+            role="button"
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}`}
+            aria-expanded={expanded}
+            onClick={handleToggleClick}
+            {...toggleLongPress}>
+            {think ? (
+              mergedText ? (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <ChevronDown
+                      size={13}
+                      className={`shrink-0 text-neutral-400 transition-transform dark:text-neutral-500 ${expanded ? '' : '-rotate-90'}`}
+                    />
+                    <Brain size={13} color={dark ? '#999' : '#777'} />
+                    {/* Collapsed shows the label plus the first line; expanded
+                        swaps the preview for the full text below, so the row
+                        never repeats the body. */}
+                    {expanded ? (
+                      <div className="min-w-0 flex-1 text-left text-[13px] font-semibold leading-[18px] text-neutral-500 dark:text-neutral-400">
+                        Thought
+                      </div>
+                    ) : (
+                      <div className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left text-[13px] leading-[18px]">
+                        <span className="shrink-0 font-semibold text-neutral-500 dark:text-neutral-400">Thought</span>
+                        <span className="min-w-0 flex-1 truncate text-neutral-400 dark:text-neutral-500">
+                          {cleanThinking(mergedText)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {expanded && (
+                    <div className="py-1 pl-5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300">
+                      {cleanThinking(mergedText)}
+                    </div>
+                  )}
+                </>
               ) : (
-                <Check size={14} color={dark ? '#8fa8ff' : '#3b5bdb'} />
-              )}
-            </View>
-            <UIText
-              selectable={!!expanded}
-              className="shrink text-[13px] leading-[18px] text-[#3b5bdb] dark:text-[#8fa8ff]"
-              numberOfLines={expanded ? undefined : 2}
-            >
-              {mergedText}
-            </UIText>
-            {!!toolDiff && (
-              <UIText className="shrink-0 text-[11px] font-semibold leading-[18px]">
-                <UIText className="text-[#1a7f37] dark:text-[#5fd28a]">＋{toolStats.added}</UIText>
-                <UIText> </UIText>
-                <UIText className="text-[#c5221f] dark:text-[#ff8a8a]">−{toolStats.removed}</UIText>
-              </UIText>
-            )}
-          </View>
-          {expanded && (
-            <>
-              {!!item.command && (
-                <View className="mt-1 overflow-hidden rounded-lg border border-neutral-200/70 bg-neutral-100/60 dark:border-neutral-700/70 dark:bg-white/[0.05]">
-                  <UIText
-                    selectable
-                    className="px-1.5 py-1 font-mono text-[11px] leading-[15px] text-neutral-600 dark:text-neutral-300"
-                  >
-                    {item.command}
-                  </UIText>
-                </View>
-              )}
-              {!!item.output && !(!!toolDiff && looksLikeDiff(item.output)) && <ToolOutput text={item.output} />}
-              {!!toolDiff && <DiffView diff={toolDiff} dark={dark} />}
-              {!item.output && !toolDiff && !item.command && !!item.detail && (
-                <UIText selectable className="mt-1 text-[12px] leading-[17px] text-neutral-600 dark:text-neutral-300">
-                  {item.detail}
-                </UIText>
-              )}
-              {!item.output && !toolDiff && !item.command && !item.detail && !item.pending && (
-                <UIText className="mt-1 text-[11px] italic text-neutral-400 dark:text-neutral-500">
-                  no result captured
-                </UIText>
-              )}
-            </>
-          )}
-        </>
-      ) : item.role === 'summary' ? (
-        <View className="flex-row items-center gap-1.5">
-          <FileText size={12} color={dark ? '#777' : '#999'} />
-          <Text selectable className="text-[11px] text-neutral-500 dark:text-neutral-400">
-            {mergedText}
-          </Text>
-        </View>
-      ) : markdown ? (
-        item.role === 'user' ? (
-          // Long-press our own message for the Copy / Edit menu. Plain
-          // Pressable (no press tint) so the bubble look doesn't change.
-          <Pressable
-            onLongPress={handleUserLongPress}
-            delayLongPress={400}
-            accessibilityRole="button"
-            accessibilityLabel="Message actions"
-          >
-            {!!item.media?.length && (
-              <View className="mb-1 flex-row flex-wrap gap-1.5">
-                {item.media.map((a) => (
-                  <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
-                ))}
-              </View>
-            )}
-            {!!liveText && (
-              <Markdown rules={rules} style={dark ? mdUserDark : mdUser}>{body}</Markdown>
-            )}
-          </Pressable>
-        ) : (
-          <>
-            {!!item.media?.length && (
-              <View className="mb-1 flex-row flex-wrap gap-1.5">
-                {item.media.map((a) => (
-                  <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
-                ))}
-              </View>
-            )}
-            {!!liveText && (
-              streamPlain ? (
-                <Text selectable className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
-                  {liveText}
-                </Text>
-              ) : (
-                <Markdown rules={rules} style={dark ? mdAiDark : mdAi}>{body}</Markdown>
+                <TypingDots dim />
               )
+            ) : (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <ChevronDown
+                    size={13}
+                    className={`shrink-0 text-neutral-400 transition-transform dark:text-neutral-500 ${expanded ? '' : '-rotate-90'}`}
+                  />
+                  {item.pending ? (
+                    <Cog size={13} color={dark ? '#8fa8ff' : '#3b5bdb'} />
+                  ) : (
+                    <Check size={13} color={dark ? '#8fa8ff' : '#3b5bdb'} />
+                  )}
+                  <div className="min-w-0 flex-1 truncate text-left text-[13px] leading-[18px] text-neutral-700 dark:text-neutral-200">
+                    {mergedText}
+                    {!expanded && toolSubtitle ? (
+                      <span className="font-normal text-neutral-400 dark:text-neutral-500"> · {toolSubtitle}</span>
+                    ) : null}
+                  </div>
+                  {!!toolDiff && (
+                    <span className="shrink-0 text-[11px] font-semibold leading-[18px]">
+                      <span className="text-[#1a7f37] dark:text-[#5fd28a]">＋{toolStats.added}</span>{' '}
+                      <span className="text-[#c5221f] dark:text-[#ff8a8a]">−{toolStats.removed}</span>
+                    </span>
+                  )}
+                </div>
+                {expanded && (
+                  <>
+                    {!!item.command && (
+                      <div className="mt-1 overflow-hidden rounded-lg border border-border/70 bg-muted/60 dark:border-border/70 dark:bg-popover/[0.05]">
+                        <div className="px-1.5 py-1 font-mono text-[11px] leading-[15px] text-neutral-600 dark:text-neutral-300">
+                          {item.command}
+                        </div>
+                      </div>
+                    )}
+                    {!!item.output && !(!!toolDiff && looksLikeDiff(item.output)) && <ToolOutput text={item.output} />}
+                    {!!toolDiff && <DiffView diff={toolDiff} dark={dark} />}
+                    {!item.output && !toolDiff && !item.command && !!item.detail && (
+                      <div className="mt-1 text-[12px] leading-[17px] text-neutral-600 dark:text-neutral-300">
+                        {item.detail}
+                      </div>
+                    )}
+                    {!item.output && !toolDiff && !item.command && !item.detail && !item.pending && (
+                      <div className="mt-1 text-[11px] italic text-neutral-400 dark:text-neutral-500">
+                        no result captured
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
-          </>
-        )
-      ) : (
-        <Text selectable className="text-[15px] leading-[21px] text-neutral-950 dark:text-neutral-100">
-          {mergedText}
-        </Text>
-      )}
-      {/* Footer: bot time lives in its ⋯ menu, ours in the long-press menu —
-          copy icon stays on bot bubbles only. */}
-      {((copyable && item.role !== 'user') || canRegenerate || canBranch) && (
-        <View className="mt-1 flex-row items-center gap-3 self-end">
-          {copyable && item.role !== 'user' && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={handleCopyPress}
-              onLongPress={handleCopyTip}
-              delayLongPress={400}
-              accessibilityRole="button"
-              accessibilityLabel={copied ? 'Copied' : 'Copy'}
-              className="h-6 w-6"
-              hitSlop={6}
-            >
-              <View ref={copyAnchorRef}>
-                {copied ? (
-                  <Check size={12} color={dark ? '#aaa' : '#999'} />
-                ) : (
-                  <Copy size={12} color={dark ? '#aaa' : '#999'} />
-                )}
-              </View>
-            </Button>
-          )}
-          {canRegenerate && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={handleRegenPress}
-              onLongPress={handleRegenTip}
-              delayLongPress={400}
-              accessibilityRole="button"
-              accessibilityLabel="Regenerate"
-              className="h-6 w-6"
-              hitSlop={6}
-            >
-              <View ref={regenAnchorRef}>
-                <RotateCcw size={12} color={dark ? '#aaa' : '#999'} />
-              </View>
-            </Button>
-          )}
-          {canBranch && (
-            // No long-press tooltip here (unlike copy/regenerate): the trigger
-            // toggles the popover on release-press, so a tooltip peek would
-            // also pop the menu open. The a11y label carries the meaning.
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  accessibilityRole="button"
-                  accessibilityLabel="More actions"
-                  className="h-6 w-6"
-                  hitSlop={6}
-                >
-                  <Ellipsis size={12} color={dark ? '#aaa' : '#999'} />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent side="top" align="end" className="p-1.5">
-                {!!item.ts && (
-                  <View className="flex-row items-center gap-2.5 px-3 py-2">
-                    <Clock size={17} color={dark ? '#888' : '#999'} />
-                    <UIText className="text-[13px] text-neutral-500 dark:text-neutral-400">
-                      {formatBubbleTime(item.ts)}
-                    </UIText>
-                  </View>
-                )}
-                <PopoverClose asChild>
+          </div>
+        </MessageContent>
+      </Message>
+    );
+  }
+
+  return (
+    <Message align={align}>
+      <MessageContent>
+        <Bubble
+          ref={bubbleRef}
+          variant={BUBBLE_VARIANT[item.role]}
+          align={align}
+          // 85% of the *content column*, not the window, so a long row (a thinking
+          // summary, a tool card) can never spill past the column and drag a
+          // horizontal scrollbar across the transcript.
+          className={`max-w-[85%] ${item.role === 'notice' ? 'self-center' : ''}`}
+          role={toggleable ? 'button' : undefined}
+          aria-label={
+            toggleable ? `${expanded ? 'Collapse' : 'Expand'} ${think ? 'thinking' : 'tool output'}` : undefined
+          }
+          aria-expanded={toggleable ? expanded : undefined}
+          onClick={toggleable ? handleToggleClick : dismissKeyboard}
+          {...(toggleable ? toggleLongPress : {})}>
+          {/* The bubble's own radius, not shadcn's `rounded-xl`: the surface used
+              to be 14px and the brief was to keep the transcript's look. */}
+          <BubbleContent className="rounded-[14px]">
+            {typing ? (
+              <TypingDots />
+            ) : item.role === 'summary' ? (
+              <div className="flex items-center gap-1.5">
+                <FileText size={12} color={dark ? '#777' : '#999'} />
+                <div className="text-[11px] text-neutral-500 dark:text-neutral-400">{mergedText}</div>
+              </div>
+            ) : markdown ? (
+              item.role === 'user' ? (
+                // Long-press our own message for the Copy / Edit menu. The bubble
+                // above already handles the click, so this wrapper only adds the
+                // gesture.
+                <div {...userLongPress} className="cursor-default">
+                  {!!item.media?.length && (
+                    <div className="mb-1 flex flex-wrap gap-1.5">
+                      {item.media.map((a) => (
+                        <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
+                      ))}
+                    </div>
+                  )}
+                  {!!liveText && <ChatMarkdown body={body} theme="user" dark={dark} />}
+                </div>
+              ) : (
+                <>
+                  {!!item.media?.length && (
+                    <div className="mb-1 flex flex-wrap gap-1.5">
+                      {item.media.map((a) => (
+                        <BubbleThumb key={a.uri + a.name} uri={a.uri} name={a.name} />
+                      ))}
+                    </div>
+                  )}
+                  {/* The settled prefix and the tail are two ChatMarkdowns
+                      rather than one: the split is at a blank line, so each half
+                      is already a complete markdown document and the pair renders
+                      exactly as the whole would. The prefix is memoised on its
+                      body (see ChatMarkdown), so only the block still being
+                      written is re-parsed per frame. */}
+                  {!!settled && <ChatMarkdown body={settled} theme="ai" dark={dark} />}
+                  {!!tail && <ChatMarkdown body={tail} theme="ai" dark={dark} />}
+                </>
+              )
+            ) : (
+              // 24px, matching the markdown body: a notice or interim line sits
+              // between replies, and a different leading there reads as a
+              // different document.
+              <div className="text-[15px] leading-[24px] text-neutral-950 dark:text-neutral-100">{mergedText}</div>
+            )}
+            {/* Footer: bot time lives in its ⋯ menu, ours in the long-press menu —
+                copy icon stays on bot bubbles only. Still inside the surface, not
+                in shadcn's MessageFooter, because the buttons have always sat on
+                the bubble's own background. */}
+            {((copyable && item.role !== 'user') || canRegenerate || canBranch) && (
+              // `gap-2`, not `gap-3`: the buttons are ghost, so the space that
+              // reads is the icon-to-icon gap (6px of padding either side of a
+              // 12px glyph), and 12px of it made three glyphs look scattered
+              // across the bubble. 4px was the other extreme — at that pitch the
+              // 8px corner radius of the hover fill nearly touches.
+              <div className="mt-1 flex items-center gap-2 self-end">
+                {copyable && item.role !== 'user' && (
                   <Button
                     variant="ghost"
-                    testID="menu-branch"
-                    onPress={onBranchChat}
-                    className="flex-row items-center justify-start gap-2.5 px-3 py-2.5"
-                  >
-                    <GitFork size={17} color={dark ? '#aaa' : '#999'} />
-                    <UIText className="text-[15px]">Branch chat</UIText>
+                    size="iconSm"
+                    onClick={handleCopyClick}
+                    aria-label={copied ? 'Copied' : 'Copy'}
+                    {...copyLongPress}>
+                    <span ref={copyAnchor}>
+                      {copied ? (
+                        <Check size={12} color={dark ? '#aaa' : '#999'} />
+                      ) : (
+                        <Copy size={12} color={dark ? '#aaa' : '#999'} />
+                      )}
+                    </span>
                   </Button>
-                </PopoverClose>
-              </PopoverContent>
-            </Popover>
-          )}
-        </View>
-      )}
-    </Pressable>
+                )}
+                {canRegenerate && (
+                  <Button
+                    variant="ghost"
+                    size="iconSm"
+                    onClick={handleRegenClick}
+                    aria-label="Regenerate"
+                    {...regenLongPress}>
+                    <span ref={regenAnchor}>
+                      <RotateCcw size={12} color={dark ? '#aaa' : '#999'} />
+                    </span>
+                  </Button>
+                )}
+                {canBranch && (
+                  // No long-press tooltip here (unlike copy/regenerate): the trigger
+                  // toggles the menu on click, so a tooltip peek would also open it.
+                  // The a11y label carries the meaning.
+                  //
+                  // A real menu rather than the Radix popover this was: arrow-key
+                  // roving, typeahead, and Escape / outside-press come from the
+                  // primitive, and selecting a row closes it without a PopoverClose
+                  // wrapper. Also `w-48`: the content defaults to
+                  // `w-(--anchor-width)` — the width of its trigger — which for a
+                  // 24px icon button clamps the menu to `min-w-32`.
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<Button variant="ghost" size="iconSm" aria-label="More actions" />}>
+                      <Ellipsis size={12} color={dark ? '#aaa' : '#999'} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="top" align="end" className="w-48">
+                      {!!item.ts && (
+                        // A label, not a row: this is not an action. It has to sit
+                        // inside a group — Base UI's GroupLabel reads its context and
+                        // throws without one ("MenuGroupContext is missing").
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-normal text-neutral-500 dark:text-neutral-400">
+                            <Clock size={17} color={dark ? '#888' : '#999'} />
+                            {formatBubbleTime(item.ts)}
+                          </DropdownMenuLabel>
+                        </DropdownMenuGroup>
+                      )}
+                      <DropdownMenuItem
+                        data-testid="menu-branch"
+                        onClick={onBranchChat}
+                        className="w-full items-center justify-start gap-2.5 px-3 py-2.5">
+                        <GitFork size={17} color={dark ? '#aaa' : '#999'} />
+                        <span className="text-[15px]">Branch chat</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            )}
+          </BubbleContent>
+        </Bubble>
+      </MessageContent>
+    </Message>
   );
 });

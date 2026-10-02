@@ -1,6 +1,5 @@
 // Shared chat models + pure helpers (no React imports).
-// Split out of the old monolithic App.tsx so the expo-router screens,
-// the global store and the shared UI components all use one definition.
+// One definition shared by the screens, the store and the UI components.
 import type { ModelProviderOption } from '../services/dashboard';
 
 export type Role = 'user' | 'assistant' | 'notice' | 'interim' | 'thinking' | 'tool' | 'summary';
@@ -76,11 +75,7 @@ export const TOOL_INSERT_CAP = 20;
  * is nothing to anchor against — both return [] rather than guessing. A
  * surplus past TOOL_INSERT_CAP is structural mismatch, not a turn: skip.
  */
-export function missingHistoryTools(
-  history: UiMessage[],
-  live: UiMessage[],
-  allowUnanchored = false,
-): UiMessage[] {
+export function missingHistoryTools(history: UiMessage[], live: UiMessage[], allowUnanchored = false): UiMessage[] {
   const histTools = history.filter((m) => m.role === 'tool');
   const liveTools = live.filter((m) => m.role === 'tool');
   if (histTools.length === 0) return [];
@@ -167,7 +162,8 @@ export function normalizeTodos(payload: unknown): TodoItem[] {
 
 export const todoLabel = (t: TodoItem): string => t.content || t.text || t.title || t.activeForm || '';
 export const todoDone = (t: TodoItem): boolean => /^(completed|done|complete)$/i.test((t.status || '').trim());
-export const todoActive = (t: TodoItem): boolean => /^(in_progress|active|running|doing)$/i.test((t.status || '').trim());
+export const todoActive = (t: TodoItem): boolean =>
+  /^(in_progress|active|running|doing)$/i.test((t.status || '').trim());
 
 /** One live child agent from `subagent.list` (`SubagentSnapshot`). */
 export interface SubagentRow {
@@ -188,9 +184,7 @@ export function normalizeSubagents(payload: unknown): SubagentRow[] {
 
 /** Plain-object view of an unknown payload ({} for anything else). */
 function asRecord(payload: unknown): Record<string, unknown> {
-  return payload && typeof payload === 'object' && !Array.isArray(payload)
-    ? (payload as Record<string, unknown>)
-    : {};
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
 }
 
 /** Terminal statuses — a finished child no longer needs the live roster. */
@@ -245,8 +239,7 @@ export const SLASH_COMMAND_RE = /^\/[^\s/]+(?:\s|$)/;
 export const isSlashCommand = (text: string): boolean => SLASH_COMMAND_RE.test(text);
 
 /** The `/token` a completion request is for (null when the line isn't a lone command). */
-export const slashToken = (text: string): string | null =>
-  /^\/[^\s]*$/.test(text) ? text : null;
+export const slashToken = (text: string): string | null => (/^\/[^\s]*$/.test(text) ? text : null);
 
 /** Replace a slash-command completion token and leave one trailing space. */
 export function applySlashCompletion(input: string, text: string, replaceFrom: number): string {
@@ -277,8 +270,7 @@ export function parseSlashCommand(command: string): { name: string; arg: string 
 // Commands that act on the local terminal/client rather than the session are
 // curated centrally in ./slash-commands (ported from the desktop registry).
 
-export const slashName = (text: string): string =>
-  (text.replace(/^\/+/, '').split(/\s/, 1)[0] || '').toLowerCase();
+export const slashName = (text: string): string => (text.replace(/^\/+/, '').split(/\s/, 1)[0] || '').toLowerCase();
 
 /**
  * Hermes-authored boundary copy for a turn that ended without an answer.
@@ -295,8 +287,7 @@ export const slashName = (text: string): string =>
  * copy (not the whole string) is deliberate: a real reply that merely quotes it
  * is still a reply.
  */
-export const FAILED_TURN_NOTICE =
-  'Your request was not processed. Send it again if you still want me to carry it out.';
+export const FAILED_TURN_NOTICE = 'Your request was not processed. Send it again if you still want me to carry it out.';
 export const PARTIAL_FAILED_TURN_NOTICE =
   'This turn did not complete. Some actions may already have run; verify their effects before resending.';
 
@@ -393,15 +384,64 @@ export function parseClarify(ask: { params: Record<string, unknown> }): {
 // surfaces agree on the syntax.
 
 const MEDIA_DELIVERY_EXTS = [
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'svg',
-  'mp4', 'mov', 'avi', 'mkv', 'webm', '3gp',
-  'mp3', 'm2a', 'wav', 'ogg', 'opus', 'm4a', 'flac',
-  'pdf', 'docx', 'doc', 'odt', 'rtf', 'txt', 'md', 'epub',
-  'xlsx', 'xls', 'ods', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml',
-  'kmz', 'kml', 'geojson', 'gpx',
-  'pptx', 'ppt', 'odp', 'key',
-  'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'apk', 'ipa',
-  'html', 'htm',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'tiff',
+  'svg',
+  'mp4',
+  'mov',
+  'avi',
+  'mkv',
+  'webm',
+  '3gp',
+  'mp3',
+  'm2a',
+  'wav',
+  'ogg',
+  'opus',
+  'm4a',
+  'flac',
+  'pdf',
+  'docx',
+  'doc',
+  'odt',
+  'rtf',
+  'txt',
+  'md',
+  'epub',
+  'xlsx',
+  'xls',
+  'ods',
+  'csv',
+  'tsv',
+  'json',
+  'xml',
+  'yaml',
+  'yml',
+  'kmz',
+  'kml',
+  'geojson',
+  'gpx',
+  'pptx',
+  'ppt',
+  'odp',
+  'key',
+  'zip',
+  'tar',
+  'gz',
+  'tgz',
+  'bz2',
+  'xz',
+  '7z',
+  'rar',
+  'apk',
+  'ipa',
+  'html',
+  'htm',
 ];
 
 // Longest-first so a short ext never matches as a prefix of a longer one.
@@ -409,8 +449,7 @@ const MEDIA_EXT_ALT = [...MEDIA_DELIVERY_EXTS].sort((a, b) => b.length - a.lengt
 
 // Unquoted path: anchored on `~/`, `/` or `X:\`, interior spaces allowed, ends
 // on a known extension (#96657 — "Morten - Nobly Kickoff.docx" is one path).
-const MEDIA_PATH_ANCHORED =
-  `(?:~/|/|[A-Za-z]:[/\\\\])\\S+?(?:[^\\S\\n]+\\S+?)*?\\.(?:${MEDIA_EXT_ALT})(?=[\\s\`"'*_,;:)\\]}]|MEDIA:|$)`;
+const MEDIA_PATH_ANCHORED = `(?:~/|/|[A-Za-z]:[/\\\\])\\S+?(?:[^\\S\\n]+\\S+?)*?\\.(?:${MEDIA_EXT_ALT})(?=[\\s\`"'*_,;:)\\]}]|MEDIA:|$)`;
 
 const MEDIA_LINE_RE = new RegExp(
   `(^|\\n)[\\t ]*[\`"']?MEDIA:\\s*(\`[^\`\\n]+\`|"[^"\\n]+"|'[^'\\n]+'|${MEDIA_PATH_ANCHORED}|\\S+)[\`"']?[\\t ]*(\\n|$)`,
@@ -508,7 +547,10 @@ export function renderMediaTags(text: string): string {
     // documented example tag stays literal instead of becoming an image.
     out = mapOutside(out, new RegExp(`${FENCED_CODE.source}|${INLINE_CODE.source}`, 'g'), (chunk) =>
       chunk
-        .replace(MEDIA_LINE_RE, (_m, lead: string, value: string, trailer: string) => `${lead}${mediaLink(value)}${trailer}`)
+        .replace(
+          MEDIA_LINE_RE,
+          (_m, lead: string, value: string, trailer: string) => `${lead}${mediaLink(value)}${trailer}`,
+        )
         .replace(MEDIA_TAG_RE, (_m, value: string) => mediaLink(value)),
     );
   }
@@ -525,7 +567,7 @@ export function cleanThinking(text: string): string {
   const lines = text.split('\n');
   while (lines.length > 1 && /^\([^)\n]{0,12}\)\s*\S.*\.\.\.\s*$/.test(lines[0])) lines.shift();
   // Collapse runs of invisible-only lines: streaming deltas and some models
-  // pad with blank / zero-width-space lines, and an RN Text renders every
+  // pad with blank / zero-width-space lines, and a block element renders every
   // one at full line height — a tall empty void under the real content.
   // A line carrying only invisible chars shows nothing, so keep at most one
   // blank separator (paragraph breaks survive) and strip the rest, including
@@ -545,23 +587,43 @@ export function cleanThinking(text: string): string {
   return out.join('\n').replace(/[\s\u200B\u200C\u200D\u2060\uFEFF]+$/, '');
 }
 
-// react-native-markdown-display renders lists as flex rows whose width Yoga
-// measures as unbounded inside an auto-width bubble — the text never wraps
-// and spills out of the bubble. Flatten list markers to plain-text bullets so
-// every line is a normal wrapping paragraph.
-export function flattenLists(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => {
-      // Unordered (- * +) with optional [ ]/[x] checkbox → •
-      let m = line.match(/^(\s*)[-*+]\s+(?:\[[ xX]\]\s+)?(.*)$/);
-      if (m) return `${m[1].slice(0, 3)}• ${m[2]}`;
-      // Ordered (1. / 1)) → escape the dot so it stays a literal paragraph.
-      m = line.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
-      if (m) return `${m[1].slice(0, 3)}${m[2]}\\. ${m[3]}`;
-      return line;
-    })
-    .join('\n');
+// ── Streaming markdown ───────────────────────────────────────────────────────
+//
+// A streaming reply is re-rendered once per animation frame, and re-parsing the
+// WHOLE body each time is what makes the text stutter on a long answer: measured
+// at ~1ms for 1KB but ~6ms for 9KB, which does not fit in a 16ms frame alongside
+// the layout of a markdown tree that size.
+//
+// So the body is split at the last blank line that is not inside a code fence.
+// Everything before that boundary cannot change again — the text only ever grows
+// — so its parse is memoised and paid once. Only the tail, which is one block at
+// most, is re-parsed per frame. That is the same shape streamdown uses, and it
+// keeps the cost per frame flat no matter how long the reply gets.
+//
+// The boundary is a blank line, i.e. a markdown BLOCK boundary, which is what
+// lets the two halves be rendered as two independent documents and still come
+// out identical to rendering the whole.
+//
+// The transform above (renderMediaTags) is line-local and left-to-right, so
+// splitting after it is safe: the prefix of the transformed text renders exactly
+// as the prefix of the full render will.
+export function splitSettled(body: string): [settled: string, tail: string] {
+  let fence: string | null = null;
+  let cut = 0;
+  let offset = 0;
+  for (const line of body.split('\n')) {
+    const fenceMark = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (fenceMark) {
+      const marker = fenceMark[1][0];
+      if (!fence) fence = marker;
+      else if (fence === marker) fence = null;
+    } else if (!fence && line.trim() === '') {
+      // Just past this line's newline: the boundary is the blank line itself.
+      cut = offset + line.length + 1;
+    }
+    offset += line.length + 1;
+  }
+  return cut > 0 ? [body.slice(0, cut), body.slice(cut)] : ['', body];
 }
 
 // ── Composer options ─────────────────────────────────────────────────────────
