@@ -134,6 +134,20 @@ export const cronJobAction = (id: string, action: CronJobAction, profile?: strin
 export const cronJobRuns = (id: string, profile?: string | null, limit = 30): string =>
   withProfile(`/api/cron/jobs/${encodeURIComponent(id)}/runs${query({ limit })}`, profile);
 
+// ── Env / Keys ──────────────────────────────────────────────────────────────
+
+/** All env vars with set/redacted metadata (channel-managed keys excluded). */
+export const envVars = (profile?: string | null): string => withProfile('/api/env', profile);
+/** Return the real value of one env var (token-gated + rate limited). */
+export const envReveal = (): string => '/api/env/reveal';
+/** Live-probe a provider credential before saving. */
+export const providerValidate = (): string => '/api/providers/validate';
+/** Custom provider endpoints (config.yaml `providers.*`). */
+export const customEndpoints = (): string => '/api/providers/custom-endpoints';
+export const customEndpointActivate = (id: string): string =>
+  `/api/providers/custom-endpoints/${encodeURIComponent(id)}/activate`;
+export const customEndpointValidate = (): string => '/api/providers/custom-endpoints/validate';
+
 // ── Plugins ─────────────────────────────────────────────────────────────────
 
 /** Agent plugins + dashboard extension metadata (session protected). */

@@ -9,6 +9,7 @@ import { McpScreen } from './features/mcp';
 import { PairingScreen } from './features/pairing';
 import { ProfilesScreen } from './features/profiles';
 import { PluginsScreen } from './features/plugins';
+import { EnvScreen } from './features/keys';
 import { SettingsScreen } from './features/settings';
 import { SkillsScreen } from './features/skills';
 import { SkillsHubScreen } from './features/skills-hub';
@@ -34,6 +35,7 @@ export const APP_ROUTES = [
   { path: '/pairing', element: <PairingScreen /> },
   { path: '/profiles', element: <ProfilesScreen /> },
   { path: '/plugins', element: <PluginsScreen /> },
+  { path: '/keys', element: <EnvScreen /> },
   { path: '/webhooks', element: <WebhooksScreen /> },
   { path: '/system', element: <SystemScreen /> },
   { path: '/channels', element: <ChannelsScreen /> },

@@ -72,7 +72,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | System / Ops | `/system` | `SystemPage.tsx` | **done** (core) | L |
 | Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | **done** | L |
 | Config | `/config` | `ConfigPage.tsx` | missing | L |
-| Keys / Env | `/env` | `EnvPage.tsx` | missing | L |
+| Keys / Env | `/keys` | `EnvPage.tsx` | **done** (env vars) | L |
 | Plugins | `/plugins` | `PluginsPage.tsx` | **done** | L |
 | Pairing | `/pairing` | `PairingPage.tsx` | **done** | M |
 | Webhooks | `/webhooks` | `WebhooksPage.tsx` | **done** | M |
@@ -224,6 +224,17 @@ The mobile app already has helpers, so adding an endpoint is fast:
   sheet), and Providers (live memory-provider / context-engine pickers). The
   desktop's per-field memory-provider config editor belongs with the Memory surface.
 
+### 4.13 Keys / Env `L` — done (env vars)
+- `GET /api/env`, `PUT /api/env`, `DELETE /api/env`, `POST /api/env/reveal`,
+  `POST /api/providers/validate`
+- Reference: `EnvPage.tsx` (1109)
+- Shipped: `src/features/keys/index.tsx` (route `/keys`) + `src/services/env.ts`:
+  a searchable, category-grouped list of every env var with set/unset state,
+  provider labels, an All/Common filter, inline set/replace with a live provider
+  probe, reveal-on-demand (token-gated) with copy, delete, and add-a-custom-key.
+  The desktop's custom provider-endpoints editor (config.yaml `providers.*`) is
+  a distinct surface and is not ported here.
+
 ---
 
 ## 5. Large — full new screens
@@ -235,7 +246,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | System / Ops | `SystemPage.tsx` (1649) | `/api/health`, `/api/system/stats`, `/api/gateway/start\|stop`, `/api/credentials/pool`, `/api/ops/*` | L |
 | Profiles | `ProfilesPage.tsx` (1426) + `ProfileBuilderPage.tsx` | `/api/profiles*` (CRUD, soul, export/import) | L |
 | Config | `ConfigPage.tsx` (680) | `/api/config`, `/config/raw`, `/config/schema` | L |
-| Keys / Env | `EnvPage.tsx` (1109) | `/api/env`, `/api/providers/*` | L |
+| Keys / Env | `EnvPage.tsx` (1109) | `/api/env`, `/api/env/reveal`, `/api/providers/validate`, `/api/providers/custom-endpoints*` | L |
 | Plugins | `PluginsPage.tsx` (1401) | `/api/dashboard/plugins*`, `/api/dashboard/agent-plugins/*`, `/api/dashboard/plugin-providers` | L |
 | Full Models | `ModelsPage.tsx` (1368) | `/api/model/info`, `/auxiliary`, `/moa`, `/recommended-default` | M–L |
 | i18n + Thai | `src/i18n/` | — | L |
