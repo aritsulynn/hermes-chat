@@ -73,7 +73,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | **done** | L |
 | Config | `/config` | `ConfigPage.tsx` | missing | L |
 | Keys / Env | `/env` | `EnvPage.tsx` | missing | L |
-| Plugins | `/plugins` | `PluginsPage.tsx` | missing | L |
+| Plugins | `/plugins` | `PluginsPage.tsx` | **done** | L |
 | Pairing | `/pairing` | `PairingPage.tsx` | **done** | M |
 | Webhooks | `/webhooks` | `WebhooksPage.tsx` | **done** | M |
 | Timeline / branch view | `/sessions` | `SessionsPage.tsx` | missing | M |
@@ -212,6 +212,18 @@ The mobile app already has helpers, so adding an endpoint is fast:
   rename/delete/export, switch active, and a SOUL.md + description editor with
   auto-describe. The desktop's separate ProfileBuilderPage is not ported.
 
+### 4.12 Plugins `L` — done
+- `GET /api/dashboard/plugins/hub`, `/catalog`, `/rescan`
+- `POST /api/dashboard/agent-plugins/install`, `/{name}/enable|disable|update`,
+  `DELETE /api/dashboard/agent-plugins/{name}`, `POST /api/dashboard/plugins/{name}/visibility`
+- `PUT /api/dashboard/plugin-providers` (memory provider + context engine)
+- Reference: `PluginsPage.tsx` (1401)
+- Shipped: `src/features/plugins/index.tsx` (route `/plugins`) + `src/services/plugins.ts`:
+  three tabs — Installed (enable/disable, sidebar visibility, git update, remove,
+  rescan), Catalog (352 curated entries with capability badges and an install
+  sheet), and Providers (live memory-provider / context-engine pickers). The
+  desktop's per-field memory-provider config editor belongs with the Memory surface.
+
 ---
 
 ## 5. Large — full new screens
@@ -224,7 +236,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Profiles | `ProfilesPage.tsx` (1426) + `ProfileBuilderPage.tsx` | `/api/profiles*` (CRUD, soul, export/import) | L |
 | Config | `ConfigPage.tsx` (680) | `/api/config`, `/config/raw`, `/config/schema` | L |
 | Keys / Env | `EnvPage.tsx` (1109) | `/api/env`, `/api/providers/*` | L |
-| Plugins | `PluginsPage.tsx` (1401) | `/api/dashboard/plugins*` | L |
+| Plugins | `PluginsPage.tsx` (1401) | `/api/dashboard/plugins*`, `/api/dashboard/agent-plugins/*`, `/api/dashboard/plugin-providers` | L |
 | Full Models | `ModelsPage.tsx` (1368) | `/api/model/info`, `/auxiliary`, `/moa`, `/recommended-default` | M–L |
 | i18n + Thai | `src/i18n/` | — | L |
 

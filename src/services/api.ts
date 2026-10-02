@@ -134,6 +134,33 @@ export const cronJobAction = (id: string, action: CronJobAction, profile?: strin
 export const cronJobRuns = (id: string, profile?: string | null, limit = 30): string =>
   withProfile(`/api/cron/jobs/${encodeURIComponent(id)}/runs${query({ limit })}`, profile);
 
+// ── Plugins ─────────────────────────────────────────────────────────────────
+
+/** Agent plugins + dashboard extension metadata (session protected). */
+export const pluginsHub = (profile?: string | null): string =>
+  withProfile('/api/dashboard/plugins/hub', profile);
+/** Curated plugin catalog merged with installed state. */
+export const pluginsCatalog = (): string => '/api/dashboard/plugins/catalog';
+/** Force a rescan of dashboard plugins. */
+export const pluginsRescan = (): string => '/api/dashboard/plugins/rescan';
+/** Installed-plugin toggle for sidebar visibility. */
+export const pluginVisibility = (name: string): string =>
+  `/api/dashboard/plugins/${encodeURIComponent(name)}/visibility`;
+/** Agent plugin lifecycle. `name` may contain a path segment (repo/name). */
+export const agentPlugin = (name: string): string => `/api/dashboard/agent-plugins/${encodeURI(name)}`;
+export const agentPluginInstall = (): string => '/api/dashboard/agent-plugins/install';
+export const agentPluginEnable = (name: string): string => `${agentPlugin(name)}/enable`;
+export const agentPluginDisable = (name: string): string => `${agentPlugin(name)}/disable`;
+export const agentPluginUpdate = (name: string): string => `${agentPlugin(name)}/update`;
+/** Memory provider / context engine selection (writes config.yaml). */
+export const pluginProviders = (profile?: string | null): string =>
+  withProfile('/api/dashboard/plugin-providers', profile);
+/** Backend memory-provider status + provider picker metadata. */
+export const memoryStatus = (profile?: string | null): string =>
+  withProfile('/api/memory', profile);
+export const memoryProviderSetup = (name: string): string =>
+  `/api/memory/providers/${encodeURIComponent(name)}/setup`;
+
 // ── Kanban (plugin) ─────────────────────────────────────────────────────────
 
 export const KANBAN_BASE = '/api/plugins/kanban';
