@@ -62,7 +62,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Analytics by model | `/analytics` | `AnalyticsPage.tsx` | partial (usage already renders `by_model`) | S |
 | Skill editor | `/skills` | `SkillEditorDialog.tsx` | **done** | M |
 | Skill hub (search/install) | `/skills` | `SkillsPage.tsx` | **done** | M |
-| Toolset config | — | `ToolsetConfigDrawer.tsx` | missing | M |
+| Toolset config | — | `ToolsetConfigDrawer.tsx` | **done** | M |
 | Files write/delete/download | `/files` | `FilesPage.tsx` | missing | M |
 | Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
 | Session search | `/sessions` | `SessionsPage.tsx` | missing | M |
@@ -145,11 +145,12 @@ The mobile app already has helpers, so adding an endpoint is fast:
 - Shipped: `src/features/skills-hub/index.tsx` (route `/skills-hub`), plus the
   hub method builders in `src/services/api.ts` / `src/services/skills.ts`.
 
-### 4.3 Toolset config `M`
-- `GET /api/tools/toolsets/{name}/config`, `/models`
-- `PUT /api/tools/toolsets/{name}/model|provider|env`, `POST .../post-setup`
+### 4.3 Toolset config `M` — done
+- `GET /api/tools/toolsets/{name}/config`
+- `PUT /api/tools/toolsets/{name}/provider|env`, `POST .../post-setup`
 - Reference: `ToolsetConfigDrawer.tsx` (460)
-- Touch: `src/features/toolsets/index.tsx` (today only `getToolsets` / `setToolsetEnabled`)
+- Shipped: `src/features/toolsets/components/ToolsetConfigSheet.tsx`; rows on the
+  toolsets screen now open the config sheet.
 
 ### 4.4 Files write/delete/download `M`
 - `POST /api/fs/write-text`, `DELETE /api/files`, `GET /api/files/download`,

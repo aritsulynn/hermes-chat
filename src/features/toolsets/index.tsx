@@ -3,7 +3,7 @@
 // agent can use (terminal, web, browser, vision, media generation, and more).
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
-import { Boxes, RefreshCw, Search } from 'lucide-react';
+import { Boxes, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
@@ -15,6 +15,7 @@ import { errMsg } from '../../utils/messages';
 import { brandColor, screenStyle } from '../../theme';
 import { getToolsets, setToolsetEnabled } from '../../services/toolsets';
 import type { ToolsetInfo } from '../../services/toolsets';
+import { ToolsetConfigSheet } from './components/ToolsetConfigSheet';
 
 // Same presentation-only curation as Hermes Desktop's Toolsets tab.
 const HIDDEN_TOOLSETS = new Set(['discord', 'discord_admin', 'yuanbao', 'context_engine', 'moa']);
@@ -36,11 +37,13 @@ const ToolsetRow = memo(function ToolsetRow({
   dark,
   toggling,
   onToggle,
+  onConfigure,
 }: {
   toolset: ToolsetInfo;
   dark: boolean;
   toggling: boolean;
   onToggle: (name: string, enabled: boolean) => void;
+  onConfigure: (toolset: ToolsetInfo) => void;
 }) {
   const name = String(toolset.name ?? '');
   const enabled = toolset.enabled;
@@ -62,7 +65,11 @@ const ToolsetRow = memo(function ToolsetRow({
           }`}>
           <Boxes size={17} color={enabled ? (dark ? '#7dd3fc' : '#0284c7') : dark ? '#666' : '#999'} />
         </div>
-        <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 flex-col text-left"
+          aria-label={`Configure ${label}`}
+          onClick={() => onConfigure(toolset)}>
           <div
             className={`text-sm font-semibold ${
               enabled ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
@@ -87,8 +94,9 @@ const ToolsetRow = memo(function ToolsetRow({
                 {toolset.configured ? 'Ready' : 'Needs setup'}
               </span>
             </Badge>
+            <ChevronRight size={14} color={dark ? '#777' : '#aaa'} />
           </div>
-        </div>
+        </button>
         {toggling ? (
           <Spinner size={14} color={brandColor(dark)} />
         ) : (
@@ -115,6 +123,7 @@ export function ToolsetsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [configuring, setConfiguring] = useState<ToolsetInfo | null>(null);
   const loadEpoch = useRef(0);
 
   const load = useCallback(
@@ -274,12 +283,23 @@ export function ToolsetsScreen() {
                     dark={dark}
                     toggling={toggling === String(toolset.name ?? '')}
                     onToggle={toggle}
+                    onConfigure={setConfiguring}
                   />
                 ))}
               </div>
             )}
         </div>
       </ScreenScaffold>
+
+      {configuring && (
+        <ToolsetConfigSheet
+          toolset={configuring}
+          onClose={() => {
+            setConfiguring(null);
+            void load(true);
+          }}
+        />
+      )}
     </div>
   );
 }

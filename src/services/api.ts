@@ -211,6 +211,18 @@ function profileParam(profile?: string | null): string {
 export const toolsets = (profile?: string | null): string => `/api/tools/toolsets?profile=${profileParam(profile)}`;
 export const toolsetToggle = (name: string, profile?: string | null): string =>
   `/api/tools/toolsets/${encodeURIComponent(name)}?profile=${profileParam(profile)}`;
+/** Provider matrix + per-env-var `is_set` flags for one toolset. */
+export const toolsetConfig = (name: string, profile?: string | null): string =>
+  `/api/tools/toolsets/${encodeURIComponent(name)}/config?profile=${profileParam(profile)}`;
+/** PUT the active provider row for one toolset. */
+export const toolsetProvider = (name: string, profile?: string | null): string =>
+  `/api/tools/toolsets/${encodeURIComponent(name)}/provider?profile=${profileParam(profile)}`;
+/** PUT one or more env vars (API keys) for a toolset backend. */
+export const toolsetEnv = (name: string, profile?: string | null): string =>
+  `/api/tools/toolsets/${encodeURIComponent(name)}/env?profile=${profileParam(profile)}`;
+/** POST a provider's post-setup install hook (runs on the gateway host). */
+export const toolsetPostSetup = (name: string, profile?: string | null): string =>
+  `/api/tools/toolsets/${encodeURIComponent(name)}/post-setup?profile=${profileParam(profile)}`;
 
 // ── Server update / gateway actions ─────────────────────────────────────────
 
