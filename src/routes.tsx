@@ -1,5 +1,6 @@
 import { AskInboxScreen } from './features/asks';
 import { ChatScreen } from './features/chat';
+import { ChannelsScreen } from './features/channels';
 import { CronScreen } from './features/cron';
 import { FilesScreen } from './features/files';
 import { KanbanScreen } from './features/kanban';
@@ -31,6 +32,7 @@ export const APP_ROUTES = [
   { path: '/pairing', element: <PairingScreen /> },
   { path: '/webhooks', element: <WebhooksScreen /> },
   { path: '/system', element: <SystemScreen /> },
+  { path: '/channels', element: <ChannelsScreen /> },
   { path: '/settings', element: <SettingsScreen /> },
   { path: '/skills', element: <SkillsScreen /> },
   { path: '/skills-hub', element: <SkillsHubScreen /> },

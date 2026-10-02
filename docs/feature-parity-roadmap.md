@@ -68,7 +68,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Session search | `/sessions` | `SessionsPage.tsx` | **done** (sidebar FTS) | M |
 | Models (aux / MoA) | `/models` | `ModelsPage.tsx` | partial | M–L |
 | MCP | `/mcp` | `McpPage.tsx` | **done** (servers + catalog) | L |
-| Channels | `/channels` | `ChannelsPage.tsx` | missing | L |
+| Channels | `/channels` | `ChannelsPage.tsx` | **done** | L |
 | System / Ops | `/system` | `SystemPage.tsx` | **done** (core) | L |
 | Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | partial | L |
 | Config | `/config` | `ConfigPage.tsx` | missing | L |
@@ -191,6 +191,16 @@ The mobile app already has helpers, so adding an endpoint is fast:
   (doctor / security audit / backup / prune checkpoints) with a live log.
 - Remaining from the desktop page: memory provider, shell hooks, config editor —
   those belong to the not-yet-ported Config/Memory surfaces.
+
+### 4.10 Channels + pairing `L` — done
+- `GET /api/messaging/platforms`, `PUT .../{id}`, `POST .../{id}/test`
+- Telegram/WhatsApp onboarding: `POST /start`, `GET /{pairing_id}`,
+  `POST /{pairing_id}/apply`, `DELETE /{pairing_id}`
+- Reference: `ChannelsPage.tsx` (1460)
+- Shipped: `src/features/channels/index.tsx` (route `/channels`) +
+  `src/services/channels.ts`: the platform list with enable/test, per-platform
+  credential editing, and the Telegram/WhatsApp pairing flow. On a phone the
+  pairing link is a tappable deep link rather than a QR (no QR lib bundled).
 
 ---
 

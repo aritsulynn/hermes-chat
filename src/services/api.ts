@@ -236,6 +236,27 @@ export const mcpCatalog = (profile?: string | null): string =>
 /** POST — install a catalog entry (env secrets, optional background git clone). */
 export const mcpCatalogInstall = (): string => '/api/mcp/catalog/install';
 
+// ── Messaging / channels ────────────────────────────────────────────────────
+
+export const messagingPlatforms = (profile?: string | null): string =>
+  withProfile('/api/messaging/platforms', profile);
+export const messagingPlatform = (platformId: string): string =>
+  `/api/messaging/platforms/${encodeURIComponent(platformId)}`;
+export const messagingPlatformTest = (platformId: string): string =>
+  `/api/messaging/platforms/${encodeURIComponent(platformId)}/test`;
+/** Telegram QR/deep-link onboarding. */
+export const telegramOnboardingStart = (): string => '/api/messaging/telegram/onboarding/start';
+export const telegramOnboarding = (pairingId: string): string =>
+  `/api/messaging/telegram/onboarding/${encodeURIComponent(pairingId)}`;
+export const telegramOnboardingApply = (pairingId: string): string =>
+  `/api/messaging/telegram/onboarding/${encodeURIComponent(pairingId)}/apply`;
+/** WhatsApp QR onboarding. */
+export const whatsappOnboardingStart = (): string => '/api/messaging/whatsapp/onboarding/start';
+export const whatsappOnboarding = (pairingId: string): string =>
+  `/api/messaging/whatsapp/onboarding/${encodeURIComponent(pairingId)}`;
+export const whatsappOnboardingApply = (pairingId: string): string =>
+  `/api/messaging/whatsapp/onboarding/${encodeURIComponent(pairingId)}/apply`;
+
 // ── Pairing ─────────────────────────────────────────────────────────────────
 
 export const pairing = (): string => '/api/pairing';
