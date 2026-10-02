@@ -66,7 +66,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Files write/delete/download | `/files` | `FilesPage.tsx` | **done** (download added) | M |
 | Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
 | Session search | `/sessions` | `SessionsPage.tsx` | **done** (sidebar FTS) | M |
-| Models (aux / MoA) | `/models` | `ModelsPage.tsx` | partial | M–L |
+| Models (aux / MoA) | `/models` | `ModelsPage.tsx` | **done** (aux) | M–L |
 | MCP | `/mcp` | `McpPage.tsx` | **done** (servers + catalog) | L |
 | Channels | `/channels` | `ChannelsPage.tsx` | **done** | L |
 | System / Ops | `/system` | `SystemPage.tsx` | **done** (core) | L |
@@ -245,6 +245,16 @@ The mobile app already has helpers, so adding an endpoint is fast:
   reload guarded by an unsaved-changes confirm. The desktop's schema-driven
   category form (per-field renderer + scoped reset) is a large separate renderer
   and is not ported.
+
+### 4.15 Models (auxiliary) `M–L` — done (aux)
+- `GET /api/model/info`, `/api/model/auxiliary`, `POST /api/model/set`,
+  `GET /api/model/recommended-default`
+- Reference: `ModelsPage.tsx` (1368)
+- Shipped: `src/features/models/index.tsx` (route `/models`) +
+  `src/services/models-admin.ts`: the resolved main model with context/capability
+  badges, and all 11 auxiliary task slots (view, per-task assign via the composer
+  provider inventory, per-task reset, reset-all). The desktop's Mixture-of-Agents
+  preset editor is a separate renderer and is not ported.
 
 ---
 

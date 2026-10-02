@@ -84,6 +84,18 @@ export const modelOptions = (
 /** POST /api/model/set — the global ("main") default. Session-scoped switching
  *  goes through the WS `slash.exec` /model path instead. */
 export const modelSet = (profile?: string): string => withProfile('/api/model/set', String(profile ?? '').trim());
+/** Resolved metadata for the configured model (context length + capabilities). */
+export const modelInfo = (profile?: string | null): string =>
+  withProfile('/api/model/info', String(profile ?? '').trim());
+/** Current auxiliary task assignments + the main slot. */
+export const modelAuxiliary = (profile?: string | null): string =>
+  withProfile('/api/model/auxiliary', String(profile ?? '').trim());
+/** Configured Mixture-of-Agents slots. */
+export const modelMoa = (profile?: string | null): string =>
+  withProfile('/api/model/moa', String(profile ?? '').trim());
+/** Recommended default model for a provider. */
+export const modelRecommendedDefault = (provider: string, profile?: string | null): string =>
+  withProfile(`/api/model/recommended-default?provider=${encodeURIComponent(provider)}`, profile);
 
 // ── Sessions ────────────────────────────────────────────────────────────────
 
