@@ -4,7 +4,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
-import { RefreshCw, X } from 'lucide-react';
+import { RefreshCw, Pencil, Plus, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
@@ -17,6 +17,7 @@ import { brandColor, screenStyle } from '../../theme';
 import { getSkillContent, getSkills, setSkillEnabled } from '../../services/skills';
 import type { SkillInfo } from '../../services/skills';
 import { writeClipboard } from '../../services/clipboard';
+import { SkillEditor } from './components/SkillEditor';
 
 // Memoized row: the installed-skills list is small and bounded, so no
 // virtualized list is needed — but toggling one switch must not re-render
@@ -82,6 +83,9 @@ export function SkillsScreen() {
   const [viewing, setViewing] = useState<string | null>(null);
   const [content, setContent] = useState('');
   const [contentLoading, setContentLoading] = useState(false);
+  // Editor: `null` while closed, `{ name: string | null }` while open — `name:
+  // null` means create mode, matching the desktop dialog's `editName` contract.
+  const [editor, setEditor] = useState<{ name: string | null } | null>(null);
   // Filter-as-you-type over name + description + origin. Memoized so a toggle
   // (which rewrites one row) doesn't refilter the whole inventory.
   const [q, setQ] = useState('');
@@ -105,6 +109,7 @@ export function SkillsScreen() {
     setSkills(null);
     setViewing(null);
     setContent('');
+    setEditor(null);
     setError(null);
   }, [authed]);
 
@@ -195,9 +200,17 @@ export function SkillsScreen() {
                   : `${skills?.length ?? 0} installed`
             }
             actions={
-              <HeaderIconButton aria-label="Refresh skills" onClick={() => void load(true)}>
-                <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
-              </HeaderIconButton>
+              <div className="flex items-center gap-1">
+                <HeaderIconButton
+                  aria-label="New skill"
+                  onClick={() => setEditor({ name: null })}
+>
+                  <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
+                </HeaderIconButton>
+                <HeaderIconButton aria-label="Refresh skills" onClick={() => void load(true)}>
+                  <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
+                </HeaderIconButton>
+              </div>
             }
           />
         }
@@ -273,6 +286,21 @@ export function SkillsScreen() {
                 </div>
                 <Button
                   variant="ghost"
+                  onClick={() => {
+                    // Close the viewer first: two stacked full-screen dialogs
+                    // fight over pointer events. The editor holds the name, so
+                    // the viewer does not need to stay mounted.
+                    const name = viewing;
+                    setViewing(null);
+                    if (name) setEditor({ name });
+                  }}
+                  aria-label="Edit skill file"
+                  className="h-auto sm:h-auto px-2 py-1.5">
+                  <Pencil size={15} color={brandColor(dark)} />
+                  <span className="text-xs font-semibold text-brand">Edit</span>
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={() => void writeClipboard(content).catch(() => {})}
                   aria-label="Copy skill file"
                   className="h-auto sm:h-auto px-2 py-1.5">
@@ -305,6 +333,25 @@ export function SkillsScreen() {
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
+
+      {/* Create/edit SKILL.md. Mounted only while open so React state resets on
+          each fresh open (see SkillEditor's note on why it is not a `key`). */}
+      {editor && (
+        <SkillEditor
+          open
+          editName={editor.name}
+          dark={dark}
+          opsGet={opsGet}
+          opsMut={opsMut}
+          getAuthScope={getAuthScope}
+          onClose={() => setEditor(null)}
+          onSaved={(name) => {
+            toast({ title: editor.name ? 'Skill saved' : 'Skill created', description: name });
+            setViewing(null);
+            void load(true);
+          }}
+        />
+      )}
     </div>
   );
 }

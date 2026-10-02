@@ -172,6 +172,10 @@ export const portal = (): string => '/api/portal';
 export const skills = (): string => '/api/skills';
 export const skillContent = (name: string): string => `/api/skills/content?name=${encodeURIComponent(name)}`;
 export const skillToggle = (): string => '/api/skills/toggle';
+/** PUT — full rewrite of an existing SKILL.md from the editor. */
+export const skillContentUpdate = (): string => '/api/skills/content';
+/** POST — create a new skill (name + optional category + SKILL.md body). */
+export const skillCreate = (): string => '/api/skills';
 
 // ── Toolsets ────────────────────────────────────────────────────────────────
 
