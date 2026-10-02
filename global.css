@@ -456,6 +456,52 @@
   }
 }
 
+/* Scrollbars, thin and low-contrast — the browser default is the opposite of
+   both, and on a light theme it is what a drawer/sidebar edge looks like a
+   stray divider rather than a scroll affordance.
+
+   Applied to `*` on purpose. There is no wrapper to hang this on: scrollers are
+   scattered across `overflow-y-auto` on the sidebar, each feature screen, every
+   sheet and the transcript. A universal rule is the only way to catch the ones
+   nobody remembers.
+
+   The 3px transparent border with `background-clip: content-box` is what makes
+   the thumb read as ~4px inside a 10px track without changing layout: a plain
+   4px thumb in a 10px track leaves a gap the eye reads as a gap in the border.
+   Firefox takes the first two declarations instead, which is why both are here.
+
+   `--border` is the token the sidebar divider already uses, so the thumb sits at
+   the same weight as the chrome it moves over, and it repaints with the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.55);
+}
+
+/* Corner between a vertical and a horizontal bar, over the same background. */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Horizontal chip strips have no affordance to scroll with on touch, and a
    fat overlay scrollbar across a row of chips looks broken. The scroller still
    scrolls; only the bar is hidden. */

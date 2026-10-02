@@ -390,7 +390,7 @@ export function HermesSidebarContent() {
             </Button>
           )}
           <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-            <div className="truncate px-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Sessions</div>
+            <div className="truncate px-1 text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Hermes</div>
           </div>
           {/* Tinted compose pill, pinned right like theirs. Icon-only in
               the collapsed rail. */}
