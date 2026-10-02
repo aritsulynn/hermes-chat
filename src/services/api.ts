@@ -61,6 +61,13 @@ export const ws = (ticket: string): string => `/api/ws?ticket=${encodeURICompone
 
 export const profiles = (): string => '/api/profiles';
 export const activeProfile = (): string => '/api/profiles/active';
+export const profile = (name: string): string => `/api/profiles/${encodeURIComponent(name)}`;
+export const profileSoul = (name: string): string => `/api/profiles/${encodeURIComponent(name)}/soul`;
+export const profileDescription = (name: string): string => `/api/profiles/${encodeURIComponent(name)}/description`;
+export const profileModel = (name: string): string => `/api/profiles/${encodeURIComponent(name)}/model`;
+export const profileDescribeAuto = (name: string): string => `/api/profiles/${encodeURIComponent(name)}/describe-auto`;
+export const profileExport = (name: string): string => `/api/profiles/${encodeURIComponent(name)}/export`;
+export const profileImport = (): string => '/api/profiles/import';
 
 // ── Models ──────────────────────────────────────────────────────────────────
 

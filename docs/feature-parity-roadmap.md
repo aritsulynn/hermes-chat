@@ -70,7 +70,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | MCP | `/mcp` | `McpPage.tsx` | **done** (servers + catalog) | L |
 | Channels | `/channels` | `ChannelsPage.tsx` | **done** | L |
 | System / Ops | `/system` | `SystemPage.tsx` | **done** (core) | L |
-| Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | partial | L |
+| Profiles (CRUD) | `/profiles` | `ProfilesPage.tsx` | **done** | L |
 | Config | `/config` | `ConfigPage.tsx` | missing | L |
 | Keys / Env | `/env` | `EnvPage.tsx` | missing | L |
 | Plugins | `/plugins` | `PluginsPage.tsx` | missing | L |
@@ -201,6 +201,16 @@ The mobile app already has helpers, so adding an endpoint is fast:
   `src/services/channels.ts`: the platform list with enable/test, per-platform
   credential editing, and the Telegram/WhatsApp pairing flow. On a phone the
   pairing link is a tappable deep link rather than a QR (no QR lib bundled).
+
+### 4.11 Profiles CRUD `L` — done
+- `GET/POST /api/profiles`, `PATCH/DELETE /api/profiles/{name}`,
+  `PUT .../{name}/soul|description|model`, `POST .../{name}/describe-auto|export`,
+  `POST /api/profiles/import`, `POST /api/profiles/active`
+- Reference: `ProfilesPage.tsx` (1426)
+- Shipped: `src/features/profiles/index.tsx` (route `/profiles`) +
+  `src/services/profiles.ts`: list with model/skills, create (optional clone),
+  rename/delete/export, switch active, and a SOUL.md + description editor with
+  auto-describe. The desktop's separate ProfileBuilderPage is not ported.
 
 ---
 
