@@ -184,10 +184,18 @@ export function ScreenScaffold({
   header,
   children,
   contentClassName,
+  contentTopInset = 16,
 }: {
   header: React.ReactNode;
   children: React.ReactNode;
   contentClassName?: string;
+  /**
+   * Gap between the measured header region and the first content row. The
+   * inline `paddingTop` below overrides whatever `py-*` the `contentClassName`
+   * sets, so without this the content would sit flush against the header's
+   * bottom border (the sub-bar screens were the visible case).
+   */
+  contentTopInset?: number;
 }) {
   const [headerH, setHeaderH] = useState(0);
   const measure = useCallback((el: HTMLDivElement | null) => {
@@ -215,8 +223,13 @@ export function ScreenScaffold({
         className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain', contentClassName)}
         // The measured height, with the static safe-area + bar height as the
         // first-paint value so the content does not start under the header for
-        // a frame.
-        style={{ paddingTop: headerH || 'calc(var(--safe-area-top, 0px) + var(--header-height))' }}>
+        // a frame. `contentTopInset` restores the top gap the screens' `py-4`
+        // expects — the inline padding replaces that class value.
+        style={{
+          paddingTop: headerH
+            ? headerH + contentTopInset
+            : 'calc(var(--safe-area-top, 0px) + var(--header-height))',
+        }}>
         {children}
       </div>
     </div>
