@@ -3,75 +3,80 @@
 // The bar was always the same shape as every other screen's: hamburger, title,
 // right-hand actions. It stayed a separate component only because it predates
 // `ScreenHeader` gaining an `actions` node. Now it just supplies chat's own
-// controls (the context ring + the session menu) and drops the subtitle, which
-// is the only real difference left.
+// control (the context ring) and drops the subtitle, which is the only real
+// difference left.
 //
-// The chat screen wraps this in an absolute glass region so the transcript
-// scrolls under it; see the overlay in chat/index.tsx. No `insetTop` prop: the
-// safe area is a CSS variable now.
-import { Info, PencilRuler } from 'lucide-react';
-import { CtxRing, headerIconButtonClass, ScreenHeader } from '../../../components/ui/bits';
+// No `insetTop` prop: the safe area is a CSS variable now.
+import { CtxRingBody, ScreenHeader } from '../../../components/ui/bits';
+import { compactNumber } from '../../../utils/format';
 import { Button } from '../../../components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../../../components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
 
 export function ChatNormalHeader({
   dark,
-  iconColor,
   title,
   contextPercent,
   contextTone,
-  onSelectInfo,
-  onOpenInfo,
+  contextUsed,
+  contextMax,
+  input,
+  output,
+  costUsd,
+  subagents,
 }: {
   dark: boolean;
-  iconColor: string;
   title: string;
   contextPercent: number | null;
   contextTone: 'ok' | 'warn' | 'hot';
-  onSelectInfo: () => void;
-  onOpenInfo: () => void;
+  /** The token/cost figures for the dropdown; absent on an older gateway. */
+  contextUsed?: number | null;
+  contextMax?: number | null;
+  input?: number | null;
+  output?: number | null;
+  costUsd?: number | null;
+  subagents?: number | null;
 }) {
+  // The ring is a menu: a header badge is a one-tap summary, and the numbers
+  // behind it are four separate fields that have no other home in the UI.
+  const ctxLabel = contextPercent != null ? `${parseFloat(contextPercent.toFixed(1))}%` : '';
+  const ctxRow = (k: string, v: string) => (
+    <div className="flex items-center justify-between gap-4 px-3 py-1.5">
+      <span className="text-[13px] text-neutral-500 dark:text-neutral-400">{k}</span>
+      <span className="font-mono text-[13px] font-medium text-neutral-950 dark:text-neutral-100">{v}</span>
+    </div>
+  );
   return (
     <ScreenHeader
       title={title}
       actions={
         <div className="flex items-center gap-1">
           {contextPercent != null && (
-            <CtxRing pct={contextPercent} tone={contextTone} dark={dark} onPress={onOpenInfo} />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    data-testid="ctx-ring"
+                    aria-label={`Context ${ctxLabel} — open usage`}
+                    className="h-9 rounded-full px-2"
+                    style={{ width: 'auto', height: 36 }}
+                  />
+                }>
+                <CtxRingBody pct={contextPercent} tone={contextTone} dark={dark} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end" className="w-60 p-1.5">
+                <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Context
+                </div>
+                {ctxRow('Used', contextUsed != null ? compactNumber(contextUsed) : '—')}
+                {ctxRow('Window', contextMax != null ? compactNumber(contextMax) : '—')}
+                {input != null && ctxRow('Input', compactNumber(input))}
+                {output != null && ctxRow('Output', compactNumber(output))}
+                {costUsd != null && costUsd > 0 && ctxRow('Cost', `$${costUsd.toFixed(2)}`)}
+                {subagents != null && subagents > 0 && ctxRow('Subagents', String(subagents))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-testid="kebab-btn"
-                  aria-label="Chat menu"
-                  className={headerIconButtonClass}
-                />
-              }>
-              <PencilRuler size={20} color={iconColor} />
-            </DropdownMenuTrigger>
-            {/* `w-44` because the content's default is `w-(--anchor-width)` —
-                the menu matches its trigger, which is right for a text trigger
-                and wrong for this one: the menu button is a 40px icon button, so
-                the menu came out clamped to `min-w-32` (128px) and "Session
-                info" wrapped onto two lines. */}
-            <DropdownMenuContent side="bottom" align="end" className="w-44">
-              <DropdownMenuItem
-                data-testid="menu-info"
-                onClick={onSelectInfo}
-                className="w-full items-center justify-start gap-2.5 px-3 py-2.5">
-                <Info size={17} color={iconColor} />
-                <span className="text-left text-[15px]">Session info</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       }
     />

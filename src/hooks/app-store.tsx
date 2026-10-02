@@ -5,7 +5,6 @@
 // import path stable for screens/components.
 export {
   useApp,
-  useStreamingChars,
   useStreamingRead,
   useStreamingText,
   useThemeValue,

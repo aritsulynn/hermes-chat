@@ -23,6 +23,8 @@ export interface GatewaySlice {
   confirmAfterReconnect: () => Promise<void>;
   syncOpenRequests: (g: GatewayWs) => Promise<void>;
   openWs: (h: string, user: string) => Promise<GatewayWs>;
+  /** Cut through the reconnect backoff and dial immediately. */
+  reconnectNow: () => void;
 }
 
 export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
@@ -714,5 +716,9 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
     [hydrateSessionContext, confirmAfterReconnect, syncOpenRequests, resolveAskOwner, applyAskInbox, markAskByRpc],
   );
 
-  return { probeWorkingSessions, confirmAfterReconnect, syncOpenRequests, openWs };
+  const reconnectNow = useCallback(() => {
+    gw.current?.retryNow();
+  }, []);
+
+  return { probeWorkingSessions, confirmAfterReconnect, syncOpenRequests, openWs, reconnectNow };
 }

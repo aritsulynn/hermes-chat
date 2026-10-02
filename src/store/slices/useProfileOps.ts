@@ -62,11 +62,9 @@ export function useProfileOpsSlice(ctx: StoreCtx): ProfileOpsSlice {
     setSubagents,
     setAsk,
     setEditingRowId,
-    setInfoOpen,
     setInputRaw,
     setSessionInfo,
     setUsageInfo,
-    setUsageLoading,
     setOpeningId,
     setSessions,
     setSessionsLimit,
@@ -149,14 +147,12 @@ export function useProfileOpsSlice(ctx: StoreCtx): ProfileOpsSlice {
       setAttachments([]);
       setSessionInfo(null);
       setUsageInfo(null);
-      setUsageLoading(false);
       setTodos([]);
       setSubagents([]);
       setAsk(null);
       setToolLine(null);
       setEditingRowId(null);
       editRowRef.current = null;
-      setInfoOpen(false);
       setInputRaw('');
       draftKeyRef.current = `${next}::__none__`;
       sessionsFetchRef.current = null;

@@ -86,12 +86,8 @@ export interface AppStore {
   setAttachments: (v: Attachment[]) => void;
   generating: boolean;
   copiedId: string | null;
-  infoOpen: boolean;
-  setInfoOpen: (v: boolean) => void;
-  infoSeq: number;
   sessionInfo: SessionInfo | null;
   usageInfo: UsageInfo | null;
-  usageLoading: boolean;
   toolLine: string | null;
   ask: ServerAsk | null;
   /** All unresolved/settled server asks, newest first. */
@@ -111,6 +107,8 @@ export interface AppStore {
   connect: (h: string, user: string, pw: string) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  /** Cut through the reconnect backoff and dial immediately. */
+  reconnectNow: () => void;
   refreshSessions: (limit?: number) => Promise<ScopedSessionSummary[]>;
   /** Fetch the next page (limit+100) — used by drawer infinite scroll. */
   loadMoreSessions: () => Promise<ScopedSessionSummary[]>;
@@ -120,7 +118,6 @@ export interface AppStore {
   newSession: () => Promise<void>;
   send: () => Promise<void>;
   stop: () => void;
-  openInfo: () => Promise<void>;
   getGw: () => GatewayWs | null;
   /** Connection + WS diagnostics snapshot (Settings → Diagnostics). */
   diagnostics: () => Record<string, unknown>;

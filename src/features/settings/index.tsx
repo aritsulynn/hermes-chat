@@ -7,12 +7,9 @@ import {
   Globe,
   Info,
   LogOut,
-  Monitor,
-  Moon,
   Palette,
   Server,
   Shield,
-  Sun,
   User,
 } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
@@ -22,6 +19,8 @@ import { Button } from '../../components/ui/button';
 import { Separator } from '../../components/ui/separator';
 import { Avatar, AvatarFallback } from '../../components/ui/avatar';
 import { ConfirmDialog } from '../../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import type { Accent, Theme } from '../../services/connection';
 import { UpdatePanel } from '../../components/ui/update-panel';
 import { notificationsSupported } from '../../services/notifications';
 import { brandColor, screenStyle } from '../../theme';
@@ -77,168 +76,44 @@ export function SettingsScreen() {
                   Appearance
                 </div>
               </div>
-              <Card>
-                <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">Theme Mode</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
-                  Follow your device or choose a fixed theme
-                </div>
+              {/* Two cards, one section: `gap-3` between them. They were direct
+                  siblings with nothing between, so their borders read as a single
+                  box split by a hairline — the section looked like one card with a
+                  divider rather than two settings. */}
+              <div className="flex flex-col gap-3">
+                <Card>
+                  <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">Theme Mode</div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
+                    Follow your device or choose a fixed theme
+                  </div>
 
-                <div className="flex gap-2">
-                  {/* Light Theme Card */}
-                  <button
-                    type="button"
-                    aria-label="Light theme"
-                    aria-pressed={themeMode === 'light'}
-                    onClick={() => setTheme('light')}
-                    className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
-                      themeMode === 'light'
-                        ? 'border-amber-500 bg-amber-50 dark:bg-input/30'
-                        : 'border-border bg-popover'
-                    }`}>
-                    <div className="flex items-center justify-center h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-950/60 mb-2">
-                      <Sun size={18} color="#d97706" />
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        themeMode === 'light'
-                          ? 'text-amber-700 font-bold dark:text-amber-300'
-                          : 'text-neutral-700 dark:text-neutral-300'
-                      }`}>
-                      Light
-                    </span>
-                    {themeMode === 'light' && (
-                      <div className="mt-1.5 flex items-center gap-1">
-                        <Check size={12} color="#b45309" />
-                        <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">Active</div>
-                      </div>
-                    )}
-                  </button>
-
-                  {/* Dark Theme Card */}
-                  <button
-                    type="button"
-                    aria-label="Dark theme"
-                    aria-pressed={themeMode === 'dark'}
-                    onClick={() => setTheme('dark')}
-                    className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
-                      themeMode === 'dark'
-                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50'
-                        : 'border-border bg-popover'
-                    }`}>
-                    <div className="flex items-center justify-center h-8 w-8 rounded-full bg-indigo-100 dark:bg-indigo-950/60 mb-2">
-                      <Moon size={18} color="#6366f1" />
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        themeMode === 'dark'
-                          ? 'text-indigo-700 font-bold dark:text-indigo-300'
-                          : 'text-neutral-700 dark:text-neutral-300'
-                      }`}>
-                      Dark
-                    </span>
-                    {themeMode === 'dark' && (
-                      <div className="mt-1.5 flex items-center gap-1">
-                        <Check size={12} color="#a5b4fc" />
-                        <div className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">Active</div>
-                      </div>
-                    )}
-                  </button>
-
-                  {/* Follow the device appearance. */}
-                  <button
-                    type="button"
-                    aria-label="System theme"
-                    aria-pressed={themeMode === 'system'}
-                    onClick={() => setTheme('system')}
-                    className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
-                      themeMode === 'system'
-                        ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/50'
-                        : 'border-border bg-popover'
-                    }`}>
-                    <div className="flex flex-col mb-2 h-8 w-8 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/60">
-                      <Monitor size={18} color={dark ? '#38bdf8' : '#0284c7'} />
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        themeMode === 'system'
-                          ? 'font-bold text-sky-700 dark:text-sky-300'
-                          : 'text-neutral-700 dark:text-neutral-300'
-                      }`}>
-                      System
-                    </span>
-                    {themeMode === 'system' && (
-                      <div className="mt-1.5 flex items-center gap-1">
-                        <Check size={12} color={dark ? '#7dd3fc' : '#0369a1'} />
-                        <div className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Active</div>
-                      </div>
-                    )}
-                  </button>
-                </div>
-              </Card>
-              <Card>
-                <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">Accent</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
-                  Hermes blue or OpenChamber warm ember
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    aria-label="Hermes accent"
-                    aria-pressed={accent === 'default'}
-                    onClick={() => setAccent('default')}
-                    className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
-                      accent === 'default'
-                        ? 'border-brand bg-brand/10'
-                        : 'border-border bg-popover'
-                    }`}>
-                    <div className="flex items-center justify-center h-8 w-8 rounded-full bg-brand mb-2">
-                      <span className="text-sm font-bold text-white">H</span>
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        accent === 'default'
-                          ? 'font-bold text-brand'
-                          : 'text-neutral-700 dark:text-neutral-300'
-                      }`}>
-                      Hermes
-                    </span>
-                    {accent === 'default' && (
-                      <div className="mt-1.5 flex items-center gap-1">
-                        <Check size={12} color="var(--brand-hex)" />
-                        <div className="text-[11px] font-semibold text-brand">Active</div>
-                      </div>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="OpenChamber accent"
-                    aria-pressed={accent === 'openchamber'}
-                    onClick={() => setAccent('openchamber')}
-                    className={`flex-1 items-center justify-center rounded-xl border p-3.5 ${
-                      accent === 'openchamber'
-                        ? 'border-[#da7c47] bg-orange-50 dark:bg-orange-950/40'
-                        : 'border-border bg-popover'
-                    }`}>
-                    <div className="flex items-center justify-center h-8 w-8 rounded-full bg-[#da7c47] mb-2">
-                      <span className="text-sm font-bold text-white">O</span>
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        accent === 'openchamber'
-                          ? 'font-bold text-[#b35017] dark:text-[#da7c47]'
-                          : 'text-neutral-700 dark:text-neutral-300'
-                      }`}>
-                      Chamber
-                    </span>
-                    {accent === 'openchamber' && (
-                      <div className="mt-1.5 flex items-center gap-1">
-                        <Check size={12} color={dark ? '#da7c47' : '#b35017'} />
-                        <div className="text-[11px] font-semibold text-[#b35017] dark:text-[#da7c47]">Active</div>
-                      </div>
-                    )}
-                  </button>
-                </div>
-              </Card>
+                  <Select value={themeMode} onValueChange={(v) => setTheme(v as Theme)}>
+                    <SelectTrigger className="w-full" aria-label="Theme mode" data-testid="theme-mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="light">Light</SelectItem>
+                      <SelectItem value="dark">Dark</SelectItem>
+                      <SelectItem value="system">System</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Card>
+                <Card>
+                  <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1">Accent</div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-3.5">
+                    Default blue or OpenChamber warm ember
+                  </div>
+                  <Select value={accent} onValueChange={(v) => setAccent(v as Accent)}>
+                    <SelectTrigger className="w-full" aria-label="Accent" data-testid="accent">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default</SelectItem>
+                      <SelectItem value="openchamber">Chamber</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Card>
+              </div>
             </div>
 
             {/* Agent / runtime Section */}

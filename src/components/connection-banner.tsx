@@ -16,7 +16,7 @@ import { Button } from './ui/button';
 import { Spinner } from './ui/bits';
 
 export function ConnectionBanner() {
-  const { conn, authed, login } = useApp();
+  const { conn, authed, login, reconnectNow, diagnostics } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
 
@@ -25,10 +25,21 @@ export function ConnectionBanner() {
   const dropped = conn === 'closed';
   if (!stalled && !dropped) return null;
 
+  // Last socket close, so a stuck "reconnecting…" names its cause (1006 =
+  // network/server gone, 44xx = auth). Already in Copy diagnostics too.
+  let closeHint = '';
+  try {
+    const closes = (diagnostics() as any)?.ws?.closes;
+    const last = Array.isArray(closes) && closes.length > 0 ? closes[closes.length - 1] : null;
+    if (last && (typeof last.code === 'number' || last.reason)) {
+      closeHint = ` (close ${last.code ?? '?'}${last.reason ? `: ${last.reason}` : ''})`;
+    }
+  } catch {}
+
   const message = dropped
     ? 'Disconnected from the gateway'
     : conn === 'reconnecting'
-      ? 'Connection lost — reconnecting…'
+      ? `Connection lost — reconnecting…${closeHint}`
       : 'Connecting to the gateway…';
 
   return (
@@ -45,12 +56,12 @@ export function ConnectionBanner() {
           <Spinner size={14} color={dark ? '#fcd34d' : '#b45309'} />
         )}
         <div className="flex-1 text-xs font-medium text-amber-900 dark:text-amber-100 line-clamp-2">{message}</div>
-        {dropped && (
+        {(dropped || stalled) && (
           <Button
             variant="ghost"
             size="sm"
             aria-label="Reconnect to the gateway"
-            onClick={() => void login()}
+            onClick={() => (dropped ? void login() : reconnectNow())}
             className="h-auto sm:h-auto shrink-0 rounded-lg px-2 py-1">
             <RefreshCw size={13} color={dark ? '#fcd34d' : '#b45309'} />
             <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">Retry</span>

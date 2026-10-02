@@ -61,10 +61,11 @@ function ShellBridges() {
     });
   }, [isMobile, setOpen, setOpenMobile]);
 
-  // The hamburger has to step aside when a panel is already on screen, or two
-  // PanelLeft glyphs sit on one screen and read as a bug. On desktop the rail is
-  // always there (collapsed or not) and carries its own expand control, so it
-  // always steps aside. On a phone the hamburger is the only way in.
+  // `sidebarShown` means "the sidebar carries its own toggle, so the screen
+  // header's hamburger steps aside". The rail is that toggle on desktop — click
+  // it to expand (see Sidebar) — so desktop hides the hamburger. A phone's
+  // sheet has no persistent control at all, so the button stays and is the only
+  // way in besides the edge swipe.
   useEffect(() => {
     setSidebarShown(!isMobile);
   }, [isMobile]);
@@ -115,6 +116,9 @@ export function AppShell() {
       // this app fills the viewport and scrolls its own panes, so the wrapper is
       // a column holding one row (panel + content) with the overlay hosts below.
       className="h-full flex-col"
+      // The remembered cookie wins; without one the panel starts open, so a
+      // first-time desktop visitor sees the session list rather than only the
+      // rail. Collapsing is one click on the rail's own PanelLeft control.
       defaultOpen={readSidebarCookie() ?? true}
       style={{ background: screenBg(theme === 'dark') }}>
       {/* Tooltips only appear when the panel is collapsed to the rail, where

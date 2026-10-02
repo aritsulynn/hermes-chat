@@ -205,6 +205,12 @@ function Sidebar({
     );
   }
 
+  const { toggleSidebar } = useSidebar();
+  // Clicking the collapsed rail expands it: with no hamburger in the screen
+  // header and no room for a toggle button at 64px, the rail itself is the only
+  // affordance on desktop. Guarded so the expanded panel is unaffected.
+  const railExpands = collapsible === 'icon' && state === 'collapsed';
+
   return (
     <div
       className="group peer hidden text-sidebar-foreground md:block"
@@ -234,8 +240,26 @@ function Sidebar({
           variant === 'floating' || variant === 'inset'
             ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
             : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
+          // The edge says it is grabbable. Only the padding above takes the
+          // click though — see the handler below.
+          railExpands && 'cursor-e-resize',
           className,
         )}
+        // Clicking the collapsed rail expands it — including the empty space
+        // below its icons, which is most of a 934px-tall rail. `closest` is what
+        // makes it safe: the nav rows and the panel's own buttons are descendants,
+        // so any click that reaches one of them is left alone and only genuinely
+        // dead space expands the panel. An equality check on target/currentTarget
+        // would not work — the inner box fills the rail, so it owns the space.
+        onClick={
+          railExpands
+            ? (e) => {
+                const hit = e.target as HTMLElement | null;
+                if (hit?.closest('button, a, [role="menuitem"], [role="button"]')) return;
+                toggleSidebar();
+              }
+            : undefined
+        }
         {...props}>
         <div
           data-sidebar="sidebar"
@@ -281,7 +305,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        'absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2',
+        'absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] after:bg-transparent hover:after:bg-sidebar-ring sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2',
         'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',
         '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
         'group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar',

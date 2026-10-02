@@ -153,19 +153,43 @@ export const Composer = memo(function Composer({
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Collapsed pill on narrow screens while the keyboard is down: tapping the
-  // preview expands and focuses the field; dismissing the keyboard collapses.
+  // preview expands and focuses the field.
+  //
+  // `tapExpand` is a latch, not a transient. It used to be cleared the instant
+  // focus was requested, which collapsed the pill again before the keyboard
+  // finished coming up — and on a device that never raises one (a desktop
+  // browser narrowed under 768px) it collapsed instantly, so the tap did
+  // nothing visible. It clears when the field reports focus (so the keyboard
+  // owns the state from then on) or when the keyboard is dismissed.
   const [tapExpand, setTapExpand] = useState(false);
   const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    if (!keyboardUp) setTapExpand(false);
-  }, [keyboardUp]);
   const expanded = !stackModel || keyboardUp || focused || tapExpand || attachments.length > 0;
+  // Ask for focus on the tap itself, not in an effect: iOS only raises the soft
+  // keyboard while a gesture is still live, and an effect runs after it.
+  //
+  // The field is only mounted once expanded, so on the very first tap the ref is
+  // still null and the focus request lands on nothing — the pill expands, but
+  // typing needs a second tap. Focus the field the moment it attaches instead;
+  // `tapExpand` is what says the user asked for it, so this only ever happens
+  // after a deliberate expand and never steals focus on its own.
   useEffect(() => {
-    if (tapExpand && expanded) {
-      inputRef.current?.focus();
-      setTapExpand(false);
-    }
+    if (!tapExpand) return;
+    inputRef.current?.focus();
   }, [tapExpand, expanded]);
+  const expand = useCallback(() => {
+    setTapExpand(true);
+    inputRef.current?.focus();
+  }, []);
+  // The field took focus, so `focused` carries the state from here.
+  //
+  // `keyboardUp` is what *replaces* the latch, not focus: focus leaves the field
+  // for every sibling control (model chip, effort, approvals, attach) and for
+  // the sheet's own autofocus, so treating blur as "collapse" made the composer
+  // fold away under the user's thumb every time they touched any other button in
+  // it. The keyboard going down is the real signal that they are done.
+  useEffect(() => {
+    if (keyboardUp) setTapExpand(false);
+  }, [keyboardUp]);
   // Shield glyph per approval mode, like OpenChamber's permission button:
   // manual asks every time, smart lets the model decide, off runs everything.
   const ApprovalIcon = approvalMode === 'off' ? ShieldOff : approvalMode === 'smart' ? ShieldCheck : ShieldUser;
@@ -270,6 +294,18 @@ export const Composer = memo(function Composer({
           onBlur={() => {
             setFocused(false);
             handleBlur();
+            // Tapping the transcript dismisses the keyboard (its scroller's own
+            // handler) and the field blurs, but nothing tells the keyboard to go
+            // away — on Android the soft keyboard can stay up with nothing
+            // focused. The pill is meant to come back the moment the field is
+            // dismissed, and the blur is that signal, so drop the latch here too.
+            // Blur from a *sibling control* is filtered out by the delay check:
+            // focus is still inside the box, so the composer is untouched.
+            window.setTimeout(() => {
+              const el = inputRef.current;
+              const active = document.activeElement;
+              if (el && active !== el && !el.closest('.frame-focus')?.contains(active)) setTapExpand(false);
+            }, 120);
           }}
           onFocus={() => setFocused(true)}
         />
@@ -364,7 +400,7 @@ export const Composer = memo(function Composer({
                 type="button"
                 aria-label="Expand composer"
                 className="flex h-full min-w-0 flex-1 cursor-text items-center px-1.5 text-left"
-                onClick={() => setTapExpand(true)}>
+                onClick={expand}>
                 <span
                   className={`truncate text-[15px] ${hasText ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-400 dark:text-neutral-500'}`}>
                   {hasText ? input : placeholder}

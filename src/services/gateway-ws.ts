@@ -280,6 +280,8 @@ export class GatewayWs {
   >();
   private closed = false;
   private backoff = WS_INITIAL_BACKOFF_MS;
+  /** online/focus/visibility hooks, kept so detach can remove the same fns. */
+  private wakeListeners: { wake: () => void; visible: () => void } | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectScheduled = false;
@@ -339,11 +341,13 @@ export class GatewayWs {
       this.readyResolve = finish;
       const timer = setTimeout(() => finish(false), timeoutMs);
       this.dial();
+      this.attachLifecycleHooks();
     });
   }
 
   close() {
     this.closed = true;
+    this.detachLifecycleHooks();
     this.clearTimers();
     try {
       asWsLike(this.ws)?.close?.();
@@ -355,6 +359,66 @@ export class GatewayWs {
     this.readyResolve?.(false);
     this.readyResolve = null;
     this.setState('closed');
+  }
+
+  /** Cut through the backoff and dial immediately (banner Retry button). */
+  retryNow() {
+    if (this.closed) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectScheduled = false;
+    this.backoff = WS_INITIAL_BACKOFF_MS;
+    this.dial();
+  }
+
+  /**
+   * Wire lifecycle events that let a 1006 recover fast.
+   *
+   * A phone loses its network constantly (screen off, cell handover, wifi →
+   * mobile), and the close that follows is always 1006 — no close frame, so
+   * nothing on the socket says why. Two cases are worth reacting to:
+   *
+   *  - the device just got its network back: waiting out a 15s backoff while
+   *    the socket is perfectly dialable is the whole stall the banner shows.
+   *  - the tab was hidden and is visible again: phones freeze timers while
+   *    backgrounded, so the pending backoff can sit minutes behind reality.
+   *
+   * Both are the same action, and both must stay guarded by `closed` — a
+   * logged-out socket must never come back on its own.
+   */
+  attachLifecycleHooks() {
+    if (typeof globalThis.addEventListener !== 'function') return;
+    if (this.wakeListeners) return;
+    // Cut through the backoff rather than respect it. `scheduleReconnect` has
+    // already set `reconnectScheduled` by the time these fire — that is the
+    // normal state on a resume, and honouring it here would skip the wake on
+    // exactly the frame it exists for.
+    const wake = () => {
+      if (this.closed) return;
+      const sock = asWsLike(this.ws);
+      // An OPEN socket is healthy; a dial already in flight (0/1) will settle
+      // on its own, and retryNow() would only churn it.
+      if (sock && (sock.readyState === 1 || sock.readyState === 0)) return;
+      this.retryNow();
+    };
+    const onVisible = () => {
+      if (this.closed) return;
+      if (document.visibilityState !== 'visible') return;
+      wake();
+    };
+    this.wakeListeners = { wake, visible: onVisible };
+    globalThis.addEventListener('online', wake);
+    globalThis.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+  }
+
+  detachLifecycleHooks() {
+    const entry = this.wakeListeners;
+    if (!entry) return;
+    this.wakeListeners = null;
+    globalThis.removeEventListener('online', entry.wake);
+    globalThis.removeEventListener('focus', entry.visible);
+    document.removeEventListener('visibilitychange', entry.visible);
   }
 
   private clearTimers() {

@@ -6,16 +6,12 @@ import { useEffect, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Check, Copy, Info, KeyRound, Lock, MessageSquare, TriangleAlert } from 'lucide-react';
 import { parseClarify } from '../../utils/messages';
-import { mergeUsage, contextTone } from '../../utils/usage';
-import { compactNumber } from '../../utils/format';
 import { useThemeValue } from '../../hooks/app-store';
 import { cn } from '../../utils/cn';
 import { screenBg } from '../../theme';
 import type { GatewayWs, ServerAsk } from '../../services/gateway-ws';
 import { Button } from './button';
-import { Spinner } from './bits';
 import { Input } from './input';
-import { Progress } from './progress';
 import { Textarea } from './textarea';
 
 const sheetBody = 'flex flex-col gap-2.5 overflow-y-auto overscroll-contain p-4';
@@ -60,182 +56,6 @@ function SheetChrome({
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
-  );
-}
-
-// ── Session info sheet ───────────────────────────────────────────────────────
-
-function InfoRow({ label, value }: { label: string; value?: string }) {
-  if (!value) return null;
-  return (
-    <div className="flex gap-2 py-1">
-      <div className="w-[88px] shrink-0 text-[13px] leading-[18px] text-neutral-500 dark:text-neutral-400">{label}</div>
-      <div className="min-w-0 flex-1 select-text text-sm leading-[18px] text-neutral-950 dark:text-neutral-100">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function StatCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-1 flex-col gap-0.5 rounded-xl bg-elevated px-3 py-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-        {label}
-      </div>
-      <div className="text-[16px] font-bold text-neutral-950 dark:text-neutral-100 truncate">{value}</div>
-    </div>
-  );
-}
-
-function InfoSheetContent({
-  title,
-  model,
-  provider,
-  info,
-  usage,
-  usageLoading,
-  onRename,
-  tokenEstimate,
-}: {
-  title: string;
-  model: string;
-  provider: string;
-  info: any;
-  usage: any;
-  usageLoading: boolean;
-  onRename: (title: string) => void;
-  tokenEstimate: number;
-}) {
-  const { theme } = useThemeValue();
-  const dark = theme === 'dark';
-  const [draft, setDraft] = useState(title);
-  useEffect(() => setDraft(title), [title]);
-  // Usage arrives in two shapes (nested under session.info or flat from
-  // session.usage) — one reader covers both, same as the composer strip.
-  const snap = mergeUsage(info?.usage, usage);
-  const ctxPct = snap?.contextPercent != null ? Math.max(0, Math.min(100, Math.round(snap.contextPercent))) : null;
-  const tone = ctxPct == null ? 'ok' : contextTone(ctxPct);
-  // Stat grid, chunked into pairs so every row fills evenly.
-  const stats: [string, string][] = [];
-  if (snap?.input != null) stats.push(['Input', compactNumber(snap.input)]);
-  if (snap?.output != null) stats.push(['Output', compactNumber(snap.output)]);
-  if (snap?.total != null) stats.push(['Total tokens', compactNumber(snap.total)]);
-  if (snap?.costUsd != null && snap.costUsd > 0) stats.push(['Cost', `$${snap.costUsd.toFixed(2)}`]);
-  if (snap?.subagents != null) stats.push(['Subagents', String(snap.subagents)]);
-  const statRows: [string, string][][] = [];
-  for (let i = 0; i < stats.length; i += 2) statRows.push(stats.slice(i, i + 2));
-  const canSave = draft.trim().length > 0 && draft.trim() !== title;
-  return (
-    <div className={cn(sheetBody, 'gap-3')}>
-      <div className="text-[17px] font-bold text-neutral-950 dark:text-neutral-100">Session info</div>
-      <div className="flex flex-col gap-1 rounded-2xl bg-elevated px-3.5 py-2">
-        <InfoRow label="Title" value={title || '(untitled)'} />
-        <InfoRow
-          label="Model"
-          value={typeof info?.model === 'string' && info.model ? info.model : model || undefined}
-        />
-        <InfoRow
-          label="Provider"
-          value={typeof info?.provider === 'string' && info.provider ? info.provider : provider || undefined}
-        />
-        <InfoRow label="Profile" value={typeof info?.profile_name === 'string' ? info.profile_name : undefined} />
-        <InfoRow
-          label="Reasoning"
-          value={typeof info?.reasoning_effort_wire === 'string' ? info.reasoning_effort_wire : undefined}
-        />
-        <InfoRow label="Fast mode" value={info?.fast === true ? 'On' : undefined} />
-        <InfoRow label="Working dir" value={typeof info?.cwd === 'string' ? info.cwd : undefined} />
-        <InfoRow label="~Tokens" value={tokenEstimate > 0 ? `≈ ${tokenEstimate.toLocaleString()}` : undefined} />
-      </div>
-      <div className="flex items-center gap-2">
-        <Input
-          className="min-w-0 flex-1 rounded-xl border border-border px-3 py-2 text-sm text-neutral-950 dark:text-neutral-100"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Rename session…"
-          autoCapitalize="none"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && draft.trim()) onRename(draft.trim());
-          }}
-        />
-        <Button onClick={() => draft.trim() && onRename(draft.trim())} disabled={!canSave} className="px-3.5 py-2">
-          <span className="text-sm font-semibold">Save</span>
-        </Button>
-      </div>
-      <div className="text-sm font-bold text-neutral-950 dark:text-neutral-100">Usage</div>
-      {usageLoading ? (
-        <div className="flex items-center gap-2 py-2">
-          <Spinner size={16} color={dark ? '#888' : '#666'} />
-          <div className="text-sm text-neutral-500 dark:text-neutral-400">loading usage…</div>
-        </div>
-      ) : !snap ? (
-        <div className="text-sm text-neutral-500 dark:text-neutral-400">No usage reported yet.</div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {ctxPct != null && (
-            <div className="flex flex-col gap-1.5 rounded-2xl bg-elevated p-3.5">
-              <div className="flex items-center justify-between">
-                <div className="text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">Context window</div>
-                <div
-                  className={cn(
-                    'text-[13px] font-bold',
-                    tone === 'hot'
-                      ? 'text-[#c5221f] dark:text-[#ff8a8a]'
-                      : tone === 'warn'
-                        ? 'text-[#d97706] dark:text-[#f0b429]'
-                        : 'text-neutral-500 dark:text-neutral-400',
-                  )}>
-                  {snap.contextEstimated ? '~' : ''}
-                  {ctxPct}%
-                </div>
-              </div>
-              <Progress
-                value={ctxPct}
-                className="bg-border"
-                indicatorClassName={tone === 'hot' ? 'bg-[#c5221f]' : tone === 'warn' ? 'bg-[#d97706]' : 'bg-[#1a7f37]'}
-              />
-              {snap.contextUsed != null && snap.contextMax != null && (
-                <div className="text-[12px] text-neutral-500 dark:text-neutral-400">
-                  {compactNumber(snap.contextUsed)} / {compactNumber(snap.contextMax)} tokens
-                </div>
-              )}
-            </div>
-          )}
-          {statRows.map((row, i) => (
-            <div key={i} className="flex gap-2">
-              {row.map(([label, value]) => (
-                <StatCell key={label} label={label} value={value} />
-              ))}
-              {row.length === 1 && <div className="flex-1" />}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function InfoSheet({
-  open,
-  onOpenChange,
-  ...rest
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  model: string;
-  provider: string;
-  info: any;
-  usage: any;
-  usageLoading: boolean;
-  onRename: (title: string) => void;
-  tokenEstimate: number;
-}) {
-  return (
-    <SheetChrome open={open} onOpenChange={onOpenChange}>
-      <InfoSheetContent {...rest} />
-    </SheetChrome>
   );
 }
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pickFiles } from '../../services/file-picker';
 import { Navigate as Redirect } from 'react-router-dom';
 import { ChevronDown, ChevronUp, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
-import { useApp, useStreamingChars, useStreamingRead, useThemeValue } from '../../hooks/app-store';
+import { useApp, useStreamingRead, useThemeValue } from '../../hooks/app-store';
 import { Transcript } from '../../components/chat/transcript';
 import { MessageScrollerItem } from '../../components/ui/message-scroller';
 import { UserMenuDialog } from '../../components/chat/user-menu-dialog';
@@ -43,7 +43,7 @@ import {
   createDropdownMenuHandle,
 } from '../../components/ui/dropdown-menu';
 import { MessageBubble, formatBubbleTime } from '../../components/chat/message-bubble';
-import { AskSheet, InfoSheet } from '../../components/ui/sheets';
+import { AskSheet } from '../../components/ui/sheets';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -76,21 +76,15 @@ export function ChatScreen() {
     setAttachments,
     generating,
     copiedId,
-    infoOpen,
-    setInfoOpen,
-
     sessionInfo,
     usageInfo,
-    usageLoading,
     toolLine,
     ask,
     send,
     stop,
     redirectLive,
-    renameSession,
     setGlobalModel,
     newSession,
-    openInfo,
     loadProviders,
     loadCommandsCatalog,
     queued,
@@ -135,11 +129,29 @@ export function ChatScreen() {
   const headerIcon = dark ? '#f5f5f5' : '#111';
   // Approval mode shown on the composer's shield. Unknown yet (session info
   // still loading) reads as manual — the safe side.
-  const approvalMode =
+  const serverApprovalMode =
     sessionInfo?.approval_mode === 'smart' || sessionInfo?.approval_mode === 'off' ? sessionInfo.approval_mode : 'manual';
+  // Optimistic local echo. `applyApprovalMode` is a `config.set` RPC that
+  // resolves only when the gateway answers, and the shield is a control whose
+  // whole feedback loop is "did the glyph change" — reading only the server
+  // value made every tap look dead on a slow socket, and permanently dead on a
+  // gateway that does not push `session.info` back after the write. The ref
+  // holds the pending value so the next tap cycles from what the user last chose
+  // rather than from a stale server read, and `sessionInfo` takes over again as
+  // soon as it catches up.
+  const [pendingApproval, setPendingApproval] = useState<'manual' | 'smart' | 'off' | null>(null);
+  const approvalMode = pendingApproval ?? serverApprovalMode;
+  useEffect(() => {
+    if (pendingApproval !== null && pendingApproval === serverApprovalMode) setPendingApproval(null);
+  }, [pendingApproval, serverApprovalMode]);
   const cycleApproval = useCallback(() => {
     const next = approvalMode === 'manual' ? 'smart' : approvalMode === 'smart' ? 'off' : 'manual';
-    void applyApprovalMode(next).catch(() => {});
+    setPendingApproval(next);
+    void applyApprovalMode(next).catch(() => {
+      // The write failed, so the server value still stands — drop the echo and
+      // let the glyph snap back rather than showing a mode that is not set.
+      setPendingApproval(null);
+    });
   }, [approvalMode, applyApprovalMode]);
 
   // Thinking-effort control follows the MODEL's published capability: hide it
@@ -405,14 +417,6 @@ export function ChatScreen() {
   const kbGap = kbH > 0 ? 8 : 0;
   // Live child-agent roster (subagent.list) — same collapsed-summary treatment.
   const [subagentsOpen, setSubagentsOpen] = useState(false);
-  // `useStreamingChars` follows the stream only while the sheet is open, so the
-  // screen does not sit on the per-token render path for a display-only number.
-  const streamedChars = useStreamingChars(infoOpen);
-  const tokenEstimate = useMemo(() => {
-    let n = Math.ceil(streamedChars / 4);
-    for (const m of messages) n += Math.ceil(m.text.length / 4);
-    return n;
-  }, [messages, streamedChars]);
   // Regenerate targets the last assistant bubble; the rewind target is the last
   // user row that carries a durable id.
   const lastAssistantId = useMemo(() => [...messages].reverse().find((m) => m.role === 'assistant')?.id, [messages]);
@@ -552,7 +556,7 @@ export function ChatScreen() {
   // React re-renders from `open`, so "presenting again" and "staying open" are
   // the same statement.
   //
-  // `ask` and `infoOpen` are the whole contract. The sheet cannot be dismissed
+  // `ask` is the whole contract. The sheet cannot be dismissed
   // by the user at all (AskSheet prevents Escape and outside-press), so
   // onOpenChange only ever fires for a programmatic close we asked for.
   const onAskSheetDismiss = useCallback(() => {
@@ -595,10 +599,11 @@ export function ChatScreen() {
   // button on a rail that matches the column, so the button lands on the
   // bubbles' right edge — see TranscriptProps.columnClassName.
   const listColumnClass = 'mx-auto w-full max-w-3xl';
-  // Top pad clears the floating glass header (safe area + bar + a 12px gap),
-  // so the first bubble starts below it but scrolls *under* it — that overlap
-  // is what the header's backdrop-blur blurs.
-  const listContentClass = 'flex flex-col px-3 pt-[calc(var(--safe-area-top,0px)+var(--header-height)+12px)]';
+  // The header is in normal flow above the scroller (see the JSX below), so the
+  // scroller's own top edge is already below it — the content needs no top pad
+  // to clear a floating bar. Just the safe area the header does not cover, and
+  // a small gap so the first row is not flush against the bar.
+  const listContentClass = 'flex flex-col px-3 pt-3';
   const listKeyExtractor = useCallback((m: UiMessage) => m.id, []);
   // Following the tail, holding position across a prepend, and settling the
   // follow state on a release all used to live here as ~150 lines of scroll
@@ -752,17 +757,29 @@ export function ChatScreen() {
 
   return (
     <div ref={rootRef} style={screen} className="relative">
-      {/* Floating glass header: absolute so the transcript scrolls under it.
-          Same surface as ScreenScaffold uses everywhere else. */}
-      <div className="absolute inset-x-0 top-0 z-30 bg-popover/80 backdrop-blur dark:bg-background/80">
+      {/* Header in normal flow, not floating. A floating bar overlapped the
+          scroller, which meant the scroller owned the full column height and
+          its scrollbar ran *under* the header — visible on platforms whose
+          scrollbar is an overlay (Android, macOS), where it painted on top of
+          the glass with nothing to reserve: `scrollbar-gutter` reserves space
+          for a classic scrollbar only, and an overlay one measures zero. In
+          flow, the scroller simply starts below the bar, so the scrollbar's
+          top edge is the bar's bottom edge. This is also what every other screen
+          in the app does via ScreenScaffold, and what OpenChamber does.
+          The cost: rows no longer scroll under the bar, so there is no
+          backdrop-blur overlap to blur. */}
+      <div className="shrink-0 bg-popover dark:bg-background">
         <ChatNormalHeader
           dark={dark}
-          iconColor={headerIcon}
           title={sessionTitle && sessionTitle !== '(new session)' ? sessionTitle : ''}
           contextPercent={ctxPct}
           contextTone={ctxTone}
-          onSelectInfo={() => void openInfo()}
-          onOpenInfo={() => void openInfo()}
+          contextUsed={usage?.contextUsed ?? null}
+          contextMax={usage?.contextMax ?? null}
+          input={usage?.input ?? null}
+          output={usage?.output ?? null}
+          costUsd={usage?.costUsd ?? null}
+          subagents={subagents.length}
         />
       </div>
 
@@ -881,9 +898,15 @@ export function ChatScreen() {
             underneath and shows through around the composer card. The list
             keeps the last bubble reachable via bottom content padding
             (= dockH). Same JSX position as before, so the focused input
-            never remounts. box-none: taps on the transparent margins fall
-            through to the list (which dismisses the keyboard); the card and
-            panels stay fully tappable. */}
+            never remounts.
+            `pointer-events-none` is what lets a tap on the transparent margin
+            fall through to the list (which dismisses the keyboard). Every
+            interactive child below opts back in with `pointer-events-auto` —
+            the Composer already did; the Tasks / Subagents / Queued /
+            completion panels did not, so they inherited `none` and were
+            completely inert: no tap, no wheel, no touch-drag. `none` is
+            inherited, so a panel that forgets it is not "mostly working", it
+            is dead. */}
           <div
             ref={observeDock}
             className="pointer-events-none"
@@ -916,7 +939,7 @@ export function ChatScreen() {
                   const done = todos.filter(todoDone).length;
                   const active = todos.find(todoActive);
                   return (
-                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                    <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                       <Button
                         variant="ghost"
                         onClick={() => setTodosOpen((v) => !v)}
@@ -980,7 +1003,7 @@ export function ChatScreen() {
                   const running = subagents.filter((s) => !subagentDone(s)).length;
                   const first = subagents.find((s) => !subagentDone(s)) ?? subagents[0];
                   return (
-                    <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                    <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                       <Button
                         variant="ghost"
                         onClick={() => setSubagentsOpen((v) => !v)}
@@ -1044,7 +1067,7 @@ export function ChatScreen() {
             end. Sits above the completion panel so completions stay nearest the
             input. */}
               {queued.length > 0 && (
-                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                   <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       {queueParked ? `Queued · paused (${queued.length})` : `Queued (${queued.length})`}
@@ -1086,7 +1109,7 @@ export function ChatScreen() {
             so its rows stay tappable on Android and the input keeps focus while
             the user keeps typing. */}
               {visibleCompletions.length > 0 && (
-                <div className="mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
+                <div className="pointer-events-auto mx-2.5 mb-1.5 overflow-hidden rounded-2xl border border-border glass-composer">
                   <div className="flex items-center justify-between px-3 pb-0.5 pt-2">
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       {completionKind === 'slash' ? 'Commands' : 'References'}
@@ -1095,7 +1118,13 @@ export function ChatScreen() {
                       {visibleCompletions.length}
                     </div>
                   </div>
-                  <div className="overflow-y-auto max-h-[248px]">
+                  {/* `overflow-x-hidden` is load-bearing: a row is a `Button`, whose base
+                    carries `whitespace-nowrap`, so a long command description
+                    made the panel wider than its box and gave it a horizontal
+                    scrollbar beside the vertical one. `overscroll-contain` stops
+                    a swipe that runs out of rows from chaining to the
+                    transcript behind. */}
+                  <div className="max-h-[248px] overflow-x-hidden overflow-y-auto overscroll-contain">
                     <div>
                       {visibleCompletions.slice(0, 40).map((item, i) => {
                         const label = item.display || item.text;
@@ -1105,8 +1134,13 @@ export function ChatScreen() {
                             key={`${item.text}-${i}`}
                             data-testid={`completion-option-${i}`}
                             onClick={() => applyCompletion(item)}
-                            className="flex items-center gap-2 px-3 py-2">
-                            <span className="shrink-0 text-[14px] font-semibold text-brand truncate">
+                            // `w-full justify-start min-w-0` override the
+                            // button base's `shrink-0` + `justify-center`: a
+                            // shrink-to-fit row centred in a narrower box puts
+                            // its overflow on *both* sides, and the left half
+                            // can never be scrolled to.
+                            className="flex w-full min-w-0 items-center justify-start gap-2 overflow-hidden px-3 py-2 text-left">
+                            <span className="max-w-[45%] text-[14px] font-semibold text-brand truncate">
                               {label}
                             </span>
                             {item.meta ? (
@@ -1129,7 +1163,7 @@ export function ChatScreen() {
                 </div>
               )}
               {editingRowId != null && (
-                <div className="mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/5 px-3 py-1.5/40/10">
+                <div className="pointer-events-auto mx-2.5 mb-1 flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/5 px-3 py-1.5/40/10">
                   <div className="min-w-0 flex-1 text-[12px] text-brand">
                     Editing — resend to rewind and rerun from here
                   </div>
@@ -1178,18 +1212,6 @@ export function ChatScreen() {
           onOpenChange={(o) => !o && onAskSheetDismiss()}
           gw={getGw()}
           contextLabel={sessionTitle || undefined}
-        />
-        <InfoSheet
-          open={infoOpen}
-          onOpenChange={(o) => !o && setInfoOpen(false)}
-          title={sessionTitle}
-          model={model}
-          provider={modelProvider}
-          info={sessionInfo}
-          usage={usageInfo}
-          usageLoading={usageLoading}
-          tokenEstimate={tokenEstimate}
-          onRename={(t) => void renameSession(t)}
         />
 
         {/* Thinking effort, as a menu. It was a hand-drawn list in the panel
@@ -1364,7 +1386,12 @@ export function ChatScreen() {
                             return (
                               <div
                                 key={mm}
-                                className={`flex items-center gap-2 rounded-lg py-1.5 pl-3 pr-1.5 ${
+                                // `pl-1.5` to match the provider rows above and the
+                                // panel's own `px-3` — the model rows used to start
+                                // further in (`pl-3` plus the gap between this
+                                // button and Global), which read as a second indent
+                                // level under a list that is already flat.
+                                className={`flex items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-1.5 ${
                                   on ? 'bg-brand/10 dark:bg-brand/20' : ''
                                 }`}>
                                 {' '}

@@ -118,25 +118,6 @@ export function useStreamingRead(): (id: string) => string {
   return useCallback((id: string) => store.read(id), [store]);
 }
 
-/**
- * Total streamed characters, for the session-info sheet's token estimate.
- *
- * Subscribes only while `enabled`: the estimate is display-only, and following
- * the stream for a whole turn would put the chat screen back on the per-token
- * render path this store exists to remove.
- */
-export function useStreamingChars(enabled: boolean): number {
-  const store = useStreamingStore();
-  const [chars, setChars] = useState(0);
-  useEffect(() => {
-    if (!enabled) return;
-    const sync = () => setChars(store.totalChars());
-    sync();
-    return store.subscribeAll(sync);
-  }, [enabled, store]);
-  return enabled ? chars : 0;
-}
-
 // The theme triple, isolated from AppContext for the same reason as streaming.
 // A theme toggle changes `theme`, so leaving it in the shared value gave every
 // useApp() consumer a new context object and re-rendered all of them — the
@@ -383,19 +364,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } = add(useSessionsSlice(ctx));
   // Live runtime session id for callbacks frozen in openWs (reconnect replay).
   sessionIdRef.current = sessionId;
-  const {
-    infoOpen,
-    setInfoOpen,
-    infoSeq,
-
-    sessionInfo,
-
-    usageInfo,
-    setUsageInfo,
-    usageLoading,
-
-    openInfo,
-  } = add(useSessionInfoSlice(ctx));
+  const { sessionInfo, usageInfo, setUsageInfo } = add(useSessionInfoSlice(ctx));
   const {
     queued,
     queueParked,
@@ -779,7 +748,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // below. Same one-line publish as hydrateSessionContext.
   ctx.ensureCookie = ensureCookie;
 
-  const { probeWorkingSessions } = add(useGatewaySlice(ctx));
+  const { probeWorkingSessions, reconnectNow } = add(useGatewaySlice(ctx));
 
   const { connect, login, logout } = add(useConnectionSlice(ctx));
   connectRef.current = connect;
@@ -951,12 +920,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAttachments,
       generating,
       copiedId,
-      infoOpen,
-      setInfoOpen,
-      infoSeq,
       sessionInfo,
       usageInfo,
-      usageLoading,
       toolLine,
       ask,
       askInbox,
@@ -967,6 +932,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       connect,
       login,
       logout,
+      reconnectNow,
       refreshSessions,
       loadMoreSessions,
       sessionsHasMore,
@@ -975,7 +941,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       newSession,
       send,
       stop,
-      openInfo,
       loadProviders,
       loadCommandsCatalog,
       queued,
@@ -1058,11 +1023,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       attachments,
       generating,
       copiedId,
-      infoOpen,
-      infoSeq,
       sessionInfo,
       usageInfo,
-      usageLoading,
       toolLine,
       ask,
       askInbox,
@@ -1072,6 +1034,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       connect,
       login,
       logout,
+      reconnectNow,
       refreshSessions,
       loadMoreSessions,
       sessionsHasMore,
@@ -1080,7 +1043,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       newSession,
       send,
       stop,
-      openInfo,
       loadProviders,
       loadCommandsCatalog,
       queued,

@@ -92,6 +92,7 @@ function liveColorClass(status: LiveStatus | undefined): string {
 //
 // Hence `mx-auto` as well as `justify-center`: one centres the button in the
 // rail, the other centres the icon in the button.
+const RAIL_ROW = 'group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:justify-center';
 const RAIL_LABEL = 'group-data-[collapsible=icon]:hidden';
 
 // Memoized recents row: the session list is windowed to 50 rendered rows
@@ -280,7 +281,15 @@ export function HermesSidebarContent() {
 
   return (
     <>
-      <SidebarHeader className="gap-1 px-3 pt-[max(env(safe-area-inset-top,0px),8px)]">
+      <SidebarHeader
+        className="gap-1 px-3 pt-[max(env(safe-area-inset-top,0px),8px)] group-data-[collapsible=icon]:px-1.5">
+        {/* Title + compose pill (mobile) or just the collapse toggle (desktop).
+            New chat moves into Browse on desktop only — there it reads as a
+            nav row alongside the places it navigates to, and it leaves the
+            header carrying just the one control that can only live there. The
+            mobile sheet keeps it in the header: its top row is the full-width
+            title bar OpenChamber uses, and a nav-styled pill there would read
+            as a stray item. */}
         <div className="flex items-center">
           {/* Full-screen sheet slides in from the left, so its dismiss lives
               at the same edge. The profile switcher moved to the footer. */}
@@ -294,8 +303,9 @@ export function HermesSidebarContent() {
               Sessions
             </div>
           </div>
-            {/* Tinted compose pill, pinned right like theirs. Icon-only in
-                the collapsed rail. */}
+          {/* Tinted compose pill, pinned right like theirs. Icon-only in
+              the collapsed rail. */}
+          {isMobile && (
             <Button
               variant="ghost"
               data-testid="new-chat"
@@ -306,14 +316,17 @@ export function HermesSidebarContent() {
                 dismissIfOverlay();
                 void newSession();
               }}
-              className={`h-9 shrink-0 gap-1 rounded-full border border-brand/40 bg-brand/10 px-3 text-brand group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:w-9 group-data-[collapsible=icon]:px-0 ${busy ? 'opacity-50' : ''}`}>
+              className={`h-9 shrink-0 gap-1 rounded-full border border-brand/40 bg-brand/10 px-3 text-brand ${busy ? 'opacity-50' : ''}`}>
               <Plus size={16} />
-              <span className={`text-[13px] font-semibold ${RAIL_LABEL}`}>new chat</span>
+              <span className="text-[13px] font-semibold">new chat</span>
             </Button>
-            {/* Desktop rail toggle. Mobile already has the X on the left,
-                so showing this too would be two dismiss controls. */}
-            {!isMobile && <SidebarTrigger className="group-data-[collapsible=icon]:mx-auto" />}
-          </div>
+          )}
+          {/* Collapse toggle. Visible in both states: in the panel it collapses,
+              and in the rail it expands — which is what makes the rail a control
+              rather than a dead strip of icons, since the screen header has no
+              hamburger on desktop to open it with. */}
+          {!isMobile && <SidebarTrigger className="group-data-[collapsible=icon]:mx-auto" />}
+        </div>
         {/* Search lives below the header row, not behind an icon toggle.
             Hidden in the collapsed rail where a full field cannot fit. */}
         <div className="flex items-center gap-1 group-data-[collapsible=icon]:hidden">
@@ -335,20 +348,53 @@ export function HermesSidebarContent() {
       {/* The sidebar's own scroller. The recents paging hangs off its `scroll`
           event, so this element is the one that has to hear it. */}
       <SidebarContent onScroll={handleRecentsScroll}>
-        {/* Everything that is not a chat. Flat, no folders — the list above
-            stays one chronological run of sessions. */}
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel className="text-[13px] font-semibold">Browse</SidebarGroupLabel>
+        {/* Nav — the one group that survives the icon rail. A collapsed rail is
+            a directory of screens, not a session list, so Browse stays (as
+            icons) while Chats below hides entirely. */}
+        <SidebarGroup>
+          {/* The label cannot fit a 64px rail; the group reads as nav without it. */}
+          <SidebarGroupLabel className="text-[13px] font-semibold group-data-[collapsible=icon]:hidden">
+            Browse
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              {/* Desktop only: compose reads as the first nav row here, beside
+                  the places it navigates to. The mobile sheet keeps it in its
+                  header instead (see SidebarHeader above). In the rail it is the
+                  top icon, which is why it precedes the config list. */}
+              {!isMobile && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    size="lg"
+                    data-testid="new-chat"
+                    aria-label="New chat"
+                    disabled={busy}
+                    onClick={() => {
+                      if (busy) return;
+                      void newSession();
+                    }}
+                    className={`text-brand ${RAIL_ROW} ${busy ? 'opacity-50' : ''}`}>
+                    <Plus className="text-brand" />
+                    <span className={RAIL_LABEL}>New chat</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               {[...NAV_ITEMS, ...MORE_NAV_ITEMS.filter((item) => item.name !== 'asks')].map((item) => {
                 const active = pathname === `/${item.name}`;
                 const Icon = item.icon;
                 return (
                   <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton size="lg" isActive={active} tooltip={item.label} onClick={() => go(item.name)}>
+                    {/* RAIL_ROW: the lg button collapses with p-0 and needs an
+                        explicit mx-auto + justify-center to sit centred in the
+                        rail — see the note on RAIL_ROW below. */}
+                    <SidebarMenuButton
+                      size="lg"
+                      isActive={active}
+                      tooltip={item.label}
+                      onClick={() => go(item.name)}
+                      className={RAIL_ROW}>
                       <Icon className={active ? ICON_BRAND : ICON_DIM} />
-                      <span>{item.label}</span>
+                      <span className={RAIL_LABEL}>{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

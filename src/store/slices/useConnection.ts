@@ -77,7 +77,6 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     setSubagents,
     setAttachments,
     setEditingRowId,
-    setInfoOpen,
     gw,
     cookie,
     cookieScope,
@@ -311,7 +310,6 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     setAttachments([]);
     editRowRef.current = null;
     setEditingRowId(null);
-    setInfoOpen(false);
     navigate('/login', { replace: true });
 
     const cleanup = (async () => {

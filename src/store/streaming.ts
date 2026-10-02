@@ -18,25 +18,19 @@ export interface StreamingStore {
   push(id: string, delta: string): void;
   /** Every id at once, for the end-of-turn fold into the durable transcript. */
   snapshot(): Record<string, string>;
-  /** Total characters across every id, for the display-only token estimate. */
-  totalChars(): number;
   /** Drop everything, waking each id once. */
   clear(): void;
   /** Follow one id. */
   subscribe(id: string, listener: () => void): () => void;
-  /** Follow every id, for an aggregate readout. */
-  subscribeAll(listener: () => void): () => void;
 }
 
 export function createStreamingStore(): StreamingStore {
   const texts = new Map<string, string>();
   const listeners = new Map<string, Set<() => void>>();
-  const watchers = new Set<() => void>();
 
   const wake = (id: string) => {
     const set = listeners.get(id);
     if (set) for (const listener of [...set]) listener();
-    for (const listener of [...watchers]) listener();
   };
 
   return {
@@ -47,11 +41,6 @@ export function createStreamingStore(): StreamingStore {
       wake(id);
     },
     snapshot: () => Object.fromEntries(texts),
-    totalChars: () => {
-      let n = 0;
-      for (const text of texts.values()) n += text.length;
-      return n;
-    },
     clear: () => {
       if (texts.size === 0) return;
       const ids = [...texts.keys()];
@@ -65,12 +54,6 @@ export function createStreamingStore(): StreamingStore {
       return () => {
         set.delete(listener);
         if (set.size === 0) listeners.delete(id);
-      };
-    },
-    subscribeAll: (listener) => {
-      watchers.add(listener);
-      return () => {
-        watchers.delete(listener);
       };
     },
   };
