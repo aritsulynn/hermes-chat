@@ -61,7 +61,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Schedule builder (cron) | `/cron` | `lib/schedule.ts` + `ScheduleBuilder.tsx` | **done** | S–M |
 | Analytics by model | `/analytics` | `AnalyticsPage.tsx` | partial (usage already renders `by_model`) | S |
 | Skill editor | `/skills` | `SkillEditorDialog.tsx` | **done** | M |
-| Skill hub (search/install) | `/skills` | `SkillsPage.tsx` | missing | M |
+| Skill hub (search/install) | `/skills` | `SkillsPage.tsx` | **done** | M |
 | Toolset config | — | `ToolsetConfigDrawer.tsx` | missing | M |
 | Files write/delete/download | `/files` | `FilesPage.tsx` | missing | M |
 | Reasoning picker | `/chat` | `ReasoningPicker.tsx` | **done** (chat already has a thinking-effort menu) | — |
@@ -138,10 +138,12 @@ The mobile app already has helpers, so adding an endpoint is fast:
 - Shipped: `src/features/skills/components/SkillEditor.tsx`, `New skill` /
   `Edit` actions in `src/features/skills/index.tsx`.
 
-### 4.2 Skill hub — search/install skills `M`
-- `GET /api/skills/hub/search?q=&source=&limit=`, `/sources`, `/preview?identifier=`, `/scan`
+### 4.2 Skill hub — search/install skills `M` — done
+- `GET /api/skills/hub/sources`, `/search`, `/preview`, `/scan`
 - `POST /api/skills/hub/install|uninstall|update`
-- Reference: `SkillsPage.tsx`
+- Reference: `SkillsPage.tsx` HubBrowser
+- Shipped: `src/features/skills-hub/index.tsx` (route `/skills-hub`), plus the
+  hub method builders in `src/services/api.ts` / `src/services/skills.ts`.
 
 ### 4.3 Toolset config `M`
 - `GET /api/tools/toolsets/{name}/config`, `/models`

@@ -1,6 +1,6 @@
 // Drawer navigation config + icon helper, shared by the drawer content and the
 // route table in routes.tsx.
-import { Activity, BellRing, Boxes, Clock, Folder, Kanban, ScrollText, Wrench } from 'lucide-react';
+import { Activity, BellRing, Boxes, Clock, Folder, Kanban, ScrollText, Store, Wrench } from 'lucide-react';
 
 // Module-level icon helper — used by the route table and the drawer content.
 export const drawerIcon =
@@ -16,6 +16,7 @@ export const MORE_NAV_ITEMS = [
   { name: 'kanban', label: 'Kanban', icon: Kanban },
   { name: 'asks', label: 'Ask Inbox', icon: BellRing },
   { name: 'skills', label: 'Skills', icon: Wrench },
+  { name: 'skills-hub', label: 'Skills Hub', icon: Store },
   { name: 'toolsets', label: 'Toolsets', icon: Boxes },
 ] as const;
 

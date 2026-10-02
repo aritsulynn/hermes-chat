@@ -6,6 +6,7 @@ import { KanbanScreen } from './features/kanban';
 import { LogsScreen } from './features/logs';
 import { SettingsScreen } from './features/settings';
 import { SkillsScreen } from './features/skills';
+import { SkillsHubScreen } from './features/skills-hub';
 import { ToolsetsScreen } from './features/toolsets';
 import { UsageScreen } from './features/usage';
 
@@ -24,6 +25,7 @@ export const APP_ROUTES = [
   { path: '/logs', element: <LogsScreen /> },
   { path: '/settings', element: <SettingsScreen /> },
   { path: '/skills', element: <SkillsScreen /> },
+  { path: '/skills-hub', element: <SkillsHubScreen /> },
   { path: '/toolsets', element: <ToolsetsScreen /> },
   { path: '/usage', element: <UsageScreen /> },
 ] as const;

@@ -177,6 +177,30 @@ export const skillContentUpdate = (): string => '/api/skills/content';
 /** POST — create a new skill (name + optional category + SKILL.md body). */
 export const skillCreate = (): string => '/api/skills';
 
+// ── Skills hub ──────────────────────────────────────────────────────────────
+
+/** GET — configured hub sources + installed provenance + featured skills. */
+export const skillHubSources = (profile?: string | null): string =>
+  withProfile('/api/skills/hub/sources', String(profile ?? '').trim());
+/** GET — search every configured hub source. */
+export const skillHubSearch = (q: string, opts: { source?: string; limit?: number; profile?: string | null } = {}): string =>
+  withProfile(
+    `/api/skills/hub/search?q=${encodeURIComponent(q)}&source=${encodeURIComponent(opts.source ?? 'all')}&limit=${opts.limit ?? 20}`,
+    String(opts.profile ?? '').trim(),
+  );
+/** GET — a hub skill's SKILL.md + file manifest without installing. */
+export const skillHubPreview = (identifier: string): string =>
+  `/api/skills/hub/preview?identifier=${encodeURIComponent(identifier)}`;
+/** GET — install-time security scan without installing. */
+export const skillHubScan = (identifier: string): string =>
+  `/api/skills/hub/scan?identifier=${encodeURIComponent(identifier)}`;
+/** POST — install a hub skill by identifier (spawns a background action). */
+export const skillHubInstall = (): string => '/api/skills/hub/install';
+/** POST — uninstall an installed hub skill by name. */
+export const skillHubUninstall = (): string => '/api/skills/hub/uninstall';
+/** POST — update every installed hub skill. */
+export const skillHubUpdate = (): string => '/api/skills/hub/update';
+
 // ── Toolsets ────────────────────────────────────────────────────────────────
 
 /** Unlike `withProfile`, an empty profile resolves to the default namespace
