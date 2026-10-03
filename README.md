@@ -324,7 +324,8 @@ against a real gateway. `npm run lint` should also be clean, and `npm run
 format:check` before committing.
 
 `docs/feature-parity-roadmap.md` tracks what this client still lacks relative to
-the full desktop dashboard in `~/.hermes/hermes-agent/web/`.
+the full desktop dashboard in `~/.hermes/hermes-agent/web/`. `docs/backlog.md`
+records work that was found but not done.
 
 ## License
 
