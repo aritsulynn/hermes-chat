@@ -12,7 +12,7 @@
 //     identity with host/username. Reading them through one hook means the key
 //     and the fetcher can never disagree about which connection they belong to.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query';
+import type { Query, QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query';
 
 import { useApp } from './useAppStore';
 import { isSuperseded, opsKey } from './ops-keys';
@@ -73,8 +73,14 @@ export function useOpsQuery<TData = OpsResult>(options: {
   get: (opsGet: OpsGet) => Promise<OpsResult>;
   select?: (raw: OpsResult) => TData;
   enabled?: boolean;
-  /** Poll interval in ms — replaces the hand-rolled `setInterval` + load. */
-  refetchInterval?: number | false;
+  /**
+   * Poll interval in ms — replaces the hand-rolled `setInterval` + load.
+   *
+   * The function form is TanStack's own, for a poll that stops on its own
+   * condition: it reads the query, so "keep polling while this action is still
+   * running" needs no interval effect and no cancelled flag. `false` disables.
+   */
+  refetchInterval?: number | false | ((query: Query<OpsResult, Error>) => number | false);
 }): OpsQueryResult<TData> {
   const { opsGet, getAuthScope } = useApp();
   const scope = getAuthScope();
