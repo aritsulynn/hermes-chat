@@ -33,7 +33,7 @@ import {
 const DELIVER_OPTIONS = ['log', 'telegram', 'discord', 'slack', 'local'] as const;
 
 export function WebhooksScreen() {
-  const { authed } = useApp();
+  const { authed, activeProfile } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
@@ -43,7 +43,7 @@ export function WebhooksScreen() {
 
   const state = useOpsQuery<WebhooksState>({
     key: ['webhooks'],
-    get: (get) => getWebhooks(get),
+    get: (get) => getWebhooks(get, activeProfile),
     enabled: authed,
   });
   const enabled = state.data?.enabled ?? false;
@@ -81,7 +81,7 @@ export function WebhooksScreen() {
   const toggling = toggle.isPending ? toggle.variables?.name : undefined;
 
   const remove = useOpsMutation<void, string>({
-    mutationFn: (mut, name) => deleteWebhook(mut, name),
+    mutationFn: (mut, name) => deleteWebhook(mut, name, activeProfile),
     done: [['webhooks']],
     onSuccess: (_d, name) => {
       toast({ title: 'Webhook deleted', description: name });
@@ -201,15 +201,20 @@ export function WebhooksScreen() {
                       </div>
                     )}
                   </div>
-                  {toggling === route.name ? (
-                    <Spinner size={14} color={brand} />
-                  ) : (
-                    <Switch
-                      checked={route.enabled}
-                      onCheckedChange={(v) => toggle.mutate({ name: route.name, next: v })}
-                      aria-label={`${route.enabled ? 'Disable' : 'Enable'} ${route.name}`}
-                    />
-                  )}
+                  {/*
+                    The switch stays mounted while the write is in flight. It
+                    used to be swapped for a spinner, which hid the optimistic
+                    paint for the whole request — so the flip was invisible and
+                    `optimistic` bought nothing. Disabled is the right
+                    affordance: it shows the new state immediately and stops a
+                    second toggle racing the first.
+                  */}
+                  <Switch
+                    checked={route.enabled}
+                    disabled={toggling === route.name}
+                    onCheckedChange={(v) => toggle.mutate({ name: route.name, next: v })}
+                    aria-label={`${route.enabled ? 'Disable' : 'Enable'} ${route.name}`}
+                  />
                 </div>
                 <div className="mt-2.5 flex items-center justify-end border-t border-border pt-2.5">
                   <Button

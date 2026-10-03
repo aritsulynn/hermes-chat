@@ -109,8 +109,15 @@ export async function createWebhook(
   return { route: routeOf(r), secret: str(r.secret) };
 }
 
-export async function deleteWebhook(opsMut: OpsMut, name: string): Promise<void> {
-  await opsMut(webhook(name), 'DELETE');
+/** Delete a route.
+ *
+ *  `profile` is not optional in practice: the backend treats this route as
+ *  destructive and rejects an omitted profile with a 400 whenever the host
+ *  serves more than one (see `destructive_profile` in the gateway's
+ *  `web_routers/_common.py`). Omitting it used to make Delete fail on exactly
+ *  the installs that have profiles. */
+export async function deleteWebhook(opsMut: OpsMut, name: string, profile?: string | null): Promise<void> {
+  await opsMut(webhook(name, profile), 'DELETE');
 }
 
 export async function setWebhookEnabled(opsMut: OpsMut, name: string, enabled: boolean): Promise<void> {

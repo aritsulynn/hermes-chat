@@ -12,8 +12,9 @@ dist/
 # `npm run format:check` with thousands of errors from prebundled vendor code.
 .vite/
 
-# agent tooling output (screenshots from the browser panel)
+# agent tooling output (screenshots and session state from the browser panel)
 .openchamber/
+.playwright-cli/
 
 # local agent skills — installed per machine, not part of the app
 .agents/

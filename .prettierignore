@@ -2,6 +2,7 @@ dist
 node_modules
 package-lock.json
 .openchamber
+.playwright-cli
 public
 
 # Vite's dep-optimization cache — prebundled vendor code, not ours to format.

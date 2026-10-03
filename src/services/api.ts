@@ -333,7 +333,8 @@ export const pairingClearPending = (): string => '/api/pairing/clear-pending';
 
 export const webhooks = (profile?: string | null): string => withProfile('/api/webhooks', profile);
 export const webhooksEnable = (): string => '/api/webhooks/enable';
-export const webhook = (name: string): string => `/api/webhooks/${encodeURIComponent(name)}`;
+export const webhook = (name: string, profile?: string | null): string =>
+  withProfile(`/api/webhooks/${encodeURIComponent(name)}`, profile);
 export const webhookEnabled = (name: string): string => `/api/webhooks/${encodeURIComponent(name)}/enabled`;
 
 // ── Toolsets ────────────────────────────────────────────────────────────────

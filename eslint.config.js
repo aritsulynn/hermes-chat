@@ -14,6 +14,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/node_modules/**',
       '**/.openchamber/**',
+      '**/.playwright-cli/**',
       '**/public/**',
       // Vite's dep-optimization cache. Unignored it contributed ~3,000 errors
       // from prebundled vendor code, burying the handful of real warnings in
