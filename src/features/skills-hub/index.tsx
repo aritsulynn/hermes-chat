@@ -6,11 +6,12 @@
 // screen stays a plain inventory. Install/update spawn a background action
 // (`/api/actions/{name}/status`) exactly like the desktop, so progress is
 // polled and the installed-state badges refresh when the process exits.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Download, RefreshCw, Search, Shield, ShieldAlert, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -28,6 +29,8 @@ import {
   searchSkillHub,
   updateSkillsHub,
   type SkillHubPreview,
+  type SkillHubSearchResult,
+  type SkillHubSources,
   type SkillHubResult,
   type SkillHubScan,
   type SkillHubSource,
@@ -35,6 +38,12 @@ import {
 
 const LOG_LINES = 200;
 const POLL_MS = 1200;
+
+// Stable empty values, so the `??`s below do not hand a memo a fresh array or
+// object on every render while a query is still pending.
+const NO_SOURCES: SkillHubSource[] = [];
+const NO_RESULTS: SkillHubResult[] = [];
+const NO_LOG: string[] = [];
 
 function trustBadgeClass(level: string): string {
   switch (level) {
@@ -63,143 +72,103 @@ function verdictVisual(verdict: string): { className: string; label: string; Ico
 }
 
 export function SkillsHubScreen() {
-  const { authed, opsGet, opsMut, getAuthScope, activeProfile } = useApp();
+  const { authed, opsGet, activeProfile } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SkillHubResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  // `query` is the input, `applied` is the search the server was last asked for.
+  // Submit-driven, so the key tracks the applied term and typing does not search.
+  const [applied, setApplied] = useState('');
 
-  const [sources, setSources] = useState<SkillHubSource[]>([]);
-  const [featured, setFeatured] = useState<SkillHubResult[]>([]);
-  const [sourcesLoading, setSourcesLoading] = useState(true);
-  const [installed, setInstalled] = useState<Record<string, { name?: string }>>({});
-
-  // Live action log for the most recent install/update.
+  // Live action log for the most recent install/update. Only the id is state.
   const [action, setAction] = useState<string | null>(null);
-  const [actionLog, setActionLog] = useState<string[]>([]);
-  const [actionRunning, setActionRunning] = useState(false);
 
   const [detail, setDetail] = useState<SkillHubResult | null>(null);
 
   const profile = activeProfile || undefined;
-  const aliveRef = useRef(true);
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
 
-  const loadSources = useCallback(async () => {
-    setSourcesLoading(true);
-    try {
-      const r = await getSkillHubSources(opsGet, profile);
-      if (!aliveRef.current) return;
-      setSources(r.sources);
-      setFeatured(r.featured);
-      setInstalled(r.installed);
-    } catch {
-      // Leave the landing minimal when the sources probe fails; search still works.
-    } finally {
-      if (aliveRef.current) setSourcesLoading(false);
-    }
-  }, [opsGet, profile]);
+  // Sources + featured. The old load swallowed a failure here on purpose — leave
+  // the landing minimal and let search still work — so this query's error is
+  // deliberately not rendered.
+  const sourcesQ = useOpsQuery<SkillHubSources>({
+    key: ['skills-hub', 'sources', profile],
+    get: (get) => getSkillHubSources(get, profile),
+    enabled: authed,
+  });
+  const sources = sourcesQ.data?.sources ?? NO_SOURCES;
+  const featured = sourcesQ.data?.featured ?? NO_RESULTS;
+  const sourcesLoading = sourcesQ.isPending;
 
-  useEffect(() => {
-    if (authed) void loadSources();
-  }, [authed, loadSources]);
+  const searchQ = useOpsQuery<SkillHubSearchResult>({
+    key: ['skills-hub', 'search', profile, applied],
+    get: (get) => searchSkillHub(get, applied, { profile }),
+    enabled: authed && !!applied,
+  });
+  const results = searchQ.data?.results ?? NO_RESULTS;
+  // A disabled query stays `pending` forever, so the flag needs the applied term.
+  const searching = !!applied && searchQ.isPending;
+  const searchError = searchQ.error ? errMsg(searchQ.error) : null;
 
-  const runSearch = useCallback(async () => {
-    const q = query.trim();
-    if (!q) return;
-    const scope = getAuthScope();
-    setSearching(true);
-    setSearched(true);
-    setSearchError(null);
-    try {
-      const r = await searchSkillHub(opsGet, q, { profile });
-      if (getAuthScope() !== scope) return;
-      setResults(r.results);
-      setInstalled((prev) => ({ ...prev, ...r.installed }));
-    } catch (e) {
-      if (getAuthScope() !== scope) return;
-      setSearchError(errMsg(e));
-      setResults([]);
-    } finally {
-      if (getAuthScope() === scope) setSearching(false);
-    }
-  }, [getAuthScope, opsGet, profile, query]);
+  // A search reports installed state for the rows it returned, on top of what the
+  // sources probe knew.
+  const installed = { ...(sourcesQ.data?.installed ?? {}), ...(searchQ.data?.installed ?? {}) };
 
-  // Poll the spawned install/update action until it exits.
-  useEffect(() => {
-    if (!action) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const tick = async () => {
-      const scope = getAuthScope();
-      try {
-        const raw = await opsGet(api.actionStatus(action, LOG_LINES));
-        if (cancelled || getAuthScope() !== scope) return;
-        const st = normalizeActionStatus(raw);
-        setActionLog(st.lines);
-        setActionRunning(st.running);
-        if (st.running) {
-          timer = setTimeout(tick, POLL_MS);
-        } else {
-          // Refresh installed-state so badges update after an install.
-          void loadSources();
-        }
-      } catch {
-        if (!cancelled) setActionRunning(false);
-      }
-    };
-    void tick();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [action, getAuthScope, loadSources, opsGet]);
-
-  const install = useCallback(
-    async (identifier: string) => {
-      const scope = getAuthScope();
-      try {
-        const name = await installSkillHub(opsMut, identifier, profile);
-        if (getAuthScope() !== scope) return;
-        toast({ title: 'Installing skill', description: identifier });
-        setActionLog([]);
-        setActionRunning(true);
-        setAction(name || `skills-install-${identifier}`);
-        setDetail(null);
-      } catch (e) {
-        if (getAuthScope() === scope)
-          toast({ title: 'Install failed', description: errMsg(e), variant: 'destructive' });
-      }
+  // The poll fetches once on mount, then only while the action is still running.
+  // `running !== true` matches how `normalizeActionStatus` reads the field; the
+  // two have to agree or this would keep polling a payload that renders as done.
+  const actionQ = useOpsQuery({
+    key: ['skills-hub', 'action', action],
+    get: (get) => get(api.actionStatus(String(action), LOG_LINES)),
+    select: normalizeActionStatus,
+    enabled: !!action && authed,
+    refetchInterval: (q) => {
+      const raw = q.state.data as { running?: unknown } | undefined;
+      const finished = raw != null && raw.running !== true;
+      return q.state.error || finished ? false : POLL_MS;
     },
-    [getAuthScope, opsMut, profile],
-  );
+  });
+  const actionLog = actionQ.data?.lines ?? NO_LOG;
+  // No data and no error yet is the first poll still in flight — "Starting…".
+  const actionRunning = !!action && (actionQ.data ? actionQ.data.running : !actionQ.error);
+  const actionFinished = !!actionQ.data && !actionQ.data.running;
 
-  const updateAll = useCallback(async () => {
-    const scope = getAuthScope();
-    try {
-      const name = await updateSkillsHub(opsMut, profile);
-      if (getAuthScope() !== scope) return;
+  // Installed-state has to come from the server once the action exits, and the
+  // poll's last tick is the only thing that knows it did. Keyed on the boolean so
+  // it fires once per action — the rule wants `sourcesQ` in the deps, and that is
+  // a new object every render, so this would refetch in a loop.
+  useEffect(() => {
+    if (actionFinished) void sourcesQ.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionFinished]);
+
+  const runSearch = () => {
+    const q = query.trim();
+    if (q) setApplied(q);
+  };
+
+  const install = useOpsMutation<string, string>({
+    mutationFn: (mut, identifier) => installSkillHub(mut, identifier, profile),
+    onSuccess: (name, identifier) => {
+      toast({ title: 'Installing skill', description: identifier });
+      setAction(name || `skills-install-${identifier}`);
+      setDetail(null);
+    },
+    onError: (e) => toast({ title: 'Install failed', description: errMsg(e), variant: 'destructive' }),
+  });
+
+  const updateAll = useOpsMutation<string, void>({
+    mutationFn: (mut) => updateSkillsHub(mut, profile),
+    onSuccess: (name) => {
       toast({ title: 'Updating installed skills' });
-      setActionLog([]);
-      setActionRunning(true);
       setAction(name || 'skills-update');
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' });
-    }
-  }, [getAuthScope, opsMut, profile]);
+    },
+    onError: (e) => toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const isInstalled = useCallback((identifier: string) => Boolean(installed[identifier]), [installed]);
-  const showLanding = !searched && !searching;
+  const isInstalled = (identifier: string) => Boolean(installed[identifier]);
+  const showLanding = !applied && !searching;
   const list = showLanding ? featured : results;
 
   if (!authed) return <Redirect to="/login" replace />;
@@ -213,7 +182,7 @@ export function SkillsHubScreen() {
             subtitle={showLanding ? 'Featured & connected sources' : `${results.length} result(s)`}
             actions={
               <div className="flex items-center gap-1">
-                <HeaderIconButton aria-label="Update installed skills" onClick={() => void updateAll()}>
+                <HeaderIconButton aria-label="Update installed skills" onClick={() => updateAll.mutate()}>
                   <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} />
                 </HeaderIconButton>
               </div>
@@ -228,7 +197,7 @@ export function SkillsHubScreen() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void runSearch();
+                if (e.key === 'Enter') runSearch();
               }}
               placeholder="Search the skill hub…"
               aria-label="Search the skill hub"
@@ -242,7 +211,7 @@ export function SkillsHubScreen() {
             ) : null}
             <Button
               aria-label="Search hub"
-              onClick={() => void runSearch()}
+              onClick={() => runSearch()}
               disabled={searching || !query.trim()}
               className="h-auto sm:h-auto shrink-0 rounded-xl px-4 py-2.5">
               {searching ? <Spinner size={14} color="#fff" /> : <Search size={16} color="#fff" />}
@@ -321,7 +290,7 @@ export function SkillsHubScreen() {
                   result={r}
                   installed={isInstalled(r.identifier)}
                   onOpen={() => setDetail(r)}
-                  onInstall={() => void install(r.identifier)}
+                  onInstall={() => install.mutate(r.identifier)}
                 />
               ))}
             </div>
@@ -335,7 +304,7 @@ export function SkillsHubScreen() {
           installed={isInstalled(detail.identifier)}
           opsGet={opsGet}
           onClose={() => setDetail(null)}
-          onInstall={() => void install(detail.identifier)}
+          onInstall={() => install.mutate(detail.identifier)}
         />
       )}
     </div>
