@@ -1,15 +1,16 @@
 <p align="center">
-  <img src="public/icon.png" width="112" alt="Hermes" />
+  <img src="public/android-chrome-192x192.png" width="112" alt="Hermes" />
 </p>
 
-<h1 align="center">Hermes Web</h1>
+<h1 align="center">Hermes</h1>
 
 <p align="center">
-  A browser client for the <strong>Hermes agent gateway</strong> — streaming chat, tool calls, approvals, and session operations.
+  A web and Android client for the <strong>Hermes agent gateway</strong> — streaming chat, tool calls,
+  approvals, and session operations.
 </p>
 
 <p align="center">
-  React 19 · Vite · TypeScript · React Router · Tailwind CSS · Radix UI
+  React 19 · Vite · TypeScript · React Router · Tailwind CSS v4 · Base UI + Radix UI
 </p>
 
 ---
@@ -36,37 +37,74 @@
 - Profile-aware sessions with server-side pagination and live status in the drawer
 - Dangerous-command approvals in three modes: `manual`, `smart`, or `off`
 - Approvals and clarifying questions raised by _background_ sessions are routed to an **Ask Inbox** instead of hijacking the open chat
+- Full-text search across message content, with the hit's snippet shown in the sidebar
+
+**Agent configuration**
+
+- **Models** — the resolved main model with context/capability badges, plus all auxiliary task slots
+- **Profiles** — CRUD, active-profile switching, `SOUL.md` + description editing with auto-describe, export/import
+- **Skills** — installed inventory with toggle and an editor; **Skills Hub** searches, previews, security-scans and installs from connected hub sources
+- **Toolsets** — enable/disable tool groups, plus per-toolset provider and env configuration
+- **MCP** — server CRUD with a test action, OAuth, and a catalog installer for declared env vars
+- **Channels** — messaging platforms with enable/test and credential editing; Telegram/WhatsApp pairing
 
 **Operations**
 
 - Cron jobs — create, edit, pause, run now, and inspect run history with durations
 - Kanban board for tracked tasks
-- Server file browser with text previews and a binary-file guard
-- Skills inventory, toolset toggles, gateway logs, and token/cost usage
+- Server file browser — read, create, upload, rename, delete, download, with text previews and a binary-file guard
+- Env / API key manager with set/unset state, provider labels, live provider probe, and reveal-on-demand
+- Raw `config.yaml` editor with server-side YAML validation on save
+- Plugin manager — installed plugins, a curated catalog, and memory/context provider pickers
+- Webhooks with a one-time HMAC secret surfaced at creation
+- Pairing approvals
+- System / Ops — host stats, gateway start/stop, credential pool, and maintenance actions (doctor / security audit / backup / prune checkpoints) with a live log
+- Gateway logs, and token/cost usage by day with a per-model breakdown
+
+**App**
+
+- Light / dark / system theme, plus a default or "Chamber" accent
+- Local notifications when a turn finishes, including background sessions; they fire only while the app is backgrounded
 - In-app panel for available server updates
-- Light / dark / system theme
+- Web, or a Capacitor Android shell
 
 ## Screens
 
-| Route       | Screen    | What it does                                   |
-| ----------- | --------- | ---------------------------------------------- |
-| `/login`    | Login     | Gateway host and credentials                   |
-| `/chat`     | Chat      | Streaming conversation, tools, todos, composer |
-| `/asks`     | Ask Inbox | Pending approvals from background sessions     |
-| `/cron`     | Cron Jobs | Scheduled job CRUD, run history                |
-| `/files`    | Files     | Server file browser and previews               |
-| `/kanban`   | Kanban    | Task board                                     |
-| `/skills`   | Skills    | Installed skill inventory                      |
-| `/toolsets` | Toolsets  | Enable or disable tool groups                  |
-| `/logs`     | Logs      | Gateway log stream                             |
-| `/usage`    | Usage     | Token and cost usage by day                    |
-| `/settings` | Settings  | Theme, approvals, profiles, diagnostics        |
+Every route below is a screen in `src/features/<name>`. `/login` renders outside the app
+shell; unknown URLs fall back to `/chat`.
 
-`/` simply redirects to `/login`; auth gating lives in the screens themselves.
+| Route         | Screen     | What it does                                       |
+| ------------- | ---------- | -------------------------------------------------- |
+| `/login`      | Login      | Gateway host and credentials                       |
+| `/chat`       | Chat       | Streaming conversation, tools, todos, composer     |
+| `/asks`       | Ask Inbox  | Pending approvals from background sessions         |
+| `/cron`       | Cron Jobs  | Scheduled job CRUD, run history                    |
+| `/files`      | Files      | Server file browser, previews, upload/download     |
+| `/kanban`     | Kanban     | Task board                                         |
+| `/skills`     | Skills     | Installed skill inventory, toggle, editor          |
+| `/skills-hub` | Skills Hub | Search, preview and install from hub sources       |
+| `/toolsets`   | Toolsets   | Enable/disable tool groups, per-toolset config     |
+| `/mcp`        | MCP        | MCP servers and catalog                            |
+| `/pairing`    | Pairing    | Pairing requests, approve and revoke               |
+| `/profiles`   | Profiles   | Profile CRUD, active profile, SOUL.md editor       |
+| `/plugins`    | Plugins    | Installed plugins, catalog, provider config        |
+| `/keys`       | Keys / Env | Env vars and API keys, reveal, provider validation |
+| `/config`     | Config     | Raw `config.yaml` editor                           |
+| `/models`     | Models     | Main model and auxiliary task slots                |
+| `/webhooks`   | Webhooks   | Webhook CRUD, enable/disable                       |
+| `/system`     | System     | Host stats, gateway control, maintenance actions   |
+| `/channels`   | Channels   | Messaging platforms and pairing                    |
+| `/logs`       | Logs       | Gateway log stream                                 |
+| `/usage`      | Usage      | Token and cost usage by day, by model              |
+| `/settings`   | Settings   | Theme, accent, approvals, notifications, updates   |
+
+`/` redirects to `/login`. Auth gating lives in the screens themselves.
 
 ## Requirements
 
-- **Node.js** `^20.19.4 || ^22.13.0 || ^24.3.0 || >=25`
+- **Node.js** `^20.19.0 || >=22.13.0` — the strictest floor across the toolchain
+  (ESLint 10 and typescript-eslint both want `^20.19.0 || ^22.13.0 || >=24`;
+  Vite 7 is slightly looser at `>=22.12.0`)
 - **npm**
 - **A Hermes gateway** you can reach over HTTP — e.g. `http://your-server:9119`
 - Android shell only: **JDK 21** (a full JDK — a JRE is not enough, and Gradle
@@ -83,17 +121,30 @@ npm run dev
 ```
 
 Then open the printed URL and enter your gateway host (for example
-`http://your-server:9119`) and your dashboard credentials. They are persisted in
-the browser, so you only do this once.
+`http://your-server:9119`) and your dashboard credentials.
 
 The dev server binds all interfaces (`host: true`) because the gateway is usually
 a plain-HTTP host on a LAN address.
 
 ## Configuration
 
-There is no `.env` file. The gateway host and credentials are entered on the
-Login screen and stored in the browser. The build id shown on Login and Settings
-is read from git at config time (`vite.config.ts`), not hand-bumped.
+There is no `.env` file and nothing to configure before the first run. The gateway
+host and credentials are entered on the Login screen.
+
+**What is persisted** (`localStorage`, scoped to host + username so switching
+dashboards cannot leak one account's preferences into another): host, username,
+theme and accent, active profile, last-opened session per profile, per-profile
+model and provider choice.
+
+**What is not persisted:** the session cookie stays in the browser's own jar,
+where JS cannot read it — only a `'web-jar'` marker is stored so boot knows a
+silent reconnect is worth attempting. The password is never stored at all; boot
+clears it every time.
+
+The build id shown on Login and Settings is read from git at config time
+(`vite.config.ts`), so it cannot drift from the commit the bundle came from. It
+falls back to `dev (vite)` against a dev server, and to `unknown` in a tarball or
+CI build with no git.
 
 ## Project structure
 
@@ -101,16 +152,20 @@ is read from git at config time (`vite.config.ts`), not hand-bumped.
 src/
   main.tsx      entry — mounts <App/>
   App.tsx       router: BrowserRouter on web, HashRouter in a native shell + AppProvider + routes
-  AppShell.tsx  chrome around every screen: drawer/sidebar, toasts, connection banner
-  routes.tsx    URL -> screen table
+  AppShell.tsx  chrome around every screen: sidebar, toasts, connection banner, module-level bridges
+  routes.tsx    URL -> screen table (the `path` doubles as the drawer key)
   platform.ts   native-shell detection + status-bar setup (Capacitor only)
-  features/     screens: index.tsx + helpers.ts + types.ts + components/
-  store/        AppStore: orchestrator + slices/ + shared runtime refs
-  services/     transport only — dashboard REST, gateway WebSocket, storage,
-                native-http (Capacitor pipe that bypasses WebView cookie/CORS rules)
-  components/   ui/ (reusables), chat/, drawer/
+  build.ts      the git-derived build id shown on Login/Settings
+  theme.ts      TypeScript mirror of the colour tokens in global.css
+  features/     screens, one directory each: index.tsx, plus helpers.ts / types.ts /
+                components/ where the screen is big enough to warrant them
+  store/        AppStore: useAppStore.tsx orchestrator + slices/ + shared runtime refs
+  services/     transport and typed endpoint wrappers — dashboard REST, gateway
+                WebSocket, storage, native-http (Capacitor pipe that bypasses
+                WebView cookie/CORS rules), plus one module per API surface
+  components/   ui/ (reusables), chat/, drawer/, connection-banner
   hooks/        app-store.tsx (React context over the store), generic hooks
-  utils/        pure helpers and types
+  utils/        pure helpers and types — no React imports
 ```
 
 `capacitor.config.ts` is the native-shell manifest (`appId`, `webDir: 'dist'`).
@@ -121,14 +176,18 @@ ignored; a fresh clone rebuilds them with the commands below.
 
 ## Architecture
 
-- **Store.** `src/store/useAppStore.tsx` composes ~21 slices from `src/store/slices/`
-  and owns the cross-cutting orchestration: connection and auth, session management,
-  the turn engine, and the gateway WebSocket wiring (`openWs`). Slices own their own
-  state and refs; shared cross-cutting refs live in `src/store/runtime.ts` to break
-  ordering cycles. `src/hooks/app-store.tsx` exposes it through React context.
-- **Services vs utils.** `src/services/` is transport only; `src/utils/` is pure logic
-  and types. Shared protocol constants live in the import-free leaf
-  `src/services/constants.ts`.
+- **Store.** `src/store/useAppStore.tsx` composes 20 slices from
+  `src/store/slices/` (18 through the `add()` helper, plus `useThemeSlice` and
+  `useNotificationsSlice`) and owns the cross-cutting orchestration: connection
+  and auth, session management, the turn engine, and the gateway WebSocket wiring
+  (`openWs`). Slices own their own state and refs; shared cross-cutting refs live
+  in `src/store/runtime.ts` to break ordering cycles. `src/hooks/app-store.tsx`
+  exposes the store through React context.
+- **Services vs utils.** `src/services/` holds everything that talks to a
+  gateway — the transport itself (`dashboard.ts`, `gateway-ws.ts`) and the typed
+  wrappers that normalise each API surface's payloads (`skills.ts`, `mcp.ts`,
+  `profiles.ts`, …). `src/utils/` is pure logic and types. Shared protocol
+  constants live in the import-free leaf `src/services/constants.ts`.
 - **Navigation.** `src/routes.tsx` maps URLs to screens. The store slices route
   themselves from WebSocket callbacks, where no hook is available, through the
   module-level bridge in `src/store/nav.ts`.
@@ -168,11 +227,27 @@ is fine; ids that never match mean the id spaces differ.
 ## Development
 
 ```bash
-npm run dev         # vite dev server
-npm run typecheck   # tsc --noEmit
-npm test            # node --experimental-strip-types --test
-npm run build       # vite build
+npm run dev           # vite dev server
+npm run typecheck     # tsc --noEmit
+npm test              # node --experimental-strip-types --test
+npm run lint          # eslint
+npm run format        # prettier --write .
+npm run format:check  # prettier --check
+npm run build         # vite build
 ```
+
+### Lint and format
+
+ESLint 10 + typescript-eslint + `eslint-plugin-react-hooks`, with
+`eslint-config-prettier` last so formatting is Prettier's job alone. A few
+React-Compiler-oriented hook rules (`refs`, `immutability`,
+`set-state-in-effect`, `preserve-manual-memoization`) are switched **off** — they
+flag deliberate patterns here, notably slices that write refs during render so
+callbacks frozen inside `openWs()` always read the latest values. Adopting them
+is a refactor, not a config change.
+
+Prettier covers everything except `dist/`, `node_modules/`, `public/`, and the
+Capacitor/Gradle output.
 
 ### Android (Capacitor, debug)
 
@@ -195,9 +270,6 @@ a WebView never attaches that cookie cross-origin. So on native, dashboard
 REST goes through the `NativeHttp` plugin with the session kept in the JS
 cookie jar (`mergeCookies`), while web keeps using `fetch`. The WebSocket
 needs no such treatment: it authenticates with a ticket in the URL.
-
-Typecheck and tests must be green before a change is considered done. There is no
-linter or formatter configured.
 
 ### Tests
 
@@ -246,11 +318,13 @@ fix(chat): stop clipping the model name on wide screens
 refactor(store): extract live-turn slice
 ```
 
-Typecheck and test after each change, and keep commits focused.
-
 The verification bar is `npm run typecheck` and `npm test`; neither can see gateway
 behaviour, so anything touching sessions or the turn engine needs a manual pass
-against a real gateway.
+against a real gateway. `npm run lint` should also be clean, and `npm run
+format:check` before committing.
+
+`docs/feature-parity-roadmap.md` tracks what this client still lacks relative to
+the full desktop dashboard in `~/.hermes/hermes-agent/web/`.
 
 ## License
 
