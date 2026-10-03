@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Alert as UIAlert, AlertDescription } from '../../components/ui/alert';
@@ -31,9 +31,9 @@ import {
   X,
 } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import type { SessionSummary } from '../../services/gateway-ws';
 import { errMsg } from '../../utils/messages';
-import { asRecord } from '../../utils/ops';
 import { ErrorRetry, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import * as api from '../../services/api';
 import { compactNumber, formatDateTime, formatRunDuration, formatRunTime } from '../../utils/format';
@@ -45,11 +45,14 @@ import {
   deliveryOptions,
   getScheduleExpr,
   normaliseDelivery,
+  asCronJobs,
+  asCronRuns,
+  asDeliveryTargets,
+  asRunMessages,
   parseMessageContent,
-  scopedRunKey,
 } from './helpers';
 import type { DeliveryTarget } from './helpers';
-import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
+import type { CronJobItem, CronRunItem } from './types';
 import { navigate } from '../../store/nav';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
 import {
@@ -60,6 +63,15 @@ import {
   type ScheduleBuilderState,
   type ScheduleDescribeStrings,
 } from '../../utils/schedule';
+
+/** The four one-shot verbs on a job card, plus delete. */
+type JobActionVerb = 'trigger' | 'pause' | 'resume' | 'delete';
+
+// Stable empty values, so the `??`s in the screen do not hand a memo a fresh
+// array on every render while a query is still pending.
+const NO_JOBS: CronJobItem[] = [];
+const NO_RUNS: CronRunItem[] = [];
+const NO_TARGETS: DeliveryTarget[] = [];
 
 /** English strings for the human-readable schedule description. Kept here (not
  *  in the pure helper) so a future i18n layer has one obvious place to swap. */
@@ -266,22 +278,27 @@ type RunCardProps = {
   run: CronRunItem;
   dark: boolean;
   expanded: boolean;
-  messages: RunMessageItem[] | undefined;
-  messagesLoading: boolean;
+  /** Profile the run belongs to; the messages endpoint is per-run, per-profile. */
+  profile: string;
   onToggleRun: (runId: string) => void;
   onOpenInChat: (run: CronRunItem) => void;
 };
 
 // Memoized so expanding one run's transcript doesn't re-render every row.
-const RunCard = memo(function RunCard({
-  run,
-  dark,
-  expanded,
-  messages,
-  messagesLoading,
-  onToggleRun,
-  onOpenInChat,
-}: RunCardProps) {
+const RunCard = memo(function RunCard({ run, dark, expanded, profile, onToggleRun, onOpenInChat }: RunCardProps) {
+  // The transcript belongs to this row, so its query lives here: one observer
+  // per run, disabled until the row is expanded. That replaces the parent's
+  // `runMessages` map keyed by `profile + runId` and its single loading flag,
+  // which could only ever describe one row at a time.
+  const messagesQ = useOpsQuery({
+    key: ['cron', 'run-messages', run.id, profile],
+    get: (get) => get(api.cronRunMessages(run.id, profile)),
+    select: asRunMessages,
+    enabled: expanded,
+  });
+  const messages = messagesQ.data;
+  const messagesLoading = expanded && messagesQ.isPending;
+
   const isRunActive = run.is_active || (!run.ended_at && Boolean(run.started_at));
   const isRunFailed = run.end_reason === 'error';
   const isRunCompleted = Boolean(run.ended_at) && !isRunFailed;
@@ -480,18 +497,13 @@ const RunCard = memo(function RunCard({
 });
 
 export function CronScreen() {
-  const { authed, activeProfile, opsGet, opsMut, openSession, getAuthScope } = useApp();
+  const { authed, activeProfile, openSession, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Resolved once per scheme: the job list re-renders on every poll and each
   // value feeds the screen surface plus all four form fields.
   const screen = useMemo(() => screenStyle(dark), [dark]);
 
-  const [jobs, setJobs] = useState<CronJobItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   // Themed replacement for the old Alert.alert delete confirm.
   const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
@@ -511,96 +523,53 @@ export function CronScreen() {
   // job already had. It used to be seeded to 'local' and always shipped, which
   // pinned any job whose delivery was configured elsewhere.
   const [formDeliver, setFormDeliver] = useState('');
-  const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  // `GET /api/cron/delivery-targets` — the server owns this list (connected
-  // platforms + bot-chat targets per profile), so the form never invents a
-  // platform name. Empty means the fetch failed; the form then offers `local`
-  // only rather than offering targets that may not exist.
-  const [deliveryTargets, setDeliveryTargets] = useState<DeliveryTarget[]>([]);
 
-  // Run History state
+  // Run History state — which job's runs are on screen, and which run is
+  // expanded. The runs themselves are a query keyed on the job.
   const [runsModalOpen, setRunsModalOpen] = useState(false);
   const [selectedJobForRuns, setSelectedJobForRuns] = useState<CronJobItem | null>(null);
-  const [runsList, setRunsList] = useState<CronRunItem[]>([]);
-  const [runsLoading, setRunsLoading] = useState(false);
-  const [runsError, setRunsError] = useState<string | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
-  const [runMessages, setRunMessages] = useState<Record<string, RunMessageItem[]>>({});
-  const [runMessagesLoading, setRunMessagesLoading] = useState(false);
 
   // Bottom sheets: Sheet drives present/dismiss from these two booleans.
 
-  useEffect(() => {
-    if (authed) return;
-    setJobs([]);
-    setRunsList([]);
-    setRunMessages({});
-    setSelectedJobForRuns(null);
-    setRunsModalOpen(false);
-    setModalOpen(false);
-    setError(null);
-  }, [authed]);
+  // Every profile's jobs in one key, so a refresh while a job write is landing
+  // cannot repaint the list with a response from before the write.
+  const jobsQ = useOpsQuery({
+    key: ['cron', 'jobs'],
+    get: (get) => get(api.cronJobsAllProfiles()),
+    select: asCronJobs,
+    enabled: authed,
+  });
+  const jobs = jobsQ.data ?? NO_JOBS;
+  const loading = jobsQ.isPending;
+  const refreshing = jobsQ.isRefetching;
+  const error = jobsQ.error ? errMsg(jobsQ.error) : null;
 
-  const loadJobs = useCallback(
-    async (isRefresh = false) => {
-      const scope = getAuthScope();
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const data = await opsGet(api.cronJobsAllProfiles());
-        if (getAuthScope() !== scope) return;
-        const payload = asRecord(data);
-        const list = (Array.isArray(payload.jobs) ? payload.jobs : Array.isArray(data) ? data : []) as CronJobItem[];
-        setJobs(list);
-      } catch (e) {
-        if (getAuthScope() === scope) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [getAuthScope, opsGet],
-  );
+  // The server owns the delivery-target list (connected platforms + bot-chat
+  // targets per profile), so the form never invents a platform name. A failed
+  // fetch must not block the job list — the form then offers `local` only — so
+  // this query's error is deliberately not rendered.
+  const targetsQ = useOpsQuery({
+    key: ['cron', 'delivery-targets', activeProfile],
+    get: (get) => get(api.cronDeliveryTargets(activeProfile)),
+    select: asDeliveryTargets,
+    enabled: authed,
+  });
+  const deliveryTargets = targetsQ.data ?? NO_TARGETS;
 
-  useEffect(() => {
-    if (authed) void loadJobs();
-  }, [authed, loadJobs]);
-
-  // Loaded once per auth: the target list only changes when a platform is
-  // connected or a home channel is set, and a failed fetch must not block the
-  // job list (the form falls back to `local`).
-  const loadDeliveryTargets = useCallback(async () => {
-    const scope = getAuthScope();
-    try {
-      const data = await opsGet(api.cronDeliveryTargets(activeProfile));
-      if (getAuthScope() !== scope) return;
-      const payload = asRecord(data);
-      const rows = Array.isArray(payload.targets) ? payload.targets : [];
-      const targets: DeliveryTarget[] = [];
-      for (const row of rows) {
-        const t = asRecord(row);
-        const id = typeof t.id === 'string' ? t.id.trim() : '';
-        if (!id) continue;
-        targets.push({
-          id,
-          name: typeof t.name === 'string' && t.name ? t.name : id,
-          home_target_set: t.home_target_set !== false,
-          home_env_var: typeof t.home_env_var === 'string' ? t.home_env_var : null,
-        });
-      }
-      setDeliveryTargets(targets);
-    } catch {
-      if (getAuthScope() === scope) setDeliveryTargets([]);
-    }
-  }, [activeProfile, getAuthScope, opsGet]);
-
-  useEffect(() => {
-    if (authed) void loadDeliveryTargets();
-  }, [authed, loadDeliveryTargets]);
+  // The selected job's runs. Keyed on the job, so opening job B while job A's
+  // fetch is in flight cannot show A's history under B's name.
+  const runsQ = useOpsQuery({
+    key: ['cron', 'runs', selectedJobForRuns?.id, selectedJobForRuns?.profile ?? activeProfile],
+    get: (get) =>
+      get(api.cronJobRuns(String(selectedJobForRuns?.id ?? ''), selectedJobForRuns?.profile || activeProfile)),
+    select: asCronRuns,
+    enabled: authed && !!selectedJobForRuns,
+  });
+  const runsList = runsQ.data ?? NO_RUNS;
+  const runsLoading = runsQ.isPending;
+  const runsError = runsQ.error ? errMsg(runsQ.error) : null;
 
   const openCreateModal = useCallback(() => {
     setEditingJob(null);
@@ -642,80 +611,13 @@ export function CronScreen() {
   };
 
   // Run History Handlers
-  const handleOpenRuns = useCallback(
-    async (job: CronJobItem) => {
-      const scope = getAuthScope();
-      setSelectedJobForRuns(job);
-      setRunsModalOpen(true);
-      setRunsLoading(true);
-      setRunsError(null);
-      setExpandedRunId(null);
-      try {
-        const data = await opsGet(api.cronJobRuns(job.id, job.profile || activeProfile));
-        if (getAuthScope() !== scope) return;
-        const runsPayload = asRecord(data);
-        const list = (
-          Array.isArray(runsPayload.runs) ? runsPayload.runs : Array.isArray(data) ? data : []
-        ) as CronRunItem[];
-        setRunsList(list);
-      } catch (e) {
-        if (getAuthScope() === scope) setRunsError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope) setRunsLoading(false);
-      }
-    },
-    [activeProfile, getAuthScope, opsGet],
-  );
+  const handleOpenRuns = (job: CronJobItem) => {
+    setSelectedJobForRuns(job);
+    setRunsModalOpen(true);
+    setExpandedRunId(null);
+  };
 
-  const handleRefreshRuns = useCallback(async () => {
-    if (!selectedJobForRuns) return;
-    const scope = getAuthScope();
-    setRunsLoading(true);
-    setRunsError(null);
-    try {
-      const data = await opsGet(api.cronJobRuns(selectedJobForRuns.id, selectedJobForRuns.profile || activeProfile));
-      if (getAuthScope() !== scope) return;
-      const refreshPayload = asRecord(data);
-      const list = (
-        Array.isArray(refreshPayload.runs) ? refreshPayload.runs : Array.isArray(data) ? data : []
-      ) as CronRunItem[];
-      setRunsList(list);
-    } catch (e) {
-      if (getAuthScope() === scope) setRunsError(errMsg(e));
-    } finally {
-      if (getAuthScope() === scope) setRunsLoading(false);
-    }
-  }, [activeProfile, getAuthScope, opsGet, selectedJobForRuns]);
-
-  const toggleExpandRun = useCallback(
-    async (runId: string) => {
-      const scope = getAuthScope();
-      if (expandedRunId === runId) {
-        setExpandedRunId(null);
-        return;
-      }
-      setExpandedRunId(runId);
-      const run = runsList.find((item) => item.id === runId);
-      const runProfile = run?.profile || selectedJobForRuns?.profile || activeProfile;
-      const cacheKey = scopedRunKey(runId, runProfile);
-      if (!runMessages[cacheKey]) {
-        setRunMessagesLoading(true);
-        try {
-          const data = await opsGet(api.cronRunMessages(runId, runProfile));
-          if (getAuthScope() !== scope) return;
-          const msgsPayload = asRecord(data);
-          const msgs = (Array.isArray(msgsPayload.messages) ? msgsPayload.messages : []) as RunMessageItem[];
-          setRunMessages((prev) => ({ ...prev, [cacheKey]: msgs }));
-        } catch (e) {
-          console.warn('[cron] run messages failed', e);
-          if (getAuthScope() === scope) setRunMessages((prev) => ({ ...prev, [cacheKey]: [] }));
-        } finally {
-          if (getAuthScope() === scope) setRunMessagesLoading(false);
-        }
-      }
-    },
-    [activeProfile, expandedRunId, getAuthScope, opsGet, runMessages, runsList, selectedJobForRuns],
-  );
+  const toggleExpandRun = (runId: string) => setExpandedRunId((prev) => (prev === runId ? null : runId));
 
   const handleOpenInChat = useCallback(
     async (run: CronRunItem) => {
@@ -742,93 +644,71 @@ export function CronScreen() {
     [activeProfile, getAuthScope, openSession, selectedJobForRuns],
   );
 
-  // Run Now (Trigger)
-  const handleTrigger = useCallback(
-    async (job: CronJobItem) => {
-      const scope = getAuthScope();
-      setActionLoadingId(job.id);
-      try {
-        await opsMut(api.cronJobAction(job.id, 'trigger', job.profile || activeProfile), 'POST', {});
-        if (getAuthScope() !== scope) return;
-        notify(`Triggered "${job.name || job.id}"`);
-        await loadJobs(true);
-      } catch (e) {
-        if (getAuthScope() === scope)
-          toast({ title: 'Trigger Failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setActionLoadingId(null);
+  // Job actions — trigger / pause / resume / delete. One mutation for all four:
+  // same path shape, same toast-on-failure, and `done` refreshes the list, which
+  // is what the `await loadJobs(true)` tail did after each one.
+  const jobAction = useOpsMutation<void, { job: CronJobItem; verb: JobActionVerb }>({
+    mutationFn: async (mut, { job, verb }) => {
+      const profile = job.profile || activeProfile;
+      await (verb === 'delete'
+        ? mut(api.cronJob(job.id, profile), 'DELETE')
+        : mut(api.cronJobAction(job.id, verb, profile), 'POST', {}));
+    },
+    done: [['cron', 'jobs']],
+    onSuccess: (_d, { job, verb }) => {
+      const label = job.name || job.id;
+      const past =
+        verb === 'trigger' ? 'Triggered' : verb === 'pause' ? 'Paused' : verb === 'resume' ? 'Resumed' : 'Deleted';
+      notify(`${past} "${label}"`);
+    },
+    onError: (e, { verb }) =>
+      toast({
+        title: `${verb === 'trigger' ? 'Trigger' : verb === 'pause' ? 'Pause' : verb === 'resume' ? 'Resume' : 'Delete'} Failed`,
+        description: errMsg(e),
+        variant: 'destructive',
+      }),
+  });
+  const actionLoadingId = jobAction.isPending ? jobAction.variables?.job.id : null;
+
+  const handleJobAction = (job: CronJobItem, verb: JobActionVerb) => jobAction.mutate({ job, verb });
+
+  const handleDelete = (job: CronJobItem) => {
+    setConfirmDelete({
+      title: 'Delete Cron Job',
+      body: `Are you sure you want to delete "${job.name || job.id}"?`,
+      run: () => jobAction.mutate({ job, verb: 'delete' }),
+    });
+  };
+
+  // Save (Create or Edit). The form's own fields are read here, so the sheet's
+  // button stays a zero-argument call.
+  const saveJob = useOpsMutation<void, void>({
+    mutationFn: async (mut) => {
+      const deliver = formDeliver.trim();
+      const payload = {
+        name: formName.trim(),
+        schedule: formSchedule.trim(),
+        prompt: formPrompt.trim(),
+        // Only sent when it differs from what the job already has, so an untouched
+        // field can't rewrite a target the form never showed.
+        ...(deliver && deliver !== (editingJob?.deliver || '') ? { deliver } : {}),
+        ...(formModel.trim() ? { model: formModel.trim() } : {}),
+      };
+      if (editingJob) {
+        await mut(api.cronJob(editingJob.id, editingJob.profile || activeProfile), 'PUT', { updates: payload });
+        return;
       }
+      await mut(api.cronJobs(activeProfile), 'POST', payload);
     },
-    [activeProfile, getAuthScope, loadJobs, opsMut],
-  );
-
-  // Pause
-  const handlePause = useCallback(
-    async (job: CronJobItem) => {
-      const scope = getAuthScope();
-      setActionLoadingId(job.id);
-      try {
-        await opsMut(api.cronJobAction(job.id, 'pause', job.profile || activeProfile), 'POST', {});
-        if (getAuthScope() !== scope) return;
-        notify(`Paused "${job.name || job.id}"`);
-        await loadJobs(true);
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Pause Failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setActionLoadingId(null);
-      }
+    done: [['cron', 'jobs']],
+    onSuccess: () => {
+      notify(`${editingJob ? 'Updated' : 'Created'} "${formName.trim()}"`);
+      setModalOpen(false);
     },
-    [activeProfile, getAuthScope, loadJobs, opsMut],
-  );
+    onError: (e) => setFormError(errMsg(e)),
+  });
 
-  // Resume
-  const handleResume = useCallback(
-    async (job: CronJobItem) => {
-      const scope = getAuthScope();
-      setActionLoadingId(job.id);
-      try {
-        await opsMut(api.cronJobAction(job.id, 'resume', job.profile || activeProfile), 'POST', {});
-        if (getAuthScope() !== scope) return;
-        notify(`Resumed "${job.name || job.id}"`);
-        await loadJobs(true);
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Resume Failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setActionLoadingId(null);
-      }
-    },
-    [activeProfile, getAuthScope, loadJobs, opsMut],
-  );
-
-  // Delete
-  const handleDelete = useCallback(
-    (job: CronJobItem) => {
-      setConfirmDelete({
-        title: 'Delete Cron Job',
-        body: `Are you sure you want to delete "${job.name || job.id}"?`,
-        run: async () => {
-          const scope = getAuthScope();
-          setActionLoadingId(job.id);
-          try {
-            await opsMut(api.cronJob(job.id, job.profile || activeProfile), 'DELETE');
-            if (getAuthScope() !== scope) return;
-            notify(`Deleted "${job.name || job.id}"`);
-            await loadJobs(true);
-          } catch (e) {
-            if (getAuthScope() === scope)
-              toast({ title: 'Delete Failed', description: errMsg(e), variant: 'destructive' });
-          } finally {
-            if (getAuthScope() === scope) setActionLoadingId(null);
-          }
-        },
-      });
-    },
-    [activeProfile, getAuthScope, loadJobs, opsMut],
-  );
-
-  // Save (Create or Edit)
-  const handleSave = async () => {
-    const scope = getAuthScope();
+  const handleSave = () => {
     if (!formName.trim()) {
       setFormError('Job name is required');
       return;
@@ -841,38 +721,8 @@ export function CronScreen() {
       setFormError('Prompt / instructions are required');
       return;
     }
-
-    setFormSaving(true);
     setFormError(null);
-
-    const deliver = formDeliver.trim();
-    const payload = {
-      name: formName.trim(),
-      schedule: formSchedule.trim(),
-      prompt: formPrompt.trim(),
-      // Only sent when it differs from what the job already has, so an untouched
-      // field can't rewrite a target the form never showed.
-      ...(deliver && deliver !== (editingJob?.deliver || '') ? { deliver } : {}),
-      ...(formModel.trim() ? { model: formModel.trim() } : {}),
-    };
-
-    try {
-      if (editingJob) {
-        await opsMut(api.cronJob(editingJob.id, editingJob.profile || activeProfile), 'PUT', { updates: payload });
-        if (getAuthScope() !== scope) return;
-        notify(`Updated "${payload.name}"`);
-      } else {
-        await opsMut(api.cronJobs(activeProfile), 'POST', payload);
-        if (getAuthScope() !== scope) return;
-        notify(`Created "${payload.name}"`);
-      }
-      setModalOpen(false);
-      await loadJobs(true);
-    } catch (e) {
-      if (getAuthScope() === scope) setFormError(errMsg(e));
-    } finally {
-      if (getAuthScope() === scope) setFormSaving(false);
-    }
+    saveJob.mutate();
   };
 
   // What the Notify field offers for the job being edited. `origin` only makes
@@ -915,10 +765,12 @@ export function CronScreen() {
 
   const runsHeader = useMemo(
     () =>
-      runsError ? (
-        <ErrorRetry error={runsError} onRetry={() => void handleRefreshRuns()} className="mb-3" compact />
-      ) : null,
-    [handleRefreshRuns, runsError],
+      runsError ? <ErrorRetry error={runsError} onRetry={() => void runsQ.refetch()} className="mb-3" compact /> : null,
+    // `runsQ` is a new object every render and its `refetch` is always current,
+    // so keying this on the error string is enough — keying on the query would
+    // rebuild the element on every render and memoise nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runsError],
   );
   const runsEmpty = useMemo(() => {
     if (runsLoading && runsList.length === 0) {
@@ -969,7 +821,7 @@ export function CronScreen() {
           </div>
         )}
 
-        <ErrorRetry error={error} onRetry={() => void loadJobs()} className="mx-4 mb-3 mt-3" compact />
+        <ErrorRetry error={error} onRetry={() => void jobsQ.refetch()} className="mx-4 mb-3 mt-3" compact />
 
         <div className={`mx-auto flex min-h-full w-full max-w-4xl flex-col ${jobsContentClass}`}>
           {jobs.length === 0
@@ -984,9 +836,9 @@ export function CronScreen() {
                     expanded={expandedIds.has(job.id)}
                     onToggleExpand={toggleExpand}
                     onOpenRuns={handleOpenRuns}
-                    onTrigger={handleTrigger}
-                    onPause={handlePause}
-                    onResume={handleResume}
+                    onTrigger={(job) => handleJobAction(job, 'trigger')}
+                    onPause={(job) => handleJobAction(job, 'pause')}
+                    onResume={(job) => handleJobAction(job, 'resume')}
                     onEdit={openEditModal}
                     onDelete={handleDelete}
                   />
@@ -1006,7 +858,7 @@ export function CronScreen() {
             variant="ghost"
             size="icon"
             aria-label="Close"
-            disabled={formSaving}
+            disabled={saveJob.isPending}
             onClick={() => setModalOpen(false)}
             className="h-8 w-8 rounded-lg">
             <X size={20} color={dark ? '#ccc' : '#444'} />
@@ -1147,7 +999,7 @@ export function CronScreen() {
             <div className="mt-2 flex gap-3">
               <Button
                 variant="outline"
-                disabled={formSaving}
+                disabled={saveJob.isPending}
                 onClick={() => setModalOpen(false)}
                 aria-label="Cancel"
                 className="h-auto sm:h-auto flex-1 rounded-xl py-3">
@@ -1155,11 +1007,11 @@ export function CronScreen() {
               </Button>
 
               <Button
-                disabled={formSaving}
+                disabled={saveJob.isPending}
                 onClick={handleSave}
                 aria-label={editingJob ? 'Save changes' : 'Create job'}
                 className="h-auto sm:h-auto flex-1 rounded-xl bg-brand py-3 active:bg-brand">
-                {formSaving ? (
+                {saveJob.isPending ? (
                   <Spinner size={14} color="#fff" />
                 ) : (
                   <span className="text-sm font-semibold text-white">{editingJob ? 'Save Changes' : 'Create Job'}</span>
@@ -1190,7 +1042,7 @@ export function CronScreen() {
               size="icon"
               aria-label="Refresh runs"
               disabled={runsLoading}
-              onClick={() => void handleRefreshRuns()}
+              onClick={() => void runsQ.refetch()}
               className="h-9 w-9 rounded-lg">
               {runsLoading ? (
                 <Spinner size={14} color="var(--brand-hex)" />
@@ -1222,10 +1074,7 @@ export function CronScreen() {
                       run={run}
                       dark={dark}
                       expanded={expandedRunId === run.id}
-                      messages={
-                        runMessages[scopedRunKey(run.id, run.profile || selectedJobForRuns?.profile || activeProfile)]
-                      }
-                      messagesLoading={runMessagesLoading}
+                      profile={run.profile || selectedJobForRuns?.profile || activeProfile}
                       onToggleRun={toggleExpandRun}
                       onOpenInChat={handleOpenInChat}
                     />

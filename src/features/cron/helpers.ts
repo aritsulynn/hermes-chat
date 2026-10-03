@@ -1,5 +1,5 @@
 // Pure helpers for the Cron Jobs screen (no React/JSX).
-import type { CronJobItem } from './types';
+import type { CronJobItem, CronRunItem, RunMessageItem } from './types';
 
 export const SCHEDULE_PRESETS = [
   { label: 'Every hour', expr: '0 * * * *' },
@@ -36,8 +36,29 @@ export function parseMessageContent(content: any): string {
   return String(content);
 }
 
-export function scopedRunKey(runId: string, profile?: string | null): string {
-  return JSON.stringify([String(profile ?? '').trim(), runId]);
+/** One array out of a payload that may be the bare array or wrap it in a field.
+ *
+ *  All three cron list endpoints have answered both ways, so every list on this
+ *  screen normalises through here rather than repeating the two-step check. */
+function rowsOf(raw: unknown, field: string): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  const wrapped = raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[field] : undefined;
+  return Array.isArray(wrapped) ? wrapped : [];
+}
+
+/** `GET /api/cron/jobs` — every profile's jobs. */
+export function asCronJobs(raw: unknown): CronJobItem[] {
+  return rowsOf(raw, 'jobs') as CronJobItem[];
+}
+
+/** `GET /api/cron/jobs/{id}/runs`. */
+export function asCronRuns(raw: unknown): CronRunItem[] {
+  return rowsOf(raw, 'runs') as CronRunItem[];
+}
+
+/** `GET /api/cron/runs/{id}/messages`. */
+export function asRunMessages(raw: unknown): RunMessageItem[] {
+  return rowsOf(raw, 'messages') as RunMessageItem[];
 }
 
 /** One row of `GET /api/cron/delivery-targets`. */
@@ -54,6 +75,25 @@ export interface DeliveryTarget {
  *  server's own default (scheduler_delivery._resolve_single_delivery_target
  *  returns None for it) and the one option that always works. */
 export const LOCAL_DELIVERY = 'local';
+
+/** `GET /api/cron/delivery-targets` — rows without an id are dropped, since the
+ *  id is what a job's `deliver` field is matched against. A malformed row would
+ *  otherwise render as an option the server cannot accept. */
+export function asDeliveryTargets(raw: unknown): DeliveryTarget[] {
+  const targets: DeliveryTarget[] = [];
+  for (const row of rowsOf(raw, 'targets')) {
+    const t = (row && typeof row === 'object' ? row : {}) as Record<string, unknown>;
+    const id = typeof t.id === 'string' ? t.id.trim() : '';
+    if (!id) continue;
+    targets.push({
+      id,
+      name: typeof t.name === 'string' && t.name ? t.name : id,
+      home_target_set: t.home_target_set !== false,
+      home_env_var: typeof t.home_env_var === 'string' ? t.home_env_var : null,
+    });
+  }
+  return targets;
+}
 
 /**
  * The `deliver` options to offer, in server order.

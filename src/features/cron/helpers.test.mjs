@@ -3,11 +3,14 @@ import test from 'node:test';
 
 import {
   LOCAL_DELIVERY,
+  asCronJobs,
+  asCronRuns,
+  asDeliveryTargets,
+  asRunMessages,
   deliveryOptions,
   getScheduleExpr,
   normaliseDelivery,
   parseMessageContent,
-  scopedRunKey,
 } from './helpers.ts';
 
 test('getScheduleExpr prefers display, then string, then expr', () => {
@@ -24,9 +27,39 @@ test('parseMessageContent handles string/array/object/null', () => {
   assert.equal(parseMessageContent(null), '');
 });
 
-test('scopedRunKey namespaces the run id by profile', () => {
-  assert.equal(scopedRunKey('r1'), JSON.stringify(['', 'r1']));
-  assert.equal(scopedRunKey('r1', 'dev'), JSON.stringify(['dev', 'r1']));
+test('the list normalisers accept both a bare array and a wrapped one', () => {
+  // Every cron list endpoint has answered both ways.
+  assert.deepEqual(asCronJobs([{ id: '1' }]), [{ id: '1' }]);
+  assert.deepEqual(asCronJobs({ jobs: [{ id: '1' }] }), [{ id: '1' }]);
+  assert.deepEqual(asCronRuns({ runs: [{ id: 'r1' }] }), [{ id: 'r1' }]);
+  assert.deepEqual(asRunMessages({ messages: [{ role: 'user' }] }), [{ role: 'user' }]);
+});
+
+test('the list normalisers read a missing or malformed payload as no rows', () => {
+  assert.deepEqual(asCronJobs(null), []);
+  assert.deepEqual(asCronJobs({}), []);
+  assert.deepEqual(asCronJobs({ jobs: 'nope' }), []);
+  assert.deepEqual(asCronRuns({}), []);
+  assert.deepEqual(asRunMessages({}), []);
+});
+
+test('asDeliveryTargets drops rows with no id and fills in a missing name', () => {
+  const targets = asDeliveryTargets({
+    targets: [
+      { id: '  telegram ', name: 'Telegram', home_target_set: true, home_env_var: null },
+      { name: 'no id at all' },
+      { id: 'discord', home_target_set: false, home_env_var: 'DISCORD_HOME_CHANNEL' },
+      { id: '   ' },
+    ],
+  });
+  assert.deepEqual(targets, [
+    { id: 'telegram', name: 'Telegram', home_target_set: true, home_env_var: null },
+    { id: 'discord', name: 'discord', home_target_set: false, home_env_var: 'DISCORD_HOME_CHANNEL' },
+  ]);
+  // The id is what a job's `deliver` is matched against, so an unusable row is
+  // dropped rather than rendered as an option the server cannot accept.
+  assert.equal(targets.length, 2);
+  assert.deepEqual(asDeliveryTargets({}), []);
 });
 
 const TARGETS = [
