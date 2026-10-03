@@ -9,6 +9,16 @@ export const LINE_COUNTS = [50, 100, 200, 500] as const;
 
 export type LineSeverity = 'error' | 'warning' | 'info' | 'debug';
 
+/** `GET /api/logs` — the payload's `lines`, as a string array.
+ *
+ *  A non-string row is dropped rather than rendered: the list interpolates each
+ *  entry straight into a `<div>`, so one object from a half-written log line
+ *  would throw during render and take the whole screen with it. */
+export function asLogLines(raw: unknown): string[] {
+  const rows = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { lines?: unknown }).lines : undefined;
+  return Array.isArray(rows) ? rows.filter((l): l is string => typeof l === 'string') : [];
+}
+
 export const LEVEL_COLORS: Record<LogLevelFilter, { activeBg: string; activeText: string; activeBorder: string }> = {
   ALL: {
     activeBg: 'bg-neutral-900 dark:bg-neutral-100',

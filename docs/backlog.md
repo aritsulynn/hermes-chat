@@ -24,16 +24,16 @@ shape by hand: four `useState` slots (data / loading / refreshing / error), a
 `load()` callback, a mount effect, and a scope guard. `useOpsQuery` and
 `useOpsMutation` in `src/store/ops-query.ts` replace all of it and put the
 connection scope in the query key, so a superseded response cannot render under a
-new connection. `kanban`, `webhooks` and `skills` are ported.
+new connection. `kanban`, `webhooks`, `skills` and `logs` are ported.
 
-**Six have no race guard at all** — `cron`, `logs`, `mcp`, `skills-hub`,
+**Five have no race guard at all** — `cron`, `mcp`, `skills-hub`,
 `system`, `usage`. They check `getAuthScope()` after awaiting, so
 they are safe across a profile switch, but two overlapping loads of the same
 screen can still land out of order: an older response overwrites a newer one.
 `kanban` was the case that proved it — it ran two loads concurrently, wrote both
 to one `useState`, and switching boards fast could repaint the previous board.
 
-These six first; they are the ones where the bug is real.
+These five first; they are the ones where the bug is real.
 
 **Nine already guard correctly** and are a mechanical port: `channels`,
 `config`, `files`, `keys`, `models`, `pairing`, `plugins`, `profiles`,

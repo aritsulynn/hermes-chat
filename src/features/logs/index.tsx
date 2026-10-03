@@ -18,17 +18,24 @@ import {
   X,
 } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
-import { asRecord } from '../../utils/ops';
 import { screenStyle } from '../../theme';
 import { HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import * as api from '../../services/api';
-import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, classifyLine } from './helpers';
+import { LEVEL_COLORS, LINE_COUNTS, LOG_FILES, LOG_LEVELS, asLogLines, classifyLine } from './helpers';
 import type { LogFile, LogLevelFilter } from './helpers';
 import { writeClipboard } from '../../services/clipboard';
 
+/** Live-refresh cadence, ms. */
+const LIVE_MS = 3500;
+
+// Stable empty list, so the `?? []` below does not hand the severity memo a
+// fresh array on every render while the query is still pending.
+const NO_LINES: string[] = [];
+
 export function LogsScreen() {
-  const { authed, opsGet, getAuthScope } = useApp();
+  const { authed } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Resolved once per scheme: auto-refresh re-renders this screen every 3.5s
@@ -40,81 +47,43 @@ export function LogsScreen() {
   const [level, setLevel] = useState<LogLevelFilter>('ALL');
   const [lineCount, setLineCount] = useState<number>(100);
   const [search, setSearch] = useState('');
-  const [lines, setLines] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // `search` is the input, `applied` is what the server was last asked for. The
+  // filter is submit-driven, so the query key tracks the applied value — typing
+  // must not refetch on every keystroke.
+  const [applied, setApplied] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
 
-  useEffect(() => {
-    if (authed) return;
-    setLines([]);
-    setError(null);
-    setLoading(true);
-  }, [authed]);
-
-  // `search` is submit-driven (not live): read it through a ref so typing in
-  // the box doesn't recreate `fetchLogs` and refetch on every keystroke.
-  const searchRef = useRef(search);
-  searchRef.current = search;
-
-  const fetchLogs = useCallback(
-    async (isBackground = false) => {
-      const scope = getAuthScope();
-      if (!isBackground) {
-        setRefreshing(true);
-      }
-      setError(null);
-      try {
-        const res = await opsGet(
-          api.logs({
-            file,
-            lines: lineCount,
-            level: level !== 'ALL' ? level : undefined,
-            search: searchRef.current.trim() || undefined,
-          }),
-        );
-        if (getAuthScope() !== scope) return;
-        const raw = asRecord(res).lines;
-        const rawLines: string[] = Array.isArray(raw) ? raw.filter((l): l is string => typeof l === 'string') : [];
-        setLines(rawLines);
-      } catch (e) {
-        if (getAuthScope() === scope) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [file, getAuthScope, lineCount, level, opsGet],
-  );
-
-  // Initial load & when file/level/lines change
-  useEffect(() => {
-    if (authed) void fetchLogs();
-  }, [authed, fetchLogs]);
-
-  // Auto-refresh interval (every 3.5 seconds) — skips when backgrounded
-  // so the Drawer keeping this screen mounted doesn't poll forever.
-  useEffect(() => {
-    if (!autoRefresh || !authed) return;
-    let appActive = true;
-    const onVisibility = () => {
-      appActive = !document.hidden;
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    const interval = setInterval(() => {
-      if (!appActive) return;
-      void fetchLogs(true);
-    }, 3500);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [autoRefresh, authed, fetchLogs]);
+  // Every filter is in the key, so a response for the previous filter belongs to
+  // a key nobody reads any more: switching file/level while a fetch is in flight
+  // can no longer paint the old lines under the new header. The connection scope
+  // rides along too (see `store/ops-query`) — that is what the `getAuthScope()`
+  // checks after each await used to do.
+  const logQ = useOpsQuery({
+    key: ['logs', file, level, lineCount, applied],
+    get: (get) =>
+      get(
+        api.logs({
+          file,
+          lines: lineCount,
+          level: level !== 'ALL' ? level : undefined,
+          search: applied || undefined,
+        }),
+      ),
+    select: asLogLines,
+    enabled: authed,
+    // Live mode is the old `setInterval`, except TanStack already skips the fetch
+    // while the document is hidden (`refetchIntervalInBackground` defaults to
+    // false) — which is all the visibilitychange listener was doing.
+    refetchInterval: autoRefresh ? LIVE_MS : false,
+  });
+  const lines = logQ.data ?? NO_LINES;
+  const loading = logQ.isPending;
+  // Suppressed while live-polling: every 3.5s the icon would restart its spin,
+  // which reads as a stuck button rather than as the tail catching up.
+  const refreshing = logQ.isRefetching && !autoRefresh;
+  const error = logQ.error ? errMsg(logQ.error) : null;
 
   // Copy to clipboard
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -243,7 +212,7 @@ export function LogsScreen() {
                     <HeaderIconButton
                       variant="outline"
                       disabled={loading || refreshing}
-                      onClick={() => void fetchLogs()}
+                      onClick={() => void logQ.refetch()}
                       aria-label="Refresh logs"
                       className="rounded-xl border border-border bg-popover dark:bg-muted">
                       <RefreshCw
@@ -327,7 +296,7 @@ export function LogsScreen() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            void fetchLogs();
+                            setApplied(search.trim());
                           }
                         }}
                       />
@@ -337,6 +306,10 @@ export function LogsScreen() {
                           size="iconSm"
                           onClick={() => {
                             setSearch('');
+                            // Clearing the box used to leave the filtered rows on
+                            // screen until the next Enter; applied goes too, so
+                            // the list goes back to the whole file.
+                            setApplied('');
                           }}
                           aria-label="Clear filter"
                           className="rounded-md">
@@ -492,7 +465,7 @@ export function LogsScreen() {
                 No log entries found
               </div>
               <div className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-                {search ? 'Try clearing the search query or changing log level.' : `${file}.log is empty.`}
+                {applied ? 'Try clearing the search query or changing log level.' : `${file}.log is empty.`}
               </div>
             </div>
           ) : (
