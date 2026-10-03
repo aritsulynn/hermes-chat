@@ -186,7 +186,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
   on the chat header. `utils/session-timeline` is a leaf so the cursor rules are
   testable — Node's type-stripping runner cannot import the slice, which pulls in
   React and the store.
-- The cursor is the part worth reading the code for: `next_cursor` is a *sort*
+- The cursor is the part worth reading the code for: `next_cursor` is a _sort_
   id (the first physical row of the last logical turn), not the entry's own
   `row_id`, and the cursor row comes back as the first entry of the next page.
   Both are pinned by tests.
