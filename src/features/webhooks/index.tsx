@@ -3,11 +3,12 @@
 // Ported from Hermes Desktop's `WebhooksPage.tsx`. Enables the platform, lists
 // routes with their ingest URL (secret redacted), toggles and deletes them, and
 // creates a new one — surfacing the generated HMAC secret exactly once.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Check, RefreshCw, Trash2, Webhook, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -24,114 +25,77 @@ import {
   enableWebhooks,
   getWebhooks,
   setWebhookEnabled,
+  type WebhookCreateInput,
   type WebhookRoute,
+  type WebhooksState,
 } from '../../services/webhooks';
 
 const DELIVER_OPTIONS = ['log', 'telegram', 'discord', 'slack', 'local'] as const;
 
 export function WebhooksScreen() {
-  const { authed, opsGet, opsMut, getAuthScope } = useApp();
+  const { authed } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
-  const [enabled, setEnabled] = useState(false);
-  const [routes, setRoutes] = useState<WebhookRoute[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [toggling, setToggling] = useState<string | null>(null);
-  const [enabling, setEnabling] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; body: string; run: () => void } | null>(null);
 
-  const loadEpoch = useRef(0);
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const state = await getWebhooks(opsGet);
-        if (getAuthScope() !== scope || loadEpoch.current !== epoch) return;
-        setEnabled(state.enabled);
-        setRoutes(state.subscriptions);
-      } catch (e) {
-        if (getAuthScope() === scope && loadEpoch.current === epoch) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [getAuthScope, opsGet],
-  );
+  const state = useOpsQuery<WebhooksState>({
+    key: ['webhooks'],
+    get: (get) => getWebhooks(get),
+    enabled: authed,
+  });
+  const enabled = state.data?.enabled ?? false;
+  const routes = state.data?.subscriptions ?? [];
+  const loading = state.isPending;
+  const refreshing = state.isRefetching;
 
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
-
-  const handleEnable = useCallback(async () => {
-    const scope = getAuthScope();
-    setEnabling(true);
-    try {
-      const { needRestart } = await enableWebhooks(opsMut);
-      if (getAuthScope() !== scope) return;
+  const enable = useOpsMutation({
+    mutationFn: (mut) => enableWebhooks(mut),
+    done: [['webhooks']],
+    onSuccess: ({ needRestart }) => {
       toast({
         title: 'Webhook platform enabled',
         description: needRestart ? 'A gateway restart is required to go live.' : undefined,
       });
-      await load(true);
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Enable failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setEnabling(false);
-    }
-  }, [getAuthScope, load, opsMut]);
-
-  const handleToggle = useCallback(
-    async (route: WebhookRoute, next: boolean) => {
-      const scope = getAuthScope();
-      setToggling(route.name);
-      setRoutes((prev) => prev.map((r) => (r.name === route.name ? { ...r, enabled: next } : r)));
-      try {
-        await setWebhookEnabled(opsMut, route.name, next);
-        if (getAuthScope() !== scope) return;
-      } catch (e) {
-        if (getAuthScope() !== scope) return;
-        setRoutes((prev) => prev.map((r) => (r.name === route.name ? { ...r, enabled: !next } : r)));
-        toast({ title: 'Toggle failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setToggling(null);
-      }
     },
-    [getAuthScope, opsMut],
-  );
+    onError: (e) => toast({ title: 'Enable failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const handleDelete = useCallback(
-    (route: WebhookRoute) => {
-      setConfirm({
-        title: 'Delete webhook',
-        body: `Delete "${route.name}"? Its ingest URL stops working immediately.`,
-        run: async () => {
-          const scope = getAuthScope();
-          try {
-            await deleteWebhook(opsMut, route.name);
-            if (getAuthScope() !== scope) return;
-            toast({ title: 'Webhook deleted', description: route.name });
-            await load(true);
-          } catch (e) {
-            if (getAuthScope() === scope)
-              toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
-          }
-        },
-      });
+  // The switch flips before the request goes out and rolls back if it fails.
+  // That pair used to be written by hand — setRoutes, try, catch, setRoutes
+  // again — and it is the reason `optimistic` exists on the mutation hook.
+  const toggle = useOpsMutation<void, { name: string; next: boolean }, WebhooksState>({
+    mutationFn: (mut, v) => setWebhookEnabled(mut, v.name, v.next),
+    done: [['webhooks']],
+    optimistic: {
+      key: ['webhooks'],
+      patch: (current, v) => ({
+        ...(current ?? { enabled: true, baseUrl: '', subscriptions: [] }),
+        subscriptions: (current?.subscriptions ?? []).map((r) => (r.name === v.name ? { ...r, enabled: v.next } : r)),
+      }),
     },
-    [getAuthScope, load, opsMut],
-  );
+    onError: (e) => toast({ title: 'Toggle failed', description: errMsg(e), variant: 'destructive' }),
+  });
+  const toggling = toggle.isPending ? toggle.variables?.name : undefined;
+
+  const remove = useOpsMutation<void, string>({
+    mutationFn: (mut, name) => deleteWebhook(mut, name),
+    done: [['webhooks']],
+    onSuccess: (_d, name) => {
+      toast({ title: 'Webhook deleted', description: name });
+    },
+    onError: (e) => toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' }),
+  });
+
+  const handleDelete = (route: WebhookRoute) => {
+    setConfirm({
+      title: 'Delete webhook',
+      body: `Delete "${route.name}"? Its ingest URL stops working immediately.`,
+      run: () => remove.mutate(route.name),
+    });
+  };
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -149,7 +113,7 @@ export function WebhooksScreen() {
                     <Webhook size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
                 )}
-                <HeaderIconButton aria-label="Refresh webhooks" onClick={() => void load(true)}>
+                <HeaderIconButton aria-label="Refresh webhooks" onClick={() => void state.refetch()}>
                   <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
                 </HeaderIconButton>
               </div>
@@ -162,8 +126,8 @@ export function WebhooksScreen() {
             <div className="flex items-center justify-center py-16">
               <Spinner size={24} color={brand} />
             </div>
-          ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+          ) : state.error ? (
+            <ErrorRetry error={errMsg(state.error)} onRetry={() => void state.refetch()} />
           ) : !enabled ? (
             <Card>
               <div className="flex flex-col gap-3">
@@ -178,10 +142,10 @@ export function WebhooksScreen() {
                 </p>
                 <Button
                   aria-label="Enable webhooks"
-                  onClick={() => void handleEnable()}
-                  disabled={enabling}
+                  onClick={() => enable.mutate(undefined)}
+                  disabled={enable.isPending}
                   className="h-auto sm:h-auto self-start rounded-xl px-4 py-2.5">
-                  {enabling ? <Spinner size={14} color="#fff" /> : <Check size={14} color="#fff" />}
+                  {enable.isPending ? <Spinner size={14} color="#fff" /> : <Check size={14} color="#fff" />}
                   <span className="text-sm font-semibold text-white">Enable webhooks</span>
                 </Button>
               </div>
@@ -242,7 +206,7 @@ export function WebhooksScreen() {
                   ) : (
                     <Switch
                       checked={route.enabled}
-                      onCheckedChange={(v) => void handleToggle(route, v)}
+                      onCheckedChange={(v) => toggle.mutate({ name: route.name, next: v })}
                       aria-label={`${route.enabled ? 'Disable' : 'Enable'} ${route.name}`}
                     />
                   )}
@@ -264,16 +228,7 @@ export function WebhooksScreen() {
       </ScreenScaffold>
 
       {createOpen && (
-        <CreateWebhookSheet
-          dark={dark}
-          opsMut={opsMut}
-          getAuthScope={getAuthScope}
-          onClose={() => setCreateOpen(false)}
-          onCreated={() => {
-            setCreateOpen(false);
-            void load(true);
-          }}
-        />
+        <CreateWebhookSheet dark={dark} onClose={() => setCreateOpen(false)} onCreated={() => setCreateOpen(false)} />
       )}
 
       <ConfirmDialog
@@ -293,14 +248,10 @@ export function WebhooksScreen() {
 
 function CreateWebhookSheet({
   dark,
-  opsMut,
-  getAuthScope,
   onClose,
   onCreated,
 }: {
   dark: boolean;
-  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<unknown>;
-  getAuthScope: () => unknown;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -309,32 +260,13 @@ function CreateWebhookSheet({
   const [events, setEvents] = useState('');
   const [prompt, setPrompt] = useState('');
   const [deliver, setDeliver] = useState<string>('log');
-  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
 
-  const save = useCallback(async () => {
-    if (!name.trim()) {
-      setErr('Name is required.');
-      return;
-    }
-    const scope = getAuthScope();
-    setSaving(true);
-    setErr(null);
-    try {
-      const res = await createWebhook(opsMut, {
-        name: name.trim().toLowerCase().replace(/\s+/g, '-'),
-        description: description.trim() || undefined,
-        events: events.trim()
-          ? events
-              .trim()
-              .split(/[\s,]+/)
-              .filter(Boolean)
-          : [],
-        prompt: prompt.trim() || undefined,
-        deliver,
-      });
-      if (getAuthScope() !== scope) return;
+  const create = useOpsMutation({
+    mutationFn: (mut, input: WebhookCreateInput) => createWebhook(mut, input),
+    done: [['webhooks']],
+    onSuccess: (res) => {
       if (res.secret) {
         // Surface the one-time secret; the route summary on disk redacts it.
         setSecret(res.secret);
@@ -342,12 +274,30 @@ function CreateWebhookSheet({
       } else {
         onCreated();
       }
-    } catch (e) {
-      if (getAuthScope() === scope) setErr(errMsg(e));
-    } finally {
-      if (getAuthScope() === scope) setSaving(false);
+    },
+    onError: (e) => setErr(errMsg(e)),
+  });
+
+  const save = () => {
+    if (!name.trim()) {
+      setErr('Name is required.');
+      return;
     }
-  }, [deliver, description, events, getAuthScope, name, onCreated, opsMut, prompt]);
+    setErr(null);
+    create.mutate({
+      name: name.trim().toLowerCase().replace(/\s+/g, '-'),
+      description: description.trim() || undefined,
+      events: events.trim()
+        ? events
+            .trim()
+            .split(/[\s,]+/)
+            .filter(Boolean)
+        : [],
+      prompt: prompt.trim() || undefined,
+      deliver,
+    });
+  };
+  const saving = create.isPending;
 
   return (
     <DialogPrimitive.Root open onOpenChange={(o) => !o && onClose()}>
@@ -369,7 +319,7 @@ function CreateWebhookSheet({
               {!secret && (
                 <Button
                   aria-label="Create webhook"
-                  onClick={() => void save()}
+                  onClick={save}
                   disabled={saving}
                   className="h-auto sm:h-auto shrink-0 rounded-xl px-4 py-2.5">
                   {saving ? <Spinner size={14} color="#fff" /> : <Check size={14} color="#fff" />}
