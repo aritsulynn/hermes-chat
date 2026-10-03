@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { AlertCircle, Cpu, DollarSign, MessageSquare, RefreshCw, TrendingUp, Wrench, Zap } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -23,64 +24,44 @@ const PERIOD_OPTIONS = [
 ] as const;
 
 export function UsageScreen() {
-  const { authed, opsGet, getAuthScope } = useApp();
+  const { authed } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   // Shared by the spinner and the KPI icon — resolve once per scheme.
   const brand = useMemo(() => brandColor(dark), [dark]);
 
   const [days, setDays] = useState<number>(30);
-  const [data, setData] = useState<any>(null);
-  const [modelsData, setModelsData] = useState<unknown>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
 
-  useEffect(() => {
-    if (authed) return;
-    setData(null);
-    setSelectedDay(null);
-    setError(null);
-    setLoading(true);
-  }, [authed]);
-
-  const fetchUsage = useCallback(
-    async (isRefresh = false) => {
-      const scope = getAuthScope();
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        // Fire both analytics calls together — the model breakdown is a second
-        // endpoint and there is no reason to serialize them.
-        const [res, modelsRes] = await Promise.all([
-          opsGet(api.usage(days)),
-          opsGet(api.usageModels(days)).catch((e) => {
-            // Older gateways may lack /analytics/models; degrade to the
-            // by_model rows already inside /analytics/usage.
-            console.warn('[usage] models analytics unavailable', e);
-            return null;
-          }),
-        ]);
-        if (getAuthScope() !== scope) return;
-        setData(res);
-        setModelsData(modelsRes);
-      } catch (e) {
-        if (getAuthScope() === scope) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
+  // Both analytics calls ride one key: the model breakdown is a second endpoint
+  // and there is no reason to serialize it, but the two together are what a
+  // period means. `days` in the key is the race fix — switching period while a
+  // fetch is in flight could paint the old period's bars under the new heading.
+  //
+  // `usage` stays `any` like the state it replaces: the payload is read field by
+  // field below (`totals`, `daily`, `by_model`, `tools`, `skills`) and typing
+  // that schema is its own job, not this refactor's.
+  const usageQ = useOpsQuery<{ usage: any; models: unknown }>({
+    key: ['usage', days],
+    get: async (get) => {
+      const [usage, models] = await Promise.all([
+        get(api.usage(days)),
+        get(api.usageModels(days)).catch((e) => {
+          // Older gateways may lack /analytics/models; degrade to the by_model
+          // rows already inside /analytics/usage.
+          console.warn('[usage] models analytics unavailable', e);
+          return null;
+        }),
+      ]);
+      return { usage, models };
     },
-    [days, getAuthScope, opsGet],
-  );
-
-  useEffect(() => {
-    if (authed) void fetchUsage();
-  }, [authed, fetchUsage]);
+    enabled: authed,
+  });
+  const data = usageQ.data?.usage ?? null;
+  const modelsData = usageQ.data?.models ?? null;
+  const loading = usageQ.isPending;
+  const refreshing = usageQ.isRefetching;
+  const error = usageQ.error ? errMsg(usageQ.error) : null;
 
   const totals = data?.totals || {};
   const totalTokens = (totals?.total_input || 0) + (totals?.total_output || 0) + (totals?.total_reasoning || 0);
@@ -175,7 +156,7 @@ export function UsageScreen() {
                   variant="outline"
                   aria-label="Refresh usage"
                   disabled={loading || refreshing}
-                  onClick={() => void fetchUsage(true)}
+                  onClick={() => void usageQ.refetch()}
                   className="border border-border">
                   <RefreshCw size={20} color={dark ? '#ccc' : '#444'} />
                 </HeaderIconButton>
@@ -218,7 +199,7 @@ export function UsageScreen() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => void fetchUsage(true)}
+                onClick={() => void usageQ.refetch()}
                 className="ml-6 mt-1 self-start">
                 <span className="text-xs font-medium text-white">Retry</span>
               </Button>
