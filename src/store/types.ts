@@ -2,9 +2,10 @@
 // Extracted from hooks/app-store.tsx so the context contract is readable in
 // one place instead of buried above a 4k-line provider.
 import type { AskInboxEntry } from '../services/ask-inbox';
-import type { ModelProviderOption } from '../services/dashboard';
+import type { AroundPagination, ModelProviderOption } from '../services/dashboard';
 import type { GatewayWs, ServerAsk, SessionSummary } from '../services/gateway-ws';
 import type { LiveSessionMap } from './live-sessions';
+import type { TimelineIndex } from '../utils/session-timeline';
 import type { Attachment, QueuedPrompt, SubagentRow, TodoItem, UiMessage } from '../utils/messages';
 
 export interface AgentProfile {
@@ -68,6 +69,39 @@ export interface AppStore {
   loadOlderMessages: () => Promise<boolean>;
   /** Drop the window head past the soft cap (refetchable, never the live tail). */
   trimHead: () => void;
+  // ── Jump to prompt ────────────────────────────────────────────────────────
+  // The growing-limit paging above stops at CHAT_HISTORY_MAX_ROWS, so a longer
+  // session reports no more history with rows still on the server. These reach
+  // any prompt through the gateway's cursor endpoints instead.
+  /** Every human prompt in the open session; null until first loaded. */
+  index: TimelineIndex | null;
+  indexLoading: boolean;
+  indexError: string | null;
+  /** True when the index holds every prompt the server counted. */
+  indexExhausted: boolean;
+  loadIndex: (opts?: { append?: boolean }) => Promise<void>;
+  /**
+   * True when the tail paging gave up at CHAT_HISTORY_MAX_ROWS with rows still
+   * on the server. Distinct from `historyExhausted`, which also means "cannot
+   * page further" but implies the transcript really does start here.
+   */
+  historyCapped: boolean;
+  /** True while `messages` is the session tail; false inside a jumped window. */
+  atTail: boolean;
+  /** Where the jumped window sits in the transcript. */
+  jumpAt: AroundPagination | null;
+  jumping: boolean;
+  jumpError: string | null;
+  /** Replace the window with the page anchored at this prompt row. */
+  jumpTo: (rowId: number) => Promise<boolean>;
+  /** Page within the jumped window, anchored on the neighbouring prompt. */
+  jumpOlder: () => Promise<boolean>;
+  jumpNewer: () => Promise<boolean>;
+  canJumpOlder: boolean;
+  canJumpNewer: boolean;
+  /** Leave the jumped window and restore the tail. */
+  backToTail: () => Promise<void>;
+  clearJump: () => void;
   input: string;
   setInput: (v: string) => void;
   model: string;

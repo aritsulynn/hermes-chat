@@ -48,6 +48,30 @@ test('session transcript keeps stored-id slashes as path separators', () => {
   assert.equal(api.cronRunMessages('r1', ''), '/api/sessions/r1/messages?order=oldest&limit=100');
 });
 
+test('timeline and jump routes address a row id and keep stored-id slashes', () => {
+  assert.equal(
+    api.sessionTimeline('abc/def'),
+    '/api/sessions/abc/def/timeline?after_row_id=0&limit=200&profile=default',
+  );
+  assert.equal(
+    api.sessionTimeline('abc', { afterRowId: 42, limit: 500, profile: 'work' }),
+    '/api/sessions/abc/timeline?after_row_id=42&limit=500&profile=work',
+  );
+  // after_row_id=0 is the server's "from the beginning". The query builder skips
+  // falsy values, so pinning it here catches that changing — dropping the param
+  // also works today, but only by accident.
+  assert.equal(
+    api.sessionMessagesAround('abc/def', 7),
+    '/api/sessions/abc/def/messages/around?row_id=7&limit=120&profile=default',
+  );
+  assert.equal(
+    api.sessionMessagesAround('abc', 7, { limit: 40, profile: 'work' }),
+    '/api/sessions/abc/messages/around?row_id=7&limit=40&profile=work',
+  );
+  assert.equal(api.sessionLatestDescendant('abc/def'), '/api/sessions/abc/def/latest-descendant');
+  assert.equal(api.sessionLatestDescendant('abc', 'work'), '/api/sessions/abc/latest-descendant?profile=work');
+});
+
 test('withProfile appends without clobbering an existing query', () => {
   assert.equal(api.withProfile('/api/x', ''), '/api/x');
   assert.equal(api.withProfile('/api/x', '  '), '/api/x');

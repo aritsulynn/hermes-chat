@@ -76,7 +76,7 @@ The mobile app already has helpers, so adding an endpoint is fast:
 | Plugins                     | `/plugins`    | `PluginsPage.tsx`                         | **done**                                           | L    |
 | Pairing                     | `/pairing`    | `PairingPage.tsx`                         | **done**                                           | M    |
 | Webhooks                    | `/webhooks`   | `WebhooksPage.tsx`                        | **done**                                           | M    |
-| Timeline / branch view      | `/sessions`   | `SessionsPage.tsx`                        | missing                                            | M    |
+| Timeline / branch view      | `/sessions`   | `SessionsPage.tsx`                        | **done** (chat header)                             | M    |
 | i18n + Thai                 | whole app     | `src/i18n/`                               | missing                                            | L    |
 
 ---
@@ -177,10 +177,24 @@ The mobile app already has helpers, so adding an endpoint is fast:
 - Shipped: `src/features/webhooks/index.tsx` (route `/webhooks`) +
   `src/services/webhooks.ts`; create sheet surfaces the one-time HMAC secret.
 
-### 4.7 Timeline / branch view `M`
+### 4.7 Timeline / branch view `M` — done
 
 - `GET /api/sessions/{id}/timeline`, `/latest-descendant`, `/messages/around`
 - Reference: `SessionsPage.tsx`
+- Shipped: `src/utils/session-timeline.ts` (index normalisation + cursor
+  arithmetic), `src/store/useJump.ts` (the slice), and a **Jump to prompt** sheet
+  on the chat header. `utils/session-timeline` is a leaf so the cursor rules are
+  testable — Node's type-stripping runner cannot import the slice, which pulls in
+  React and the store.
+- The cursor is the part worth reading the code for: `next_cursor` is a *sort*
+  id (the first physical row of the last logical turn), not the entry's own
+  `row_id`, and the cursor row comes back as the first entry of the next page.
+  Both are pinned by tests.
+- `latest-descendant` is wired in `services/dashboard.ts`
+  (`getLatestDescendant`) but not yet called by a screen.
+- Fixed on the way: the growing-limit tail paging never worked through the UI.
+  See the commit message — two independent bugs, one of which made every
+  session look exhausted on its first fetch.
 
 ### 4.8 MCP servers + catalog `L` — done
 

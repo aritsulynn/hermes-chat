@@ -40,6 +40,13 @@ export interface StoreRuntime {
   historyLoadingRef: MutableRefObject<boolean>;
   /** True when the server has no rows older than the window. */
   historyExhaustedRef: MutableRefObject<boolean>;
+  /**
+   * True when load-older gave up at CHAT_HISTORY_MAX_ROWS rather than because
+   * the server ran out of rows. Both mean "the tail fetch cannot go further",
+   * but only this one means rows are still on the server — so the UI offers the
+   * jump sheet instead of claiming this is the start of the conversation.
+   */
+  historyCappedRef: MutableRefObject<boolean>;
   // ── Orchestrator refs ──────────────────────────────────────────────────
   profilesRef: MutableRefObject<AgentProfile[]>;
   sessionIdRef: MutableRefObject<string | null>;
@@ -78,6 +85,7 @@ export function useStoreRuntime(): StoreRuntime {
     historyLimitRef: useRef(0),
     historyLoadingRef: useRef(false),
     historyExhaustedRef: useRef(true),
+    historyCappedRef: useRef(false),
     profilesRef: useRef<AgentProfile[]>([]),
     sessionIdRef: useRef<string | null>(null),
     editingRowRef: useRef<number | null>(null),

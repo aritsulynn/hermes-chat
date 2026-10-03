@@ -2,7 +2,7 @@
 import { useCallback } from 'react';
 import { navigate } from '../nav';
 import type { HistoryMessage } from '../../services/gateway-ws';
-import { getSessionMessages, getSessionExportText } from '../../services/dashboard';
+import { getSessionMessages, getSessionExportText, lastSessionMessagesRawCount } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
@@ -186,7 +186,14 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
             connectionScope(targetHost, targetUser),
             async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
           );
-          historyExhausted = hist.length < CHAT_HISTORY_PAGE;
+          // The RAW row count, not `hist.length`: historyItemsFrom drops rows
+          // (model-switch markers, hidden rows, empty tool results), so a full
+          // page can project to fewer items than it fetched. Comparing the
+          // projected length to the page limit reported almost every session as
+          // exhausted on its first fetch, which is what made the growing-limit
+          // paging unreachable — no "load older" control, transcript appearing to
+          // start mid-conversation.
+          historyExhausted = lastSessionMessagesRawCount() < CHAT_HISTORY_PAGE;
         } catch {
           hist = [];
         }

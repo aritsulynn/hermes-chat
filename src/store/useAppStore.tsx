@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 import {
   checkMe,
   getSessionMessages,
+  lastSessionMessagesRawCount,
   opsGet as dashboardOpsGet,
   opsMut as dashboardOpsMut,
   passwordLogin,
@@ -73,6 +74,8 @@ import { useSessionsSlice } from './slices/useSessions';
 import { useAskInboxSlice } from './slices/useAskInbox';
 import { useAskRepliesSlice } from './slices/useAskReplies';
 import { useToolRefreshSlice } from './slices/useToolRefresh';
+import { useJumpSlice } from './useJump';
+import type { JumpCtx } from './useJump';
 import { useLiveTurnSlice } from './slices/useLiveTurn';
 import { useCommandsSlice } from './slices/useCommands';
 import { useStoreRuntime } from './runtime';
@@ -186,6 +189,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null); // stored DB id — stable across resumes
   const [sessionTitle, setSessionTitle] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  // True once the tail paging has hit CHAT_HISTORY_MAX_ROWS with rows still on
+  // the server. State, not just a ref, because the chat header has to re-render
+  // and swap its "load older" affordance for the jump sheet.
+  const [historyCapped, setHistoryCapped] = useState(false);
   // Transcript window (10k+ sessions): only a tail page lives in `messages`;
   // older rows are paged in on demand and the head auto-trims past the cap.
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
@@ -217,6 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     historyLimitRef,
     historyLoadingRef,
     historyExhaustedRef,
+    historyCappedRef,
     profilesRef,
     sessionIdRef,
 
@@ -292,6 +300,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     historyLimitRef.current = 0;
     historyLoadingRef.current = false;
     historyExhaustedRef.current = true;
+    // A new session has not hit the cap yet; leaving this set would tell the
+    // chat header to offer a jump sheet for a conversation of three messages.
+    historyCappedRef.current = false;
+    setHistoryCapped(false);
     setHistoryLoadingMore(false);
     setHistoryExhausted(true);
     setTrimmedOlder(0);
@@ -433,6 +445,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const trimHead = useCallback(() => {
     const cur = messagesRef.current;
     if (cur.length <= CHAT_WINDOW_SOFT_CAP || generatingRef.current) return;
+    // Never inside a jumped window: those rows were fetched at an anchor, not
+    // paged from the tail, so trimming one would silently rewrite history the
+    // user navigated to and the head trim has nothing to page back from.
+    if (!jump.atTail) return;
     const drop = cur.length - CHAT_WINDOW_TRIM_KEEP;
     if (drop <= 0) return;
     const next = cur.slice(drop);
@@ -455,13 +471,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const targetUser = latest.current.username;
     const cur = messagesRef.current;
     if (!h || !sk || cur.length === 0) return false;
-    if (historyLoadingRef.current || historyExhaustedRef.current || generatingRef.current) return false;
+    // Inside a jumped window the tail's growing-limit paging is meaningless — it
+    // would fetch a window the user did not ask for and splice it onto an
+    // unrelated one. Jump sheet handles navigation here; see useJump.
+    if (!jump.atTail) return false;
+    // Cap check BEFORE the exhausted guard, and that ordering is the whole point.
+    // Both mean "the tail fetch cannot page further", and on a long session both
+    // are true at once — the window sits at the cap AND the server has more rows.
+    // With the exhausted guard first, `return false` fired before the cap was
+    // ever evaluated, so the flag that tells the UI to offer the jump sheet was
+    // unreachable in precisely the case it exists for.
     const nextLimit = Math.min(historyLimitRef.current + CHAT_HISTORY_PAGE, CHAT_HISTORY_MAX_ROWS);
     if (nextLimit <= historyLimitRef.current) {
       historyExhaustedRef.current = true;
       setHistoryExhausted(true);
+      historyCappedRef.current = true;
+      setHistoryCapped(true);
       return false;
     }
+    if (historyLoadingRef.current || historyExhaustedRef.current || generatingRef.current) return false;
     historyLoadingRef.current = true;
     setHistoryLoadingMore(true);
     try {
@@ -489,7 +517,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Older rows existed beyond the anchor — the window is not exhaustive.
         historyExhaustedRef.current = false;
         setHistoryExhausted(false);
-      } else if (items.length < nextLimit) {
+      } else if (lastSessionMessagesRawCount() < nextLimit) {
         historyExhaustedRef.current = true;
         setHistoryExhausted(true);
       }
@@ -554,6 +582,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Post-reconnect resync: the replay ring had already dropped the gap, so the
   // transcript must be rebuilt from REST rather than trusted piecemeal.
   resyncRef.current = () => {
+    // Rebuild the loaded window (not a fixed 200): paging/trim state stays
+    // intact across a reconnect instead of collapsing back to a full load.
+    void refreshTail().catch((e) => console.warn('[store] resync failed', e));
+  };
+
+  // Rebuild the tail window from REST. Shared by the reconnect resync and by
+  // jumping back from a prompt window, which is why it is a named helper rather
+  // than inline in either place.
+  const refreshTail = useCallback(async () => {
     const h = latest.current.host;
     const profile = latest.current.activeProfile;
     const epoch = profileEpochRef.current;
@@ -562,44 +599,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const targetUser = latest.current.username;
     const runtime = sessionIdRef.current;
     if (!h || !sk || !runtime) return;
-    void (async () => {
-      try {
-        // Rebuild the loaded window (not a fixed 200): paging/trim state stays
-        // intact across a reconnect instead of collapsing back to a full load.
-        const hist = await getSessionMessages(
-          h,
-          cookie.current,
-          sk,
-          profile,
-          historyLimitRef.current > 0 ? historyLimitRef.current : CHAT_HISTORY_PAGE,
-          connectionScope(h, targetUser),
-          async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
-        );
-        if (
-          activeProfileRef.current !== profile ||
-          profileEpochRef.current !== epoch ||
-          connectionEpochRef.current !== connectionEpoch ||
-          latest.current.sessionKey !== sk ||
-          sessionIdRef.current !== runtime
-        )
-          return;
-        if (hist.length) {
-          const items = historyToItems(hist);
-          clearStreaming();
-          if (generatingRef.current) {
-            // Rebuild dropped the live bubble — re-anchor so streaming continues.
-            setMessages(reanchorLiveTurn(items));
-            lastTurnEventAt.current = Date.now();
-          } else {
-            setMessages(items);
-          }
-          setToolLine(null);
-        }
-      } catch (e) {
-        console.warn('[store] resync failed', e);
+    const hist = await getSessionMessages(
+      h,
+      cookie.current,
+      sk,
+      profile,
+      historyLimitRef.current > 0 ? historyLimitRef.current : CHAT_HISTORY_PAGE,
+      connectionScope(h, targetUser),
+      async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
+    );
+    if (
+      activeProfileRef.current !== profile ||
+      profileEpochRef.current !== epoch ||
+      connectionEpochRef.current !== connectionEpoch ||
+      latest.current.sessionKey !== sk ||
+      sessionIdRef.current !== runtime
+    )
+      return;
+    if (hist.length) {
+      const items = historyToItems(hist);
+      clearStreaming();
+      if (generatingRef.current) {
+        // Rebuild dropped the live bubble — re-anchor so streaming continues.
+        setMessages(reanchorLiveTurn(items));
+        lastTurnEventAt.current = Date.now();
+      } else {
+        setMessages(items);
       }
-    })();
-  };
+      setToolLine(null);
+    }
+  }, [acceptRotatedCookie]);
+
+  // Jump-to-prompt. Composed here, after refreshTail, because the slice needs it
+  // to restore the tail window when the user leaves a jumped one. Everything else
+  // comes off the accumulating ctx, which already carries host / profile /
+  // sessionKey / the cookie ref and the two scope epochs.
+  const jump = add(useJumpSlice({ ...(ctx as unknown as JumpCtx), refreshTail }));
 
   const hydrateSessionContext = useCallback((g: GatewayWs, sid: string) => {
     contextHydrateCancelRef.current?.();
@@ -915,6 +950,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       trimmedOlder,
       loadOlderMessages,
       trimHead,
+      // Jump-to-prompt: the prompt index, the jumped-window state, and the
+      // transitions. `atTail` matters beyond the sheet — the head-trim and the
+      // composer both have to know the window is not the session tail.
+      index: jump.index,
+      indexLoading: jump.indexLoading,
+      indexError: jump.indexError,
+      indexExhausted: jump.indexExhausted,
+      loadIndex: jump.loadIndex,
+      historyCapped,
+      atTail: jump.atTail,
+      jumpAt: jump.jumpAt,
+      jumping: jump.jumping,
+      jumpError: jump.jumpError,
+      jumpTo: jump.jumpTo,
+      jumpOlder: jump.jumpOlder,
+      jumpNewer: jump.jumpNewer,
+      canJumpOlder: jump.canJumpOlder,
+      canJumpNewer: jump.canJumpNewer,
+      backToTail: jump.backToTail,
+      clearJump: jump.clearJump,
       input,
       setInput,
       model,
@@ -1020,6 +1075,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       trimmedOlder,
       loadOlderMessages,
       trimHead,
+      // Jump slice state and its stable transitions. The callbacks read refs
+      // internally, so they are identity-stable and listed once.
+      jump.index,
+      jump.indexLoading,
+      jump.indexError,
+      jump.indexExhausted,
+      jump.loadIndex,
+      historyCapped,
+      jump.atTail,
+      jump.jumpAt,
+      jump.jumping,
+      jump.jumpError,
+      jump.jumpTo,
+      jump.jumpOlder,
+      jump.jumpNewer,
+      jump.canJumpOlder,
+      jump.canJumpNewer,
+      jump.backToTail,
+      jump.clearJump,
       input,
       setInput,
       model,

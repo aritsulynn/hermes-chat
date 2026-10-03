@@ -17,7 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../components/ui/dropdown-menu';
-import { Download } from 'lucide-react';
+import { Download, ListTree } from 'lucide-react';
 
 export function ChatNormalHeader({
   dark,
@@ -31,6 +31,7 @@ export function ChatNormalHeader({
   costUsd,
   subagents,
   onExport,
+  onJump,
 }: {
   dark: boolean;
   title: string;
@@ -45,6 +46,8 @@ export function ChatNormalHeader({
   subagents?: number | null;
   /** Download the open session as JSON. */
   onExport?: () => void;
+  /** Open the prompt index — the only way past the transcript window cap. */
+  onJump?: () => void;
 }) {
   // The ring is a menu: a header badge is a one-tap summary, and the numbers
   // behind it are four separate fields that have no other home in the UI.
@@ -96,6 +99,15 @@ export function ChatNormalHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+          {/* Its own button rather than an item in the context menu: that menu's
+              trigger only renders when the session has hydrated a context
+              reading, and jumping to a prompt has to work in a resumed session
+              that does not have one yet. */}
+          {onJump && (
+            <Button variant="ghost" size="iconSm" aria-label="Jump to a prompt" onClick={onJump} className="rounded-lg">
+              <ListTree size={18} color={headerIcon} />
+            </Button>
           )}
         </div>
       }
