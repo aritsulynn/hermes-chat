@@ -7,6 +7,11 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Vite's dep-optimization cache. Normally this lands in node_modules/.vite, but
+# it sits at the repo root here — and unignored it poisons `npm run lint` and
+# `npm run format:check` with thousands of errors from prebundled vendor code.
+.vite/
+
 # agent tooling output (screenshots from the browser panel)
 .openchamber/
 

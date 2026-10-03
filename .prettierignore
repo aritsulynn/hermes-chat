@@ -4,6 +4,9 @@ package-lock.json
 .openchamber
 public
 
+# Vite's dep-optimization cache — prebundled vendor code, not ours to format.
+.vite
+
 # Capacitor / Gradle output. `public` above only matches at the repo root, and
 # the bundle also lands in android/**/assets/public + android/**/build.
 android

@@ -15,6 +15,11 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/.openchamber/**',
       '**/public/**',
+      // Vite's dep-optimization cache. Unignored it contributed ~3,000 errors
+      // from prebundled vendor code, burying the handful of real warnings in
+      // src/. Listed here as well as in .gitignore: ignoring it for git does
+      // not stop eslint from walking it.
+      '**/.vite/**',
       // Gradle output — native-bridge.js is a Capacitor-generated asset.
       '**/build/**',
     ],
