@@ -8,6 +8,7 @@ import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { connectionScope, getKanbanBoard, saveKanbanBoard } from '../../services/connection';
 import * as api from '../../services/api';
+import { opsKey, useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -18,8 +19,8 @@ import { ConfirmDialog } from '../../components/ui/dialog';
 import { FormSheet } from '../../components/ui/sheets';
 import { CardChips } from './components/CardChips';
 import { screenStyle } from '../../theme';
-import { asTask, dotOf } from './helpers';
-import type { BoardMeta, KanbanBoardData, KanbanTask } from './types';
+import { asBoard, asBoardList, dotOf, pickBoardSlug } from './helpers';
+import type { KanbanBoardData, KanbanTask } from './types';
 
 // Memoized task row: opening/editing one card must not re-render every card
 // on the board. The press binding closes over the row's own task, so the
@@ -52,16 +53,11 @@ const KanbanTaskRow = memo(function KanbanTaskRow({
 });
 
 export function KanbanScreen() {
-  const { booting, authed, host, username, opsGet, opsMut, getAuthScope } = useApp();
+  const { booting, authed, host, username, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
 
-  const [boards, setBoards] = useState<BoardMeta[]>([]);
   const [slug, setSlug] = useState('');
-  const [board, setBoard] = useState<KanbanBoardData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // Per-column collapse overrides; absence = auto (empty + archived collapse).
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Detail sheet task + its editable fields.
@@ -70,23 +66,11 @@ export function KanbanScreen() {
   const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editBody, setEditBody] = useState('');
-  const [saving, setSaving] = useState(false);
   // Create sheet fields.
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newStatus, setNewStatus] = useState('');
-  // Bottom sheets. Plain controlled booleans: the sheets are Radix dialogs,
-  // so there is no imperative present/dismiss to marshal.
-  useEffect(() => {
-    if (authed) return;
-    setBoards([]);
-    setSlug('');
-    setBoard(null);
-    setCollapsed({});
-    setDetail(null);
-    setError(null);
-  }, [authed]);
 
   // A `navigation.setOptions({ headerLeft, title })` effect used to live here.
   // Under React Navigation the *navigator* drew the screen's title bar, so this
@@ -108,90 +92,59 @@ export function KanbanScreen() {
     [slug],
   );
 
-  const loadBoards = useCallback(async (): Promise<BoardMeta[]> => {
-    const scope = getAuthScope();
-    try {
-      const r: any = await opsGet(api.kanbanBoards());
-      if (getAuthScope() !== scope) return [];
-      const rows = Array.isArray(r?.boards) ? r.boards : [];
-      const list: BoardMeta[] = rows.map((b: any) => ({
-        slug: String(b?.slug ?? ''),
-        ...(typeof b?.name === 'string' ? { name: b.name } : {}),
-        ...(typeof b?.is_current === 'boolean' ? { is_current: b.is_current } : {}),
-        ...(typeof b?.total === 'number' ? { total: b.total } : {}),
-      }));
-      setBoards(list);
-      return list;
-    } catch {
-      if (getAuthScope() === scope) setBoards([]);
-      return [];
-    }
-  }, [getAuthScope, opsGet]);
+  // Two separate queries, and that is the point. The old screen ran both loads
+  // concurrently inside one `reload` and wrote both into one pair of useState,
+  // with no guard at all: switch boards quickly and the previous board's
+  // response could land after the new one's and repaint the wrong board. Here
+  // the slug is part of the board query's key, so a stale response belongs to a
+  // key nobody is reading any more, and the scope in both keys means a
+  // superseded fetch cannot render under a new connection either.
+  const boardsQ = useOpsQuery({
+    key: ['kanban', 'boards'],
+    get: (get) => get(api.kanbanBoards()),
+    select: asBoardList,
+    enabled: authed,
+  });
+  const boardQ = useOpsQuery({
+    key: ['kanban', 'board', slug],
+    get: (get) => get(api.kanbanBoard(slug ? `?board=${encodeURIComponent(slug)}&include_archived=true` : '')),
+    select: asBoard,
+    enabled: authed,
+  });
 
-  const loadBoard = useCallback(async (): Promise<KanbanBoardData | null> => {
-    const scope = getAuthScope();
-    try {
-      const r: any = await opsGet(api.kanbanBoard(boardQuery('include_archived=true')));
-      if (getAuthScope() !== scope) return null;
-      const cols = Array.isArray(r?.columns) ? r.columns : [];
-      const data: KanbanBoardData = {
-        columns: cols.map((c: any) => ({
-          name: String(c?.name ?? '(col)'),
-          tasks: Array.isArray(c?.tasks) ? c.tasks.map(asTask) : [],
-        })),
-      };
-      setBoard(data);
-      setError(null);
-      return data;
-    } catch (e) {
-      if (getAuthScope() === scope) {
-        setError(errMsg(e));
-        setBoard(null);
-      }
-      return null;
-    }
-  }, [getAuthScope, opsGet, boardQuery]);
+  const boards = boardsQ.data ?? [];
+  const board = boardQ.data ?? null;
+  const loading = boardsQ.isPending || boardQ.isPending;
+  const refreshing = boardsQ.isRefetching || boardQ.isRefetching;
+  const failed = boardsQ.error ?? boardQ.error;
+  const error = failed ? errMsg(failed) : null;
 
-  const reload = useCallback(
-    async (pull = false) => {
-      if (pull) setRefreshing(true);
-      else setLoading(true);
-      try {
-        const list = await loadBoards();
-        // First run: restore the saved board, else the server current.
-        if (!slug) {
-          const saved = await getKanbanBoard(connectionScope(host, username)).catch(() => null);
-          const pick =
-            (saved && list.some((b) => b.slug === saved) && saved) ||
-            list.find((b) => b.is_current)?.slug ||
-            list[0]?.slug ||
-            '';
-          if (pick && pick !== slug) {
-            setSlug(pick);
-            return; // boardQuery changes → effect below reloads the board
-          }
-        }
-        await loadBoard();
-      } finally {
-        if (pull) setRefreshing(false);
-        else setLoading(false);
-      }
-    },
-    [loadBoards, loadBoard, slug, host, username],
-  );
+  const reload = () => {
+    void boardsQ.refetch();
+    void boardQ.refetch();
+  };
 
-  // Board body follows the selected slug.
+  // First run picks the board: this account's last one, else the server's
+  // current, else the first. Reads the saved slug from storage rather than
+  // storing it in state, so it cannot drift out of step with the query cache.
   useEffect(() => {
-    if (!authed) return;
+    if (slug || !boardsQ.data) return;
+    let live = true;
+    void getKanbanBoard(connectionScope(host, username))
+      .catch(() => null)
+      .then((saved) => {
+        if (live) setSlug(pickBoardSlug(boardsQ.data!, saved));
+      });
+    return () => {
+      live = false;
+    };
+  }, [slug, boardsQ.data, host, username]);
+
+  // Per-board view state resets when the board changes.
+  useEffect(() => {
     setCollapsed({});
     setDetail(null);
-    setLoading(true);
-    void loadBoard().finally(() => setLoading(false));
-  }, [authed, slug, loadBoard]);
-
-  useEffect(() => {
-    if (authed) void reload();
-  }, [authed, reload]);
+  }, [slug]);
 
   const pickSlug = useCallback(
     (s: string) => {
@@ -216,35 +169,35 @@ export function KanbanScreen() {
     setCollapsed((p) => ({ ...p, [name]: next }));
   }, []);
 
-  const mutate = async (fn: () => Promise<unknown>, after?: () => void) => {
-    const scope = getAuthScope();
-    setSaving(true);
-    try {
-      await fn();
-      if (getAuthScope() !== scope) return;
-      const b = await loadBoard();
-      after?.();
-      // Keep the detail sheet on the fresh row so consecutive moves work.
-      if (detail && b) {
-        const fresh = b.columns.flatMap((c) => c.tasks).find((t) => t.id === detail.id);
-        if (fresh) {
-          setDetail(fresh);
-          setEditTitle(fresh.title);
-          setEditBody(fresh.body ?? '');
-        } else {
-          setDetail(null);
-        }
+  // One mutation for every task write (move / edit / delete / create). `done`
+  // invalidates the board key, which is the old `await loadBoard()` tail — and
+  // `onSuccess` runs after that refetch settles so the open detail sheet can be
+  // re-anchored on the fresh row, which is what lets two consecutive moves work
+  // from the same sheet.
+  const taskWrite = useOpsMutation({
+    mutationFn: (opsMut, vars: { path: string; method: 'POST' | 'PATCH' | 'DELETE'; body?: unknown }) =>
+      opsMut(vars.path, vars.method, vars.body),
+    done: [['kanban', 'board', slug]],
+    onSuccess: (_data, _vars, client) => {
+      if (!detail) return;
+      const fresh = client
+        .getQueryData<KanbanBoardData>([...opsKey('kanban', 'board', slug), getAuthScope()])
+        ?.columns.flatMap((c) => c.tasks)
+        .find((t) => t.id === detail.id);
+      if (fresh) {
+        setDetail(fresh);
+        setEditTitle(fresh.title);
+        setEditBody(fresh.body ?? '');
+      } else {
+        setDetail(null);
       }
-    } catch (e) {
-      if (getAuthScope() === scope) setError(errMsg(e));
-    } finally {
-      if (getAuthScope() === scope) setSaving(false);
-    }
-  };
+    },
+  });
+  const saving = taskWrite.isPending;
 
   const moveTask = (t: KanbanTask, status: string) => {
     if (!t.id || t.status === status) return;
-    void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'PATCH', { status }));
+    taskWrite.mutate({ path: api.kanbanTask(t.id, boardQuery()), method: 'PATCH', body: { status } });
   };
 
   const saveDetail = () => {
@@ -256,7 +209,7 @@ export function KanbanScreen() {
       setDetail(null);
       return;
     }
-    void mutate(() => opsMut(api.kanbanTask(detail.id, boardQuery()), 'PATCH', patch));
+    taskWrite.mutate({ path: api.kanbanTask(detail.id, boardQuery()), method: 'PATCH', body: patch });
   };
 
   const deleteDetail = () => {
@@ -265,7 +218,7 @@ export function KanbanScreen() {
     setConfirmDelete({
       title: 'Delete task',
       body: `"${t.title}"? This can't be undone.`,
-      run: () => void mutate(() => opsMut(api.kanbanTask(t.id, boardQuery()), 'DELETE')),
+      run: () => taskWrite.mutate({ path: api.kanbanTask(t.id, boardQuery()), method: 'DELETE' }),
     });
   };
 
@@ -280,18 +233,23 @@ export function KanbanScreen() {
       cols[0] ||
       ''
     ).trim();
-    void mutate(
-      () =>
-        opsMut(api.kanbanTasks(boardQuery()), 'POST', {
+    taskWrite.mutate(
+      {
+        path: api.kanbanTasks(boardQuery()),
+        method: 'POST',
+        body: {
           title,
           ...(newBody.trim() ? { body: newBody.trim() } : {}),
           ...(status ? { status } : {}),
-        }),
-      () => {
-        setShowCreate(false);
-        setNewTitle('');
-        setNewBody('');
-        setNewStatus('');
+        },
+      },
+      {
+        onSuccess: () => {
+          setShowCreate(false);
+          setNewTitle('');
+          setNewBody('');
+          setNewStatus('');
+        },
       },
     );
   };
@@ -319,7 +277,7 @@ export function KanbanScreen() {
               subtitle={activeBoard?.name}
               actions={
                 <div className="flex items-center gap-0.5">
-                  <HeaderIconButton aria-label="Refresh board" onClick={() => void reload(true)}>
+                  <HeaderIconButton aria-label="Refresh board" onClick={reload}>
                     <RefreshCw
                       size={20}
                       color={dark ? '#e5e5e5' : '#333'}

@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { AppProvider } from './hooks/app-store';
 import { AppShell } from './AppShell';
 import { APP_ROUTES, FALLBACK_PATH } from './routes';
 import { LoginScreen } from './features/login';
 import { initNativeChrome, isNativeShell } from './platform';
+import { queryClient } from './store/query-client';
 
 /**
  * `BrowserRouter` on the web (a deep link like /chat survives a reload because
@@ -36,19 +38,25 @@ export default function App() {
     void initNativeChrome();
   }, []);
   return (
-    <Router>
-      <AppProvider>
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<LoginScreen />} />
-          <Route element={<AppShell />}>
-            {APP_ROUTES.map((r) => (
-              <Route key={r.path} path={r.path} element={r.element} />
-            ))}
-            <Route path="*" element={<Navigate to={FALLBACK_PATH} replace />} />
-          </Route>
-        </Routes>
-      </AppProvider>
-    </Router>
+    // QueryClientProvider sits OUTSIDE AppProvider on purpose: the ops hooks
+    // read opsGet out of the store, so the cache has to be above the component
+    // that owns it, and the cache must outlive a logout/login cycle (the scope
+    // in each key is what invalidates the old entries, not a client swap).
+    <QueryClientProvider client={queryClient}>
+      <Router>
+        <AppProvider>
+          <Routes>
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/login" element={<LoginScreen />} />
+            <Route element={<AppShell />}>
+              {APP_ROUTES.map((r) => (
+                <Route key={r.path} path={r.path} element={r.element} />
+              ))}
+              <Route path="*" element={<Navigate to={FALLBACK_PATH} replace />} />
+            </Route>
+          </Routes>
+        </AppProvider>
+      </Router>
+    </QueryClientProvider>
   );
 }
