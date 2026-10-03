@@ -4,11 +4,12 @@
 // sections: the servers the profile has configured (toggle, test, OAuth,
 // delete) and the catalog of installable entries (install with declared env
 // secrets; git-bootstrap entries run as a background action).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Check, Download, ExternalLink, Plus, RefreshCw, Server, Shield, Trash2, X, Zap } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -35,6 +36,21 @@ import {
 
 type Mode = 'servers' | 'catalog';
 
+/** What the screen reads in one go — the servers list and the catalog. */
+interface McpPayload {
+  servers: McpServer[];
+  catalog: McpCatalogEntry[];
+}
+
+/** Action poll cadence, ms. */
+const POLL_MS = 1200;
+
+// Stable empty values, so the `??`s below do not hand a memo a fresh array on
+// every render while the query is still pending.
+const NO_SERVERS: McpServer[] = [];
+const NO_CATALOG: McpCatalogEntry[] = [];
+const NO_LOG: string[] = [];
+
 function transportBadgeClass(t: string): string {
   switch (t) {
     case 'http':
@@ -47,209 +63,140 @@ function transportBadgeClass(t: string): string {
 }
 
 export function McpScreen() {
-  const { authed, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { authed, activeProfile, opsMut, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
   const profile = activeProfile;
+  const mcpKey = ['mcp', profile];
 
   const [mode, setMode] = useState<Mode>('servers');
-  const [servers, setServers] = useState<McpServer[]>([]);
-  const [catalog, setCatalog] = useState<McpCatalogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
-  const [toggling, setToggling] = useState<string | null>(null);
-  const [testing, setTesting] = useState<string | null>(null);
+  // Test results are per server and outlive the request that produced them, so
+  // they stay in state keyed by name — not in the cache, which is the servers
+  // list.
   const [tests, setTests] = useState<Record<string, McpServerTestResult>>({});
-  const [authenticating, setAuthenticating] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [installEntry, setInstallEntry] = useState<McpCatalogEntry | null>(null);
   const [installEnv, setInstallEnv] = useState<Record<string, string>>({});
-  const [installing, setInstalling] = useState(false);
-  // Live action log for a git-bootstrap install.
+
+  // Live action log for a git-bootstrap install. Only the id is state.
   const [action, setAction] = useState<string | null>(null);
-  const [actionLog, setActionLog] = useState<string[]>([]);
-  const [actionRunning, setActionRunning] = useState(false);
 
-  const aliveRef = useRef(true);
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
+  // Servers are the screen; the catalog is an optional extra that degrades to
+  // empty. One key, so a refresh cannot land them out of step.
+  const mcpQ = useOpsQuery<McpPayload>({
+    key: mcpKey,
+    get: async (get) => {
+      const [servers, catalog] = await Promise.all([
+        getMcpServers(get, profile),
+        getMcpCatalog(get, profile).catch((e) => {
+          console.warn('[mcp] catalog unavailable', e);
+          return { entries: [], diagnostics: [] };
+        }),
+      ]);
+      return { servers, catalog: catalog.entries };
+    },
+    enabled: authed,
+  });
+  const servers = mcpQ.data?.servers ?? NO_SERVERS;
+  const catalog = mcpQ.data?.catalog ?? NO_CATALOG;
+  const loading = mcpQ.isPending;
+  const refreshing = mcpQ.isRefetching;
+  const error = mcpQ.error ? errMsg(mcpQ.error) : null;
 
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const scope = getAuthScope();
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const [nextServers, nextCatalog] = await Promise.all([
-          getMcpServers(opsGet, profile),
-          getMcpCatalog(opsGet, profile).catch((e) => {
-            console.warn('[mcp] catalog unavailable', e);
-            return { entries: [], diagnostics: [] };
-          }),
-        ]);
-        if (getAuthScope() !== scope) return;
-        setServers(nextServers);
-        setCatalog(nextCatalog.entries);
-      } catch (e) {
-        if (getAuthScope() === scope) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope) {
-          setLoading(false);
-          setRefreshing(false);
-        }
+  // Fetches once on mount, then only while the install is still running.
+  // `running !== true` matches how `normalizeActionStatus` reads the field; the
+  // two have to agree or this would keep polling a payload that renders as done.
+  const actionQ = useOpsQuery({
+    key: ['mcp', 'action', action],
+    get: (get) => get(api.actionStatus(String(action), 300)),
+    select: normalizeActionStatus,
+    enabled: !!action && authed,
+    refetchInterval: (q) => {
+      const raw = q.state.data as { running?: unknown } | undefined;
+      const finished = raw != null && raw.running !== true;
+      return q.state.error || finished ? false : POLL_MS;
+    },
+  });
+  const actionLog = actionQ.data?.lines ?? NO_LOG;
+  // No data and no error yet is the first poll still in flight — "Starting…".
+  const actionRunning = !!action && (actionQ.data ? actionQ.data.running : !actionQ.error);
+
+  const toggleServer = useOpsMutation<void, { name: string; enabled: boolean }, McpPayload>({
+    mutationFn: (mut, v) => setMcpServerEnabled(mut, v.name, v.enabled),
+    done: [mcpKey],
+    optimistic: {
+      key: mcpKey,
+      patch: (current, v) => ({
+        servers: (current?.servers ?? []).map((s) => (s.name === v.name ? { ...s, enabled: v.enabled } : s)),
+        catalog: current?.catalog ?? [],
+      }),
+    },
+    onError: (e) => toast({ title: 'Toggle failed', description: errMsg(e), variant: 'destructive' }),
+  });
+  const toggling = toggleServer.isPending ? toggleServer.variables?.name : undefined;
+
+  const runTest = useOpsMutation<McpServerTestResult, string>({
+    mutationFn: (mut, name) => testMcpServer(mut, name),
+    onSuccess: (res, name) => setTests((prev) => ({ ...prev, [name]: res })),
+    onError: (e, name) =>
+      setTests((prev) => ({ ...prev, [name]: { ok: false, error: errMsg(e), tools: [], prompts: 0, resources: 0 } })),
+  });
+  const testing = runTest.isPending ? runTest.variables : undefined;
+
+  const runAuth = useOpsMutation<{ url?: string }, string>({
+    mutationFn: (mut, name) => startMcpAuth(mut, name),
+    onSuccess: (res, name) => {
+      if (res.url) {
+        window.open(res.url, '_blank', 'noopener');
+        toast({ title: 'Authorize in the browser', description: name });
+      } else {
+        toast({ title: 'No authorization URL returned', variant: 'destructive' });
       }
     },
-    [getAuthScope, opsGet, profile],
-  );
+    onError: (e) => toast({ title: 'Auth failed', description: errMsg(e), variant: 'destructive' }),
+  });
+  const authenticating = runAuth.isPending ? runAuth.variables : undefined;
 
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
-
-  // Poll a git-bootstrap install action.
-  useEffect(() => {
-    if (!action) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const tick = async () => {
-      const scope = getAuthScope();
-      try {
-        const raw = await opsGet(api.actionStatus(action, 300));
-        if (cancelled || getAuthScope() !== scope) return;
-        const st = normalizeActionStatus(raw);
-        setActionLog(st.lines);
-        setActionRunning(st.running);
-        if (st.running) timer = setTimeout(tick, 1200);
-        else void load(true);
-      } catch {
-        if (!cancelled) setActionRunning(false);
-      }
-    };
-    void tick();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [action, getAuthScope, load, opsGet]);
-
-  const toggleServer = useCallback(
-    async (server: McpServer, enabled: boolean) => {
-      const scope = getAuthScope();
-      setToggling(server.name);
-      setServers((prev) => prev.map((s) => (s.name === server.name ? { ...s, enabled } : s)));
-      try {
-        await setMcpServerEnabled(opsMut, server.name, enabled);
-        if (getAuthScope() !== scope) return;
-      } catch (e) {
-        if (getAuthScope() !== scope) return;
-        setServers((prev) => prev.map((s) => (s.name === server.name ? { ...s, enabled: !enabled } : s)));
-        toast({ title: 'Toggle failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setToggling(null);
-      }
+  const removeServer = useOpsMutation<void, string>({
+    mutationFn: (mut, name) => deleteMcpServer(mut, name),
+    done: [mcpKey],
+    onSuccess: (_d, name) => {
+      toast({ title: 'Server removed', description: name });
     },
-    [getAuthScope, opsMut],
-  );
+    onError: (e) => toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const runTest = useCallback(
-    async (server: McpServer) => {
-      const scope = getAuthScope();
-      setTesting(server.name);
-      try {
-        const res = await testMcpServer(opsMut, server.name);
-        if (getAuthScope() !== scope) return;
-        setTests((prev) => ({ ...prev, [server.name]: res }));
-      } catch (e) {
-        if (getAuthScope() === scope)
-          setTests((prev) => ({
-            ...prev,
-            [server.name]: { ok: false, error: errMsg(e), tools: [], prompts: 0, resources: 0 },
-          }));
-      } finally {
-        if (getAuthScope() === scope) setTesting(null);
-      }
-    },
-    [getAuthScope, opsMut],
-  );
-
-  const runAuth = useCallback(
-    async (server: McpServer) => {
-      const scope = getAuthScope();
-      setAuthenticating(server.name);
-      try {
-        const { url } = await startMcpAuth(opsMut, server.name);
-        if (getAuthScope() !== scope) return;
-        if (url) {
-          window.open(url, '_blank', 'noopener');
-          toast({ title: 'Authorize in the browser', description: server.name });
-        } else {
-          toast({ title: 'No authorization URL returned', variant: 'destructive' });
-        }
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Auth failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setAuthenticating(null);
-      }
-    },
-    [getAuthScope, opsMut],
-  );
-
-  const removeServer = useCallback(
-    async (server: McpServer) => {
-      const scope = getAuthScope();
-      try {
-        await deleteMcpServer(opsMut, server.name);
-        if (getAuthScope() !== scope) return;
-        toast({ title: 'Server removed', description: server.name });
-        await load(true);
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
-      }
-    },
-    [getAuthScope, load, opsMut],
-  );
-
-  const openInstall = useCallback((entry: McpCatalogEntry) => {
+  const openInstall = (entry: McpCatalogEntry) => {
     setInstallEntry(entry);
     const seed: Record<string, string> = {};
     for (const e of entry.requiredEnv) seed[e.name] = '';
     setInstallEnv(seed);
-  }, []);
+  };
 
-  const doInstall = useCallback(async () => {
-    if (!installEntry) return;
-    const scope = getAuthScope();
-    setInstalling(true);
-    try {
+  // The sheet's button carries no payload: the entry and the env values are read
+  // from state inside the fn, which is the same closure the render came from.
+  const doInstall = useOpsMutation<{ background: boolean; action: string | null }, void>({
+    mutationFn: (mut) => {
+      if (!installEntry) throw new Error('No catalog entry selected');
       const env: Record<string, string> = {};
       for (const [k, v] of Object.entries(installEnv)) if (v.trim()) env[k] = v.trim();
-      const res = await installMcpCatalogEntry(opsMut, { name: installEntry.name, env, enable: true });
-      if (getAuthScope() !== scope) return;
+      return installMcpCatalogEntry(mut, { name: installEntry.name, env, enable: true });
+    },
+    done: [mcpKey],
+    onSuccess: (res) => {
+      if (!installEntry) return;
       toast({ title: `Installed ${installEntry.name}` });
       setInstallEntry(null);
-      if (res.background && res.action) {
-        setActionLog([]);
-        setActionRunning(true);
-        setAction(res.action);
-      } else {
-        await load(true);
-      }
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Install failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setInstalling(false);
-    }
-  }, [getAuthScope, installEntry, installEnv, load, opsMut]);
+      // A git-bootstrap entry installs in the background; the poll takes over
+      // from here and `done` has already refreshed the list.
+      if (res.background && res.action) setAction(res.action);
+    },
+    onError: (e) => toast({ title: 'Install failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
   const ql = query.trim().toLowerCase();
   const visibleServers = useMemo(
@@ -294,7 +241,7 @@ export function McpScreen() {
                   <HeaderIconButton aria-label="Add MCP server" onClick={() => setAddOpen(true)}>
                     <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
-                  <HeaderIconButton aria-label="Refresh MCP" onClick={() => void load(true)}>
+                  <HeaderIconButton aria-label="Refresh MCP" onClick={() => void mcpQ.refetch()}>
                     <RefreshCw
                       size={20}
                       color={dark ? '#e5e5e5' : '#333'}
@@ -371,7 +318,7 @@ export function McpScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={() => void mcpQ.refetch()} />
           ) : mode === 'servers' ? (
             visibleServers.length === 0 ? (
               <Card>
@@ -392,10 +339,10 @@ export function McpScreen() {
                     testing={testing === s.name}
                     authenticating={authenticating === s.name}
                     test={tests[s.name]}
-                    onToggle={toggleServer}
-                    onTest={runTest}
-                    onAuth={runAuth}
-                    onDelete={removeServer}
+                    onToggle={(sv, enabled) => toggleServer.mutate({ name: sv.name, enabled })}
+                    onTest={(sv) => runTest.mutate(sv.name)}
+                    onAuth={(sv) => runAuth.mutate(sv.name)}
+                    onDelete={(sv) => removeServer.mutate(sv.name)}
                   />
                 ))}
               </div>
@@ -422,7 +369,7 @@ export function McpScreen() {
           onClose={() => setAddOpen(false)}
           onAdded={() => {
             setAddOpen(false);
-            void load(true);
+            void mcpQ.refetch();
           }}
         />
       )}
@@ -432,10 +379,10 @@ export function McpScreen() {
           entry={installEntry}
           env={installEnv}
           setEnv={setInstallEnv}
-          installing={installing}
+          installing={doInstall.isPending}
           dark={dark}
           onClose={() => setInstallEntry(null)}
-          onInstall={() => void doInstall()}
+          onInstall={() => doInstall.mutate()}
         />
       )}
     </div>
@@ -492,15 +439,15 @@ function ServerRow({
             {server.url || [server.command, ...server.args].filter(Boolean).join(' ')}
           </div>
         </div>
-        {toggling ? (
-          <Spinner size={14} color={brandColor(dark)} />
-        ) : (
-          <Switch
-            checked={server.enabled}
-            onCheckedChange={(v) => void onToggle(server, v)}
-            aria-label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
-          />
-        )}
+        {/* Kept mounted while the write is in flight, only disabled: swapping it
+            for a spinner is what used to hide the optimistic flip for the whole
+            request. */}
+        <Switch
+          checked={server.enabled}
+          disabled={toggling}
+          onCheckedChange={(v) => void onToggle(server, v)}
+          aria-label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
+        />
       </div>
 
       {test && (
