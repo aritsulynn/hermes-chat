@@ -3,24 +3,17 @@
 > Work found but not done, newest first. Each item says what it is, why it
 > matters, and where the work lands. Ordered by how much it costs a user, not by
 > how easy it is.
-> Last updated: 2026-10-03
+> Last updated: 2026-10-04
 
 ## How to test a change
 
 The web client can only talk to a gateway on the **same origin** — the session
-cookie is `SameSite=lax` and the browser enforces it. So `npm run dev` on
-`localhost:5173` pointed at `192.168.1.8:9119` cannot log in, and neither can
-`localhost:5173` → `localhost:9119` (cross-origin without
-`Access-Control-Allow-Credentials`). Three working setups:
-
-| Setup                                                                                                      | Needs                                                                    |
-| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Android APK                                                                                                | nothing — `NativeHttpPlugin` bypasses the browser network stack entirely |
-| `npm run build` + a reverse proxy serving `dist/` and forwarding `/api`, `/auth`, `/api/ws` to the gateway | a proxy; no gateway change                                               |
-| `npm run dev` on the **same host** as the gateway (e.g. `192.168.1.8:5173` → `192.168.1.8:9119`)           | the gateway's CORS allowlist must include that origin                    |
-
-Same host works because `SameSite` keys on _site_ (scheme + eTLD+1), **not on
-port** — different ports on one host are same-site, so the cookie is attached.
+cookie is `SameSite=lax` and the browser enforces it, so `npm run dev` on
+`localhost:5173` pointed at `192.168.1.8:9119` cannot log in. This is written up
+in full, with the three working setups, under
+[Deployment → the app and the gateway must share an origin](../README.md#the-app-and-the-gateway-must-share-an-origin);
+the short version is: serve `dist/` from the gateway's origin, or run the dev
+server on the gateway's own host.
 
 ---
 
@@ -68,29 +61,7 @@ block on it.
 
 ---
 
-## 3. README does not state the same-origin constraint — `S`
-
-`## Deployment` says the host must rewrite unknown paths to `index.html`. It does
-not say the app and the gateway must share an origin, which is the thing that
-actually stops a new contributor: without it the login screen reports
-`Unreachable: Failed to fetch` and the console shows a CORS error that reads
-like the gateway is down.
-
-Also missing from the README: the gateway's session cookie is always
-`SameSite=lax` (only the PKCE cookies go `None; Secure`, and only over HTTPS), so
-relaxing it is not the fix people reach for.
-
----
-
-## 4. `@tanstack/react-virtual` is a dead dependency — `S`
-
-In `package.json` `dependencies`; zero imports across `src/`. Either use it for
-the transcript (the window currently keeps a bounded array in memory) or remove
-it.
-
----
-
-## 5. Unverified behaviour — `M`
+## 3. Unverified behaviour — `M`
 
 Driven against a real gateway on 192.168.1.8:9119, but these were not observed:
 
@@ -105,7 +76,7 @@ Driven against a real gateway on 192.168.1.8:9119, but these were not observed:
 
 ---
 
-## 6. P3 — check whether Capacitor ships an HTTP plugin — `S`, speculative
+## 4. P3 — check whether Capacitor ships an HTTP plugin — `S`, speculative
 
 `NativeHttpPlugin` is hand-written because the WebView's `fetch` enforces the
 browser cookie rules. If Capacitor has its own HTTP plugin with cookie handling,
@@ -114,7 +85,7 @@ guess either way until someone reads the Capacitor docs.
 
 ---
 
-## 7. i18n + Thai — `L`
+## 5. i18n + Thai — `L`
 
 The only roadmap item still `missing`. Desktop has 20 locales, this app has none.
 Large by any measure; see `feature-parity-roadmap.md` §2.

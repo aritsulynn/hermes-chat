@@ -124,7 +124,10 @@ Then open the printed URL and enter your gateway host (for example
 `http://your-server:9119`) and your dashboard credentials.
 
 The dev server binds all interfaces (`host: true`) because the gateway is usually
-a plain-HTTP host on a LAN address.
+a plain-HTTP host on a LAN address. Open it on the **same host as the gateway**
+(`http://your-server:5173`, not `http://localhost:5173`) or the login will fail
+with `Unreachable: Failed to fetch` — see
+[the app and the gateway must share an origin](#the-app-and-the-gateway-must-share-an-origin).
 
 ## Configuration
 
@@ -306,6 +309,41 @@ above for the APK flow.
 ```
 /*  ->  /index.html  200
 ```
+
+### The app and the gateway must share an origin
+
+> [!IMPORTANT]
+> **Serving `dist/` from a different origin than the gateway will not log in**, and
+> the failure looks like the gateway is down. Fix the origin, not the CORS error.
+
+The gateway authenticates with a session cookie that is **always `SameSite=lax`**
+(only the PKCE cookies go `None; Secure`, and only over HTTPS). A cross-origin
+dashboard request arrives without that cookie, so the login you watch succeed in
+DevTools still leaves every later call unauthenticated. The browser enforces this
+before any request is sent — there is no header that fixes it, and relaxing
+`SameSite` is not the fix either.
+
+`SameSite` keys on _site_ (scheme + eTLD+1), **not on port**. So `5173` and `9119`
+on one host are already same-site and the cookie is attached; what breaks is a
+_different host_ — `localhost` versus `192.168.1.8`, say.
+
+Three setups that work:
+
+| Setup                                                                                                      | Needs                                                                    |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Android APK                                                                                                | nothing — `NativeHttpPlugin` bypasses the browser network stack entirely |
+| `npm run build` + a reverse proxy serving `dist/` and forwarding `/api`, `/auth`, `/api/ws` to the gateway | a proxy; no gateway change                                               |
+| `npm run dev` on the **same host** as the gateway (e.g. `http://192.168.1.8:5173`)                         | the gateway's CORS allowlist must include that origin                    |
+
+**How it fails.** `npm run dev` on `localhost:5173` pointed at `192.168.1.8:9119`
+reports `Unreachable: Failed to fetch`, and the console shows a CORS error. The
+gateway is answering `200` the whole time. Same for `localhost:5173` →
+`localhost:9119`: different ports on one host are same-site, but still
+cross-origin without `Access-Control-Allow-Credentials`.
+
+Note that the Android shell is unaffected — it talks to the gateway through
+`NativeHttp`, which keeps the session in the JS cookie jar instead of relying on
+the WebView's.
 
 ## Contributing
 
