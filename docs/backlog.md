@@ -17,35 +17,47 @@ server on the gateway's own host.
 
 ---
 
-## 1. Ops screens still hand-roll their fetching — `M–L`
+## 1. Nine ops screens still hand-roll their fetching — `M–L`
 
-Fifteen of the eighteen screens that call `opsGet` still implement the fetch
-shape by hand: four `useState` slots (data / loading / refreshing / error), a
-`load()` callback, a mount effect, and a scope guard. `useOpsQuery` and
-`useOpsMutation` in `src/store/ops-query.ts` replace all of it and put the
-connection scope in the query key, so a superseded response cannot render under a
-new connection. `kanban`, `webhooks`, `skills` and `logs` are ported.
+`useOpsQuery` and `useOpsMutation` in `src/store/ops-query.ts` replace the
+hand-rolled fetch shape — four `useState` slots (data / loading / refreshing /
+error), a `load()` callback, a mount effect, and a scope guard — and put the
+connection scope in the query key, so a superseded response cannot render under
+a new connection.
 
-**Five have no race guard at all** — `cron`, `mcp`, `skills-hub`,
-`system`, `usage`. They check `getAuthScope()` after awaiting, so
-they are safe across a profile switch, but two overlapping loads of the same
-screen can still land out of order: an older response overwrites a newer one.
-`kanban` was the case that proved it — it ran two loads concurrently, wrote both
-to one `useState`, and switching boards fast could repaint the previous board.
+**Done:** `kanban`, `webhooks`, `skills`, `logs`, `usage`, `system`, `mcp`,
+`skills-hub`, `cron`. The seven that had no race guard at all are the ones that
+mattered: they checked `getAuthScope()` after awaiting, so they were safe across
+a profile switch, but two overlapping loads of the same screen could still land
+out of order. `kanban` was the case that proved it.
 
-These five first; they are the ones where the bug is real.
-
-**Nine already guard correctly** and are a mechanical port: `channels`,
-`config`, `files`, `keys`, `models`, `pairing`, `plugins`, `profiles`,
-`toolsets`.
+**Left — nine screens that already guarded correctly**, so these are mechanical:
+`channels`, `config`, `files`, `keys`, `models`, `pairing`, `plugins`,
+`profiles`, `toolsets`. No bug to fix, only consistency.
 
 Per screen: one `useOpsQuery` for the read, one `useOpsMutation` per write with
 `done: [[...]]` naming the keys to invalidate, and any optimistic write becomes
 an `optimistic: { key, patch }` on the mutation hook.
 
-Watch for the webhooks trap: a toggle switch swapped for a spinner while the
-write is in flight hides the optimistic paint for the whole request, so the
-optimistic update buys nothing. Keep the control mounted and `disabled`.
+Two traps the ported screens ran into, both now fixed there and both worth
+knowing before the remaining nine:
+
+- **A toggle swapped for a spinner hides the optimistic paint for the whole
+  request**, so the optimistic update buys nothing. Keep the control mounted and
+  `disabled`. (`skills`, `mcp`)
+- **A disabled query stays `pending` forever**, so any `isPending` you turn into
+  a spinner has to be gated on the thing that enables it — an applied search
+  term, a selected job. (`skills-hub`, `cron`)
+
+Payload normalisers belong in the screen's `helpers.ts` as `select`, where they
+are pure and testable; that is where `asLogLines`, `asCronJobs` and
+`asDeliveryTargets` went.
+
+**Not verified against a real gateway.** `npm test` cannot see any of this, and
+these screens only got a typecheck. The behaviour changes to watch for are in
+the individual commits: a 404 is now retried once, returning to a screen inside
+`staleTime` renders cached rows instead of refetching, and switching a filter
+now shows a spinner where some screens used to hold the previous rows.
 
 ---
 
