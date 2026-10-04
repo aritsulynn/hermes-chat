@@ -4,11 +4,12 @@
 // need no separate builder: the profile list with model/description editing,
 // the SOUL.md editor, rename/delete/export, and switching the sticky active
 // profile. (The desktop's ProfileBuilderPage is a separate surface.)
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Bot, Check, Download, FileText, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -38,104 +39,62 @@ export function ProfilesScreen() {
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
-  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<ProfileInfo | null>(null);
   const [creating, setCreating] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; body: string; run: () => void } | null>(null);
-  const [busyName, setBusyName] = useState<string | null>(null);
 
-  const loadEpoch = useRef(0);
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const next = await getProfiles(opsGet);
-        if (getAuthScope() !== scope || loadEpoch.current !== epoch) return;
-        setProfiles(next);
-      } catch (e) {
-        if (getAuthScope() === scope && loadEpoch.current === epoch) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
+  // One scoped query replaces the four useState slots + epoch-guarded load.
+  const list = useOpsQuery<ProfileInfo[]>({
+    key: ['profiles'],
+    get: (get) => getProfiles(get),
+    enabled: authed,
+  });
+  const profiles = list.data ?? [];
+  const loading = list.isPending;
+  const refreshing = list.isRefetching;
+  const error = list.error ? errMsg(list.error) : null;
+  const refresh = useCallback(() => void list.refetch(), [list]);
+
+  const useProfileMut = useOpsMutation<void, { name: string }>({
+    mutationFn: async (mut, v) => {
+      await setActiveProfile(mut, v.name);
+      // Retarget the live client too — the list and everything scoped follow.
+      await switchProfile(v.name);
     },
-    [getAuthScope, opsGet],
-  );
+    done: [['profiles']],
+    onSuccess: (_d, v) => { toast({ title: 'Switched profile', description: v.name }); },
+    onError: (e) => toast({ title: 'Switch failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
+  const exporter = useOpsMutation<string, { name: string }>({
+    mutationFn: (mut, v) => exportProfile(mut, v.name),
+    onSuccess: (archive) => { toast({ title: 'Profile exported', description: archive || undefined }); },
+    onError: (e) => toast({ title: 'Export failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  // Not a hook despite the old `useProfile` name — ESLint's rules-of-hooks
-  // reads the `use` prefix as a hook call and rejects it inside onClick.
-  // Pairs with doExport below.
-  const doUseProfile = useCallback(
-    async (p: ProfileInfo) => {
-      const scope = getAuthScope();
-      setBusyName(p.name);
-      try {
-        await setActiveProfile(opsMut, p.name);
-        if (getAuthScope() !== scope) return;
-        // Retarget the live client too — the list and everything scoped follow.
-        await switchProfile(p.name);
-        if (getAuthScope() !== scope) return;
-        toast({ title: 'Switched profile', description: p.name });
-        await load(true);
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Switch failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setBusyName(null);
-      }
-    },
-    [getAuthScope, load, opsMut, switchProfile],
-  );
+  const del = useOpsMutation<void, { name: string }>({
+    mutationFn: (mut, v) => deleteProfile(mut, v.name),
+    done: [['profiles']],
+    onSuccess: (_d, v) => { toast({ title: 'Profile deleted', description: v.name }); },
+    onError: (e) => toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const doExport = useCallback(
-    async (p: ProfileInfo) => {
-      const scope = getAuthScope();
-      setBusyName(p.name);
-      try {
-        const archive = await exportProfile(opsMut, p.name);
-        if (getAuthScope() !== scope) return;
-        toast({ title: 'Profile exported', description: archive || undefined });
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Export failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setBusyName(null);
-      }
-    },
-    [getAuthScope, opsMut],
-  );
+  // Which row's Use/Export button is in flight.
+  const busyName = (useProfileMut.isPending && useProfileMut.variables?.name) || (exporter.isPending && exporter.variables?.name) || null;
+
+  const doUseProfile = useCallback((p: ProfileInfo) => useProfileMut.mutate({ name: p.name }), [useProfileMut]);
+
+  const doExport = useCallback((p: ProfileInfo) => exporter.mutate({ name: p.name }), [exporter]);
 
   const handleDelete = useCallback(
     (p: ProfileInfo) => {
       setConfirm({
         title: 'Delete profile',
         body: `Delete profile "${p.name}"? Its directory and stored state are removed. This cannot be undone.`,
-        run: async () => {
-          const scope = getAuthScope();
-          try {
-            await deleteProfile(opsMut, p.name);
-            if (getAuthScope() !== scope) return;
-            toast({ title: 'Profile deleted', description: p.name });
-            await load(true);
-          } catch (e) {
-            if (getAuthScope() === scope)
-              toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
-          }
-        },
+        run: () => del.mutate({ name: p.name }),
       });
     },
-    [getAuthScope, load, opsMut],
+    [del],
   );
 
   if (!authed) return <Redirect to="/login" replace />;
@@ -152,7 +111,7 @@ export function ProfilesScreen() {
                 <HeaderIconButton aria-label="New profile" onClick={() => setCreating(true)}>
                   <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
                 </HeaderIconButton>
-                <HeaderIconButton aria-label="Refresh profiles" onClick={() => void load(true)}>
+                <HeaderIconButton aria-label="Refresh profiles" onClick={refresh}>
                   <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
                 </HeaderIconButton>
               </div>
@@ -166,7 +125,7 @@ export function ProfilesScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={() => refresh()} />
           ) : profiles.length === 0 ? (
             <Card>
               <div className="text-xs text-neutral-500 dark:text-neutral-400">No profiles found.</div>
@@ -268,7 +227,7 @@ export function ProfilesScreen() {
           onClose={() => setEditing(null)}
           onChanged={() => {
             setEditing(null);
-            void load(true);
+            refresh();
           }}
         />
       )}
@@ -281,7 +240,7 @@ export function ProfilesScreen() {
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);
-            void load(true);
+            refresh();
             void refreshProfiles();
           }}
         />
