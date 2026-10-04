@@ -2,7 +2,7 @@
 import { useCallback } from 'react';
 import { navigate } from '../nav';
 import type { HistoryMessage } from '../../services/gateway-ws';
-import { getSessionMessages, getSessionExportText, lastSessionMessagesRawCount } from '../../services/dashboard';
+import { getSessionMessages, getSessionExportText, getLatestDescendant, lastSessionMessagesRawCount } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
@@ -127,6 +127,27 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       const previousLiveAid = liveAid.current;
       const previousLiveThinkAid = liveThinkAid.current;
       if (activeProfileRef.current !== profile) return;
+      // Desktop parity: opening a session that was forked should land in the
+      // branch that was actually continued. Follow the lineage once,
+      // best-effort — an old gateway, a deleted child, or a transport failure
+      // all return null and open the requested session instead.
+      {
+        const descendantId = await getLatestDescendant(
+          targetHost,
+          cookie.current,
+          s.id,
+          profile,
+          async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
+        );
+        if (
+          !isLatestOpen() ||
+          !isSameConnection() ||
+          activeProfileRef.current !== profile ||
+          profileEpochRef.current !== epoch
+        )
+          return;
+        if (descendantId && descendantId !== s.id) s = { ...s, id: descendantId };
+      }
       // The ask slot is foreground-only; pending requests remain in the inbox.
       askRef.current = null;
       setAsk(null);
