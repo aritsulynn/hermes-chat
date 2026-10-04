@@ -6,11 +6,12 @@
 // sidebar visibility), the catalog browser with install, and the provider
 // pickers. The desktop's per-field memory-provider config editor belongs with
 // the broader Memory surface.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Check, Download, Eye, EyeOff, Package, RefreshCw, Store, Trash2, X, Zap } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { isSuperseded, useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -46,63 +47,47 @@ export function PluginsScreen() {
   const brand = useMemo(() => brandColor(dark), [dark]);
 
   const [tab, setTab] = useState<Tab>('installed');
-  const [hub, setHub] = useState<PluginsHub | null>(null);
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; body: string; run: () => void } | null>(null);
   const [installing, setInstalling] = useState<CatalogEntry | null>(null);
+  // Two queries, one per endpoint — same content as the old paired loads,
+  // each keyed so a superseded response can never render.
+  const hubQ = useOpsQuery<PluginsHub | null>({
+    key: ['plugins', 'hub'],
+    get: (get) => getPluginsHub(get, activeProfile),
+    enabled: authed,
+  });
+  const catalogQ = useOpsQuery<CatalogEntry[]>({
+    key: ['plugins', 'catalog'],
+    get: async (get) => getPluginsCatalog(get).catch(() => [] as CatalogEntry[]),
+    enabled: authed,
+  });
+  const hub = hubQ.data ?? null;
+  const catalog = catalogQ.data ?? [];
+  const loading = hubQ.isPending || catalogQ.isPending;
+  const refreshing = hubQ.isRefetching || catalogQ.isRefetching;
+  const firstError = hubQ.error ?? catalogQ.error;
+  const error = firstError ? errMsg(firstError) : null;
+  const refresh = useCallback(() => {
+    void hubQ.refetch();
+    void catalogQ.refetch();
+  }, [hubQ, catalogQ]);
 
-  const loadEpoch = useRef(0);
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const profile = activeProfile;
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const [nextHub, nextCatalog] = await Promise.all([
-          getPluginsHub(opsGet, profile),
-          getPluginsCatalog(opsGet).catch(() => [] as CatalogEntry[]),
-        ]);
-        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
-        setHub(nextHub);
-        setCatalog(nextCatalog);
-      } catch (e) {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [activeProfile, getAuthScope, opsGet],
-  );
-
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
-
+  // A GET, so it stays a plain handler — the mutation hook hands back OpsMut.
+  // isSuperseded is swallowed: a switch mid-rescan is not a failure toast.
+  const [rescanning, setRescanning] = useState(false);
   const onRescan = useCallback(async () => {
-    const scope = getAuthScope();
-    setBusy('__rescan__');
+    setRescanning(true);
     try {
       const count = await rescanPlugins(opsGet);
-      if (getAuthScope() !== scope) return;
       toast({ title: 'Rescanned', description: `${count} plugin(s) found` });
-      await load(true);
+      refresh();
     } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Rescan failed', description: errMsg(e), variant: 'destructive' });
+      if (!isSuperseded(e)) toast({ title: 'Rescan failed', description: errMsg(e), variant: 'destructive' });
     } finally {
-      if (getAuthScope() === scope) setBusy(null);
+      setRescanning(false);
     }
-  }, [getAuthScope, load, opsGet]);
+  }, [opsGet, refresh]);
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -127,7 +112,7 @@ export function PluginsScreen() {
                   <RefreshCw
                     size={20}
                     color={dark ? '#e5e5e5' : '#333'}
-                    className={busy === '__rescan__' || refreshing ? 'animate-spin' : ''}
+                    className={rescanning || refreshing ? 'animate-spin' : ''}
                   />
                 </HeaderIconButton>
               }
@@ -162,7 +147,7 @@ export function PluginsScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={refresh} />
           ) : tab === 'providers' ? (
             <ProvidersPanel hub={hub} opsMut={opsMut} profile={activeProfile} getAuthScope={getAuthScope} />
           ) : (
@@ -178,19 +163,9 @@ export function PluginsScreen() {
                 />
               </div>
               {tab === 'installed' ? (
-                <InstalledList
-                  hub={hub}
-                  query={ql}
-                  dark={dark}
-                  busy={busy}
-                  setBusy={setBusy}
-                  opsMut={opsMut}
-                  getAuthScope={getAuthScope}
-                  onChanged={() => void load(true)}
-                  setConfirm={setConfirm}
-                />
+                <InstalledList hub={hub} query={ql} dark={dark} setConfirm={setConfirm} />
               ) : (
-                <CatalogList catalog={catalog} query={ql} dark={dark} busy={busy} onInstall={(e) => setInstalling(e)} />
+                <CatalogList catalog={catalog} query={ql} dark={dark} onInstall={(e) => setInstalling(e)} />
               )}
             </>
           )}
@@ -206,7 +181,7 @@ export function PluginsScreen() {
           onClose={() => setInstalling(null)}
           onInstalled={() => {
             setInstalling(null);
-            void load(true);
+            refresh();
           }}
         />
       )}
@@ -241,21 +216,11 @@ function InstalledList({
   hub,
   query,
   dark,
-  busy,
-  setBusy,
-  opsMut,
-  getAuthScope,
-  onChanged,
   setConfirm,
 }: {
   hub: PluginsHub | null;
   query: string;
   dark: boolean;
-  busy: string | null;
-  setBusy: (v: string | null) => void;
-  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<unknown>;
-  getAuthScope: () => unknown;
-  onChanged: () => void;
   setConfirm: (v: { title: string; body: string; run: () => void } | null) => void;
 }) {
   const rows = useMemo(() => {
@@ -281,17 +246,7 @@ function InstalledList({
   return (
     <>
       {rows.map((p) => (
-        <PluginRow
-          key={`${p.name}:${p.path}`}
-          platform={p}
-          dark={dark}
-          busy={busy}
-          setBusy={setBusy}
-          opsMut={opsMut}
-          getAuthScope={getAuthScope}
-          onChanged={onChanged}
-          setConfirm={setConfirm}
-        />
+        <PluginRow key={`${p.name}:${p.path}`} platform={p} dark={dark} setConfirm={setConfirm} />
       ))}
     </>
   );
@@ -300,46 +255,25 @@ function InstalledList({
 function PluginRow({
   platform: p,
   dark,
-  busy,
-  setBusy,
-  opsMut,
-  getAuthScope,
-  onChanged,
   setConfirm,
 }: {
   platform: AgentPluginRow;
   dark: boolean;
-  busy: string | null;
-  setBusy: (v: string | null) => void;
-  opsMut: (path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<unknown>;
-  getAuthScope: () => unknown;
-  onChanged: () => void;
   setConfirm: (v: { title: string; body: string; run: () => void } | null) => void;
 }) {
   const enabled = p.runtimeStatus === 'enabled';
-  const rowBusy = busy === p.name;
 
-  const toggle = useCallback(async () => {
-    const scope = getAuthScope();
-    setBusy(p.name);
-    try {
-      await setAgentPluginEnabled(opsMut, p.name, !enabled);
-      if (getAuthScope() !== scope) return;
-      toast({ title: enabled ? 'Plugin disabled' : 'Plugin enabled', description: p.name });
-      onChanged();
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setBusy(null);
-    }
-  }, [enabled, getAuthScope, onChanged, opsMut, p.name, setBusy]);
+  const toggle = useOpsMutation<void, void>({
+    mutationFn: (mut) => setAgentPluginEnabled(mut, p.name, !enabled),
+    done: [['plugins', 'hub']],
+    onSuccess: () => { toast({ title: enabled ? 'Plugin disabled' : 'Plugin enabled', description: p.name }); },
+    onError: (e) => toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const update = useCallback(async () => {
-    const scope = getAuthScope();
-    setBusy(p.name);
-    try {
-      const res = await updateAgentPlugin(opsMut, p.name);
-      if (getAuthScope() !== scope) return;
+  const update = useOpsMutation<{ consentRequired?: boolean; deltaLines: string[]; unchanged?: boolean }, void>({
+    mutationFn: (mut) => updateAgentPlugin(mut, p.name),
+    done: [['plugins', 'hub']],
+    onSuccess: (res) => {
       if (res.consentRequired) {
         toast({
           title: 'Capabilities changed',
@@ -350,51 +284,35 @@ function PluginRow({
         toast({ title: 'Already up to date', description: p.name });
       } else {
         toast({ title: 'Plugin updated', description: p.name });
-        onChanged();
       }
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setBusy(null);
-    }
-  }, [getAuthScope, onChanged, opsMut, p.name, setBusy]);
+    },
+    onError: (e) => toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const toggleVisibility = useCallback(async () => {
-    const scope = getAuthScope();
-    setBusy(p.name);
-    try {
-      await setPluginVisibility(opsMut, p.name, !p.userHidden);
-      if (getAuthScope() !== scope) return;
-      toast({ title: p.userHidden ? 'Shown in sidebar' : 'Hidden from sidebar', description: p.name });
-      onChanged();
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setBusy(null);
-    }
-  }, [getAuthScope, onChanged, opsMut, p.name, p.userHidden, setBusy]);
+  const toggleVisibility = useOpsMutation<void, void>({
+    mutationFn: (mut) => setPluginVisibility(mut, p.name, !p.userHidden),
+    done: [['plugins', 'hub']],
+    onSuccess: () => { toast({ title: p.userHidden ? 'Shown in sidebar' : 'Hidden from sidebar', description: p.name }); },
+    onError: (e) => toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const remove = useCallback(() => {
+  const remove = useOpsMutation<void, void>({
+    mutationFn: (mut) => removeAgentPlugin(mut, p.name),
+    done: [['plugins', 'hub']],
+    onSuccess: () => { toast({ title: 'Plugin removed', description: p.name }); },
+    onError: (e) => toast({ title: 'Remove failed', description: errMsg(e), variant: 'destructive' }),
+  });
+
+  // Any of this row's four writes in flight — the buttons disable together.
+  const rowBusy = toggle.isPending || update.isPending || toggleVisibility.isPending || remove.isPending;
+
+  const askRemove = useCallback(() => {
     setConfirm({
       title: 'Remove plugin',
       body: `Remove plugin "${p.name}"? Its directory is deleted. This cannot be undone.`,
-      run: async () => {
-        const scope = getAuthScope();
-        setBusy(p.name);
-        try {
-          await removeAgentPlugin(opsMut, p.name);
-          if (getAuthScope() !== scope) return;
-          toast({ title: 'Plugin removed', description: p.name });
-          onChanged();
-        } catch (e) {
-          if (getAuthScope() === scope)
-            toast({ title: 'Remove failed', description: errMsg(e), variant: 'destructive' });
-        } finally {
-          if (getAuthScope() === scope) setBusy(null);
-        }
-      },
+      run: () => remove.mutate(),
     });
-  }, [getAuthScope, onChanged, opsMut, p.name, setBusy, setConfirm]);
+  }, [p.name, remove, setConfirm]);
 
   return (
     <Card>
@@ -432,7 +350,7 @@ function PluginRow({
         <Button
           aria-label={`${enabled ? 'Disable' : 'Enable'} ${p.name}`}
           variant="outline"
-          onClick={() => void toggle()}
+          onClick={() => toggle.mutate()}
           disabled={rowBusy}
           className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
           {rowBusy ? (
@@ -447,7 +365,7 @@ function PluginRow({
         <Button
           aria-label={`Toggle visibility for ${p.name}`}
           variant="outline"
-          onClick={() => void toggleVisibility()}
+          onClick={() => toggleVisibility.mutate()}
           disabled={rowBusy}
           className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
           {p.userHidden ? <Eye size={13} color={brandColor(dark)} /> : <EyeOff size={13} color={brandColor(dark)} />}
@@ -457,7 +375,7 @@ function PluginRow({
           <Button
             aria-label={`Update ${p.name}`}
             variant="outline"
-            onClick={() => void update()}
+            onClick={() => update.mutate()}
             disabled={rowBusy}
             className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
             <Zap size={13} color={brandColor(dark)} />
@@ -469,7 +387,7 @@ function PluginRow({
             variant="ghost"
             size="iconSm"
             aria-label={`Remove ${p.name}`}
-            onClick={remove}
+            onClick={askRemove}
             disabled={rowBusy}
             className="ml-auto rounded-lg">
             <Trash2 size={15} color="#ef4444" />
@@ -484,13 +402,11 @@ function CatalogList({
   catalog,
   query,
   dark,
-  busy,
   onInstall,
 }: {
   catalog: CatalogEntry[];
   query: string;
   dark: boolean;
-  busy: string | null;
   onInstall: (e: CatalogEntry) => void;
 }) {
   const rows = useMemo(() => {
@@ -566,7 +482,6 @@ function CatalogList({
             <Button
               aria-label={`Install ${e.name}`}
               onClick={() => onInstall(e)}
-              disabled={busy === e.name}
               className="ml-auto h-auto sm:h-auto rounded-lg px-3 py-1.5">
               <Download size={13} color="#fff" />
               <span className="text-xs font-semibold text-white">{e.installed ? 'Reinstall' : 'Install'}</span>
