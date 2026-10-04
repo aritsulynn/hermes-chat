@@ -5,16 +5,6 @@
 > how easy it is.
 > Last updated: 2026-10-04
 
-## How to test a change
-
-The web client can only talk to a gateway on the **same origin** — the session
-cookie is `SameSite=lax` and the browser enforces it, so `npm run dev` on
-`localhost:5173` pointed at `192.168.1.8:9119` cannot log in. This is written up
-in full, with the three working setups, under
-[Deployment → the app and the gateway must share an origin](../README.md#the-app-and-the-gateway-must-share-an-origin);
-the short version is: serve `dist/` from the gateway's origin, or run the dev
-server on the gateway's own host.
-
 ---
 
 ## 1. Nine ops screens still hand-roll their fetching — `M–L`
@@ -75,7 +65,7 @@ block on it.
 
 ## 3. Unverified behaviour — `M`
 
-Driven against a real gateway on 192.168.1.8:9119, but these were not observed:
+Driven against a real gateway on 192.168.1.42:9119, but these were not observed:
 
 - **The "Load older messages" button at rest.** Paging demonstrably works (a
   148-message session grew the scroller from 3.2k to 66k px), but the scroller
@@ -106,13 +96,19 @@ Large by any measure; see `feature-parity-roadmap.md` §2.
 
 ## Outside this repo
 
-`~/.hermes/hermes-agent/hermes_cli/web_server.py` has an **uncommitted** local
-edit: `allow_credentials=True` restored and `192.168.1.8` put back into
-`allow_origin_regex`, so a same-host web client can authenticate. It needs a
-gateway restart to take effect, and it was never restarted here — the running
-instance still predates the edit.
+The gateway's CORS middleware sat _inside_ its auth gate, so the gate answered
+every CORS preflight with a headerless 401 and a browser client could not log in
+from another origin. Root cause, the seven-step patch, and the one-command check
+are in [troubleshooting.md](troubleshooting.md).
 
-The durable fix is to read the allowlist from config (`dashboard.cors_origins`,
-following the `dashboard.public_url` pattern in
-`dashboard_auth/prefix.py`) instead of a hardcoded regex, so a user of this app
-adds one line to `config.yaml` rather than editing Python. Not done.
+Applied locally in `~/.hermes/hermes-agent` — the CORS registration moved to the
+end of `web_server.py` so it is the outermost layer, and the allowlist now reads
+`dashboard.cors_origins` / `HERMES_DASHBOARD_CORS_ORIGINS` instead of a hardcoded
+regex. Verified in-process (preflight 200 with the right headers, a foreign
+origin still 400) and end-to-end in a browser. Two things are still open:
+
+- **Uncommitted.** The change lives only in that checkout, so nobody else gets it.
+  It has to go upstream as a PR.
+- **Unpushed updates.** `hermes update` skips code updates on a checkout with
+  uncommitted changes, and parks on a local branch once committed. Carrying the
+  patch means carrying that.

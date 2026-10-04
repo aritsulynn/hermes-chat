@@ -22,51 +22,39 @@
 
 ## Features
 
-**Chat**
+**Chat** — token-by-token streaming with collapsible reasoning blocks; tool call
+cards with live progress and inline diffs; markdown with clickable file links;
+edit, resend, regenerate and branch from any message; message queue, turn steering
+and stop; live todo list, context gauge, per-session model picker; slash commands,
+large-paste handling, long transcripts windowed in memory.
 
-- Token-by-token streaming with collapsible reasoning / "thinking" blocks
-- Tool call cards with live progress and inline diffs
-- Markdown rendering with clickable file links
-- Edit, resend, regenerate, and branch a conversation from any message
-- Queue messages and steer a turn already in flight, or stop it
-- Live todo list, context gauge, and per-session model / provider picker
-- Slash commands, large-paste handling, and long transcripts windowed in memory
+**Sessions & access** — profile-aware sessions with server-side pagination and
+live status; dangerous-command approvals in three modes (`manual`, `smart`, `off`);
+approvals and clarifying questions from _background_ sessions routed to an **Ask
+Inbox** instead of hijacking the open chat; full-text search with the hit's snippet
+in the sidebar.
 
-**Sessions & access**
+**Agent configuration** — **Models**: the resolved main model with
+context/capability badges, plus every auxiliary task slot. **Profiles**: CRUD,
+active-profile switching, `SOUL.md` and description editing with auto-describe,
+export/import. **Skills** / **Skills Hub**: installed inventory with toggle and
+editor; hub search, preview, security scan and install. **Toolsets**:
+enable/disable groups with per-toolset provider and env config. **MCP**: server
+CRUD, test action, OAuth, catalog installer. **Channels**: messaging platforms
+with enable/test and credential editing, Telegram/WhatsApp pairing.
 
-- Profile-aware sessions with server-side pagination and live status in the drawer
-- Dangerous-command approvals in three modes: `manual`, `smart`, or `off`
-- Approvals and clarifying questions raised by _background_ sessions are routed to an **Ask Inbox** instead of hijacking the open chat
-- Full-text search across message content, with the hit's snippet shown in the sidebar
+**Operations** — cron jobs with run history and durations; a kanban board; a server
+file browser (read, create, upload, rename, delete, download, text previews, a
+binary-file guard); an env/API-key manager with provider probe and reveal on
+demand; a raw `config.yaml` editor with server-side YAML validation; a plugin
+manager with catalog and memory/context provider pickers; webhooks with a one-time
+HMAC secret; pairing approvals; host stats, gateway control and maintenance
+actions (doctor, security audit, backup, prune checkpoints) with a live log;
+gateway logs and token/cost usage by day and by model.
 
-**Agent configuration**
-
-- **Models** — the resolved main model with context/capability badges, plus all auxiliary task slots
-- **Profiles** — CRUD, active-profile switching, `SOUL.md` + description editing with auto-describe, export/import
-- **Skills** — installed inventory with toggle and an editor; **Skills Hub** searches, previews, security-scans and installs from connected hub sources
-- **Toolsets** — enable/disable tool groups, plus per-toolset provider and env configuration
-- **MCP** — server CRUD with a test action, OAuth, and a catalog installer for declared env vars
-- **Channels** — messaging platforms with enable/test and credential editing; Telegram/WhatsApp pairing
-
-**Operations**
-
-- Cron jobs — create, edit, pause, run now, and inspect run history with durations
-- Kanban board for tracked tasks
-- Server file browser — read, create, upload, rename, delete, download, with text previews and a binary-file guard
-- Env / API key manager with set/unset state, provider labels, live provider probe, and reveal-on-demand
-- Raw `config.yaml` editor with server-side YAML validation on save
-- Plugin manager — installed plugins, a curated catalog, and memory/context provider pickers
-- Webhooks with a one-time HMAC secret surfaced at creation
-- Pairing approvals
-- System / Ops — host stats, gateway start/stop, credential pool, and maintenance actions (doctor / security audit / backup / prune checkpoints) with a live log
-- Gateway logs, and token/cost usage by day with a per-model breakdown
-
-**App**
-
-- Light / dark / system theme, plus a default or "Chamber" accent
-- Local notifications when a turn finishes, including background sessions; they fire only while the app is backgrounded
-- In-app panel for available server updates
-- Web, or a Capacitor Android shell
+**App** — light/dark/system theme with a default or "Chamber" accent; local
+notifications when a turn finishes, including background sessions; an in-app
+update panel; web or a Capacitor Android shell.
 
 ## Screens
 
@@ -102,9 +90,11 @@ shell; unknown URLs fall back to `/chat`.
 
 ## Requirements
 
-- **Node.js** `^20.19.0 || >=22.13.0` — the strictest floor across the toolchain
-  (ESLint 10 and typescript-eslint both want `^20.19.0 || ^22.13.0 || >=24`;
-  Vite 7 is slightly looser at `>=22.12.0`)
+- **Node.js** `^22.13.0 || >=24`. Two floors meet here: ESLint 10 wants
+  `^22.13.0 || >=24` (it excludes Node 23), and `npm test` needs
+  `--experimental-strip-types`, which arrived in 22.6. Vite 7 alone would allow
+  `^20.19.0 || >=22.12.0`, so the app builds on Node 20 — but the test suite does
+  not run there, which is why `engines` does not claim it.
 - **npm**
 - **A Hermes gateway** you can reach over HTTP — e.g. `http://your-server:9119`
 - Android shell only: **JDK 21** (a full JDK — a JRE is not enough, and Gradle
@@ -124,10 +114,12 @@ Then open the printed URL and enter your gateway host (for example
 `http://your-server:9119`) and your dashboard credentials.
 
 The dev server binds all interfaces (`host: true`) because the gateway is usually
-a plain-HTTP host on a LAN address. Open it on the **same host as the gateway**
-(`http://your-server:5173`, not `http://localhost:5173`) or the login will fail
-with `Unreachable: Failed to fetch` — see
-[the app and the gateway must share an origin](#the-app-and-the-gateway-must-share-an-origin).
+a plain-HTTP host on a LAN address. You can open it on any host — but that makes
+the client cross-origin, so the gateway has to allow that origin, and it has to
+answer the CORS preflight. If the login fails with `Failed to fetch`, see
+[docs/troubleshooting.md](docs/troubleshooting.md); if you would rather not
+think about it, open the dev server on the gateway's own host
+(`http://your-server:5173`) or serve a build from the gateway's origin.
 
 ## Configuration
 
@@ -152,80 +144,30 @@ CI build with no git.
 ## Project structure
 
 ```
-src/
-  main.tsx      entry — mounts <App/>
-  App.tsx       router: BrowserRouter on web, HashRouter in a native shell + AppProvider + routes
-  AppShell.tsx  chrome around every screen: sidebar, toasts, connection banner, module-level bridges
-  routes.tsx    URL -> screen table (the `path` doubles as the drawer key)
-  platform.ts   native-shell detection + status-bar setup (Capacitor only)
-  build.ts      the git-derived build id shown on Login/Settings
-  theme.ts      TypeScript mirror of the colour tokens in global.css
-  features/     screens, one directory each: index.tsx, plus helpers.ts / types.ts /
-                components/ where the screen is big enough to warrant them
-  store/        AppStore: useAppStore.tsx orchestrator + slices/ + shared runtime refs
-  services/     transport and typed endpoint wrappers — dashboard REST, gateway
-                WebSocket, storage, native-http (Capacitor pipe that bypasses
-                WebView cookie/CORS rules), plus one module per API surface
-  components/   ui/ (reusables), chat/, drawer/, connection-banner
-  hooks/        app-store.tsx (React context over the store), generic hooks
-  utils/        pure helpers and types — no React imports
+src/features/    one directory per screen        docs/     troubleshooting, backlog,
+src/services/    gateway transport + API surface             roadmap, architecture
+src/store/       AppStore, slices, ops query layer
+src/components/  ui/, chat/, drawer/             android/   Capacitor shell
+src/utils/       pure helpers, no React         .github/   CI
 ```
 
-`capacitor.config.ts` is the native-shell manifest (`appId`, `webDir: 'dist'`).
-`android/` is the Capacitor shell — tracked because it carries hand-written
-source (`MainActivity`, `NativeHttpPlugin`, manifest flags), not just
-generated output. Its build outputs (`.gradle/`, `*/build/`, `*.apk`) are
-ignored; a fresh clone rebuilds them with the commands below.
+[docs/architecture.md](docs/architecture.md) has the annotated layout, including
+what each store module is for.
 
 ## Architecture
 
-- **Store.** `src/store/useAppStore.tsx` composes 20 slices from
-  `src/store/slices/` (18 through the `add()` helper, plus `useThemeSlice` and
-  `useNotificationsSlice`) and owns the cross-cutting orchestration: connection
-  and auth, session management, the turn engine, and the gateway WebSocket wiring
-  (`openWs`). Slices own their own state and refs; shared cross-cutting refs live
-  in `src/store/runtime.ts` to break ordering cycles. `src/hooks/app-store.tsx`
-  exposes the store through React context.
-- **Services vs utils.** `src/services/` holds everything that talks to a
-  gateway — the transport itself (`dashboard.ts`, `gateway-ws.ts`) and the typed
-  wrappers that normalise each API surface's payloads (`skills.ts`, `mcp.ts`,
-  `profiles.ts`, …). `src/utils/` is pure logic and types. Shared protocol
-  constants live in the import-free leaf `src/services/constants.ts`.
-- **Navigation.** `src/routes.tsx` maps URLs to screens. The store slices route
-  themselves from WebSocket callbacks, where no hook is available, through the
-  module-level bridge in `src/store/nav.ts`.
-- **Theming.** Colour tokens are declared in `global.css` and mirrored in
-  `src/theme.ts` for inline styles — change both. Tailwind is configured with
-  `darkMode: 'class'` and the store toggles `.dark` on `<html>`.
+The shape in one paragraph: `src/features/` holds one directory per screen,
+`src/services/` is everything that talks to the gateway (REST in `dashboard.ts`,
+the WebSocket in `gateway-ws.ts`), and `src/store/` composes 21 slices that own
+the client state. Chat and the session list live in the store because they are
+driven by WebSocket frames; the ops screens are plain REST and go through
+`useOpsQuery` / `useOpsMutation` on a shared TanStack Query client instead.
 
-### Session routing is the sharp edge
-
-The gateway runs many concurrent sessions — cron jobs, background turns, other
-devices. Every WebSocket event is filtered by `session_id` against the currently open
-session, and getting that wrong is subtle in both directions: too little filtering
-bleeds another session's output into the open chat, while too much makes the chat
-appear completely hung. So if you touch `src/store/slices/useGateway.ts`,
-`useTurn.ts`, or `useAskInbox.ts`:
-
-- `session.info` from another session must not overwrite the open chat's model chip.
-- Another session's `onAsk` must never hijack the current chat's ask sheet — it
-  goes to the Ask Inbox. If a profile or stored session cannot be resolved, fail
-  closed and surface it there rather than guessing which session owns it.
-- Reconnect must restore `open_requests` without duplicating inbox entries, and
-  must restore locked clarify answers.
-- `stop()` must release the local turn even when the session died mid-turn, or the
-  composer stays stuck on `generating`.
-- Todo state must survive opening a session — restored from `todo_state`, never
-  blanked by `setTodos([])`.
-- Edit/resend must rewind the correct session; message row ids are per-session, so
-  a stale id truncates the wrong history.
-- Logout must fully reset composer state — no stuck Stop button, queue, todos,
-  attachments or pending asks.
-
-When chat looks hung, log before guessing: a temporary log of `sid` in
-`GatewayWs.dispatch` and of `event_sid` vs `sessionIdRef.current` in
-`isCurrentSession` tells you whether the ids match. Matching ids mean the filter
-is fine; ids that never match mean the id spaces differ.
+**[docs/architecture.md](docs/architecture.md)** covers the layout in full, the
+slice composition, and the one place that is genuinely hard: session routing,
+where every WebSocket event must be filtered against the open session and
+getting it wrong either bleeds another session's output into the chat or makes
+the chat look hung.
 
 ## Development
 
@@ -242,15 +184,9 @@ npm run build         # vite build
 ### Lint and format
 
 ESLint 10 + typescript-eslint + `eslint-plugin-react-hooks`, with
-`eslint-config-prettier` last so formatting is Prettier's job alone. A few
-React-Compiler-oriented hook rules (`refs`, `immutability`,
-`set-state-in-effect`, `preserve-manual-memoization`) are switched **off** — they
-flag deliberate patterns here, notably slices that write refs during render so
-callbacks frozen inside `openWs()` always read the latest values. Adopting them
-is a refactor, not a config change.
-
-Prettier covers everything except `dist/`, `node_modules/`, `public/`, and the
-Capacitor/Gradle output.
+`eslint-config-prettier` last so formatting is Prettier's job alone. The repo
+carries known `react-hooks/exhaustive-deps` warnings on purpose — see
+[CONTRIBUTING.md](CONTRIBUTING.md) before touching one.
 
 ### Android (Capacitor, debug)
 
@@ -267,36 +203,17 @@ release 21, and Gradle 8.x cannot run on newer JVMs. Changing `appId` makes
 Android treat it as a different app — it installs alongside the old one and
 starts with a fresh login.
 
-Why the shell needs its own HTTP path: the app runs on `http://localhost`
-while the gateway is a LAN host, and the gateway cookie is `SameSite=lax` —
-a WebView never attaches that cookie cross-origin. So on native, dashboard
-REST goes through the `NativeHttp` plugin with the session kept in the JS
-cookie jar (`mergeCookies`), while web keeps using `fetch`. The WebSocket
-needs no such treatment: it authenticates with a ticket in the URL.
+Why the shell needs its own HTTP path: a WebView never attaches the gateway's
+`SameSite=lax` cookie cross-origin, so on native dashboard REST goes through the
+`NativeHttp` plugin with the session kept in a JS cookie jar, while web keeps
+using `fetch`. [docs/architecture.md](docs/architecture.md#transport-notes) has
+the detail.
 
 ### Tests
 
-Tests are plain `.mjs` files run by Node's built-in test runner with
-`--experimental-strip-types` — no test framework is installed. Because Node's type
-stripping requires explicit extensions, tests import source with the `.ts` suffix:
-
-```js
-import { mergeUsage } from './usage.ts';
-```
-
-The glob in `package.json` is explicit, so **a new test file placed outside these
-paths will silently never run**:
-
-```
-src/services/*.test.mjs   src/utils/*.test.mjs
-src/features/*/*.test.mjs   src/store/*.test.mjs
-```
-
-Run one file with:
-
-```bash
-node --experimental-strip-types --test src/utils/usage.test.mjs
-```
+Plain `.mjs` files on Node's built-in runner — no framework. The glob in
+`package.json` is explicit, so a test outside those paths never runs; see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Deployment
 
@@ -310,61 +227,32 @@ above for the APK flow.
 /*  ->  /index.html  200
 ```
 
-### The app and the gateway must share an origin
+### Serving from another origin
 
-> [!IMPORTANT]
-> **Serving `dist/` from a different origin than the gateway will not log in**, and
-> the failure looks like the gateway is down. Fix the origin, not the CORS error.
+A cross-origin client needs two things from the gateway: its origin in the
+allowlist (`dashboard.cors_origins`, or `HERMES_DASHBOARD_CORS_ORIGINS` — loopback
+is always allowed), and a `CORSMiddleware` that is the gateway's outermost
+middleware. When the second is missing, the gateway answers the CORS preflight
+itself and the login fails with `Ticket request failed: Failed to fetch` while the
+gateway is answering `200` throughout.
 
-The gateway authenticates with a session cookie that is **always `SameSite=lax`**
-(only the PKCE cookies go `None; Secure`, and only over HTTPS). A cross-origin
-dashboard request arrives without that cookie, so the login you watch succeed in
-DevTools still leaves every later call unauthenticated. The browser enforces this
-before any request is sent — there is no header that fixes it, and relaxing
-`SameSite` is not the fix either.
-
-`SameSite` keys on _site_ (scheme + eTLD+1), **not on port**. So `5173` and `9119`
-on one host are already same-site and the cookie is attached; what breaks is a
-_different host_ — `localhost` versus `192.168.1.8`, say.
-
-Three setups that work:
-
-| Setup                                                                                                      | Needs                                                                    |
-| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Android APK                                                                                                | nothing — `NativeHttpPlugin` bypasses the browser network stack entirely |
-| `npm run build` + a reverse proxy serving `dist/` and forwarding `/api`, `/auth`, `/api/ws` to the gateway | a proxy; no gateway change                                               |
-| `npm run dev` on the **same host** as the gateway (e.g. `http://192.168.1.8:5173`)                         | the gateway's CORS allowlist must include that origin                    |
-
-**How it fails.** `npm run dev` on `localhost:5173` pointed at `192.168.1.8:9119`
-reports `Unreachable: Failed to fetch`, and the console shows a CORS error. The
-gateway is answering `200` the whole time. Same for `localhost:5173` →
-`localhost:9119`: different ports on one host are same-site, but still
-cross-origin without `Access-Control-Allow-Credentials`.
-
-Note that the Android shell is unaffected — it talks to the gateway through
-`NativeHttp`, which keeps the session in the JS cookie jar instead of relying on
-the WebView's.
+Same-origin remains the most robust deployment because it needs neither. Both the
+requirements and the gateway-side patch are in
+[docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Contributing
 
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/),
-scoped where it helps:
-
-```
-feat(asks): answer queued requests from the inbox
-fix(chat): stop clipping the model name on wide screens
-refactor(store): extract live-turn slice
-```
-
-The verification bar is `npm run typecheck` and `npm test`; neither can see gateway
-behaviour, so anything touching sessions or the turn engine needs a manual pass
-against a real gateway. `npm run lint` should also be clean, and `npm run
-format:check` before committing.
+`CONTRIBUTING.md` has the bar: `npm run typecheck`, `npm test`, `npm run lint`,
+`npm run format:check` — the same four CI runs on every PR. Anything touching
+sessions or the turn engine also needs a manual pass against a real gateway,
+because CI cannot see gateway behaviour.
 
 `docs/feature-parity-roadmap.md` tracks what this client still lacks relative to
-the full desktop dashboard in `~/.hermes/hermes-agent/web/`. `docs/backlog.md`
-records work that was found but not done.
+the full desktop dashboard in the gateway's `web/`. `docs/backlog.md` records work
+that was found but not done.
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) — see also [CONTRIBUTING.md](CONTRIBUTING.md),
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and
+[SECURITY.md](SECURITY.md).
