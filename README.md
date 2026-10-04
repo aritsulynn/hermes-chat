@@ -105,7 +105,7 @@ shell; unknown URLs fall back to `/chat`.
 
 ```bash
 git clone <this-repo>
-cd hermes-mobile
+cd hermes-chat
 npm install
 npm run dev
 ```

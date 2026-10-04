@@ -1,5 +1,5 @@
 {
-  "name": "hermes-web",
+  "name": "hermes-chat",
   "version": "1.0.0",
   "private": true,
   "license": "MIT",
@@ -69,10 +69,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aritsulynn/hermes-mobile.git"
+    "url": "git+https://github.com/aritsulynn/hermes-chat.git"
   },
   "bugs": {
-    "url": "https://github.com/aritsulynn/hermes-mobile/issues"
+    "url": "https://github.com/aritsulynn/hermes-chat/issues"
   },
-  "homepage": "https://github.com/aritsulynn/hermes-mobile#readme"
+  "homepage": "https://github.com/aritsulynn/hermes-chat#readme"
 }

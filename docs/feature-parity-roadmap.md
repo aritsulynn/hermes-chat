@@ -5,7 +5,7 @@
 
 ## Context
 
-This repo (`hermes-mobile-react-migration`) is the **mobile client** for Hermes Agent.
+This repo (`hermes-chat`) is the **mobile client** for Hermes Agent.
 The complete desktop dashboard lives at **`~/.hermes/hermes-agent/web/`** and shares
 almost the same stack, so it is the reference implementation:
 
