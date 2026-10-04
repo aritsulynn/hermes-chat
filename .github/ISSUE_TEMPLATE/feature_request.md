@@ -1,7 +1,7 @@
 ---
 name: Feature request
 about: A workflow you want the client to support
-title: "[Feature] "
+title: '[Feature] '
 labels: enhancement
 ---
 

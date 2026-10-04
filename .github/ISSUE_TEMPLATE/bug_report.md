@@ -1,7 +1,7 @@
 ---
 name: Bug report
 about: Something is broken — the app, a screen, or the gateway round-trip
-title: "[Bug] "
+title: '[Bug] '
 labels: bug
 ---
 
@@ -15,6 +15,7 @@ Steps to reproduce the behavior.
 What you expected to happen.
 
 **Environment**
+
 - Gateway version: (the gateway UI footer or `GET /api/status`)
 - App build: (the hash on the login screen, e.g. `build f30ecfc`)
 - Platform: web / Android — and browser + version if web
