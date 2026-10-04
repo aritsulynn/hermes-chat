@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { pickFile } from '../../services/file-picker';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsQuery } from '../../store/ops-query';
 import { base64ToUtf8, errMsg, utf8ToBase64 } from '../../utils/messages';
 import { screenStyle } from '../../theme';
 import { HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
@@ -54,11 +55,32 @@ export function FilesScreen() {
   // and each value below feeds several rows of the (virtualized) tree.
   const screen = useMemo(() => screenStyle(dark), [dark]);
 
-  const [currentPath, setCurrentPath] = useState<string>('~');
-  const [listing, setListing] = useState<ManagedFilesResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [dir, setDir] = useState<string>('~');
+  // The listing is a query keyed on the directory — a newer navigation wins,
+  // and '~' is just another key. The epoch-guarded load callback, the stale
+  // guard ref, and the initialLoaded flag all go away with the key.
+  const list = useOpsQuery<ManagedFilesResponse>({
+    key: ['files', dir],
+    get: (get) =>
+      get(dir.trim() ? api.files(dir.trim()) : api.filesRoot()) as unknown as Promise<ManagedFilesResponse>,
+    enabled: authed,
+  });
+  const listing = list.data ?? null;
+  const loading = list.isPending;
+  const refreshing = list.isRefetching;
+  const error = list.error ? errMsg(list.error) : null;
+  const refresh = useCallback(() => list.refetch(), [list]);
+  const currentPath = listing?.path ?? dir;
+  const activeDirectory = currentPath;
+  // Seed the jump-to-path field from each newly loaded directory.
+  const seededPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (listing && listing.path !== seededPathRef.current) {
+      seededPathRef.current = listing.path;
+      setPathInput(listing.path);
+    }
+  }, [listing]);
+
   // Themed replacement for the old Alert.alert delete confirm.
   const [confirmDelete, setConfirmDelete] = useState<{ title: string; body: string; run: () => void } | null>(null);
 
@@ -93,8 +115,7 @@ export function FilesScreen() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   useEffect(() => {
     if (authed) return;
-    setListing(null);
-    setCurrentPath('~');
+    setDir('~');
     setSearchInput('');
     setSelectedFile(null);
     setFileTextContent('');
@@ -105,7 +126,6 @@ export function FilesScreen() {
     setNewFolderName('');
     setNewFileName('');
     setNewFileContent('');
-    setError(null);
   }, [authed]);
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchInput.trim().toLowerCase()), 150);
@@ -120,54 +140,6 @@ export function FilesScreen() {
     },
     [],
   );
-  // Stale-load guard — rapid breadcrumb/up/jump shouldn't let an old listing win.
-  const loadSeq = useRef(0);
-
-  const activeDirectory = listing?.path ?? currentPath;
-  const currentPathRef = useRef<string>('~');
-  const initialLoadedRef = useRef<boolean>(false);
-
-  const load = useCallback(
-    async (path?: string, isRefresh = false) => {
-      const seq = ++loadSeq.current;
-      const scope = getAuthScope();
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const targetPath = (path !== undefined ? path : currentPathRef.current || '~').trim();
-        const res = (await opsGet(
-          targetPath ? api.files(targetPath) : api.filesRoot(),
-        )) as unknown as ManagedFilesResponse;
-        if (seq !== loadSeq.current || getAuthScope() !== scope) return;
-        setListing(res);
-        setCurrentPath(res.path);
-        currentPathRef.current = res.path;
-        setPathInput(res.path);
-      } catch (e) {
-        if (seq !== loadSeq.current || getAuthScope() !== scope) return;
-        setError(errMsg(e));
-      } finally {
-        // No `return` in a finally: it would swallow the try's outcome. Guard
-        // the two writes instead.
-        if (seq === loadSeq.current && getAuthScope() === scope) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [getAuthScope, opsGet],
-  );
-
-  useEffect(() => {
-    if (authed && !initialLoadedRef.current) {
-      initialLoadedRef.current = true;
-      void load('~');
-    } else if (!authed) {
-      initialLoadedRef.current = false;
-    }
-  }, [authed, load]);
-
   const breadcrumbs = useMemo(() => {
     const raw = (activeDirectory || '~').trim();
     if (!raw || raw === '~') return [{ label: '~', path: '~' }];
@@ -206,7 +178,7 @@ export function FilesScreen() {
               setPreviewModalOpen(false);
               setSelectedFile(null);
             }
-            await load(activeDirectory);
+            refresh();
           } catch (e) {
             if (getAuthScope() === scope)
               toast({ title: 'Delete Failed', description: errMsg(e), variant: 'destructive' });
@@ -214,7 +186,7 @@ export function FilesScreen() {
         },
       });
     },
-    [getAuthScope, opsMut, previewModalOpen, load, activeDirectory],
+    [getAuthScope, opsMut, previewModalOpen, refresh, activeDirectory],
   );
 
   const handleOpenEntry = useCallback(
@@ -222,10 +194,9 @@ export function FilesScreen() {
       const scope = getAuthScope();
       if (entry.is_directory) {
         setSearchQuery('');
-        await load(entry.path);
+        setDir(entry.path);
       } else {
         setReadingFile(true);
-        setError(null);
         try {
           const res = (await opsGet(api.fileRead(entry.path))) as unknown as ManagedFileReadResponse;
           if (getAuthScope() !== scope) return;
@@ -248,7 +219,7 @@ export function FilesScreen() {
     },
     // `setSearchQuery` is an alias for the `setSearchInput` state setter, so its
     // identity is stable; ESLint cannot see through the alias.
-    [getAuthScope, load, opsGet, setSearchQuery],
+    [getAuthScope, opsGet, setSearchQuery],
   );
 
   // Stable identity for the list header: `load` and `listing.parent` are
@@ -257,16 +228,16 @@ export function FilesScreen() {
   const handleGoUp = useCallback(async () => {
     if (listing?.parent) {
       setSearchQuery('');
-      await load(listing.parent);
+      setDir(listing.parent);
     }
-  }, [listing?.parent, load, setSearchQuery]);
+  }, [listing?.parent, setSearchQuery]);
 
   const handleJumpToPath = async () => {
     const p = pathInput.trim();
     if (!p) return;
     setPathModalOpen(false);
     setSearchQuery('');
-    await load(p);
+    setDir(p);
   };
 
   const handleCreateFolder = async () => {
@@ -280,7 +251,7 @@ export function FilesScreen() {
       if (getAuthScope() !== scope) return;
       setNewFolderName('');
       setNewFolderModalOpen(false);
-      await load(activeDirectory);
+      refresh();
     } catch (e) {
       if (getAuthScope() === scope)
         toast({ title: 'Create Folder Failed', description: errMsg(e), variant: 'destructive' });
@@ -307,7 +278,7 @@ export function FilesScreen() {
       setNewFileName('');
       setNewFileContent('');
       setNewFileModalOpen(false);
-      await load(activeDirectory);
+      refresh();
     } catch (e) {
       if (getAuthScope() === scope)
         toast({ title: 'Create File Failed', description: errMsg(e), variant: 'destructive' });
@@ -332,7 +303,7 @@ export function FilesScreen() {
       if (getAuthScope() !== scope) return;
       setIsEditingFile(false);
       toast({ title: 'Saved', description: 'File saved successfully.', variant: 'success' });
-      await load(activeDirectory);
+      refresh();
     } catch (e) {
       if (getAuthScope() === scope) toast({ title: 'Save Failed', description: errMsg(e), variant: 'destructive' });
     } finally {
@@ -357,7 +328,7 @@ export function FilesScreen() {
         });
         if (getAuthScope() !== scope) return;
 
-        await load(activeDirectory);
+        refresh();
       }
     } catch (e) {
       if (getAuthScope() === scope) toast({ title: 'Upload Failed', description: errMsg(e), variant: 'destructive' });
@@ -522,7 +493,7 @@ export function FilesScreen() {
                     )}
                   </HeaderIconButton>
 
-                  <HeaderIconButton aria-label="Refresh" onClick={() => void load(activeDirectory, true)}>
+                  <HeaderIconButton aria-label="Refresh" onClick={() => void refresh()}>
                     <RefreshCw
                       size={20}
                       color={dark ? '#e5e5e5' : '#333'}
@@ -549,7 +520,7 @@ export function FilesScreen() {
                             aria-label={isLast ? crumb.label : `Go to ${crumb.label}`}
                             onClick={() => {
                               setSearchQuery('');
-                              void load(crumb.path);
+                              setDir(crumb.path);
                             }}
                             className={`h-auto sm:h-auto rounded px-1.5 py-0.5 ${
                               isLast ? 'bg-border' : 'active:bg-muted dark:active:bg-muted'
@@ -618,7 +589,7 @@ export function FilesScreen() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => void load(activeDirectory)}
+                onClick={() => void refresh()}
                 className="ml-6 mt-1 self-start">
                 <span className="text-xs font-semibold">Retry</span>
               </Button>
