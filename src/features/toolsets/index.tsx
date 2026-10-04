@@ -1,10 +1,11 @@
 // Toolsets route — user-facing capability groups ported from Hermes Desktop's
 // Capabilities → Toolsets view. Toolsets control which groups of tools the
 // agent can use (terminal, web, browser, vision, media generation, and more).
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { Boxes, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold } from '../../components/ui/bits';
 import { Switch } from '../../components/ui/switch';
 import { Input } from '../../components/ui/input';
@@ -95,101 +96,60 @@ const ToolsetRow = memo(function ToolsetRow({
             <ChevronRight size={14} color={dark ? '#777' : '#aaa'} />
           </div>
         </button>
-        {toggling ? (
-          <Spinner size={14} color={brandColor(dark)} />
-        ) : (
-          <Switch
-            checked={enabled}
-            onCheckedChange={(value) => void onToggle(name, value)}
-            aria-label={`${enabled ? 'Disable' : 'Enable'} ${label} toolset`}
-          />
-        )}
+        {/* Switch stays mounted while the write is in flight — swapping it for
+            a spinner would hide the optimistic flip for the whole request. */}
+        <Switch
+          checked={enabled}
+          disabled={toggling}
+          onCheckedChange={(value) => void onToggle(name, value)}
+          aria-label={`${enabled ? 'Disable' : 'Enable'} ${label} toolset`}
+        />
       </div>
     </div>
   );
 });
 
 export function ToolsetsScreen() {
-  const { authed, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { authed, activeProfile } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
 
-  const [toolsets, setToolsets] = useState<ToolsetInfo[] | null>(null);
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [unsupported, setUnsupported] = useState(false);
-  const [toggling, setToggling] = useState<string | null>(null);
   const [configuring, setConfiguring] = useState<ToolsetInfo | null>(null);
-  const loadEpoch = useRef(0);
 
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const profile = activeProfile;
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const next = await getToolsets(opsGet, profile);
-        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
-        setToolsets(next);
-        setUnsupported(false);
-      } catch (e) {
-        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
-        const msg = errMsg(e);
-        if (/HTTP 404/.test(msg)) {
-          setUnsupported(true);
-          setToolsets([]);
-        } else {
-          setError(msg);
-        }
-      } finally {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
+  // One query replaces the four useState slots + epoch-guarded load.
+  const list = useOpsQuery<ToolsetInfo[]>({
+    key: ['toolsets'],
+    get: (get) => getToolsets(get, activeProfile),
+    enabled: authed,
+  });
+  const toolsets = list.data ?? null;
+  const loading = list.isPending;
+  const refreshing = list.isRefetching;
+  const error = list.error ? errMsg(list.error) : null;
+  // A backend without `/api/toolsets` answers 404 — say so, not "no toolsets".
+  const unsupported = !!error && /HTTP 404/.test(error);
+  const refresh = useCallback(() => void list.refetch(), [list]);
+
+  const toggle = useOpsMutation<{ post_setup_started?: boolean }, { name: string; enabled: boolean }, ToolsetInfo[]>({
+    mutationFn: (mut, v) => setToolsetEnabled(mut, v.name, v.enabled, activeProfile),
+    done: [['toolsets']],
+    // Flip before the request leaves; the hook rolls the cache back on failure.
+    optimistic: {
+      key: ['toolsets'],
+      patch: (current, v) => (current ?? []).map((row) => (row.name === v.name ? { ...row, enabled: v.enabled } : row)),
+    },
+    onSuccess: (result, v) => {
+      if (result.post_setup_started) {
+        toast({
+          title: 'Setup started',
+          description: `${v.name} was enabled. Hermes is preparing its required dependency in the background.`,
+        });
       }
     },
-    [activeProfile, getAuthScope, opsGet],
-  );
-
-  useEffect(() => {
-    if (authed) void load();
-    else {
-      setToolsets(null);
-      setError(null);
-      setLoading(true);
-    }
-  }, [authed, load]);
-
-  const toggle = useCallback(
-    async (name: string, enabled: boolean) => {
-      const profile = activeProfile;
-      const scope = getAuthScope();
-      setToggling(name);
-      setToolsets((prev) => (prev ?? []).map((row) => (row.name === name ? { ...row, enabled } : row)));
-      try {
-        const result = await setToolsetEnabled(opsMut, name, enabled, profile);
-        if (getAuthScope() !== scope || activeProfile !== profile) return;
-        if (result.post_setup_started) {
-          toast({
-            title: 'Setup started',
-            description: `${name} was enabled. Hermes is preparing its required dependency in the background.`,
-          });
-        }
-      } catch (e) {
-        if (getAuthScope() !== scope || activeProfile !== profile) return;
-        setToolsets((prev) => (prev ?? []).map((row) => (row.name === name ? { ...row, enabled: !enabled } : row)));
-        toast({ title: 'Toolset update failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope && activeProfile === profile) setToggling(null);
-      }
-    },
-    [activeProfile, getAuthScope, opsMut],
-  );
+    onError: (e) => toast({ title: 'Toolset update failed', description: errMsg(e), variant: 'destructive' }),
+  });
+  const toggling = toggle.isPending ? (toggle.variables?.name ?? null) : null;
 
   const visibleToolsets = useMemo(
     () => (toolsets ?? []).filter((row) => !HIDDEN_TOOLSETS.has(String(row.name))),
@@ -218,7 +178,7 @@ export function ToolsetsScreen() {
             title="Toolsets"
             subtitle={`${activeProfile} · ${loading ? 'Loading…' : `${enabledCount}/${visibleToolsets.length} enabled`}`}
             actions={
-              <HeaderIconButton aria-label="Refresh toolsets" onClick={() => void load(true)}>
+              <HeaderIconButton aria-label="Refresh toolsets" onClick={refresh}>
                 <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
               </HeaderIconButton>
             }
@@ -265,7 +225,7 @@ export function ToolsetsScreen() {
               </div>
             </Card>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={refresh} />
           ) : filtered.length === 0 ? (
             <Card>
               <div className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -280,7 +240,7 @@ export function ToolsetsScreen() {
                   toolset={toolset}
                   dark={dark}
                   toggling={toggling === String(toolset.name ?? '')}
-                  onToggle={toggle}
+                  onToggle={(name, enabled) => toggle.mutate({ name, enabled })}
                   onConfigure={setConfiguring}
                 />
               ))}
@@ -294,7 +254,7 @@ export function ToolsetsScreen() {
           toolset={configuring}
           onClose={() => {
             setConfiguring(null);
-            void load(true);
+            refresh();
           }}
         />
       )}
