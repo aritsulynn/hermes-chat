@@ -42,6 +42,10 @@ function categoryLabel(cat: string): string {
   return CATEGORY_LABELS[cat] ?? cat.charAt(0).toUpperCase() + cat.slice(1);
 }
 
+// Stable empty map, so `?? EMPTY_VARS` doesn't hand the filter memos a fresh
+// object on every render while the query is pending.
+const EMPTY_VARS: Record<string, EnvVarInfo> = {};
+
 export function EnvScreen() {
   const { authed, activeProfile, opsMut, getAuthScope } = useApp();
   const { theme } = useThemeValue();
@@ -54,7 +58,7 @@ export function EnvScreen() {
     get: (get) => getEnvVars(get, activeProfile),
     enabled: authed,
   });
-  const vars = list.data ?? {};
+  const vars = list.data ?? EMPTY_VARS;
   const loading = list.isPending;
   const refreshing = list.isRefetching;
   const error = list.error ? errMsg(list.error) : null;
