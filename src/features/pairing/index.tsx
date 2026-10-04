@@ -2,10 +2,12 @@
 //
 // Ported from Hermes Desktop's `PairingPage.tsx`. Two sections: pending
 // requests (approve by request id) and approved users (revoke).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { Check, RefreshCw, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -18,6 +20,7 @@ import {
   getPairing,
   revokePairing,
   type PairingUser,
+  type PairingState,
 } from '../../services/pairing';
 
 function keyOf(u: PairingUser): string {
@@ -25,69 +28,59 @@ function keyOf(u: PairingUser): string {
 }
 
 export function PairingScreen() {
-  const { authed, opsGet, opsMut, getAuthScope } = useApp();
+  const { authed } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
-  const [pending, setPending] = useState<PairingUser[]>([]);
-  const [approved, setApproved] = useState<PairingUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [approving, setApproving] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; body: string; run: () => void } | null>(null);
 
-  const loadEpoch = useRef(0);
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const state = await getPairing(opsGet);
-        if (getAuthScope() !== scope || loadEpoch.current !== epoch) return;
-        setPending(state.pending);
-        setApproved(state.approved);
-      } catch (e) {
-        if (getAuthScope() === scope && loadEpoch.current === epoch) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [getAuthScope, opsGet],
-  );
+  // Connection-scoped cache entry replaces the hand-rolled load/epoch pair.
+  const list = useOpsQuery<PairingState>({
+    key: ['pairing'],
+    get: (get) => getPairing(get),
+    enabled: authed,
+  });
+  const pending = useMemo(() => list.data?.pending ?? [], [list.data]);
+  const approved = useMemo(() => list.data?.approved ?? [], [list.data]);
+  const loading = list.isPending;
+  const refreshing = list.isRefetching;
+  const error = list.error ? errMsg(list.error) : null;
+  const refresh = () => void list.refetch();
 
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
+  const approve = useOpsMutation<void, { platform: string; requestId: string; userId: string; name: string }>({
+    mutationFn: (mut, v) => approvePairing(mut, v.platform, v.requestId),
+    done: [['pairing']],
+    onSuccess: (_d, v) => { toast({ title: 'Approved', description: v.name }); },
+    onError: (e) => toast({ title: 'Approve failed', description: errMsg(e), variant: 'destructive' }),
+  });
+  // Which row's Approve button is in flight — keyed off the mutation variables.
+  const approving =
+    approve.isPending && approve.variables ? `${approve.variables.platform}:${approve.variables.userId}` : null;
+
+  const revoke = useOpsMutation<void, { platform: string; userId: string; name: string }>({
+    mutationFn: (mut, v) => revokePairing(mut, v.platform, v.userId),
+    done: [['pairing']],
+    onSuccess: (_d, v) => { toast({ title: 'Revoked', description: v.name }); },
+    onError: (e) => toast({ title: 'Revoke failed', description: errMsg(e), variant: 'destructive' }),
+  });
+
+  const clear = useOpsMutation<number, void>({
+    mutationFn: (mut) => clearPendingPairing(mut),
+    done: [['pairing']],
+    onSuccess: (cleared) => { toast({ title: `Cleared ${cleared} pending request(s)` }); },
+    onError: (e) => toast({ title: 'Clear failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
   const handleApprove = useCallback(
-    async (user: PairingUser) => {
+    (user: PairingUser) => {
       if (!user.request_id) {
         toast({ title: 'Missing pairing request', variant: 'destructive' });
         return;
       }
-      const scope = getAuthScope();
-      setApproving(keyOf(user));
-      try {
-        await approvePairing(opsMut, user.platform, user.request_id);
-        if (getAuthScope() !== scope) return;
-        toast({ title: 'Approved', description: user.user_name || user.user_id });
-        await load(true);
-      } catch (e) {
-        if (getAuthScope() === scope)
-          toast({ title: 'Approve failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setApproving(null);
-      }
+      approve.mutate({ platform: user.platform, requestId: user.request_id, userId: user.user_id, name: user.user_name || user.user_id });
     },
-    [getAuthScope, load, opsMut],
+    [approve],
   );
 
   const handleRevoke = useCallback(
@@ -95,21 +88,10 @@ export function PairingScreen() {
       setConfirm({
         title: 'Revoke access',
         body: `"${user.user_name || user.user_id}" will lose access. This cannot be undone.`,
-        run: async () => {
-          const scope = getAuthScope();
-          try {
-            await revokePairing(opsMut, user.platform, user.user_id);
-            if (getAuthScope() !== scope) return;
-            toast({ title: 'Revoked', description: user.user_name || user.user_id });
-            await load(true);
-          } catch (e) {
-            if (getAuthScope() === scope)
-              toast({ title: 'Revoke failed', description: errMsg(e), variant: 'destructive' });
-          }
-        },
+        run: () => revoke.mutate({ platform: user.platform, userId: user.user_id, name: user.user_name || user.user_id }),
       });
     },
-    [getAuthScope, load, opsMut],
+    [revoke],
   );
 
   const handleClearPending = useCallback(() => {
@@ -117,20 +99,9 @@ export function PairingScreen() {
     setConfirm({
       title: 'Clear pending',
       body: `Clear all ${pending.length} pending pairing request(s)?`,
-      run: async () => {
-        const scope = getAuthScope();
-        try {
-          const cleared = await clearPendingPairing(opsMut);
-          if (getAuthScope() !== scope) return;
-          toast({ title: `Cleared ${cleared} pending request(s)` });
-          await load(true);
-        } catch (e) {
-          if (getAuthScope() === scope)
-            toast({ title: 'Clear failed', description: errMsg(e), variant: 'destructive' });
-        }
-      },
+      run: () => clear.mutate(),
     });
-  }, [getAuthScope, load, opsMut, pending.length]);
+  }, [clear, pending.length]);
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -148,7 +119,7 @@ export function PairingScreen() {
                     <Trash2 size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
                 )}
-                <HeaderIconButton aria-label="Refresh pairing" onClick={() => void load(true)}>
+                <HeaderIconButton aria-label="Refresh pairing" onClick={refresh}>
                   <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
                 </HeaderIconButton>
               </div>
@@ -162,7 +133,7 @@ export function PairingScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={refresh} />
           ) : (
             <>
               <div className="flex items-center gap-2 px-1">
