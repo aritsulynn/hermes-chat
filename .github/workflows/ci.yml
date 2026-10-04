@@ -1,0 +1,70 @@
+# The bar for a change: typecheck, tests, lint, format. Same commands a
+# contributor runs locally (see CONTRIBUTING.md), so a green PR means the same
+# thing as a green laptop.
+#
+# Node 22 and 24 are the tested floors because `engines` says so: ESLint 10
+# requires `^22.13.0 || >=24`, and `npm test` needs `--experimental-strip-types`,
+# which does not exist before 22.6. Node 20 can still *build* the app (Vite 7
+# allows 20.19+) but cannot run the test suite, so it is not tested here — if you
+# want to support it, that is a separate decision, not an accident of the matrix.
+name: CI
+
+on:
+  push:
+    # Both spellings: this repo's default branch is `master`, but a fork or a
+    # later rename would be `main`, and a workflow that silently never runs is
+    # worse than no workflow.
+    branches: [master, main]
+  pull_request:
+
+# A new push supersedes the previous run; do not spend minutes on a commit
+# nobody is looking at any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck, test, lint, format
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `npm ci` needs the lockfile to agree with package.json; a mismatch there
+      # is a real failure, not something to paper over with an install.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Warnings are reported but do not fail the build: the repo carries 62
+      # `react-hooks/exhaustive-deps` warnings today, and CONTRIBUTING.md calls
+      # them out as known rather than fixed. Flip this to `--max-warnings 0` in
+      # the same commit that clears them.
+      - name: Lint
+        run: npm run lint
+
+      - name: Format
+        run: npm run format:check
+
+      # Nothing consumes `dist/` in this repo, so building is only worth doing
+      # to prove the bundle compiles — but the APK flow depends on it, so keep
+      # it in the loop.
+      - name: Build
+        run: npm run build
