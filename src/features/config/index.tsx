@@ -97,7 +97,10 @@ export function ConfigScreen() {
                   <HeaderIconButton aria-label="Reload config" onClick={doReload}>
                     <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
-                  <HeaderIconButton aria-label="Save config" onClick={() => save.mutate(yaml)} disabled={saving || !dirty}>
+                  <HeaderIconButton
+                    aria-label="Save config"
+                    onClick={() => save.mutate(yaml)}
+                    disabled={saving || !dirty}>
                     {saving ? (
                       <Spinner size={18} color={brand} />
                     ) : (

@@ -62,25 +62,34 @@ export function ProfilesScreen() {
       await switchProfile(v.name);
     },
     done: [['profiles']],
-    onSuccess: (_d, v) => { toast({ title: 'Switched profile', description: v.name }); },
+    onSuccess: (_d, v) => {
+      toast({ title: 'Switched profile', description: v.name });
+    },
     onError: (e) => toast({ title: 'Switch failed', description: errMsg(e), variant: 'destructive' }),
   });
 
   const exporter = useOpsMutation<string, { name: string }>({
     mutationFn: (mut, v) => exportProfile(mut, v.name),
-    onSuccess: (archive) => { toast({ title: 'Profile exported', description: archive || undefined }); },
+    onSuccess: (archive) => {
+      toast({ title: 'Profile exported', description: archive || undefined });
+    },
     onError: (e) => toast({ title: 'Export failed', description: errMsg(e), variant: 'destructive' }),
   });
 
   const del = useOpsMutation<void, { name: string }>({
     mutationFn: (mut, v) => deleteProfile(mut, v.name),
     done: [['profiles']],
-    onSuccess: (_d, v) => { toast({ title: 'Profile deleted', description: v.name }); },
+    onSuccess: (_d, v) => {
+      toast({ title: 'Profile deleted', description: v.name });
+    },
     onError: (e) => toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' }),
   });
 
   // Which row's Use/Export button is in flight.
-  const busyName = (useProfileMut.isPending && useProfileMut.variables?.name) || (exporter.isPending && exporter.variables?.name) || null;
+  const busyName =
+    (useProfileMut.isPending && useProfileMut.variables?.name) ||
+    (exporter.isPending && exporter.variables?.name) ||
+    null;
 
   const doUseProfile = useCallback((p: ProfileInfo) => useProfileMut.mutate({ name: p.name }), [useProfileMut]);
 

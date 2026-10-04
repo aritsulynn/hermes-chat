@@ -266,7 +266,9 @@ function PluginRow({
   const toggle = useOpsMutation<void, void>({
     mutationFn: (mut) => setAgentPluginEnabled(mut, p.name, !enabled),
     done: [['plugins', 'hub']],
-    onSuccess: () => { toast({ title: enabled ? 'Plugin disabled' : 'Plugin enabled', description: p.name }); },
+    onSuccess: () => {
+      toast({ title: enabled ? 'Plugin disabled' : 'Plugin enabled', description: p.name });
+    },
     onError: (e) => toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' }),
   });
 
@@ -292,14 +294,18 @@ function PluginRow({
   const toggleVisibility = useOpsMutation<void, void>({
     mutationFn: (mut) => setPluginVisibility(mut, p.name, !p.userHidden),
     done: [['plugins', 'hub']],
-    onSuccess: () => { toast({ title: p.userHidden ? 'Shown in sidebar' : 'Hidden from sidebar', description: p.name }); },
+    onSuccess: () => {
+      toast({ title: p.userHidden ? 'Shown in sidebar' : 'Hidden from sidebar', description: p.name });
+    },
     onError: (e) => toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' }),
   });
 
   const remove = useOpsMutation<void, void>({
     mutationFn: (mut) => removeAgentPlugin(mut, p.name),
     done: [['plugins', 'hub']],
-    onSuccess: () => { toast({ title: 'Plugin removed', description: p.name }); },
+    onSuccess: () => {
+      toast({ title: 'Plugin removed', description: p.name });
+    },
     onError: (e) => toast({ title: 'Remove failed', description: errMsg(e), variant: 'destructive' }),
   });
 

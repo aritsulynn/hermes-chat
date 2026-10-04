@@ -192,13 +192,11 @@ function PlatformRow({
   dark,
   onConfigure,
   onPair,
-
 }: {
   platform: MessagingPlatform;
   dark: boolean;
   onConfigure: () => void;
   onPair: () => void;
-
 }) {
   const canPair = platform.id === 'telegram' || platform.id === 'whatsapp';
 

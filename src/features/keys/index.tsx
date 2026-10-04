@@ -92,7 +92,9 @@ export function EnvScreen() {
   const del = useOpsMutation<void, string>({
     mutationFn: (mut, key) => deleteEnvVar(mut, key, activeProfile),
     done: [['env']],
-    onSuccess: (_d, key) => { toast({ title: 'Key deleted', description: key }); },
+    onSuccess: (_d, key) => {
+      toast({ title: 'Key deleted', description: key });
+    },
     onError: (e) => toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' }),
   });
 

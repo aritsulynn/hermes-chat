@@ -75,7 +75,10 @@ export function ModelsScreen() {
         ...(v.reasoningEffort !== undefined ? { reasoningEffort: v.reasoningEffort } : {}),
         profile: activeProfile,
       }),
-    done: [['models', 'info'], ['models', 'aux']],
+    done: [
+      ['models', 'info'],
+      ['models', 'aux'],
+    ],
     onSuccess: (res, v) => {
       if (res.confirmRequired) {
         toast({
@@ -100,12 +103,18 @@ export function ModelsScreen() {
         task: '__reset__',
         profile: activeProfile,
       }),
-    done: [['models', 'info'], ['models', 'aux']],
-    onSuccess: () => { toast({ title: 'All tasks reset to auto' }); },
+    done: [
+      ['models', 'info'],
+      ['models', 'aux'],
+    ],
+    onSuccess: () => {
+      toast({ title: 'All tasks reset to auto' });
+    },
     onError: (e) => toast({ title: 'Reset failed', description: errMsg(e), variant: 'destructive' }),
   });
 
-  const busyTask = assign.isPending && assign.variables ? assign.variables.task : resetAll.isPending ? '__reset__' : null;
+  const busyTask =
+    assign.isPending && assign.variables ? assign.variables.task : resetAll.isPending ? '__reset__' : null;
 
   const assignTask = useCallback(
     (task: string, provider: string, model: string, reasoningEffort?: string | null) => {
@@ -228,7 +237,7 @@ export function ModelsScreen() {
                         <Button
                           aria-label={`Reset ${t.task}`}
                           variant="ghost"
-                          onClick={() => assignTask(t.task, "auto", "")}
+                          onClick={() => assignTask(t.task, 'auto', '')}
                           disabled={busyTask === t.task}
                           className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
                           <span className="text-xs font-semibold text-neutral-500">Reset</span>

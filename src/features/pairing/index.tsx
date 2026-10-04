@@ -51,7 +51,9 @@ export function PairingScreen() {
   const approve = useOpsMutation<void, { platform: string; requestId: string; userId: string; name: string }>({
     mutationFn: (mut, v) => approvePairing(mut, v.platform, v.requestId),
     done: [['pairing']],
-    onSuccess: (_d, v) => { toast({ title: 'Approved', description: v.name }); },
+    onSuccess: (_d, v) => {
+      toast({ title: 'Approved', description: v.name });
+    },
     onError: (e) => toast({ title: 'Approve failed', description: errMsg(e), variant: 'destructive' }),
   });
   // Which row's Approve button is in flight — keyed off the mutation variables.
@@ -61,14 +63,18 @@ export function PairingScreen() {
   const revoke = useOpsMutation<void, { platform: string; userId: string; name: string }>({
     mutationFn: (mut, v) => revokePairing(mut, v.platform, v.userId),
     done: [['pairing']],
-    onSuccess: (_d, v) => { toast({ title: 'Revoked', description: v.name }); },
+    onSuccess: (_d, v) => {
+      toast({ title: 'Revoked', description: v.name });
+    },
     onError: (e) => toast({ title: 'Revoke failed', description: errMsg(e), variant: 'destructive' }),
   });
 
   const clear = useOpsMutation<number, void>({
     mutationFn: (mut) => clearPendingPairing(mut),
     done: [['pairing']],
-    onSuccess: (cleared) => { toast({ title: `Cleared ${cleared} pending request(s)` }); },
+    onSuccess: (cleared) => {
+      toast({ title: `Cleared ${cleared} pending request(s)` });
+    },
     onError: (e) => toast({ title: 'Clear failed', description: errMsg(e), variant: 'destructive' }),
   });
 
@@ -78,7 +84,12 @@ export function PairingScreen() {
         toast({ title: 'Missing pairing request', variant: 'destructive' });
         return;
       }
-      approve.mutate({ platform: user.platform, requestId: user.request_id, userId: user.user_id, name: user.user_name || user.user_id });
+      approve.mutate({
+        platform: user.platform,
+        requestId: user.request_id,
+        userId: user.user_id,
+        name: user.user_name || user.user_id,
+      });
     },
     [approve],
   );
@@ -88,7 +99,8 @@ export function PairingScreen() {
       setConfirm({
         title: 'Revoke access',
         body: `"${user.user_name || user.user_id}" will lose access. This cannot be undone.`,
-        run: () => revoke.mutate({ platform: user.platform, userId: user.user_id, name: user.user_name || user.user_id }),
+        run: () =>
+          revoke.mutate({ platform: user.platform, userId: user.user_id, name: user.user_name || user.user_id }),
       });
     },
     [revoke],

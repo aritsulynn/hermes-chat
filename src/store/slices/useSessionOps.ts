@@ -2,7 +2,12 @@
 import { useCallback } from 'react';
 import { navigate } from '../nav';
 import type { HistoryMessage } from '../../services/gateway-ws';
-import { getSessionMessages, getSessionExportText, getLatestDescendant, lastSessionMessagesRawCount } from '../../services/dashboard';
+import {
+  getSessionMessages,
+  getSessionExportText,
+  getLatestDescendant,
+  lastSessionMessagesRawCount,
+} from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
@@ -132,12 +137,8 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       // best-effort — an old gateway, a deleted child, or a transport failure
       // all return null and open the requested session instead.
       {
-        const descendantId = await getLatestDescendant(
-          targetHost,
-          cookie.current,
-          s.id,
-          profile,
-          async (nextCookie) => acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
+        const descendantId = await getLatestDescendant(targetHost, cookie.current, s.id, profile, async (nextCookie) =>
+          acceptRotatedCookie(nextCookie, targetHost, targetUser, connectionEpoch, epoch),
         );
         if (
           !isLatestOpen() ||

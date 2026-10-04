@@ -61,8 +61,7 @@ export function FilesScreen() {
   // guard ref, and the initialLoaded flag all go away with the key.
   const list = useOpsQuery<ManagedFilesResponse>({
     key: ['files', dir],
-    get: (get) =>
-      get(dir.trim() ? api.files(dir.trim()) : api.filesRoot()) as unknown as Promise<ManagedFilesResponse>,
+    get: (get) => get(dir.trim() ? api.files(dir.trim()) : api.filesRoot()) as unknown as Promise<ManagedFilesResponse>,
     enabled: authed,
   });
   const listing = list.data ?? null;
@@ -586,11 +585,7 @@ export function FilesScreen() {
           <div className="m-3">
             <UIAlert icon={AlertCircle} variant="destructive">
               <AlertDescription className="text-xs text-red-600 dark:text-red-400">{error}</AlertDescription>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => void refresh()}
-                className="ml-6 mt-1 self-start">
+              <Button variant="destructive" size="sm" onClick={() => void refresh()} className="ml-6 mt-1 self-start">
                 <span className="text-xs font-semibold">Retry</span>
               </Button>
             </UIAlert>
