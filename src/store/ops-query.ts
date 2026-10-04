@@ -38,7 +38,8 @@ export interface OpsQueryResult<T> {
   isPending: boolean;
   /** True while a refetch is in flight over data already on screen. */
   isRefetching: boolean;
-  refetch: () => Promise<unknown>;
+  /** Resolves with the fresh data (or undefined if the refetch failed). */
+  refetch: () => Promise<T | undefined>;
 }
 
 /** What `onMutate` hands back so a failed write can put the old value back. */
@@ -97,7 +98,7 @@ export function useOpsQuery<TData = OpsResult>(options: {
     error: isSuperseded(query.error) ? null : query.error,
     isPending: query.isPending,
     isRefetching: query.isRefetching,
-    refetch: () => query.refetch(),
+    refetch: () => query.refetch().then((r) => r.data),
   };
 }
 

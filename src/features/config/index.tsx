@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { Check, FileCode2, RefreshCw, RotateCcw } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -17,66 +18,69 @@ import { ConfirmDialog } from '../../components/ui/dialog';
 import { toast } from '../../components/ui/toast';
 import { brandColor, screenStyle } from '../../theme';
 import { getRawConfig, saveRawConfig } from '../../services/config';
+import type { RawConfig } from '../../services/config';
 
 export function ConfigScreen() {
-  const { authed, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { authed, activeProfile } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
   const [yaml, setYaml] = useState('');
   const [savedYaml, setSavedYaml] = useState('');
-  const [path, setPath] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [reloadConfirm, setReloadConfirm] = useState(false);
 
-  const loadEpoch = useRef(0);
-  const load = useCallback(async () => {
-    const profile = activeProfile;
-    const scope = getAuthScope();
-    const epoch = ++loadEpoch.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await getRawConfig(opsGet, profile);
-      if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
-      setYaml(res.yaml);
-      setSavedYaml(res.yaml);
-      setPath(res.path);
-    } catch (e) {
-      if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) setError(errMsg(e));
-    } finally {
-      if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) setLoading(false);
-    }
-  }, [activeProfile, getAuthScope, opsGet]);
+  // One query replaces the old four `useState` slots + epoch-guarded `load`.
+  const cfg = useOpsQuery<RawConfig>({
+    key: ['config'],
+    get: (get) => getRawConfig(get, activeProfile),
+    enabled: authed,
+  });
+  const loading = cfg.isPending;
+  const error = cfg.error ? errMsg(cfg.error) : null;
+  const path = cfg.data?.path ?? '';
 
+  // Seed the editor from the fetched document — first load, a scope switch,
+  // and a save whose response changed the file all land here. A refetch that
+  // returns identical content keeps its reference (structural sharing), so
+  // in-progress edits survive a post-save invalidation.
+  const seeded = useRef<RawConfig | null>(null);
   useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
+    if (cfg.data && cfg.data !== seeded.current) {
+      seeded.current = cfg.data;
+      setYaml(cfg.data.yaml);
+      setSavedYaml(cfg.data.yaml);
+    }
+  }, [cfg.data]);
 
   const dirty = yaml !== savedYaml;
 
-  const save = useCallback(async () => {
-    const scope = getAuthScope();
-    setSaving(true);
-    try {
-      await saveRawConfig(opsMut, yaml, activeProfile);
-      if (getAuthScope() !== scope) return;
-      setSavedYaml(yaml);
-      toast({ title: 'Config saved' });
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Save failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setSaving(false);
+  // Reload always pulls fresh content and resets the editor, even when the
+  // file is unchanged — that is the "discard edits" path.
+  const reload = useCallback(async () => {
+    const fresh = await cfg.refetch();
+    if (fresh) {
+      seeded.current = fresh;
+      setYaml(fresh.yaml);
+      setSavedYaml(fresh.yaml);
     }
-  }, [activeProfile, getAuthScope, opsMut, yaml]);
+  }, [cfg]);
+
+  const save = useOpsMutation<void, string>({
+    mutationFn: (mut, yamlText) => saveRawConfig(mut, yamlText, activeProfile),
+    done: [['config']],
+    onSuccess: (_data, yamlText) => {
+      setSavedYaml(yamlText);
+      toast({ title: 'Config saved' });
+    },
+    onError: (e) => toast({ title: 'Save failed', description: errMsg(e), variant: 'destructive' }),
+  });
+  const saving = save.isPending;
 
   const doReload = useCallback(() => {
     if (dirty) setReloadConfirm(true);
-    else void load();
-  }, [dirty, load]);
+    else void reload();
+  }, [dirty, reload]);
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -93,7 +97,7 @@ export function ConfigScreen() {
                   <HeaderIconButton aria-label="Reload config" onClick={doReload}>
                     <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
-                  <HeaderIconButton aria-label="Save config" onClick={() => void save()} disabled={saving || !dirty}>
+                  <HeaderIconButton aria-label="Save config" onClick={() => save.mutate(yaml)} disabled={saving || !dirty}>
                     {saving ? (
                       <Spinner size={18} color={brand} />
                     ) : (
@@ -118,7 +122,7 @@ export function ConfigScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={() => void reload()} />
           ) : (
             <>
               <Card>
@@ -137,7 +141,7 @@ export function ConfigScreen() {
               <div className="flex items-center gap-2">
                 <Button
                   aria-label="Save config"
-                  onClick={() => void save()}
+                  onClick={() => save.mutate(yaml)}
                   disabled={saving || !dirty}
                   className="h-auto sm:h-auto flex-1 rounded-xl px-4 py-2.5">
                   {saving ? <Spinner size={14} color="#fff" /> : <Check size={14} color="#fff" />}
@@ -164,7 +168,7 @@ export function ConfigScreen() {
         description="Reloading replaces your unsaved edits with the file on disk."
         confirmLabel="Reload"
         destructive
-        onConfirm={() => void load()}
+        onConfirm={() => void reload()}
         onOpenChange={(o) => {
           if (!o) setReloadConfirm(false);
         }}
