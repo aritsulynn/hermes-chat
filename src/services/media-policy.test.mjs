@@ -4,7 +4,7 @@ import test from 'node:test';
 import { buildImageSource, isDashboardMediaUri, shouldAttachDashboardCookie } from './media-policy.ts';
 
 const cookie = 'hermes_session_at=secret';
-const dashboard = 'http://192.168.1.8:9119';
+const dashboard = 'http://192.0.2.8:9119';
 
 test('attaches the session cookie to same-origin dashboard media paths', () => {
   for (const path of [
@@ -40,9 +40,9 @@ test('supports a dashboard mounted below a reverse-proxy path prefix', () => {
 test('does not attach the cookie to a different origin, port, or scheme', () => {
   const cases = [
     ['https://other.test/api/media?path=x', dashboard],
-    ['http://192.168.1.8:9443/api/media?path=x', dashboard],
-    ['https://192.168.1.8:9119/api/media?path=x', dashboard],
-    ['http://192.168.1.8.evil.test:9119/api/media?path=x', dashboard],
+    ['http://192.0.2.8:9443/api/media?path=x', dashboard],
+    ['https://192.0.2.8:9119/api/media?path=x', dashboard],
+    ['http://192.0.2.8.evil.test:9119/api/media?path=x', dashboard],
   ];
   for (const [uri, base] of cases) {
     assert.equal(isDashboardMediaUri(uri, base), false, uri);
@@ -70,7 +70,7 @@ test('does not attach an empty cookie even for a dashboard URL', () => {
 });
 
 test('rejects URL userinfo instead of treating it as the dashboard', () => {
-  const uri = 'http://user:pass@192.168.1.8:9119/api/media?path=x';
+  const uri = 'http://user:pass@192.0.2.8:9119/api/media?path=x';
   assert.equal(isDashboardMediaUri(uri, dashboard), false);
   assert.deepEqual(buildImageSource(uri, dashboard, cookie), { uri });
 });

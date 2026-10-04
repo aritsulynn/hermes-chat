@@ -9,7 +9,7 @@
 
 ## 1. Unverified behaviour — `M`
 
-Driven against a real gateway on 192.168.1.42:9119, but these were not observed:
+Driven against a real gateway on 192.0.2.42:9119, but these were not observed:
 
 - **The "Load older messages" button at rest.** Paging demonstrably works (a
   148-message session grew the scroller from 3.2k to 66k px), but the scroller

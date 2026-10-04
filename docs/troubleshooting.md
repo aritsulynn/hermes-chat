@@ -19,7 +19,7 @@ credentials are accepted — and then it dies on the third request. Every
 mutating screen fails the same way afterwards if you get past login by hand.
 
 **Only happens when the app and the gateway are on different origins.** A
-`localhost:5173` app against a `192.168.1.42:9119` gateway is cross-origin, so it
+`localhost:5173` app against a `192.0.2.42:9119` gateway is cross-origin, so it
 hits this. Same-origin (the app served from the gateway's own origin) never
 does: a same-origin request is never preflighted. The Android build never does —
 it talks to the gateway through `NativeHttpPlugin`, which is a plain
@@ -118,7 +118,7 @@ def _cors_allowed_origins() -> list[str]:
     """Loopback hosts plus whatever this install listed in
     ``dashboard.cors_origins`` / ``HERMES_DASHBOARD_CORS_ORIGINS``.
 
-    A listed entry is a host (``192.168.1.42``), a ``host:port`` pair, or a full
+    A listed entry is a host (``192.0.2.42``), a ``host:port`` pair, or a full
     origin (``http://hermes.example``). The port stays optional either way, so
     one entry covers every dev port on that host. Only host characters are
     accepted — an entry that cannot be a hostname is dropped rather than
@@ -232,12 +232,12 @@ not belong in the source:
 # ~/.hermes/config.yaml
 dashboard:
   cors_origins:
-    - 192.168.1.42 # this machine's dev server
+    - 192.0.2.42 # this machine's dev server
 ```
 
 ```bash
 # or, no config edit:
-export HERMES_DASHBOARD_CORS_ORIGINS="192.168.1.42, http://hermes.example"
+export HERMES_DASHBOARD_CORS_ORIGINS="192.0.2.42, http://hermes.example"
 ```
 
 The port stays optional, so one entry covers every dev port on that host. Entries
@@ -254,7 +254,7 @@ is **dropped**, not interpolated: the list is compiled into a regex, and a stray
 
 ```bash
 # 1. preflight passes, from each origin you actually use
-for o in http://localhost:5173 http://192.168.1.42:5173; do
+for o in http://localhost:5173 http://192.0.2.42:5173; do
   echo -n "$o -> "
   curl -s -o /dev/null -w "%{http_code}\n" -X OPTIONS \
     -H "Origin: $o" -H "Access-Control-Request-Method: POST" \
