@@ -29,6 +29,11 @@
 > Hermes gateway (dashboard + JSON-RPC WebSocket) to sign in. The server address is
 > entered on the login screen, not configured through the environment.
 
+<p align="center">
+  <img src="docs/assets/chat.png" width="280" alt="Chat screen — streaming response with tool cards" />
+  <img src="docs/assets/models.png" width="280" alt="Models screen — main model and auxiliary task slots" />
+</p>
+
 ## Features
 
 **Chat** — token-by-token streaming with collapsible reasoning blocks; tool call
