@@ -5,11 +5,12 @@
 // inline edit + save (with a live provider probe), a reveal-on-demand for
 // saved secrets, delete, and add-a-custom-key. The desktop's custom
 // provider-endpoints flow is a separate surface and is not ported here.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Check, Eye, EyeOff, KeyRound, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -42,49 +43,28 @@ function categoryLabel(cat: string): string {
 }
 
 export function EnvScreen() {
-  const { authed, activeProfile, opsGet, opsMut, getAuthScope } = useApp();
+  const { authed, activeProfile, opsMut, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
-  const [vars, setVars] = useState<Record<string, EnvVarInfo>>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // One scoped query replaces the four useState slots + epoch-guarded load.
+  const list = useOpsQuery<Record<string, EnvVarInfo>>({
+    key: ['env'],
+    get: (get) => getEnvVars(get, activeProfile),
+    enabled: authed,
+  });
+  const vars = list.data ?? {};
+  const loading = list.isPending;
+  const refreshing = list.isRefetching;
+  const error = list.error ? errMsg(list.error) : null;
+  const refresh = useCallback(() => void list.refetch(), [list]);
+
   const [query, setQuery] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(true);
   const [editing, setEditing] = useState<{ key: string; info: EnvVarInfo } | null>(null);
   const [adding, setAdding] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; body: string; run: () => void } | null>(null);
-
-  const loadEpoch = useRef(0);
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const profile = activeProfile;
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const next = await getEnvVars(opsGet, profile);
-        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
-        setVars(next);
-      } catch (e) {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [activeProfile, getAuthScope, opsGet],
-  );
-
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
 
   const ql = query.trim().toLowerCase();
   const groups = useMemo(() => {
@@ -105,26 +85,22 @@ export function EnvScreen() {
 
   const configured = useMemo(() => Object.values(vars).filter((v) => v.isSet && !v.channelManaged).length, [vars]);
 
+  const del = useOpsMutation<void, string>({
+    mutationFn: (mut, key) => deleteEnvVar(mut, key, activeProfile),
+    done: [['env']],
+    onSuccess: (_d, key) => { toast({ title: 'Key deleted', description: key }); },
+    onError: (e) => toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' }),
+  });
+
   const handleDelete = useCallback(
     (key: string) => {
       setConfirm({
         title: 'Delete key',
         body: `Remove ${key} from .env? Any credential mirror in config.yaml is cleared too.`,
-        run: async () => {
-          const scope = getAuthScope();
-          try {
-            await deleteEnvVar(opsMut, key, activeProfile);
-            if (getAuthScope() !== scope) return;
-            toast({ title: 'Key deleted', description: key });
-            await load(true);
-          } catch (e) {
-            if (getAuthScope() === scope)
-              toast({ title: 'Delete failed', description: errMsg(e), variant: 'destructive' });
-          }
-        },
+        run: () => del.mutate(key),
       });
     },
-    [activeProfile, getAuthScope, load, opsMut],
+    [del],
   );
 
   if (!authed) return <Redirect to="/login" replace />;
@@ -142,7 +118,7 @@ export function EnvScreen() {
                   <HeaderIconButton aria-label="Add custom key" onClick={() => setAdding(true)}>
                     <Plus size={20} color={dark ? '#e5e5e5' : '#333'} />
                   </HeaderIconButton>
-                  <HeaderIconButton aria-label="Refresh keys" onClick={() => void load(true)}>
+                  <HeaderIconButton aria-label="Refresh keys" onClick={refresh}>
                     <RefreshCw
                       size={20}
                       color={dark ? '#e5e5e5' : '#333'}
@@ -178,7 +154,7 @@ export function EnvScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={refresh} />
           ) : groups.length === 0 ? (
             <Card>
               <div className="text-xs text-neutral-500 dark:text-neutral-400">No matching keys.</div>
@@ -223,7 +199,7 @@ export function EnvScreen() {
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
-            void load(true);
+            refresh();
           }}
         />
       )}
@@ -238,7 +214,7 @@ export function EnvScreen() {
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);
-            void load(true);
+            refresh();
           }}
         />
       )}
