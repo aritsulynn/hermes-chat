@@ -12,6 +12,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Check, Copy, ExternalLink, KeyRound, RefreshCw, X, Zap } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
 import { errMsg } from '../../utils/messages';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -43,42 +44,21 @@ export function ChannelsScreen() {
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
-  const [platforms, setPlatforms] = useState<MessagingPlatform[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [configuring, setConfiguring] = useState<MessagingPlatform | null>(null);
   const [pairing, setPairing] = useState<{ kind: PairingKind; platform: MessagingPlatform } | null>(null);
 
-  const loadEpoch = useRef(0);
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const profile = activeProfile;
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const next = await getMessagingPlatforms(opsGet, profile);
-        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
-        setPlatforms(next);
-      } catch (e) {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [activeProfile, getAuthScope, opsGet],
-  );
-
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
+  // One scoped query replaces the four useState slots + epoch-guarded load.
+  const list = useOpsQuery<MessagingPlatform[]>({
+    key: ['channels'],
+    get: (get) => getMessagingPlatforms(get, activeProfile),
+    enabled: authed,
+  });
+  const platforms = list.data ?? [];
+  const loading = list.isPending;
+  const refreshing = list.isRefetching;
+  const error = list.error ? errMsg(list.error) : null;
+  const refresh = useCallback(() => void list.refetch(), [list]);
 
   const ql = query.trim().toLowerCase();
   const visible = useMemo(
@@ -107,7 +87,7 @@ export function ChannelsScreen() {
               title="Channels"
               subtitle={loading ? 'Loading…' : `${configuredCount}/${platforms.length} configured`}
               actions={
-                <HeaderIconButton aria-label="Refresh channels" onClick={() => void load(true)}>
+                <HeaderIconButton aria-label="Refresh channels" onClick={refresh}>
                   <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
                 </HeaderIconButton>
               }
@@ -131,7 +111,7 @@ export function ChannelsScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={refresh} />
           ) : visible.length === 0 ? (
             <Card>
               <div className="text-xs text-neutral-500 dark:text-neutral-400">No matching channels.</div>
@@ -144,7 +124,6 @@ export function ChannelsScreen() {
                 dark={dark}
                 onConfigure={() => setConfiguring(p)}
                 onPair={() => setPairing({ kind: p.id === 'whatsapp' ? 'whatsapp' : 'telegram', platform: p })}
-                onChanged={() => void load(true)}
               />
             ))
           )}
@@ -160,7 +139,7 @@ export function ChannelsScreen() {
           onClose={() => setConfiguring(null)}
           onChanged={() => {
             setConfiguring(null);
-            void load(true);
+            refresh();
           }}
         />
       )}
@@ -176,7 +155,7 @@ export function ChannelsScreen() {
           onClose={() => setPairing(null)}
           onDone={() => {
             setPairing(null);
-            void load(true);
+            refresh();
           }}
         />
       )}
@@ -213,53 +192,38 @@ function PlatformRow({
   dark,
   onConfigure,
   onPair,
-  onChanged,
+
 }: {
   platform: MessagingPlatform;
   dark: boolean;
   onConfigure: () => void;
   onPair: () => void;
-  onChanged: () => void;
+
 }) {
-  const { opsMut, getAuthScope } = useApp();
-  const [toggling, setToggling] = useState(false);
-  const [testing, setTesting] = useState(false);
   const canPair = platform.id === 'telegram' || platform.id === 'whatsapp';
 
-  const toggle = useCallback(
-    async (next: boolean) => {
-      const scope = getAuthScope();
-      setToggling(true);
-      try {
-        await updateMessagingPlatform(opsMut, platform.id, { enabled: next });
-        if (getAuthScope() !== scope) return;
-        onChanged();
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setToggling(false);
-      }
+  const toggle = useOpsMutation<void, boolean, MessagingPlatform[]>({
+    mutationFn: (mut, next) => updateMessagingPlatform(mut, platform.id, { enabled: next }),
+    done: [['channels']],
+    // Flip before the request leaves; the hook rolls the cache back on failure.
+    optimistic: {
+      key: ['channels'],
+      patch: (current, next) => (current ?? []).map((p) => (p.id === platform.id ? { ...p, enabled: next } : p)),
     },
-    [getAuthScope, onChanged, opsMut, platform.id],
-  );
+    onError: (e) => toast({ title: 'Update failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const test = useCallback(async () => {
-    const scope = getAuthScope();
-    setTesting(true);
-    try {
-      const res = await testMessagingPlatform(opsMut, platform.id);
-      if (getAuthScope() !== scope) return;
+  const test = useOpsMutation<{ ok: boolean; message?: string }, void>({
+    mutationFn: (mut) => testMessagingPlatform(mut, platform.id),
+    onSuccess: (res) => {
       toast({
         title: res.ok ? `${platform.name} OK` : `${platform.name} test failed`,
         description: res.message || undefined,
         ...(res.ok ? {} : { variant: 'destructive' as const }),
       });
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Test failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setTesting(false);
-    }
-  }, [getAuthScope, opsMut, platform.id, platform.name]);
+    },
+    onError: (e) => toast({ title: 'Test failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
   return (
     <Card>
@@ -280,24 +244,21 @@ function PlatformRow({
             <div className="mt-1 line-clamp-2 text-[11px] text-red-600 dark:text-red-400">{platform.errorMessage}</div>
           )}
         </div>
-        {toggling ? (
-          <Spinner size={14} color={brandColor(dark)} />
-        ) : (
-          <Switch
-            checked={platform.enabled}
-            onCheckedChange={(v) => void toggle(v)}
-            aria-label={`${platform.enabled ? 'Disable' : 'Enable'} ${platform.name}`}
-          />
-        )}
+        <Switch
+          checked={platform.enabled}
+          disabled={toggle.isPending}
+          onCheckedChange={(v) => toggle.mutate(v)}
+          aria-label={`${platform.enabled ? 'Disable' : 'Enable'} ${platform.name}`}
+        />
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-border pt-2.5">
         <Button
           aria-label={`Test ${platform.name}`}
           variant="outline"
-          onClick={() => void test()}
-          disabled={testing}
+          onClick={() => test.mutate()}
+          disabled={test.isPending}
           className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
-          {testing ? <Spinner size={13} color={brandColor(dark)} /> : <Zap size={13} color={brandColor(dark)} />}
+          {test.isPending ? <Spinner size={13} color={brandColor(dark)} /> : <Zap size={13} color={brandColor(dark)} />}
           <span className="text-xs font-semibold">Test</span>
         </Button>
         <Button
