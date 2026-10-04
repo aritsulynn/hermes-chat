@@ -58,9 +58,19 @@ export function LoginScreen() {
         style={{ paddingBottom: 24 + kbH }}>
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-brand shadow-lg">
-            <span className="text-[32px] font-extrabold text-white">H</span>
-          </div>
+          {/* The real app mark, same asset the launcher icon and the web manifest
+              use. It was a hand-drawn green "H" tile here, which is a different
+              mark from the one the app ships — the login screen read as another
+              app. Served from public/, so the URL has to stay relative: `base` is
+              "./" and the bundle also loads from a static sub-path, from
+              capacitor://localhost, and from file://. */}
+          <img
+            src={`${import.meta.env.BASE_URL}android-chrome-512x512.png`}
+            alt=""
+            width={64}
+            height={64}
+            className="h-16 w-16 select-none"
+          />
           <h1 className="mt-3 text-[28px] font-extrabold tracking-tight text-neutral-950 dark:text-neutral-100">
             Hermes
           </h1>
