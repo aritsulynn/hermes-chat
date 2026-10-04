@@ -169,13 +169,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [host, username, setPasswordForScope],
   );
-  useEffect(() => {
-    const nextScope = connectionScope(host, username);
-    if (passwordScopeRef.current && passwordScopeRef.current !== nextScope) {
-      passwordScopeRef.current = '';
-      setPasswordState('');
-    }
-  }, [host, username]);
+  // Deliberately NO effect that wipes the password when host/username change.
+  // There was one, and it fired on every keystroke: emptying the host field
+  // made the scope `''`, which never matches the scope the password was typed
+  // under, so fixing a typo in the host silently destroyed the password. An
+  // empty or half-typed host is a field being edited, not a dashboard being
+  // switched.
+  //
+  // The guarantee it was defending is already enforced where it matters, at
+  // the single point the password leaves the app: `login()` reads it only when
+  // `passwordScopeRef.current` equals the current scope (useConnection.ts), so
+  // a password typed for another dashboard is never sent there — it falls back
+  // to that scope's stored credential and reports the field as empty.
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
