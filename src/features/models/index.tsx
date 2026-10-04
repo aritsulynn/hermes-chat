@@ -5,10 +5,11 @@
 // auxiliary task assignments (view, per-task assign, reset-all) using the same
 // provider inventory as the composer picker. The desktop's Mixture-of-Agents
 // preset editor is a large separate renderer and is not ported.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate as Redirect } from 'react-router-dom';
 import { Cpu, RefreshCw, RotateCcw, Star, Wrench } from 'lucide-react';
 import { useApp, useThemeValue } from '../../hooks/app-store';
+import { useOpsMutation, useOpsQuery } from '../../store/ops-query';
 import { errMsg } from '../../utils/messages';
 import { Card, ErrorRetry, HeaderIconButton, ScreenHeader, ScreenScaffold, Spinner } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -28,109 +29,90 @@ import {
 } from '../../services/models-admin';
 
 export function ModelsScreen() {
-  const { authed, activeProfile, host, getCookie, opsGet, opsMut, getAuthScope } = useApp();
+  const { authed, activeProfile, host, getCookie, getAuthScope } = useApp();
   const { theme } = useThemeValue();
   const dark = theme === 'dark';
   const brand = useMemo(() => brandColor(dark), [dark]);
 
-  const [info, setInfo] = useState<ModelInfo | null>(null);
-  const [aux, setAux] = useState<AuxiliaryModels | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<AuxiliarySlot | null>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
-  const [busyTask, setBusyTask] = useState<string | null>(null);
 
-  const loadEpoch = useRef(0);
-  const load = useCallback(
-    async (isRefresh = false) => {
-      const profile = activeProfile;
-      const scope = getAuthScope();
-      const epoch = ++loadEpoch.current;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const [nextInfo, nextAux] = await Promise.all([
-          getModelInfo(opsGet, profile),
-          getAuxiliaryModels(opsGet, profile),
-        ]);
-        if (getAuthScope() !== scope || activeProfile !== profile || loadEpoch.current !== epoch) return;
-        setInfo(nextInfo);
-        setAux(nextAux);
-      } catch (e) {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) setError(errMsg(e));
-      } finally {
-        if (getAuthScope() === scope && activeProfile === profile && loadEpoch.current === epoch) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [activeProfile, getAuthScope, opsGet],
-  );
-
-  useEffect(() => {
-    if (authed) void load();
-  }, [authed, load]);
+  // Two queries, one per endpoint — same content as the old paired loads,
+  // each keyed so a superseded response can never render.
+  const infoQ = useOpsQuery<ModelInfo>({
+    key: ['models', 'info'],
+    get: (get) => getModelInfo(get, activeProfile),
+    enabled: authed,
+  });
+  const auxQ = useOpsQuery<AuxiliaryModels>({
+    key: ['models', 'aux'],
+    get: (get) => getAuxiliaryModels(get, activeProfile),
+    enabled: authed,
+  });
+  const info = infoQ.data ?? null;
+  const aux = auxQ.data ?? null;
+  const loading = infoQ.isPending || auxQ.isPending;
+  const refreshing = infoQ.isRefetching || auxQ.isRefetching;
+  const firstError = infoQ.error ?? auxQ.error;
+  const error = firstError ? errMsg(firstError) : null;
+  const refresh = useCallback(() => {
+    void infoQ.refetch();
+    void auxQ.refetch();
+  }, [infoQ, auxQ]);
 
   const overrideCount = useMemo(() => (aux ? aux.tasks.filter((t) => t.model).length : 0), [aux]);
 
-  const assign = useCallback(
-    async (task: string, provider: string, model: string, reasoningEffort?: string | null) => {
-      const scope = getAuthScope();
-      setBusyTask(task);
-      try {
-        const res = await setModelAssignment(opsMut, {
-          scope: 'auxiliary',
-          task,
-          provider,
-          model,
-          ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
-          profile: activeProfile,
+  const assign = useOpsMutation<
+    { confirmRequired?: boolean; confirmMessage?: string },
+    { task: string; provider: string; model: string; reasoningEffort?: string | null }
+  >({
+    mutationFn: (mut, v) =>
+      setModelAssignment(mut, {
+        scope: 'auxiliary',
+        task: v.task,
+        provider: v.provider,
+        model: v.model,
+        ...(v.reasoningEffort !== undefined ? { reasoningEffort: v.reasoningEffort } : {}),
+        profile: activeProfile,
+      }),
+    done: [['models', 'info'], ['models', 'aux']],
+    onSuccess: (res, v) => {
+      if (res.confirmRequired) {
+        toast({
+          title: 'Confirm model',
+          description: res.confirmMessage || 'This model may be expensive.',
+          variant: 'destructive',
         });
-        if (getAuthScope() !== scope) return;
-        if (res.confirmRequired) {
-          toast({
-            title: 'Confirm model',
-            description: res.confirmMessage || 'This model may be expensive.',
-            variant: 'destructive',
-          });
-          return;
-        }
-        toast({ title: model ? 'Task assigned' : 'Task reset', description: `${task} · ${model || 'auto'}` });
-        setPicker(null);
-        await load(true);
-      } catch (e) {
-        if (getAuthScope() === scope) toast({ title: 'Assign failed', description: errMsg(e), variant: 'destructive' });
-      } finally {
-        if (getAuthScope() === scope) setBusyTask(null);
+        return;
       }
+      toast({ title: v.model ? 'Task assigned' : 'Task reset', description: `${v.task} · ${v.model || 'auto'}` });
+      setPicker(null);
     },
-    [activeProfile, getAuthScope, load, opsMut],
-  );
+    onError: (e) => toast({ title: 'Assign failed', description: errMsg(e), variant: 'destructive' }),
+  });
 
-  const resetAll = useCallback(async () => {
-    const scope = getAuthScope();
-    setBusyTask('__reset__');
-    try {
-      await setModelAssignment(opsMut, {
+  const resetAll = useOpsMutation<unknown, void>({
+    mutationFn: (mut) =>
+      setModelAssignment(mut, {
         scope: 'auxiliary',
         provider: 'auto',
         model: '',
         task: '__reset__',
         profile: activeProfile,
-      });
-      if (getAuthScope() !== scope) return;
-      toast({ title: 'All tasks reset to auto' });
-      await load(true);
-    } catch (e) {
-      if (getAuthScope() === scope) toast({ title: 'Reset failed', description: errMsg(e), variant: 'destructive' });
-    } finally {
-      if (getAuthScope() === scope) setBusyTask(null);
-    }
-  }, [activeProfile, getAuthScope, load, opsMut]);
+      }),
+    done: [['models', 'info'], ['models', 'aux']],
+    onSuccess: () => { toast({ title: 'All tasks reset to auto' }); },
+    onError: (e) => toast({ title: 'Reset failed', description: errMsg(e), variant: 'destructive' }),
+  });
+
+  const busyTask = assign.isPending && assign.variables ? assign.variables.task : resetAll.isPending ? '__reset__' : null;
+
+  const assignTask = useCallback(
+    (task: string, provider: string, model: string, reasoningEffort?: string | null) => {
+      assign.mutate({ task, provider, model, reasoningEffort });
+    },
+    [assign],
+  );
 
   if (!authed) return <Redirect to="/login" replace />;
 
@@ -142,7 +124,7 @@ export function ModelsScreen() {
             title="Models"
             subtitle={loading ? 'Loading…' : aux ? `${overrideCount}/${aux.tasks.length} aux overrides` : undefined}
             actions={
-              <HeaderIconButton aria-label="Refresh models" onClick={() => void load(true)}>
+              <HeaderIconButton aria-label="Refresh models" onClick={refresh}>
                 <RefreshCw size={20} color={dark ? '#e5e5e5' : '#333'} className={refreshing ? 'animate-spin' : ''} />
               </HeaderIconButton>
             }
@@ -155,7 +137,7 @@ export function ModelsScreen() {
               <Spinner size={24} color={brand} />
             </div>
           ) : error ? (
-            <ErrorRetry error={error} onRetry={() => void load()} />
+            <ErrorRetry error={error} onRetry={refresh} />
           ) : (
             <>
               <Card>
@@ -246,7 +228,7 @@ export function ModelsScreen() {
                         <Button
                           aria-label={`Reset ${t.task}`}
                           variant="ghost"
-                          onClick={() => void assign(t.task, 'auto', '')}
+                          onClick={() => assignTask(t.task, "auto", "")}
                           disabled={busyTask === t.task}
                           className="h-auto sm:h-auto rounded-lg px-3 py-1.5">
                           <span className="text-xs font-semibold text-neutral-500">Reset</span>
@@ -270,7 +252,7 @@ export function ModelsScreen() {
           profile={activeProfile}
           getAuthScope={getAuthScope}
           busy={busyTask === picker.task}
-          onPick={(provider, model) => void assign(picker.task, provider, model)}
+          onPick={(provider, model) => assignTask(picker.task, provider, model)}
           onClose={() => setPicker(null)}
         />
       )}
@@ -281,7 +263,7 @@ export function ModelsScreen() {
         description="Every auxiliary task returns to the automatic provider."
         confirmLabel="Reset all"
         destructive
-        onConfirm={() => void resetAll()}
+        onConfirm={() => resetAll.mutate()}
         onOpenChange={(o) => {
           if (!o) setResetConfirm(false);
         }}
