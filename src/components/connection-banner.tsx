@@ -20,9 +20,21 @@ import { Spinner } from './ui/bits';
  * How long a drop has to last before the strip admits it exists.
  *
  * A socket that is going to come back inside this window never surfaces. See
- * hooks/use-grace for why the flash was worse than the outage.
+ * hooks/use-grace for why the flash was worse than the outage — and for why
+ * the window only counts *visible* time.
  */
 const BANNER_GRACE_MS = 1500;
+
+/**
+ * The window for a drop that began around an app switch (while hidden, or just
+ * after returning). Android kills the WebView socket on every switch, so this
+ * one is expected: it gets a long, silent runway while the reconnect mints a
+ * fresh ticket and dials — and no strip unless it really fails to come back.
+ */
+const BANNER_RESUME_GRACE_MS = 8000;
+
+/** How long after the app returns a drop still counts as resume-origin. */
+const BANNER_RESUME_WINDOW_MS = 5000;
 
 export function ConnectionBanner() {
   const { authed, login, reconnectNow, diagnostics } = useApp();
@@ -36,7 +48,7 @@ export function ConnectionBanner() {
   // the login screen cannot cover. The resume case — a drop that heals in a few
   // hundred ms — is not, and that is what this window hides.
   const offline = conn === 'connecting' || conn === 'reconnecting' || conn === 'closed';
-  const announced = useGrace(offline, BANNER_GRACE_MS);
+  const announced = useGrace(offline, BANNER_GRACE_MS, BANNER_RESUME_GRACE_MS, BANNER_RESUME_WINDOW_MS);
 
   if (!authed || !announced) return null;
 
