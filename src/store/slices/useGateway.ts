@@ -292,6 +292,42 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
       // resolves, so every session-scoped event is ignored during that gap.
       const isCurrentSession = (sid: string) =>
         isCurrentSessionEvent(sid, sessionIdRef.current, latest.current.sessionKey);
+      // A WS reconnect dials a fresh socket, but the gateway delivers a live
+      // session's events only to the transport(s) bound to that session — and the
+      // dead socket's binding is gone. `session.events.since` (the replay) is a
+      // plain request and does NOT re-bind, so without this the replay fills the
+      // gap and the turn then goes silent: the agent keeps emitting to the parked
+      // session and nothing reaches the app until the user re-opens the room.
+      // Re-attach exactly as openSession does; it also cancels the server's
+      // orphan-reap timer that would otherwise interrupt the running turn.
+      const reattach = async (g: GatewayWs) => {
+        // Use the STORED key: `session.resume` resolves its target through the
+        // profile DB, which knows stored ids — a live runtime id would 4007.
+        const target = latest.current.sessionKey ?? '';
+        if (!target) return;
+        const profile = latest.current.activeProfile;
+        const connectionEpoch = connectionEpochRef.current;
+        try {
+          // omit_messages: the transcript belongs to the replay/resync path; this
+          // call exists only to re-bind the transport.
+          const r: any = await g.resume(target, true, profile);
+          if (connectionEpochRef.current !== connectionEpoch) return;
+          const liveId = typeof r?.session_id === 'string' && r.session_id ? r.session_id : '';
+          if (liveId && liveId !== sessionIdRef.current) {
+            // The runtime was re-minted while we were away — adopt the new id so
+            // in-flight events and the next send address the right session.
+            runtimeOwners.current.set(liveId, profileSessionKey(profile, target));
+            sessionIdRef.current = liveId;
+            setSessionId(liveId);
+          }
+        } catch {
+          // Older gateway, or the session was reaped past the grace window: the
+          // resync path still rebuilds the transcript from REST.
+        }
+      };
+      // First `ready` is covered by openSession's own resume; only a reconnect has
+      // lost its transport binding.
+      let wasReady = false;
       // `let` on purpose: the GatewayWs options below close over `ws`, and a
       // const would put it in the temporal dead zone if the constructor ever
       // fired a callback synchronously.
@@ -372,7 +408,10 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
               return;
             }
             if (s === 'ready') {
+              const reconnected = wasReady;
+              wasReady = true;
               void (async () => {
+                if (reconnected) await reattach(ws);
                 await syncOpenRequests(ws);
                 await confirmAfterReconnect();
               })();
