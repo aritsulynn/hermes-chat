@@ -59,6 +59,7 @@ export function ChatScreen() {
     booting,
     authed,
     sessionId,
+    sessionKey,
     sessionTitle,
     messages,
     input,
@@ -894,7 +895,11 @@ export function ChatScreen() {
             scroll state, or a transcript opened while scrolled up in the
             previous session would land at the top. */}
           <Transcript
-            key={sessionId}
+            // Key on the durable STORED id, not the live runtime id: the gateway
+            // remints the runtime id on a reconnect/restart, and remounting the
+            // scroller would reset it to the bottom. A real session switch changes
+            // the stored id, so the scroll state still resets when it should.
+            key={sessionKey ?? sessionId}
             ref={listRef}
             scrollerRef={scrollerRef}
             columnClassName={listColumnClass}

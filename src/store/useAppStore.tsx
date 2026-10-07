@@ -49,7 +49,7 @@ import {
 import { pendingAsks } from '../services/ask-inbox';
 import { GatewayWs } from '../services/gateway-ws';
 import type { ConnState } from '../services/gateway-ws';
-import { errMsg, nid, sliceOlderThan } from '../utils/messages';
+import { errMsg, mergeHistoryTail, nid, sliceOlderThan } from '../utils/messages';
 import type { UiMessage } from '../utils/messages';
 import {
   discoverAgentProfiles,
@@ -612,13 +612,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionIdRef.current !== runtime
     )
       return;
-    // The rebuilt window is whatever one request can carry, so the offset has to
-    // come back to it: deep pages are dropped (the reader scrolls back for them)
-    // rather than left behind a frontier that would skip them.
     const returned = lastSessionMessagesRawCount();
-    historyOffsetRef.current = returned;
-    historyExhaustedRef.current = returned < SESSION_MESSAGES_LIMIT;
-    setHistoryExhausted(returned < SESSION_MESSAGES_LIMIT);
     if (hist.length) {
       const items = historyToItems(hist);
       clearStreaming();
@@ -627,9 +621,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMessages(reanchorLiveTurn(items));
         lastTurnEventAt.current = Date.now();
       } else {
-        setMessages(items);
+        // Fold the refreshed tail into the loaded window instead of replacing it.
+        // A reconnect must not collapse a deep history window: shrinking the
+        // content clamps the scroller to the bottom and yanks a reader who was
+        // scrolled up (which is exactly what "it goes to latest on resume" was).
+        setMessages((prev) => mergeHistoryTail(prev, items));
       }
       setToolLine(null);
+    }
+    // Keep the frontier: the merge preserves the oldest loaded row, so deep pages
+    // are not dropped. Only an empty window needs the offset seeded.
+    if (historyOffsetRef.current === 0) {
+      historyOffsetRef.current = returned;
+      historyExhaustedRef.current = returned < SESSION_MESSAGES_LIMIT;
+      setHistoryExhausted(returned < SESSION_MESSAGES_LIMIT);
     }
   }, [acceptRotatedCookie]);
 

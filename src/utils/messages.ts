@@ -64,6 +64,45 @@ export function sliceOlderThan(fetched: UiMessage[], current: UiMessage[]): UiMe
   return [];
 }
 
+/**
+ * Fold a freshly fetched newest page into the loaded window without replacing
+ * it. A reconnect resync must NOT collapse a deep history window: shrinking the
+ * content clamps the scroller to the bottom and yanks a reader who was scrolled
+ * up. Existing rows keep their identity (same `id`, so React does not remount
+ * them and the scroll anchor holds); only rows genuinely newer than the window's
+ * newest durable row are appended.
+ *
+ * Returns `current` unchanged when it cannot align safely (no durable anchor, or
+ * the anchor is missing from `fresh`) rather than risk duplicating the tail.
+ */
+export function mergeHistoryTail(current: UiMessage[], fresh: UiMessage[]): UiMessage[] {
+  if (fresh.length === 0) return current;
+  if (current.length === 0) return fresh;
+  let anchorIdx = -1;
+  for (let i = current.length - 1; i >= 0; i--) {
+    const m = current[i];
+    if ((m.role === 'user' || m.role === 'assistant') && m.rowId != null) {
+      anchorIdx = i;
+      break;
+    }
+  }
+  if (anchorIdx < 0) return current;
+  const anchor = current[anchorIdx];
+  const j = fresh.findIndex((f) => f.role === anchor.role && f.rowId === anchor.rowId);
+  if (j < 0) return current;
+  const out = current.slice(0, anchorIdx + 1);
+  const seen = new Set(current.map((m) => m.rowId).filter((id): id is number => id != null));
+  for (let k = j + 1; k < fresh.length; k++) {
+    const f = fresh[k];
+    if (f.rowId != null) {
+      if (seen.has(f.rowId)) continue;
+      seen.add(f.rowId);
+    }
+    out.push(f);
+  }
+  return out;
+}
+
 /** Cap on tool bubbles auto-inserted per refresh (see missingHistoryTools). */
 export const TOOL_INSERT_CAP = 20;
 /**
