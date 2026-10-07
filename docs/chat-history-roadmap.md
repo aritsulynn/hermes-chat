@@ -1,8 +1,10 @@
 # Chat history roadmap
 
-How long conversations are read and kept in sync. P1 is shipped; P2 and P3
-are planned. **Read the design constraints before touching any history code** —
-the first one is the trap that this whole document exists to prevent.
+How long conversations are read and kept in sync. P1 and the P2 client subset
+are shipped; P2's backend-dependent half (cursor/display identity) is **BLOCKED**
+on a server change, and P3 is planned. **Read the design constraints before
+touching any history code** — the first one is the trap that this whole document
+exists to prevent.
 
 ## Status
 
@@ -27,10 +29,12 @@ Files: `src/store/useAppStore.tsx` (`loadOlderMessages`, `trimHead`,
 `src/utils/messages.ts` (`sliceOlderThan`), `src/services/api.ts` /
 `src/services/dashboard.ts` (`offset`).
 
-### P2 — cursor + sync correctness (planned)
+### P2 — cursor + sync correctness (client subset shipped ✅; cursor half BLOCKED ⛔)
 
 **Scoped to the immutable backend** (`docs/chat-history-p2-feasibility.md`). The
 server exposes no stable display identity and no cursor, so P2 is client-only.
+Shipping status and the locked decisions are in
+`docs/chat-history-p2-semantics.md`.
 
 Shipped in P2 (client + existing contract):
 
@@ -120,9 +124,11 @@ client → reverse → prepend
 
 `after=` uses the same shape with the opposite direction.
 
-## Next step when P2 starts
+## Next step
 
-Design and lock the **server-side** cursor semantics first — display identity,
-compaction/lineage behaviour, and replay seq integration. Do **not** start by
-editing `api.ts` or the store: the semantics have to be settled before the
-client can consume them.
+The P2 cursor half is **gated on the backend** (see Blocked above): the server
+must first expose a stable display identity and a cursor. Do **not** start it by
+editing `api.ts` or the store — the semantics are already locked in
+`docs/chat-history-p2-semantics.md` and the evidence is in
+`docs/chat-history-p2-feasibility.md`. The next shippable client work is **P3**
+(local-first).
