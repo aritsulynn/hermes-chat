@@ -100,14 +100,19 @@ export const modelRecommendedDefault = (provider: string, profile?: string | nul
 // ── Sessions ────────────────────────────────────────────────────────────────
 
 /** GET /api/sessions/{id}/messages — full rows incl. tool results + reasoning.
- *  WS session.history is only a compact projection. */
+ *  WS session.history is only a compact projection.
+ *
+ *  `offset` skips that many rows in from the requested end and pages older
+ *  history; `order: 'latest'` returns the page in chronological order. The
+ *  server clamps a single request's `limit` at 500. */
 export const sessionMessages = (
   storedId: string,
-  opts: { order?: 'latest' | 'oldest'; limit?: number; profile?: string } = {},
+  opts: { order?: 'latest' | 'oldest'; limit?: number; offset?: number; profile?: string } = {},
 ): string =>
   `/api/sessions/${sessionPath(storedId)}/messages${query({
     order: opts.order ?? 'latest',
     limit: opts.limit ?? 200,
+    offset: opts.offset ?? 0,
     profile: String(opts.profile ?? '').trim() || DEFAULT_PROFILE,
   })}`;
 
@@ -115,42 +120,6 @@ export const sessionMessages = (
  *  (unlike stored session ids above, which keep their slashes). */
 export const cronRunMessages = (runId: string, profile?: string | null, limit = 100): string =>
   withProfile(`/api/sessions/${encodeURIComponent(runId)}/messages${query({ order: 'oldest', limit })}`, profile);
-
-/** GET /api/sessions/{id}/timeline — every human prompt in the session, oldest
- *  first, as metadata only (row_id + a <=120 char preview + timestamp). Never
- *  tool payloads or assistant text, so a 10k-message session pages cheaply.
- *
- *  This is the cursor-based counterpart to /messages: `after_row_id` is a
- *  logical first-row id, NOT an entry's row_id — see utils/session-timeline.
- *  Server caps limit at 500 and returns `next_cursor: null` when exhausted.
- *
- *  `latest-descendant` follows a session to its newest child, which is what
- *  makes resuming a branched session show the branch rather than its parent. */
-export const sessionTimeline = (
-  storedId: string,
-  opts: { afterRowId?: number; limit?: number; profile?: string } = {},
-): string =>
-  `/api/sessions/${sessionPath(storedId)}/timeline${query({
-    after_row_id: opts.afterRowId ?? 0,
-    limit: opts.limit ?? 200,
-    profile: String(opts.profile ?? '').trim() || DEFAULT_PROFILE,
-  })}`;
-
-/** GET /api/sessions/{id}/messages/around?row_id= — one bounded display page
- *  starting at an exact human prompt. Unlike /messages this addresses a row id,
- *  so a jump into a 10k-message session fetches ~120 rows rather than growing a
- *  tail limit until the server gives up. Returns 404 when the anchor is not a
- *  visible prompt (rewound, hidden, or belongs to another session). */
-export const sessionMessagesAround = (
-  storedId: string,
-  rowId: number,
-  opts: { limit?: number; profile?: string } = {},
-): string =>
-  `/api/sessions/${sessionPath(storedId)}/messages/around${query({
-    row_id: rowId,
-    limit: opts.limit ?? 120,
-    profile: String(opts.profile ?? '').trim() || DEFAULT_PROFILE,
-  })}`;
 
 /** GET /api/sessions/{id}/latest-descendant — the newest session this one
  *  forked into, or the same id when it has no children. Best-effort: a 404 or a

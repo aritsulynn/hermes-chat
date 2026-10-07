@@ -32,21 +32,14 @@ export interface StoreRuntime {
   drainRef: MutableRefObject<() => void>;
   messagesRef: MutableRefObject<UiMessage[]>;
   // ── Transcript windowing (10k+ sessions) ───────────────────────────────
-  // REST has no history cursor (only order+limit), so older pages grow the
-  // tail limit; the store prepends just the older slice (see sliceOlderThan).
-  /** REST rows covered by the current window (grows by CHAT_HISTORY_PAGE). */
-  historyLimitRef: MutableRefObject<number>;
+  // REST has no backward cursor, so older pages advance `offset` from the
+  // newest end; the store prepends just the older slice (see sliceOlderThan).
+  /** Rows pulled from the newest end; also the `offset` for the next older page. */
+  historyOffsetRef: MutableRefObject<number>;
   /** True while a load-older fetch is in flight (re-entrancy guard). */
   historyLoadingRef: MutableRefObject<boolean>;
-  /** True when the server has no rows older than the window. */
+  /** True when the server has no rows older than the window (or the cap is hit). */
   historyExhaustedRef: MutableRefObject<boolean>;
-  /**
-   * True when load-older gave up at CHAT_HISTORY_MAX_ROWS rather than because
-   * the server ran out of rows. Both mean "the tail fetch cannot go further",
-   * but only this one means rows are still on the server — so the UI offers the
-   * jump sheet instead of claiming this is the start of the conversation.
-   */
-  historyCappedRef: MutableRefObject<boolean>;
   // ── Orchestrator refs ──────────────────────────────────────────────────
   profilesRef: MutableRefObject<AgentProfile[]>;
   sessionIdRef: MutableRefObject<string | null>;
@@ -82,10 +75,9 @@ export function useStoreRuntime(): StoreRuntime {
     sendRef: useRef<((text?: string) => Promise<void>) | null>(null),
     drainRef: useRef<() => void>(() => {}),
     messagesRef: useRef<UiMessage[]>([]),
-    historyLimitRef: useRef(0),
+    historyOffsetRef: useRef(0),
     historyLoadingRef: useRef(false),
     historyExhaustedRef: useRef(true),
-    historyCappedRef: useRef(false),
     profilesRef: useRef<AgentProfile[]>([]),
     sessionIdRef: useRef<string | null>(null),
     editingRowRef: useRef<number | null>(null),

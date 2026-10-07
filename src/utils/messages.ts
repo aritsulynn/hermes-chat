@@ -38,12 +38,13 @@ export interface QueuedPrompt {
 }
 
 // ── Transcript windowing ───────────────────────────────────────────────────
-// The REST transcript has no cursor (only `order + limit`), so older pages are
-// fetched as a growing tail limit and merged by anchor: the oldest durable
-// (rowId-bearing) bubble in the current window is located in the fresh fetch
-// and only the rows before it are prepended. Fresh fetches mint new `nid()`
-// ids, so reusing the current tail's objects keeps memo()/expanded state for
-// every already-mounted bubble.
+// The REST transcript has no backward cursor (only `order + limit + offset`),
+// so older pages advance `offset` from the newest end and are merged by anchor:
+// the oldest durable (rowId-bearing) bubble in the current window is located in
+// the fresh fetch and only the rows before it are prepended. The fetch overlaps
+// the window by a page so that anchor is present to find. Fresh fetches mint new
+// `nid()` ids, so reusing the current window's objects keeps memo()/expanded
+// state for every already-mounted bubble.
 
 /**
  * Older bubbles to prepend when paging history: everything in `fetched`

@@ -35,10 +35,18 @@ test('model option query flags are omitted when unset', () => {
 });
 
 test('session transcript keeps stored-id slashes as path separators', () => {
-  assert.equal(api.sessionMessages('abc/def'), '/api/sessions/abc/def/messages?order=latest&limit=200&profile=default');
+  assert.equal(
+    api.sessionMessages('abc/def'),
+    '/api/sessions/abc/def/messages?order=latest&limit=200&offset=0&profile=default',
+  );
   assert.equal(
     api.sessionMessages('abc', { limit: 50, profile: 'work' }),
-    '/api/sessions/abc/messages?order=latest&limit=50&profile=work',
+    '/api/sessions/abc/messages?order=latest&limit=50&offset=0&profile=work',
+  );
+  // Paging older history advances offset; the page still comes back in order.
+  assert.equal(
+    api.sessionMessages('abc', { limit: 100, offset: 150, profile: 'work' }),
+    '/api/sessions/abc/messages?order=latest&limit=100&offset=150&profile=work',
   );
   // Runs have opaque ids, so the whole id is encoded instead.
   assert.equal(
@@ -48,26 +56,7 @@ test('session transcript keeps stored-id slashes as path separators', () => {
   assert.equal(api.cronRunMessages('r1', ''), '/api/sessions/r1/messages?order=oldest&limit=100');
 });
 
-test('timeline and jump routes address a row id and keep stored-id slashes', () => {
-  assert.equal(
-    api.sessionTimeline('abc/def'),
-    '/api/sessions/abc/def/timeline?after_row_id=0&limit=200&profile=default',
-  );
-  assert.equal(
-    api.sessionTimeline('abc', { afterRowId: 42, limit: 500, profile: 'work' }),
-    '/api/sessions/abc/timeline?after_row_id=42&limit=500&profile=work',
-  );
-  // after_row_id=0 is the server's "from the beginning". The query builder skips
-  // falsy values, so pinning it here catches that changing — dropping the param
-  // also works today, but only by accident.
-  assert.equal(
-    api.sessionMessagesAround('abc/def', 7),
-    '/api/sessions/abc/def/messages/around?row_id=7&limit=120&profile=default',
-  );
-  assert.equal(
-    api.sessionMessagesAround('abc', 7, { limit: 40, profile: 'work' }),
-    '/api/sessions/abc/messages/around?row_id=7&limit=40&profile=work',
-  );
+test('latest-descendant keeps stored-id slashes', () => {
   assert.equal(api.sessionLatestDescendant('abc/def'), '/api/sessions/abc/def/latest-descendant');
   assert.equal(api.sessionLatestDescendant('abc', 'work'), '/api/sessions/abc/latest-descendant?profile=work');
 });

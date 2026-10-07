@@ -2,18 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pickFiles } from '../../services/file-picker';
 import { Navigate as Redirect } from 'react-router-dom';
-import {
-  ChevronDown,
-  ChevronUp,
-  ChevronRight,
-  Clock,
-  Copy,
-  FileText,
-  History,
-  Image as ImageIcon,
-  ListTree,
-  Pencil,
-} from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Clock, Copy, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
 import { useApp, useStreamingRead, useThemeValue } from '../../hooks/app-store';
 import { Transcript } from '../../components/chat/transcript';
 import { MessageScrollerItem } from '../../components/ui/message-scroller';
@@ -56,7 +45,6 @@ import {
   createDropdownMenuHandle,
 } from '../../components/ui/dropdown-menu';
 import { MessageBubble, formatBubbleTime } from '../../components/chat/message-bubble';
-import { JumpToPromptSheet } from './components/JumpToPrompt';
 import { AskSheet } from '../../components/ui/sheets';
 import { HamburgerBtn } from '../../components/ui/bits';
 import { Button } from '../../components/ui/button';
@@ -115,8 +103,6 @@ export function ChatScreen() {
     pasteLarge,
     branchSession,
     historyLoadingMore,
-    historyExhausted,
-    trimmedOlder,
     loadOlderMessages,
     trimHead,
     todos,
@@ -710,122 +696,25 @@ export function ChatScreen() {
   const handleScrollableChange = useCallback((s: { start: boolean; end: boolean }) => {
     setAtBottom(!s.end);
   }, []);
-  // Jump-to-prompt: the prompt index and the three window transitions. This is
-  // what lets a conversation longer than CHAT_HISTORY_MAX_ROWS be read past its
-  // tail — the growing-limit fetch cannot get there (see useJump).
-  const {
-    index,
-    indexLoading,
-    indexError,
-    indexExhausted,
-    loadIndex,
-    atTail,
-    jumpAt,
-    jumping,
-    jumpError,
-    jumpTo,
-    jumpOlder,
-    jumpNewer,
-    canJumpOlder,
-    canJumpNewer,
-    backToTail,
-    clearJump,
-    historyCapped,
-  } = useApp();
-  const [jumpOpen, setJumpOpen] = useState(false);
-  const onOpenJump = useCallback(() => setJumpOpen(true), []);
-  const onJumpOlder = useCallback(() => void jumpOlder(), [jumpOlder]);
-  const onJumpNewer = useCallback(() => void jumpNewer(), [jumpNewer]);
-  const onBackToTail = useCallback(() => void backToTail(), [backToTail]);
-
   // Head trim past the soft cap: only while pinned at the bottom, idle, and
   // not paging — reading history up top is never yanked. Trimmed rows stay
   // server-side and come back through onLoadOlder.
   useEffect(() => {
-    // Never inside a jumped window: the store guards this too, but skipping it
-    // here keeps the effect from firing at all while reading an earlier part.
-    if (atTail && messages.length > CHAT_WINDOW_SOFT_CAP && !generating && atBottom && !historyLoadingMore) {
+    if (messages.length > CHAT_WINDOW_SOFT_CAP && !generating && atBottom && !historyLoadingMore) {
       trimHead();
     }
-  }, [atTail, messages.length, generating, atBottom, historyLoadingMore, trimHead]);
+  }, [messages.length, generating, atBottom, historyLoadingMore, trimHead]);
+  // Older history loads on its own when the reader reaches the top (see
+  // Transcript's onStartReached); this header only shows that it is working.
   const ListHeader = useCallback(() => {
-    if (historyLoadingMore) {
-      return (
-        <div className="flex flex-col items-center py-3">
-          <Spinner size={14} color="currentColor" />
-          <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</div>
-        </div>
-      );
-    }
-    // A jumped window navigates by prompt, so the tail's "load older" is not
-    // just useless here — it would splice an unrelated window onto this one.
-    // Offer the neighbouring prompts instead, plus the way back to the tail.
-    if (!atTail) {
-      return (
-        <div className="flex flex-col items-center gap-1.5 py-2">
-          <div className="rounded-full bg-elevated px-3 py-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-300">
-            Viewing {jumpAt ? `${jumpAt.offset + jumpAt.returned} of ${jumpAt.total}` : 'an earlier part'} of this
-            conversation
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Button variant="ghost" onClick={onJumpOlder} disabled={!canJumpOlder || jumping} className="px-2.5 py-1.5">
-              <ChevronUp size={14} />
-              <span className="text-xs font-semibold">Older</span>
-            </Button>
-            <Button variant="ghost" onClick={onJumpNewer} disabled={!canJumpNewer || jumping} className="px-2.5 py-1.5">
-              <ChevronDown size={14} />
-              <span className="text-xs font-semibold">Newer</span>
-            </Button>
-            <Button variant="ghost" onClick={onBackToTail} disabled={jumping} className="px-2.5 py-1.5">
-              <History size={14} />
-              <span className="text-xs font-semibold">Latest</span>
-            </Button>
-          </div>
-        </div>
-      );
-    }
-    // The tail fetch hit CHAT_HISTORY_MAX_ROWS with rows still on the server.
-    // "Load older" would be a lie here, so say what actually happened and offer
-    // the prompt index — the only way past this point.
-    if (historyCapped) {
-      return (
-        <div className="flex flex-col items-center gap-1.5 py-2">
-          <div className="px-3 text-center text-[11px] text-neutral-500 dark:text-neutral-400">
-            This conversation is longer than the transcript window.
-          </div>
-          <Button variant="ghost" onClick={onOpenJump} className="px-3 py-1.5">
-            <ListTree size={14} />
-            <span className="text-xs font-semibold">Jump to a prompt</span>
-          </Button>
-        </div>
-      );
-    }
-    if (trimmedOlder > 0 || !historyExhausted) {
-      return (
-        <div className="flex flex-col items-center py-1.5">
-          <Button variant="ghost" onClick={onLoadOlder} className="px-3 py-1.5">
-            <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">↑ Load older messages</span>
-          </Button>
-        </div>
-      );
-    }
-    return null;
-  }, [
-    historyLoadingMore,
-    historyExhausted,
-    historyCapped,
-    trimmedOlder,
-    atTail,
-    jumpAt,
-    jumping,
-    canJumpOlder,
-    canJumpNewer,
-    onLoadOlder,
-    onJumpOlder,
-    onJumpNewer,
-    onBackToTail,
-    onOpenJump,
-  ]);
+    if (!historyLoadingMore) return null;
+    return (
+      <div className="flex flex-col items-center py-3">
+        <Spinner size={14} color="currentColor" />
+        <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</div>
+      </div>
+    );
+  }, [historyLoadingMore]);
 
   if (booting) {
     return (
@@ -914,7 +803,6 @@ export function ChatScreen() {
           costUsd={usage?.costUsd ?? null}
           subagents={subagents.length}
           onExport={() => void handleExportSession()}
-          onJump={onOpenJump}
         />
       </div>
 
@@ -1019,8 +907,8 @@ export function ChatScreen() {
             {/* A `MessageScrollerItem`, like every other child. The scroller only
                 lays out and measures items tagged with its slot — a bare <div>
                 here is dropped from the DOM entirely, which is why the "load
-                older" control (and the capped/jumped banners that replaced it)
-                never appeared even though the JSX was right. */}
+                older" control (and the capped banner) never appeared even though
+                the JSX was right. */}
             <MessageScrollerItem messageId="__listHeader">{ListHeader()}</MessageScrollerItem>
             {messages.map((item) => (
               // `scrollAnchor` on your own messages is what makes a new turn
@@ -1339,33 +1227,6 @@ export function ChatScreen() {
         {/* The jump-to-newest button lives inside <Transcript> now — it is the
           visual half of the scroller's own `scrollable.end` state, and it has
           to be rendered under the same provider to read it. */}
-
-        {/* The prompt index. Only mounted when open so the transcript window it
-          is anchored to cannot go stale behind a closed sheet. */}
-        {jumpOpen && (
-          <JumpToPromptSheet
-            dark={dark}
-            jump={{
-              index,
-              indexLoading,
-              indexError,
-              indexExhausted,
-              loadIndex,
-              atTail,
-              jumpAt,
-              jumping,
-              jumpError,
-              jumpTo,
-              jumpOlder,
-              jumpNewer,
-              canJumpOlder,
-              canJumpNewer,
-              backToTail,
-              clearJump,
-            }}
-            onClose={() => setJumpOpen(false)}
-          />
-        )}
 
         <AskSheet
           open={!!ask}

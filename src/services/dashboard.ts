@@ -567,21 +567,6 @@ export const opsMut = apiMut;
 // this is the full payload the UI renders (tool cards with full JSON).
 // Slashes in stored ids stay literal (backend mints ids containing '/').
 
-/** Where a /messages/around page sits in the whole transcript. Lets the chat
- *  page forward and back from a jump without a second fetch, and lets it say
- *  where in the session the user is. */
-export interface AroundPagination {
-  /** The anchor this page started at. */
-  rowId: number;
-  /** Display rows in the entire session. */
-  total: number;
-  /** Rows before this page. */
-  offset: number;
-  returned: number;
-  hasOlder: boolean;
-  hasNewer: boolean;
-}
-
 export interface RestHistoryItem {
   role: string;
   content: string;
@@ -673,10 +658,7 @@ export function clearSessionMessagesCache(): void {
   sessionMessagesCache.clear();
 }
 
-/** Raw REST rows -> chat items. Shared by the /messages tail fetch and the
- *  /messages/around jump, because both return the same row shape and must
- *  project identically — a jump that rendered differently from the transcript
- *  it replaced would be worse than the growing-limit fetch it replaces. */
+/** Raw REST rows -> chat items for the /messages tail fetch. */
 function historyItemsFrom(rows: unknown[]): RestHistoryItem[] {
   const items: RestHistoryItem[] = [];
   // Assistant tool_calls carry the args; join them to the tool row by id so the
@@ -745,11 +727,13 @@ export async function getSessionMessages(
   limit = SESSION_MESSAGES_LIMIT,
   accountScope = '',
   onCookie?: CookieUpdater,
+  offset = 0,
 ): Promise<RestHistoryItem[]> {
   // The numeric fourth argument remains accepted for older callers.
   const selectedProfile =
     (typeof profileOrLimit === 'number' ? DEFAULT_PROFILE : String(profileOrLimit ?? '')).trim() || DEFAULT_PROFILE;
   const selectedLimit = typeof profileOrLimit === 'number' ? profileOrLimit : limit;
+  const selectedOffset = offset > 0 ? offset : 0;
   // Short in-memory TTL — toolRefresh + stampRowIds + resync often fire
   // back-to-back for the same session and each refetches 200 rows.
   const cacheKey = JSON.stringify([
@@ -758,6 +742,7 @@ export async function getSessionMessages(
     selectedProfile,
     storedId,
     selectedLimit,
+    selectedOffset,
   ]);
   const now = Date.now();
   const hit = sessionMessagesCache.get(cacheKey);
@@ -767,7 +752,7 @@ export async function getSessionMessages(
   }
   const base = normalizeBase(baseUrl);
   const res = await fetchAuthed(
-    `${base}${api.sessionMessages(storedId, { limit: selectedLimit, profile: selectedProfile })}`,
+    `${base}${api.sessionMessages(storedId, { limit: selectedLimit, offset: selectedOffset, profile: selectedProfile })}`,
     cookie ? { headers: { Cookie: cookie } } : {},
     cookie,
     HTTP_SESSION_MESSAGES_TIMEOUT_MS,
@@ -784,74 +769,6 @@ export async function getSessionMessages(
   sessionMessagesCache.set(cacheKey, { at: now, items, rawCount: rows.length });
   lastRawCount = rows.length;
   return items;
-}
-
-/** One page of prompts for the jump list — metadata only, so no cache and no
- *  TTL: it is cheap, and a stale index is what the sheet is for. */
-export async function getSessionTimeline(
-  baseUrl: string,
-  cookie: string,
-  storedId: string,
-  opts: { afterRowId?: number; limit?: number; profile?: string } = {},
-  onCookie?: CookieUpdater,
-): Promise<unknown> {
-  const res = await fetchAuthed(
-    `${normalizeBase(baseUrl)}${api.sessionTimeline(storedId, opts)}`,
-    cookie ? { headers: { Cookie: cookie } } : {},
-    cookie,
-    HTTP_SESSION_MESSAGES_TIMEOUT_MS,
-    onCookie,
-  );
-  if (!res.ok) throw new Error(`Session timeline failed: HTTP ${res.status}`);
-  return res.json();
-}
-
-/** One bounded display page anchored at an exact prompt row. Not cached: the
- *  point of this endpoint is to reach a part of the transcript the cache does
- *  not hold, and a TTL here would make the jump land on stale rows after an
- *  edit or a rewind. */
-export async function getSessionMessagesAround(
-  baseUrl: string,
-  cookie: string,
-  storedId: string,
-  rowId: number,
-  opts: { limit?: number; profile?: string } = {},
-  onCookie?: CookieUpdater,
-): Promise<{ items: RestHistoryItem[]; pagination: AroundPagination }> {
-  const res = await fetchAuthed(
-    `${normalizeBase(baseUrl)}${api.sessionMessagesAround(storedId, rowId, opts)}`,
-    cookie ? { headers: { Cookie: cookie } } : {},
-    cookie,
-    HTTP_SESSION_MESSAGES_TIMEOUT_MS,
-    onCookie,
-  );
-  // 404 is the documented answer for an anchor that is not a visible prompt —
-  // rewound, hidden, or another session's. Not a transport failure.
-  if (res.status === 404) throw new AnchorNotFoundError();
-  if (!res.ok) throw new Error(`Session messages around failed: HTTP ${res.status}`);
-  const body = asRecord(await res.json());
-  const page = asRecord(body.pagination);
-  return {
-    items: historyItemsFrom(Array.isArray(body.messages) ? body.messages : []),
-    pagination: {
-      rowId: typeof page.row_id === 'number' ? page.row_id : rowId,
-      total: typeof page.total === 'number' ? page.total : 0,
-      offset: typeof page.offset === 'number' ? page.offset : 0,
-      returned: typeof page.returned === 'number' ? page.returned : 0,
-      hasOlder: page.has_older === true,
-      hasNewer: page.has_newer === true,
-    },
-  };
-}
-
-/** The anchor row is not a visible human prompt. Callers fall back to the
- *  growing-limit tail rather than showing an error — the transcript is still
- *  reachable, just not through this jump. */
-export class AnchorNotFoundError extends Error {
-  constructor() {
-    super('Prompt not found');
-    this.name = 'AnchorNotFoundError';
-  }
 }
 
 /** The newest session this one forked into, or the same id. Best-effort: an old

@@ -195,6 +195,8 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
         // 10k-message transcript never lands in JS memory all at once.
         let hist: HistoryMessage[];
         let historyExhausted = true;
+        // Raw rows the first page covered — the starting `offset` for paging older.
+        let historyRows = 0;
         try {
           // Gate on the cookie ONLY as a fallback signal: on web the jar is empty
           // (JS can't read Set-Cookie) while the browser cookie still authenticates
@@ -212,10 +214,11 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
           // (model-switch markers, hidden rows, empty tool results), so a full
           // page can project to fewer items than it fetched. Comparing the
           // projected length to the page limit reported almost every session as
-          // exhausted on its first fetch, which is what made the growing-limit
-          // paging unreachable — no "load older" control, transcript appearing to
-          // start mid-conversation.
-          historyExhausted = lastSessionMessagesRawCount() < CHAT_HISTORY_PAGE;
+          // exhausted on its first fetch, which is what made older-history paging
+          // unreachable — no "load older" control, transcript appearing to start
+          // mid-conversation.
+          historyRows = lastSessionMessagesRawCount();
+          historyExhausted = historyRows < CHAT_HISTORY_PAGE;
         } catch {
           hist = [];
         }
@@ -281,7 +284,7 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
         } else {
           setMessages(items);
         }
-        noteHistoryWindow(CHAT_HISTORY_PAGE, historyExhausted);
+        noteHistoryWindow(historyRows, historyExhausted);
         queuedRef.current = [];
         setQueued([]);
         queueParkedRef.current = false;

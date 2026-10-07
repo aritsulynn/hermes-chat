@@ -181,20 +181,18 @@ The mobile app already has helpers, so adding an endpoint is fast:
 
 - `GET /api/sessions/{id}/timeline`, `/latest-descendant`, `/messages/around`
 - Reference: `SessionsPage.tsx`
-- Shipped: `src/utils/session-timeline.ts` (index normalisation + cursor
-  arithmetic), `src/store/useJump.ts` (the slice), and a **Jump to prompt** sheet
-  on the chat header. `utils/session-timeline` is a leaf so the cursor rules are
-  testable — Node's type-stripping runner cannot import the slice, which pulls in
-  React and the store.
-- The cursor is the part worth reading the code for: `next_cursor` is a _sort_
-  id (the first physical row of the last logical turn), not the entry's own
-  `row_id`, and the cursor row comes back as the first entry of the next page.
-  Both are pinned by tests.
+- **Removed:** the "Jump to prompt" client shipped (`useJump`, the
+  `session-timeline` index, the header sheet) and was then pulled — too many
+  edge-case bugs for the value. The consequence: a transcript longer than
+  `CHAT_HISTORY_MAX_ROWS` can no longer be read past the window cap through the
+  UI, only by lowering/raising the constant.
 - `latest-descendant` is wired in `services/dashboard.ts`
   (`getLatestDescendant`) but not yet called by a screen.
-- Fixed on the way: the growing-limit tail paging never worked through the UI.
-  See the commit message — two independent bugs, one of which made every
-  session look exhausted on its first fetch.
+- Older history now pages by advancing `offset` from the newest end (auto-load
+  when the reader reaches the top), capped at `CHAT_WINDOW_MAX_LOADED` rows in
+  memory. The raw-row-count fix from the removed work still stands: comparing a
+  projected item count to the page limit made sessions look exhausted on their
+  first fetch.
 
 ### 4.8 MCP servers + catalog `L` — done
 

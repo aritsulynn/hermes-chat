@@ -6,7 +6,7 @@ import type { MutableRefObject } from 'react';
 import { inlineDiffFromDetail } from '../../utils/diff';
 import { missingHistoryTools, pairThinkingText } from '../../utils/messages';
 import { connectionScope } from '../../services/connection';
-import { CHAT_HISTORY_PAGE } from '../../services/constants';
+import { CHAT_HISTORY_REFRESH } from '../../services/constants';
 import { getSessionMessages } from '../../services/dashboard';
 import { formatToolResult } from '../../utils/toolResult';
 import { historyToItems } from '../helpers';
@@ -66,7 +66,7 @@ export function useToolRefreshSlice({
           ck,
           sk,
           profile,
-          CHAT_HISTORY_PAGE,
+          CHAT_HISTORY_REFRESH,
           connectionScope(h, targetUser),
           async (nextCookie) => acceptRotatedCookie(nextCookie, h, targetUser, connectionEpoch, epoch),
         );

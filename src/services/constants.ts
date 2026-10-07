@@ -38,15 +38,19 @@ export const SESSION_MESSAGES_LIMIT = 200;
 export const SESSION_MESSAGES_CACHE_MAX = 20;
 
 // ── Chat transcript windowing (store + chat screen) ────────────────────────
-// The REST transcript has no cursor — only `order + limit` — so paging grows
-// the tail limit and the client prepends just the older slice (see
-// sliceOlderThan in utils/messages). Steady state keeps ~1 page in JS memory
-// instead of the whole 10k-message transcript.
+// The REST transcript has no cursor for paging back, only `order + limit +
+// offset` (server clamps a single request's limit at 500). Older history is
+// paged by advancing `offset` from the newest end and prepending just the older
+// slice (see sliceOlderThan in utils/messages), which dedupes against the
+// overlap the fetch deliberately keeps. Steady state keeps a bounded window in
+// JS memory instead of the whole 10k-message transcript.
 
-/** REST rows fetched for the initial transcript tail. */
-export const CHAT_HISTORY_PAGE = 120;
-/** Safety ceiling for one growing-limit history fetch. */
-export const CHAT_HISTORY_MAX_ROWS = 1200;
+/** REST rows fetched per transcript page: the initial tail and each older step. */
+export const CHAT_HISTORY_PAGE = 50;
+/** Newest rows re-fetched to reconcile tool results/diffs (has to span a turn). */
+export const CHAT_HISTORY_REFRESH = 120;
+/** Hard ceiling on transcript rows held in memory; older loads stop here. */
+export const CHAT_WINDOW_MAX_LOADED = 2000;
 /** Bubbles that trigger a head trim (live accumulation guard). */
 export const CHAT_WINDOW_SOFT_CAP = 800;
 /** Bubbles kept after a head trim. */

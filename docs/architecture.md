@@ -36,10 +36,10 @@ rebuilds them with the commands in the README.
 
 ## The store
 
-`src/store/useAppStore.tsx` composes 21 slices — 19 through the `add()` helper,
-plus `useThemeSlice` and `useNotificationsSlice` which take no context. Nineteen
-live in `src/store/slices/`, the twentieth is `useJumpSlice` in
-`src/store/useJump.ts` because it needs `refreshTail`.
+`src/store/useAppStore.tsx` composes 20 slices — 18 through the `add()` helper,
+plus `useThemeSlice` and `useNotificationsSlice` which take no context. They all
+live under `src/store/slices/`; the orchestrator owns `refreshTail` and the other
+cross-cutting helpers.
 
 The orchestrator also owns the cross-cutting work: connection and auth, session
 management, the turn engine, and the gateway WebSocket wiring (`openWs`). Slices
