@@ -13,7 +13,9 @@ the first one is the trap that this whole document exists to prevent.
   at 500.
 - Auto-load when the reader reaches the top — no "load older" button.
 - 50 rows per page (initial tail and each older step).
-- 2000-row in-memory ceiling; older loads stop silently at it.
+- No in-memory ceiling: older loads continue until the server runs out. DOM
+  stays bounded by the scroller's `content-visibility` (off-screen rows are not
+  laid out).
 - `sliceOlderThan` dedup. The fetch deliberately overlaps the current window by
   one page so its oldest durable row is present to anchor on, which also absorbs
   small offset drift from live messages arriving mid-read.
@@ -21,26 +23,30 @@ the first one is the trap that this whole document exists to prevent.
 
 Files: `src/store/useAppStore.tsx` (`loadOlderMessages`, `trimHead`,
 `refreshTail`), `src/store/runtime.ts` (`historyOffsetRef`),
-`src/services/constants.ts` (`CHAT_HISTORY_PAGE`, `CHAT_WINDOW_MAX_LOADED`),
+`src/services/constants.ts` (`CHAT_HISTORY_PAGE`),
 `src/utils/messages.ts` (`sliceOlderThan`), `src/services/api.ts` /
 `src/services/dashboard.ts` (`offset`).
 
 ### P2 — cursor + sync correctness (planned)
 
-The goal is not just to swap `offset` for a cursor: offset's correctness win is
-invisible to the reader. The reader-visible win is **gap-free sync after a
-reconnect** and **no duplicate/skipped rows while live messages arrive during a
-history read**.
+**Scoped to the immutable backend** (`docs/chat-history-p2-feasibility.md`). The
+server exposes no stable display identity and no cursor, so P2 is client-only.
 
-- Opaque cursor based on **display identity**, not a physical row id.
-- Keyset over `(display_order, id)`.
-- `message_uid` as the durable merge/dedup key.
-- `nextCursor` + `hasMore` in the response, so the client never computes a
-  position itself.
-- Display-aware backward history (`before=<cursor>`).
-- Display-aware forward sync (`after=<cursor>`).
-- Integrate with the existing seq/replay reconnect path.
-- Explicit history/live merge rules.
+Shipped in P2 (client + existing contract):
+
+- pin the history read with `include_compacted=true`, so the transcript is the
+  deduped display projection and does not change shape when a session compacts;
+- keep offset paging and dedup on that pinned read;
+- harden reconnect with `latest_seq` / `truncated` / `epoch` + replay events.
+
+Blocked on a backend change (do **not** fake):
+
+- stable `displayId` / `displayOrder` — not exposed on any REST row;
+- `before` / `after` cursor + `nextCursor` / `prevCursor` / `hasMore` — not
+  supported (`limit`/`offset`/`order` only);
+- `message_uid` on WS live/history — `_history_to_messages` ships `row_id` only
+  and live frames carry no durable id;
+- a robust history/live merge that needs a stable logical identity.
 
 ### P3 — local-first (planned)
 

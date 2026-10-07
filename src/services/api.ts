@@ -104,7 +104,13 @@ export const modelRecommendedDefault = (provider: string, profile?: string | nul
  *
  *  `offset` skips that many rows in from the requested end and pages older
  *  history; `order: 'latest'` returns the page in chronological order. The
- *  server clamps a single request's `limit` at 500. */
+ *  server clamps a single request's `limit` at 500.
+ *
+ *  `include_compacted=true` is pinned: it makes the server return the deduped
+ *  DISPLAY projection (one row per logical message, spanning the compression
+ *  lineage), so the transcript no longer changes shape when a session compacts.
+ *  This is an existing backend param — P2 pins it rather than letting the read
+ *  path flip (see docs/chat-history-p2-semantics.md §5.1/§5.6). */
 export const sessionMessages = (
   storedId: string,
   opts: { order?: 'latest' | 'oldest'; limit?: number; offset?: number; profile?: string } = {},
@@ -113,6 +119,7 @@ export const sessionMessages = (
     order: opts.order ?? 'latest',
     limit: opts.limit ?? 200,
     offset: opts.offset ?? 0,
+    include_compacted: true,
     profile: String(opts.profile ?? '').trim() || DEFAULT_PROFILE,
   })}`;
 

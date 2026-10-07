@@ -13,3 +13,6 @@ public
 android
 **/build
 **/assets/public
+
+# Machine-generated golden fixtures (scripts/p2-golden-fixture.py).
+src/services/__fixtures__/

@@ -41,7 +41,6 @@ import { DEFAULT_PROFILE } from '../services/constants';
 import {
   CHAT_HISTORY_PAGE,
   CHAT_HISTORY_REFRESH,
-  CHAT_WINDOW_MAX_LOADED,
   CHAT_WINDOW_SOFT_CAP,
   CHAT_WINDOW_TRIM_KEEP,
   SESSION_MESSAGES_LIMIT,
@@ -472,13 +471,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const targetUser = latest.current.username;
     const cur = messagesRef.current;
     if (!h || !sk || cur.length === 0) return false;
-    // Stop silently once the in-memory window is full — an implementation
-    // detail the reader has no use for.
-    if (historyOffsetRef.current >= CHAT_WINDOW_MAX_LOADED) {
-      historyExhaustedRef.current = true;
-      setHistoryExhausted(true);
-      return false;
-    }
     if (historyLoadingRef.current || historyExhaustedRef.current || generatingRef.current) return false;
     historyLoadingRef.current = true;
     setHistoryLoadingMore(true);
@@ -515,9 +507,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setHistoryExhausted(false);
       }
       const head = sliceOlderThan(historyToItems(items), messagesRef.current);
-      if (head.length > 0) {
-        setMessages((prev) => [...head, ...prev]);
-        setTrimmedOlder((c) => Math.max(0, c - head.length));
+      // The pinned display read already dedupes generations server-side, so this
+      // is the overlap/drift guard. Drop anything already held by its durable
+      // row id — the only stable key the existing contract exposes.
+      const held = new Set(messagesRef.current.map((m) => m.rowId).filter((id): id is number => id != null));
+      const fresh = head.filter((m) => m.rowId == null || !held.has(m.rowId));
+      if (fresh.length > 0) {
+        setMessages((prev) => [...fresh, ...prev]);
+        setTrimmedOlder((c) => Math.max(0, c - fresh.length));
       }
       return true;
     } catch {

@@ -37,16 +37,16 @@ test('model option query flags are omitted when unset', () => {
 test('session transcript keeps stored-id slashes as path separators', () => {
   assert.equal(
     api.sessionMessages('abc/def'),
-    '/api/sessions/abc/def/messages?order=latest&limit=200&offset=0&profile=default',
+    '/api/sessions/abc/def/messages?order=latest&limit=200&offset=0&include_compacted=true&profile=default',
   );
   assert.equal(
     api.sessionMessages('abc', { limit: 50, profile: 'work' }),
-    '/api/sessions/abc/messages?order=latest&limit=50&offset=0&profile=work',
+    '/api/sessions/abc/messages?order=latest&limit=50&offset=0&include_compacted=true&profile=work',
   );
   // Paging older history advances offset; the page still comes back in order.
   assert.equal(
     api.sessionMessages('abc', { limit: 100, offset: 150, profile: 'work' }),
-    '/api/sessions/abc/messages?order=latest&limit=100&offset=150&profile=work',
+    '/api/sessions/abc/messages?order=latest&limit=100&offset=150&include_compacted=true&profile=work',
   );
   // Runs have opaque ids, so the whole id is encoded instead.
   assert.equal(

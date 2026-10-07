@@ -17,6 +17,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, type ReactNode
 import { ChevronDown } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { Button } from '../ui/button';
+import { Spinner } from '../ui/bits';
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -79,6 +80,11 @@ export interface TranscriptProps {
   /** Fires when the viewport is within `startReachedThreshold` px of the top. */
   onStartReached?: () => void;
   startReachedThreshold?: number;
+  /** True while an older-history page is in flight. Drawn as an overlay, NOT as
+   *  a scroller item: an item at the top would be the prepend anchor the package
+   *  measures against, and removing it as the page lands would defeat
+   *  `preserveScrollOnPrepend` (the transcript would jump down on every load). */
+  loadingOlder?: boolean;
   /** The jump button floats this far above the scroller's bottom edge. */
   jumpBottom?: number;
   /**
@@ -147,6 +153,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     onScrollableChange,
     onStartReached,
     startReachedThreshold = 200,
+    loadingOlder = false,
     jumpBottom = 0,
     scrollerRef,
   },
@@ -176,6 +183,17 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             {clearance > 0 && <div aria-hidden style={{ height: Math.round(clearance), marginTop: '-0.5rem' }} />}
           </MessageScrollerContent>
         </MessageScrollerViewport>
+        {/* Older-history spinner. An overlay, not a content item: a leading item
+            would be the prepend anchor the scroller measures, and removing it as
+            the page lands breaks `preserveScrollOnPrepend`. `pointer-events-none`
+            so it cannot swallow the scroll gesture that started under it. */}
+        {loadingOlder && (
+          <div
+            data-slot="message-scroller-loading"
+            className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center py-2">
+            <Spinner size={14} color="currentColor" />
+          </div>
+        )}
         {/* The jump button rides a rail that mirrors the message column, not the
             window. Anchored to the window it sat a couple of hundred pixels out
             at desktop width, pointing at nothing in particular.

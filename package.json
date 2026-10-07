@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test src/services/*.test.mjs src/utils/*.test.mjs src/features/*/*.test.mjs src/store/*.test.mjs",
+    "test:p2": "node --experimental-strip-types --test src/services/__blocked__/*.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

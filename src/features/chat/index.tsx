@@ -705,17 +705,6 @@ export function ChatScreen() {
       trimHead();
     }
   }, [messages.length, generating, atBottom, historyLoadingMore, trimHead]);
-  // Older history loads on its own when the reader reaches the top (see
-  // Transcript's onStartReached); this header only shows that it is working.
-  const ListHeader = useCallback(() => {
-    if (!historyLoadingMore) return null;
-    return (
-      <div className="flex flex-col items-center py-3">
-        <Spinner size={14} color="currentColor" />
-        <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">loading older…</div>
-      </div>
-    );
-  }, [historyLoadingMore]);
 
   if (booting) {
     return (
@@ -908,13 +897,8 @@ export function ChatScreen() {
             gutter={gutter}
             jumpBottom={dockH + 12}
             onScrollableChange={handleScrollableChange}
-            onStartReached={handleStartReached}>
-            {/* A `MessageScrollerItem`, like every other child. The scroller only
-                lays out and measures items tagged with its slot — a bare <div>
-                here is dropped from the DOM entirely, which is why the "load
-                older" control (and the capped banner) never appeared even though
-                the JSX was right. */}
-            <MessageScrollerItem messageId="__listHeader">{ListHeader()}</MessageScrollerItem>
+            onStartReached={handleStartReached}
+            loadingOlder={historyLoadingMore}>
             {messages.map((item) => (
               // `scrollAnchor` on your own messages is what makes a new turn
               // settle near the top of the viewport with a peek of the previous

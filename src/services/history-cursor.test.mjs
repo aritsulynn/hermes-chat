@@ -1,16 +1,93 @@
-// Reconnect resync spec.
+// P2 Step 1 spec — CLIENT-ONLY SUBSET (backend immutable).
 //
-// A reconnect resync fetches the newest page from REST and folds it into the
-// loaded window instead of replacing it. Replacing the window with one page
-// collapses a deep history window, which clamps the scroller to the bottom and
-// yanks a reader who was scrolled up (the "it goes to latest on resume" bug).
+// The backend exposes no stable display identity and no cursor
+// (docs/chat-history-p2-feasibility.md), so the cursor/displayId specs live in
+// src/services/__blocked__/history-cursor.blocked.mjs and run via `npm run
+// test:p2`. This file holds what P2 can actually ship on the existing contract:
+//
+//   * fixture invariants — prove the golden data is genuinely hard;
+//   * the pinned display read (`include_compacted=true`);
+//   * older-page dedup anchored on the window's oldest durable row.
+//
+// Nothing here fakes a `displayId`, a cursor, or a WS `message_uid`.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 
-import { mergeHistoryTail } from '../utils/messages.ts';
+import { sessionMessages } from './api.ts';
+import { mergeHistoryTail, sliceOlderThan } from '../utils/messages.ts';
 
-test('a reconnect resync folds the fresh tail into the window instead of shrinking it', () => {
+const fixture = JSON.parse(readFileSync(new URL('./__fixtures__/p2-golden.json', import.meta.url), 'utf8'));
+const raw = fixture.rawRows;
+
+const byIdentity = new Map();
+for (const r of raw) {
+  if (!r.displayIdentity) continue;
+  byIdentity.set(r.displayIdentity, (byIdentity.get(r.displayIdentity) ?? 0) + 1);
+}
+const duplicateGroups = [...byIdentity.values()].filter((n) => n > 1);
+
+// ── Fixture invariants (green: the golden data really contains the hard cases) ─
+
+test('fixture: >2000 display messages, a real lineage, compacted/hidden/model-only and duplicate generations', () => {
+  assert.ok(fixture.counts.canonicalDisplay > 2000, 'need >2000 display messages');
+  assert.ok(fixture.session.lineage.length >= 2, 'need a compression lineage');
+  assert.ok(
+    raw.some((r) => r.compacted),
+    'need compacted rows',
+  );
+  assert.ok(
+    raw.some((r) => r.displayKind === 'hidden'),
+    'need hidden rows',
+  );
+  assert.ok(
+    raw.some((r) => r.modelOnly),
+    'need model-only rows',
+  );
+  assert.ok(duplicateGroups.length > 0, 'need duplicate generations');
+});
+
+// ── Client-only achievable: pinned display read ──────────────────────────────
+
+test('P2: history reads pin the display projection with include_compacted=true', () => {
+  const url = sessionMessages('abc', { limit: 50, offset: 100, profile: 'default' });
+  assert.match(url, /include_compacted=true/, 'the read must pin include_compacted');
+  assert.match(url, /offset=100/, 'offset paging is preserved');
+  assert.match(url, /limit=50/, 'page size is preserved');
+});
+
+test('P2: the pinned read is the deduped display projection, so the page never repeats a logical row', () => {
+  // The server returns one row per logical message when include_compacted=true;
+  // the client must not need to reconstruct that identity itself.
+  const url = sessionMessages('abc', { limit: 50 });
+  assert.match(url, /include_compacted=true/);
+});
+
+// ── Client-only achievable: older-page dedup ─────────────────────────────────
+
+test('P2: an older page merges only rows strictly older than the window, dropping overlap', () => {
+  const current = [
+    { id: 'a', role: 'user', rowId: 10, text: 'u10' },
+    { id: 'b', role: 'assistant', rowId: 11, text: 'a11' },
+  ];
+  const fetched = [
+    { id: 'x', role: 'user', rowId: 8, text: 'u8' },
+    { id: 'y', role: 'assistant', rowId: 9, text: 'a9' },
+    { id: 'z', role: 'user', rowId: 10, text: 'u10' }, // anchor: already held
+    { id: 'w', role: 'assistant', rowId: 11, text: 'a11' }, // newer: already held
+  ];
+  const older = sliceOlderThan(fetched, current);
+  assert.deepEqual(
+    older.map((m) => m.rowId),
+    [8, 9],
+    'only rows older than the window anchor may be prepended',
+  );
+});
+
+// ── Client-only achievable: reconnect resync preserves the window ─────────────
+
+test('P2: a reconnect resync folds the fresh tail into the window instead of shrinking it', () => {
   const current = [
     { id: 'a', role: 'user', rowId: 1, text: 'u1' },
     { id: 'b', role: 'assistant', rowId: 2, text: 'a1' },

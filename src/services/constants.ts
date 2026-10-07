@@ -42,15 +42,16 @@ export const SESSION_MESSAGES_CACHE_MAX = 20;
 // offset` (server clamps a single request's limit at 500). Older history is
 // paged by advancing `offset` from the newest end and prepending just the older
 // slice (see sliceOlderThan in utils/messages), which dedupes against the
-// overlap the fetch deliberately keeps. Steady state keeps a bounded window in
-// JS memory instead of the whole 10k-message transcript.
+// overlap the fetch deliberately keeps.
+//
+// No in-memory ceiling: older loads continue until the server runs out. DOM cost
+// stays bounded by the scroller's `content-visibility: auto` (off-screen rows are
+// not laid out), so a deep read grows the JS window, not the rendered rows.
 
 /** REST rows fetched per transcript page: the initial tail and each older step. */
 export const CHAT_HISTORY_PAGE = 50;
 /** Newest rows re-fetched to reconcile tool results/diffs (has to span a turn). */
 export const CHAT_HISTORY_REFRESH = 120;
-/** Hard ceiling on transcript rows held in memory; older loads stop here. */
-export const CHAT_WINDOW_MAX_LOADED = 2000;
 /** Bubbles that trigger a head trim (live accumulation guard). */
 export const CHAT_WINDOW_SOFT_CAP = 800;
 /** Bubbles kept after a head trim. */
