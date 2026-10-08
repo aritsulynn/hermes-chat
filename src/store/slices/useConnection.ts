@@ -14,6 +14,7 @@ import {
   saveHost,
 } from '../../services/connection';
 import { clearMediaCaches } from '../../services/media-cache';
+import { clearOutbox, loadOutbox } from '../../services/outbox';
 import { DEFAULT_PROFILE } from '../../services/constants';
 import { errMsg } from '../../utils/messages';
 import { discoverAgentProfiles, withTimeout } from '../helpers';
@@ -127,6 +128,15 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
         turnOwnerRef.current.clear();
         parkedLiveRef.current.clear();
         draftsRef.current.clear();
+        // P3: the new account brings its own unsent work, if any.
+        void loadOutbox(nextScope)
+          .then((box) => {
+            if (!isCurrent()) return;
+            for (const [key, value] of box.drafts) {
+              if (!draftsRef.current.has(key)) draftsRef.current.set(key, value);
+            }
+          })
+          .catch(() => {});
         setInputRaw('');
         setPassword('');
         queuedRef.current = [];
@@ -310,6 +320,9 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     setAttachments([]);
     editRowRef.current = null;
     setEditingRowId(null);
+    // P3 parity with the in-memory clear above: logging out forgets this
+    // account's unsent work instead of restoring it on the next login.
+    void clearOutbox(connectionScope(logoutHost, logoutUser));
     navigate('/login', { replace: true });
 
     const cleanup = (async () => {

@@ -28,7 +28,7 @@ export interface StoreRuntime {
   /** Best-effort runtime → owner metadata, including unresolved background profiles. */
   runtimeAskOwners: MutableRefObject<Map<string, AskOwner>>;
   generatingRef: MutableRefObject<boolean>;
-  sendRef: MutableRefObject<((text?: string) => Promise<void>) | null>;
+  sendRef: MutableRefObject<((text?: string) => Promise<boolean>) | null>;
   drainRef: MutableRefObject<() => void>;
   messagesRef: MutableRefObject<UiMessage[]>;
   // ── Transcript windowing (10k+ sessions) ───────────────────────────────
@@ -72,7 +72,7 @@ export function useStoreRuntime(): StoreRuntime {
     runtimeOwners: useRef<Map<string, string>>(new Map()),
     runtimeAskOwners: useRef<Map<string, AskOwner>>(new Map()),
     generatingRef: useRef(false),
-    sendRef: useRef<((text?: string) => Promise<void>) | null>(null),
+    sendRef: useRef<((text?: string) => Promise<boolean>) | null>(null),
     drainRef: useRef<() => void>(() => {}),
     messagesRef: useRef<UiMessage[]>([]),
     historyOffsetRef: useRef(0),

@@ -49,6 +49,8 @@ import { pendingAsks } from '../services/ask-inbox';
 import { GatewayWs } from '../services/gateway-ws';
 import type { ConnState } from '../services/gateway-ws';
 import { errMsg, mergeHistoryTail, nid, sliceOlderThan } from '../utils/messages';
+import { saveTranscriptTail } from '../services/transcript-cache';
+import { loadOutbox, saveOwnerState } from '../services/outbox';
 import type { UiMessage } from '../utils/messages';
 import {
   discoverAgentProfiles,
@@ -232,6 +234,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     stampRowIdsRef,
     resyncRef,
     connectRef,
+    drainRef,
 
     stopRef,
 
@@ -580,6 +583,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Rebuild the loaded window (not a fixed 200): paging/trim state stays
     // intact across a reconnect instead of collapsing back to a full load.
     void refreshTail().catch((e) => console.warn('[store] resync failed', e));
+    // P3: the socket is back — retry anything staged while offline. The drain
+    // no-ops when a turn is running or the queue is empty.
+    queueMicrotask(() => drainRef.current());
   };
 
   // Rebuild the tail window from REST, used by the post-reconnect resync.
@@ -657,6 +663,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     setInput,
 
+    draftsRef,
+    draftKeyRef,
+
     attachments,
     setAttachments,
     copiedId,
@@ -677,6 +686,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const c = await loadConnection();
+        // P3: restore unsent work from the previous run before anything reads
+        // the drafts map. Never overwrites keys already typed this boot.
+        try {
+          const box = await loadOutbox(connectionScope(c.host, c.username));
+          if (!cancelled) {
+            for (const [key, value] of box.drafts) {
+              if (!draftsRef.current.has(key)) draftsRef.current.set(key, value);
+            }
+          }
+        } catch {
+          // Best-effort: the network remains the source of truth.
+        }
         // Assert, not migrate: nothing on this platform writes a password, so
         // this can only ever be clearing a value left by an older build. It is
         // kept because "no secret is ever read back out of localStorage" is a
@@ -815,6 +836,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const { editMessage, cancelEdit, regenerate, pasteLarge, send, releaseLocalTurn, stop } = add(useTurnSlice(ctx));
 
+  // P3 local-first: keep the instant-paint tail fresh after a turn settles.
+  // Debounced so streaming tokens never touch storage — only the settled
+  // transcript lands, and a failed write is swallowed inside the module.
+  useEffect(() => {
+    if (!sessionKey || messages.length === 0 || generating) return;
+    const t = setTimeout(() => {
+      void saveTranscriptTail(connectionScope(host, username), activeProfile, sessionKey, messagesRef.current).catch(
+        () => {},
+      );
+    }, 800);
+    return () => clearTimeout(t);
+  }, [messages, sessionKey, generating, host, username, activeProfile]);
+  // P3 local-first: write-through for unsent work. The memory queue stays
+  // authoritative; this snapshots drafts + the current room's queue so both
+  // survive a reload. Debounced like the tail cache — typing never touches
+  // storage synchronously — and scoped per account so rooms never cross.
+  useEffect(() => {
+    if (!host) return;
+    const scope = connectionScope(host, username);
+    const owner = draftKeyRef.current.endsWith('__none__') ? null : draftKeyRef.current;
+    const t = setTimeout(() => {
+      void saveOwnerState(scope, owner, draftsRef.current, queued).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [input, queued, host, username, activeProfile, sessionKey]);
   // Watchdog: a missed turn-end (dropped complete, truncated replay, an error
   // notice instead of complete) must never strand the Stop button forever.
   // Desktop parity: confirm against `session.active_list` before releasing —

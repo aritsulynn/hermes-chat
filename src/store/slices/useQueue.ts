@@ -85,7 +85,11 @@ export function useQueueSlice({ generatingRef, sendRef, drainRef }: StoreCtx): Q
       const item = queuedRef.current.find((q) => q.id === id);
       if (!item) return;
       setQueue((prev) => prev.filter((q) => q.id !== id));
-      void sendRef.current?.(item.text);
+      void Promise.resolve(sendRef.current?.(item.text)).then((ok) => {
+        // A "Send" tap that landed while offline hands the prompt back instead
+        // of dropping it — the panel row reappears for the next retry.
+        if (ok !== true) setQueue((prev) => (prev.some((q) => q.id === item.id) ? prev : [item, ...prev]));
+      });
     },
     [setQueue, generatingRef, sendRef],
   );
@@ -99,8 +103,11 @@ export function useQueueSlice({ generatingRef, sendRef, drainRef }: StoreCtx): Q
     queueDrainInFlightRef.current = true;
     let submitted = false;
     void Promise.resolve(sendRef.current?.(next.text))
-      .then(() => {
-        submitted = true;
+      .then((ok) => {
+        // Only a consumed send retires the head: an offline drain reports
+        // false so the prompt stays queued for the next trigger instead of
+        // being silently dropped.
+        submitted = ok === true;
       })
       .catch(() => {})
       .finally(() => {

@@ -52,12 +52,21 @@ Blocked on a backend change (do **not** fake):
   and live frames carry no durable id;
 - a robust history/live merge that needs a stable logical identity.
 
-### P3 — local-first (planned)
+### P3 — local-first (in progress)
 
 - SQLite / local persistence.
 - Instant startup: open a room and show the last-known transcript immediately.
 - Optimistic send.
 - Background sync.
+
+Shipped so far (best-effort `localStorage`; SQLite still open):
+
+- tail cache (`src/services/transcript-cache.ts`): openSession paints the
+  last-known tail instantly, then the network transcript replaces it;
+- durable outbox (`src/services/outbox.ts`): per-room drafts + queued prompts
+  survive a reload, sending while offline stages into the queue instead of
+  dropping, and the drain retries on reconnect. `send()` now reports whether
+  the prompt was consumed so the drain never retires an unsent head.
 
 ## Design constraints (read before P2)
 

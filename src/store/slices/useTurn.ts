@@ -20,7 +20,12 @@ export interface TurnSlice {
   cancelEdit: () => void;
   regenerate: () => void;
   pasteLarge: (text: string) => Promise<void>;
-  send: (override?: string) => Promise<void>;
+  /**
+   * Returns true when the prompt was accepted (sent, ran as a slash command,
+   * or parked in the queue). False means "not consumed" — the queue drain
+   * keeps the item for the next trigger instead of dropping it.
+   */
+  send: (override?: string) => Promise<boolean>;
   releaseLocalTurn: () => void;
   stop: () => void;
 }
@@ -415,7 +420,24 @@ export function useTurnSlice(ctx: StoreCtx): TurnSlice {
       const profile = activeProfile;
       const epoch = profileEpochRef.current;
       const files = override === undefined ? attachments : [];
-      if ((!text && files.length === 0) || !g || !sessionId) return;
+      if (!text && files.length === 0) return false;
+      if (!g || !sessionId) {
+        // P3 local-first: no live session (socket down, room still opening).
+        // A drain retry just reports back un-consumed so the item stays queued;
+        // a real user tap stages the text-only prompt into the durable queue
+        // instead of dropping it. Attachments cannot stage — uploads need a
+        // live gateway — so those stay in the composer untouched.
+        if (override !== undefined) return false;
+        if (files.length > 0 || !latest.current.sessionKey) return false;
+        setInput('');
+        setAttachments([]);
+        enqueueQueued(text);
+        setMessages((prev) => [
+          ...prev,
+          { id: nid(), role: 'notice', text: 'Connection down — queued, will send on reconnect.' },
+        ]);
+        return true;
+      }
       // An edit resend rewinds history to that user row first (cleared below).
       const rewindRowId = editRowRef.current ?? undefined;
       if (editRowRef.current != null) {
@@ -426,7 +448,7 @@ export function useTurnSlice(ctx: StoreCtx): TurnSlice {
         // Mid-turn: hold it for the next turn instead of dropping it.
         if (text) enqueueQueued(text);
         if (override === undefined) setInput('');
-        return;
+        return true;
       }
 
       // A leading `/command` runs server-side instead of going to the model:
@@ -455,12 +477,12 @@ export function useTurnSlice(ctx: StoreCtx): TurnSlice {
           else if (hint) setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: hint }]);
           else {
             await runSlash(text);
-            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+            if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return false;
           }
         }
         // A queued slash command doesn't start a turn, so drain the next one here.
         drainRef.current();
-        return;
+        return true;
       }
 
       // Bytes go up BEFORE the prompt through the active runtime session, so
@@ -470,20 +492,20 @@ export function useTurnSlice(ctx: StoreCtx): TurnSlice {
       if (files.length) {
         // Uploads take seconds — a second tap mid-flight would send the file and
         // the prompt twice.
-        if (uploading.current) return;
+        if (uploading.current) return true;
         uploading.current = true;
         setToolLine(`uploading ${files.length} file${files.length === 1 ? '' : 's'}…`);
         try {
           sent = await uploadAttachments(files, g, sessionId);
         } catch (e) {
-          if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+          if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return false;
           setToolLine(null);
           setMessages((prev) => [...prev, { id: nid(), role: 'notice', text: `Upload failed: ${errMsg(e)}` }]);
-          return;
+          return true;
         } finally {
           uploading.current = false;
         }
-        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return;
+        if (activeProfileRef.current !== profile || profileEpochRef.current !== epoch) return false;
         setToolLine(null);
       }
 
@@ -513,6 +535,7 @@ export function useTurnSlice(ctx: StoreCtx): TurnSlice {
         rewindRowId,
         rewindTarget ? cutsWholeTranscript(messagesRef.current, rewindTarget.id) : false,
       );
+      return true;
     },
     [activeProfile, input, attachments, sessionId, setInput, setAttachments, beginTurn, runSlash, enqueueQueued],
   );

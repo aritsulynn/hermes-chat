@@ -120,7 +120,7 @@ export interface AppStore {
   newSession: () => Promise<void>;
   /** Download the open session as JSON; returns the filename and raw text. */
   exportSession: (title?: string) => Promise<{ filename: string; text: string }>;
-  send: () => Promise<void>;
+  send: () => Promise<boolean>;
   stop: () => void;
   getGw: () => GatewayWs | null;
   /** Connection + WS diagnostics snapshot (Settings → Diagnostics). */

@@ -9,6 +9,10 @@ import {
   lastSessionMessagesRawCount,
 } from '../../services/dashboard';
 import { connectionScope, saveLastSession } from '../../services/connection';
+import { loadTranscriptTail, saveTranscriptTail } from '../../services/transcript-cache';
+import { loadOwnerQueue, saveOwnerState } from '../../services/outbox';
+import type { OutboxItem } from '../../services/outbox';
+import { nid } from '../../utils/messages';
 import { CHAT_HISTORY_PAGE } from '../../services/constants';
 import { errMsg, normalizeTodos } from '../../utils/messages';
 import {
@@ -72,7 +76,9 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
     setBusy,
     setError,
     setQueued,
+    setQueue,
     setQueueParked,
+    drainRef,
     askInboxRef,
     queuedRef,
     queueParkedRef,
@@ -149,6 +155,31 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
           return;
         if (descendantId && descendantId !== s.id) s = { ...s, id: descendantId };
       }
+      // P3 local-first: paint the last-known tail instantly so a slow resume
+      // never shows a blank screen, with this room's unsent prompts appended
+      // as pending bubbles so surviving a reload is visible. The network
+      // transcript below replaces it all; a stale paint is strictly better
+      // than no paint, and the epoch guards keep a superseded open from
+      // flashing another room's tail.
+      const tailScope = connectionScope(targetHost, targetUser);
+      const tailOwner = profileSessionKey(profile, s.id);
+      const savedQueuePromise = loadOwnerQueue(tailScope, tailOwner).catch((): OutboxItem[] => []);
+      void Promise.all([loadTranscriptTail(tailScope, profile, s.id).catch(() => []), savedQueuePromise])
+        .then(([cached, saved]) => {
+          if (!isLatestOpen() || !isSameConnection() || activeProfileRef.current !== profile) return;
+          const pending = saved.map((q) => ({
+            id: nid(),
+            role: 'user' as const,
+            text: q.text,
+            ts: Math.floor(q.ts / 1000),
+            pending: true,
+          }));
+          if (cached.length === 0 && pending.length === 0) return;
+          const paint = [...cached, ...pending];
+          messagesRef.current = paint;
+          setMessages(paint);
+        })
+        .catch(() => {});
       // The ask slot is foreground-only; pending requests remain in the inbox.
       askRef.current = null;
       setAsk(null);
@@ -285,8 +316,33 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
           setMessages(items);
         }
         noteHistoryWindow(historyRows, historyExhausted);
+        // Keep the instant-paint cache fresh for the next open. `items` is the
+        // authoritative tail just fetched — not the live bubbles that follow.
+        void saveTranscriptTail(tailScope, profile, s.id, items).catch(() => {});
+        // The memory queue belongs to the room being left — stash it under the
+        // old owner before clearing, then restore this room's durable queue
+        // and let the drain send it now that the session is live.
+        if (queuedRef.current.length > 0 && previousSessionKey) {
+          void saveOwnerState(
+            tailScope,
+            profileSessionKey(profile, previousSessionKey),
+            draftsRef.current,
+            queuedRef.current,
+          ).catch(() => {});
+        }
+        const savedQueue = await savedQueuePromise;
         queuedRef.current = [];
         setQueued([]);
+        if (
+          savedQueue.length > 0 &&
+          isLatestOpen() &&
+          isSameConnection() &&
+          activeProfileRef.current === profile &&
+          profileEpochRef.current === epoch
+        ) {
+          setQueue(() => savedQueue.map((q) => ({ id: q.id, text: q.text })));
+          queueMicrotask(() => drainRef.current());
+        }
         queueParkedRef.current = false;
         setQueueParked(false);
         editRowRef.current = null;
@@ -394,6 +450,19 @@ export function useSessionOpsSlice(ctx: StoreCtx): SessionOpsSlice {
       setMessages([]);
       resetHistoryWindow();
       clearStreaming();
+      // Same stash as openSession: the queue being cleared belongs to the room
+      // being left, so snapshot it under the old owner first.
+      if (queuedRef.current.length > 0) {
+        const prevKey = previousSessionKey ?? latest.current.sessionKey;
+        if (prevKey) {
+          void saveOwnerState(
+            connectionScope(latest.current.host, latest.current.username),
+            profileSessionKey(profile, prevKey),
+            draftsRef.current,
+            queuedRef.current,
+          ).catch(() => {});
+        }
+      }
       queuedRef.current = [];
       setQueued([]);
       queueParkedRef.current = false;
