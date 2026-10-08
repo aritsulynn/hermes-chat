@@ -86,8 +86,6 @@ export interface StoreCtx
   setUsername: Setter<string>;
   password: string;
   setPassword: Setter<string>;
-  /** Guards the password against leaking across accounts; cleared on scope change. */
-  passwordScopeRef: MutableRefObject<string>;
   booting: boolean;
   setBooting: Setter<boolean>;
   busy: boolean;

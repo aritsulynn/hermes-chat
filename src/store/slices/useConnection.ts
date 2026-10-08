@@ -35,7 +35,6 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
     openWs,
     refreshSessions,
 
-    passwordScopeRef,
     host,
     username,
     password,
@@ -254,9 +253,8 @@ export function useConnectionSlice(ctx: StoreCtx): ConnectionSlice {
   );
 
   const login = useCallback(async () => {
-    const scope = connectionScope(host, username);
-    const enteredPassword = passwordScopeRef.current === scope ? password : '';
-    const pw = enteredPassword || (await getPassword(host, username)) || '';
+    // What is typed is what gets sent — see the note at the password state.
+    const pw = password || (await getPassword(host, username)) || '';
     if (!host.trim() || !username.trim() || !pw) {
       setError('Fill host, username and password');
       return;

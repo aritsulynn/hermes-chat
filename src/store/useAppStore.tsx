@@ -158,30 +158,15 @@ export function useApp(): AppStore {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [host, setHost] = useState('');
   const [username, setUsername] = useState('');
-  const [password, setPasswordState] = useState('');
-  const passwordScopeRef = useRef('');
-  const setPasswordForScope = useCallback((value: string, scope: string) => {
-    setPasswordState(value);
-    passwordScopeRef.current = value ? scope : '';
-  }, []);
-  const setPassword = useCallback(
-    (value: string) => {
-      setPasswordForScope(value, value ? connectionScope(host, username) : '');
-    },
-    [host, username, setPasswordForScope],
-  );
-  // Deliberately NO effect that wipes the password when host/username change.
-  // There was one, and it fired on every keystroke: emptying the host field
-  // made the scope `''`, which never matches the scope the password was typed
-  // under, so fixing a typo in the host silently destroyed the password. An
-  // empty or half-typed host is a field being edited, not a dashboard being
-  // switched.
-  //
-  // The guarantee it was defending is already enforced where it matters, at
-  // the single point the password leaves the app: `login()` reads it only when
-  // `passwordScopeRef.current` equals the current scope (useConnection.ts), so
-  // a password typed for another dashboard is never sent there — it falls back
-  // to that scope's stored credential and reports the field as empty.
+  // The password field is authoritative: pressing login is an explicit act
+  // with the current host on screen, so whatever is typed is what gets sent —
+  // even if the host was edited after typing. The old scope gate silently
+  // ignored a visible password and reported "Fill host...", which read as a
+  // dead network. Deliberately NO effect that wipes the password when
+  // host/username change, either: an empty or half-typed host is a field being
+  // edited, not a dashboard being switched (account switches already clear it
+  // via connect()/logout()).
+  const [password, setPassword] = useState('');
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -325,7 +310,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUsername,
     password,
     setPassword,
-    passwordScopeRef,
     booting,
     setBooting,
     busy,
@@ -711,7 +695,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const savedPw = await getPassword(c.host, c.username).catch(() => null);
         if (cancelled) return;
         const accountScope = connectionScope(c.host, c.username);
-        if (savedPw) setPasswordForScope(savedPw, accountScope);
+        if (savedPw) setPassword(savedPw);
         const savedProfile = await getActiveProfile(accountScope).catch(() => null);
         if (savedProfile) {
           const normalized = normalizeProfileName(savedProfile);
