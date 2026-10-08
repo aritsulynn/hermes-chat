@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { inlineDiffFromDetail } from '../../utils/diff';
-import { missingHistoryTools, pairThinkingText } from '../../utils/messages';
+import { missingHistoryTools, pairThinkingText, rebuildTurnTimeline } from '../../utils/messages';
 import { connectionScope } from '../../services/connection';
 import { CHAT_HISTORY_REFRESH } from '../../services/constants';
 import { getSessionMessages } from '../../services/dashboard';
@@ -114,19 +114,24 @@ export function useToolRefreshSlice({
         // history tool rows with no live bubble, placed before the anchor so
         // they land inside their own turn even if the next one already started.
         // Without an anchor the placement is unknowable — fill only.
-        const missing =
-          anchorId != null ? missingHistoryTools(historyToItems(items), messagesRef.current, intactWindow) : [];
-        // Settle thinking bubbles to the persisted reasoning sidecar (the live
-        // delta stream carries status quips; the durable reasoning only lands
-        // in history). Only while no turn is running — mid-turn the current
-        // bubble is still filling and history has nothing newer for it.
         const histItems = anchorId != null ? historyToItems(items) : [];
-        const thinkSync =
-          !generatingRef.current && histItems.length > 0 ? pairThinkingText(histItems, messagesRef.current) : [];
-        if (fill.size === 0 && missing.length === 0 && thinkSync.length === 0) return;
+        const missing =
+          anchorId != null ? missingHistoryTools(histItems, messagesRef.current, intactWindow) : [];
+        // Settle thinking to the persisted reasoning sidecar. Two jobs, both only
+        // once the turn has stopped (mid-turn history has nothing newer):
+        //   - rebuild the turn's Thought rows from the durable sidecar (the live
+        //     stream can differ in count/slot, or be absent — see
+        //     rebuildTurnTimeline);
+        //   - overwrite any bubble the rebuild left in place with the persisted
+        //     text.
+        const settle = !generatingRef.current && histItems.length > 0;
+        const hasInsert = settle && rebuildTurnTimeline(messagesRef.current, histItems) !== messagesRef.current;
+        const thinkSync = settle ? pairThinkingText(histItems, messagesRef.current) : [];
+        if (fill.size === 0 && missing.length === 0 && thinkSync.length === 0 && !hasInsert) return;
         const thinkById = new Map(thinkSync.map((t) => [t.id, t.text] as const));
         setMessages((prev) => {
-          const next = prev.map((m) => {
+          const base = hasInsert ? rebuildTurnTimeline(prev, histItems) : prev;
+          const next = base.map((m) => {
             const f = fill.get(m.id);
             const t = thinkById.get(m.id);
             return f || t !== undefined ? { ...m, ...(f ?? {}), ...(t !== undefined ? { text: t } : {}) } : m;

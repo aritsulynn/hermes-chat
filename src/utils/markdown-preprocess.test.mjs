@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { cleanThinking, renderMediaTags } from './messages.ts';
+import { cleanThinking, providerWaitText, renderMediaTags } from './messages.ts';
 
 // These are the preprocessing the chat markdown path depends on: every assistant
 // reply is `cleanThinking`-free markdown that has been through `renderMediaTags`
@@ -47,6 +47,16 @@ test('cleanThinking treats zero-width lines as blank', () => {
 
 test('cleanThinking trims trailing invisibles off the end', () => {
   assert.equal(cleanThinking('done\n\n  '), 'done');
+});
+
+test('providerWaitText keeps an explained wait and drops a spinner rewrite', () => {
+  // `thinking.delta` is the spinner, not reasoning: only the explained waits are
+  // worth the status strip. A rewrite must not paint the Thought bubble.
+  assert.equal(providerWaitText('⏳ waiting on local-model — 30s with no output yet'), '⏳ waiting on local-model — 30s with no output yet');
+  assert.equal(providerWaitText('  ⚠ no output from provider for 900s — reconnecting...  '), '⚠ no output from provider for 900s — reconnecting...');
+  assert.equal(providerWaitText('(✦) measuring burn...'), '');
+  assert.equal(providerWaitText('📖 banking into the draft...'), '');
+  assert.equal(providerWaitText(''), '');
 });
 
 test('renderMediaTags turns a MEDIA: tag into a file link', () => {

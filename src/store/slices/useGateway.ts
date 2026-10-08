@@ -12,7 +12,7 @@ import { pushNotification } from '../../services/notifications';
 import type { AskOwner } from '../../services/ask-inbox';
 import { changedFilesFromDiff } from '../../utils/diff';
 import { formatToolCommand, formatToolResult } from '../../utils/toolResult';
-import { nid, normalizeTodos, stripFailedTurnNotice } from '../../utils/messages';
+import { nid, normalizeTodos, providerWaitText, stripFailedTurnNotice } from '../../utils/messages';
 import type { Role, UiMessage } from '../../utils/messages';
 import { mergeUsageState, normalizeProfileName, profileSessionKey } from '../helpers';
 import { asRecord } from '../../utils/ops';
@@ -328,6 +328,29 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
       // First `ready` is covered by openSession's own resume; only a reconnect has
       // lost its transport binding.
       let wasReady = false;
+      // Shared by `reasoning.delta` (streamed reasoning tokens) and
+      // `reasoning.available` (one complete block from a provider that does not
+      // stream reasoning): both fill the current Thought bubble, minting one if
+      // this segment has none yet. Callers do the epoch/session guard.
+      const appendReasoning = (delta: string) => {
+        if (!delta) return;
+        let aid = liveThinkAid.current;
+        if (!aid) {
+          aid = nid();
+          liveThinkAid.current = aid;
+          const id = aid;
+          const aiId = liveAid.current;
+          setMessages((prev) => {
+            // Thinking reads first — pin it ABOVE the pending answer bubble.
+            const think = { id, role: 'thinking' as Role, text: '' };
+            const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
+            if (aiIdx === -1) return [...prev, think];
+            return [...prev.slice(0, aiIdx), think, ...prev.slice(aiIdx)];
+          });
+        }
+        lastTurnEventAt.current = Date.now();
+        streaming.push(aid, delta);
+      };
       // `let` on purpose: the GatewayWs options below close over `ws`, and a
       // const would put it in the temporal dead zone if the constructor ever
       // fired a callback synchronously.
@@ -422,31 +445,34 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             const aid = liveAid.current;
             if (!aid || !delta) return;
             lastTurnEventAt.current = Date.now();
+            // Answer text ends the current reasoning segment: a later reasoning
+            // delta (interleaved thinking) is a new step and must mint its own
+            // Thought bubble instead of appending to the previous one.
+            liveThinkAid.current = null;
             // O(1): appended outside `messages`, and it wakes exactly the live
             // bubble — no transcript map, and no app-wide re-render per delta.
             streaming.push(aid, delta);
           },
           onReasoning: (sid, delta) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
-            let aid = liveThinkAid.current;
-            if (!aid) {
-              aid = nid();
-              liveThinkAid.current = aid;
-              const id = aid;
-              const aiId = liveAid.current;
-              setMessages((prev) => {
-                // Thinking reads first — pin it ABOVE the pending answer bubble.
-                const think = { id, role: 'thinking' as Role, text: '' };
-                const aiIdx = aiId ? prev.findIndex((m) => m.id === aiId) : -1;
-                if (aiIdx === -1) return [...prev, think];
-                return [...prev.slice(0, aiIdx), think, ...prev.slice(aiIdx)];
-              });
-              if (!delta) return;
-            }
-            const id = aid;
-            if (!delta) return;
+            appendReasoning(delta);
+          },
+          onReasoningAvailable: (sid, text) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
+            // The gateway also relays a response's tagged inline reasoning through
+            // this event, and that payload can be the assistant content itself.
+            // Once the reply is visibly streaming, never repaint it into the
+            // Thought (desktop applies the same guard).
+            const aiId = liveAid.current;
+            if (aiId && streaming.read(aiId).trim()) return;
+            appendReasoning(text);
+          },
+          onThinking: (sid, text) => {
+            if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
             lastTurnEventAt.current = Date.now();
-            streaming.push(id, delta);
+            // Spinner rewrites are dropped; only an explained provider wait earns
+            // the status strip. An empty frame clears it (turn_api_call / _error).
+            setToolLine(providerWaitText(text) || null);
           },
           onInterim: (sid, text) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
@@ -465,6 +491,12 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
           onTool: (sid, info) => {
             if (connectionEpochRef.current !== connectionEpoch || !isCurrentSession(sid)) return;
             lastTurnEventAt.current = Date.now();
+            // A tool call is a step boundary: the reasoning that follows belongs
+            // to a new Thought. History keeps one reasoning sidecar per step, so
+            // without this the live view merged the whole turn into a single
+            // accumulating bubble and only split into several on reload — see
+            // onReasoning.
+            if (info.phase !== 'complete') liveThinkAid.current = null;
             if (info.phase === 'complete') {
               setToolLine(null);
               const mid = (info.toolId && liveTools.current.get(info.toolId)) || liveToolAid.current;
@@ -580,8 +612,13 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
             setToolLine(null);
             // Single merge: fold buffered deltas into the durable transcript once.
             const deltas = streaming.snapshot();
-            const hasDeltas = (aid && deltas[aid] !== undefined) || (thinkId && deltas[thinkId] !== undefined);
-            if (aid || thinkId || settled) {
+            // Fold on ANY buffered delta — not just the last thinking latch. A
+            // turn can end on a tool call, which resets liveThinkAid (see
+            // onTool), and earlier Thought bubbles still hold streamed text that
+            // streaming.clear() would otherwise wipe. The buffer is emptied at
+            // turn start, so anything here belongs to this turn.
+            const hasDeltas = Object.keys(deltas).length > 0;
+            if (aid || thinkId || settled || hasDeltas) {
               const base = messagesRef.current;
               let next: UiMessage[];
               if (hasDeltas) {

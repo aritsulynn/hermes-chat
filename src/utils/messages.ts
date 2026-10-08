@@ -183,6 +183,93 @@ export function pairThinkingText(history: UiMessage[], live: UiMessage[]): Array
   return out;
 }
 
+const lastUserIdx = (list: UiMessage[]): number => {
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].role === 'user') return i;
+  return -1;
+};
+
+// Two rows that stand for the same transcript item: same role, and for tools the
+// same name (a turn can call the same tool twice, so text is the discriminator).
+const sameTurnItem = (a: UiMessage, b: UiMessage) => a.role === b.role && (b.role !== 'tool' || a.text === b.text);
+
+// Roles the durable transcript owns — rebuilt from the stored sidecar at turn
+// end. Live-only roles (notice/summary) are never dropped by the rebuild.
+const DURABLE_TIMELINE_ROLES: ReadonlySet<Role> = new Set<Role>(['thinking', 'interim']);
+
+/**
+ * Rebuild a finished turn's Thought and commentary rows from the durable
+ * transcript, in place.
+ *
+ * The live reasoning stream and the persisted transcript disagree: a provider may
+ * stream commentary through the reasoning channel, stream different (or partial)
+ * reasoning per step, or none at all, so the live turn can carry the wrong rows
+ * in the wrong slots. `pairThinkingText` settles text but pairs positionally from
+ * the end, so a single missing/extra row shifts every pair before it — the live
+ * view then only matches after a full reload. This drops the live rows of the
+ * roles the durable side owns (thinking/interim) and re-splices the durable ones
+ * at the positions a reload would show (in front of the tool/answer of their
+ * step), keeping every other live row (notice/summary, and the live tool data).
+ * A role the durable side has none of is left alone. Returns `live` unchanged
+ * when the two sides cannot be aligned.
+ */
+export function rebuildTurnTimeline(live: UiMessage[], history: UiMessage[]): UiMessage[] {
+  const lu = lastUserIdx(live);
+  const hu = lastUserIdx(history);
+  if (lu < 0 || hu < 0) return live;
+  const liveUser = live[lu];
+  const histUser = history[hu];
+  // Same turn only: the user rows must stand for the same prompt.
+  if (liveUser.text.trim() && histUser.text.trim() && liveUser.text.trim() !== histUser.text.trim()) return live;
+  const liveTurn = live.slice(lu + 1);
+  const histTurn = history.slice(hu + 1);
+  const durable = histTurn.filter((m) => DURABLE_TIMELINE_ROLES.has(m.role) && m.text.trim());
+  if (durable.length === 0) return live; // nothing durable to show
+  const owned = new Set(durable.map((m) => m.role));
+  const durableTexts = new Set(durable.map((m) => m.text.trim()));
+  // Drop a live timeline row when the durable side owns its role (it is being
+  // rebuilt) or when its text was reclassified into a durable row of another
+  // role — e.g. commentary the provider streamed through the reasoning channel
+  // now lives as `interim`. A live row the durable side says nothing about is
+  // kept (notice/summary, and a role the durable turn has none of).
+  const dropLive = (m: UiMessage) =>
+    DURABLE_TIMELINE_ROLES.has(m.role) && (owned.has(m.role) || durableTexts.has(m.text.trim()));
+  // Group each durable row with the history row it precedes (its step's tool, or
+  // the answer). Empty-text rows are not shown.
+  const before = new Map<UiMessage, UiMessage[]>();
+  let pending: UiMessage[] = [];
+  for (const h of histTurn) {
+    if (DURABLE_TIMELINE_ROLES.has(h.role)) {
+      if (owned.has(h.role) && h.text.trim()) pending.push(h);
+      continue;
+    }
+    before.set(h, pending);
+    pending = [];
+  }
+  const tail = pending;
+  // Walk the live turn, dropping the rows the durable side owns and inserting the
+  // durable ones in front of the live row each history row precedes.
+  const used = new Set<UiMessage>();
+  const out: UiMessage[] = [];
+  for (const l of liveTurn) {
+    if (dropLive(l)) continue;
+    const anchor = [...before.keys()].find((h) => !used.has(h) && sameTurnItem(l, h));
+    if (anchor) {
+      used.add(anchor);
+      out.push(...(before.get(anchor) ?? []));
+    }
+    out.push(l);
+  }
+  // Rows whose anchor never appeared in the live turn (rare) land at the end.
+  for (const [h, rows] of before) if (!used.has(h)) out.push(...rows);
+  out.push(...tail);
+  const next = [...live.slice(0, lu + 1), ...out];
+  // If the rebuilt turn shows the same content (role + text) as the live one,
+  // keep the live objects: identical content must not remount with fresh ids on
+  // every refresh.
+  const sig = (list: UiMessage[]) => list.map((m) => `${m.role}\u0000${m.text}`).join('\u0001');
+  return sig(next) === sig(live) ? live : next;
+}
+
 /** One row of the agent's live todo list (`todo.updated` /
  *  `session.todo_state`). Field names are read defensively: the backend passes
  *  the TodoStore snapshot through unchanged. */
@@ -625,6 +712,21 @@ export function cleanThinking(text: string): string {
     }
   }
   return out.join('\n').replace(/[\s\u200B\u200C\u200D\u2060\uFEFF]+$/, '');
+}
+
+// ── Provider-wait status ─────────────────────────────────────────────────────
+// `thinking.delta` is the kawaii spinner and the explained provider waits — NOT
+// the model's reasoning (desktop parity: apps/desktop keeps most frames out of
+// the transcript). Most frames are spinner rewrites like `(✦) measuring burn...`
+// which must never paint the Thought bubble; only a wait notice is worth the
+// status strip. Mirrors apps/desktop/src/store/provider-wait.ts.
+const PROVIDER_WAIT_RE =
+  /^(?:⏳|⚠|↻|⚙)\s*(?:(?:still\s+)?waiting on|loading|processing prompt|no (?:output|response)|model returned|rate limited|provider (?:overloaded|temporarily unavailable))/i;
+
+/** The status text worth showing for a `thinking.delta`, or '' for a spinner rewrite. */
+export function providerWaitText(text: string): string {
+  const value = text.trim();
+  return PROVIDER_WAIT_RE.test(value) ? value : '';
 }
 
 // ── Streaming markdown ───────────────────────────────────────────────────────

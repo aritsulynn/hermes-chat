@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   pairThinkingText,
+  rebuildTurnTimeline,
   missingHistoryTools,
   FAILED_TURN_NOTICE,
   PARTIAL_FAILED_TURN_NOTICE,
@@ -168,6 +169,72 @@ test('pairThinkingText settles live fragments to the persisted reasoning', () =>
   );
   // Empty history text never clobbers.
   assert.deepEqual(pairThinkingText([think('h', '   ')], [think('l', 'fragments…')]), []);
+});
+
+test('rebuildTurnTimeline splices the durable Thoughts a turn showed wrong, keeping live rows', () => {
+  const think = (id, text) => ({ id, role: 'thinking', text });
+  const tool = (id, text) => ({ id, role: 'tool', text });
+  const user = (id, text) => ({ id, role: 'user', text });
+  const ai = (id, text) => ({ id, role: 'assistant', text });
+  const interim = (id, text) => ({ id, role: 'interim', text });
+  // History keeps one reasoning sidecar per step; live has the tools, a wrong
+  // first Thought and no second one.
+  const hist = [
+    user('hu', 'hermes ทำไมอัปเดตบ่อย'),
+    think('h1', 'Loading the hermes-agent skill to check update cadence'),
+    tool('ht1', 'skill_view'),
+    think('h2', 'Explaining frequent Hermes updates'),
+    tool('ht2', 'terminal'),
+    ai('ha', 'answer'),
+  ];
+  const live = [
+    user('lu', 'hermes ทำไมอัปเดตบ่อย'),
+    interim('li', 'เช็กเรื่องอัปเดต Hermes ให้แป๊บนะคะ'),
+    tool('lt1', 'skill_view'),
+    tool('lt2', 'terminal'),
+    ai('la', 'answer'),
+  ];
+  const out = rebuildTurnTimeline(live, hist);
+  assert.deepEqual(
+    out.map((m) => m.id),
+    ['lu', 'li', 'h1', 'lt1', 'h2', 'lt2', 'la'],
+  );
+  // Idempotent: the durable Thoughts are already shown, so nothing churns.
+  assert.equal(rebuildTurnTimeline(out, hist), out);
+  // A different prompt on each side must not be spliced together.
+  assert.deepEqual(rebuildTurnTimeline([user('lu', 'another')], hist), [user('lu', 'another')]);
+});
+
+test('rebuildTurnTimeline moves commentary out of the Thought into its own bubble', () => {
+  const think = (id, text) => ({ id, role: 'thinking', text });
+  const interim = (id, text) => ({ id, role: 'interim', text });
+  const tool = (id, text) => ({ id, role: 'tool', text });
+  const user = (id, text) => ({ id, role: 'user', text });
+  const ai = (id, text) => ({ id, role: 'assistant', text });
+  // The provider streamed its commentary through the reasoning channel, so the
+  // live turn shows it as a Thought; the durable projection reclassified it as
+  // commentary (`display_commentary`), which must win.
+  const hist = [
+    user('hu', 'q'),
+    interim('hi', 'กำลังดู trending'),
+    tool('ht', 'web_extract'),
+    ai('ha', 'answer'),
+  ];
+  const live = [
+    user('lu', 'q'),
+    think('lt', 'กำลังดู trending'),
+    tool('ltt', 'web_extract'),
+    ai('la', 'answer'),
+  ];
+  assert.deepEqual(
+    rebuildTurnTimeline(live, hist).map((m) => [m.role, m.id]),
+    [
+      ['user', 'lu'],
+      ['interim', 'hi'],
+      ['tool', 'ltt'],
+      ['assistant', 'la'],
+    ],
+  );
 });
 
 test('splitSettled splits a streaming body at the last blank line', () => {

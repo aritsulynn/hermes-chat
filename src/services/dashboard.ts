@@ -577,6 +577,8 @@ export interface RestHistoryItem {
   role: string;
   content: string;
   reasoning?: string;
+  /** Gateway `display_commentary` projection — see gateway-ws's HistoryMessage. */
+  commentary?: string[];
   name?: string;
   /** The tool's command / primary arg, joined from the assistant tool_calls. */
   command?: string;
@@ -710,12 +712,21 @@ function historyItemsFrom(rows: unknown[]): RestHistoryItem[] {
       });
       continue;
     }
-    const reasoning = restReasoning(rec);
-    if ((role === 'user' || role === 'assistant') && (content.trim() || reasoning)) {
+    // The gateway projects `display_reasoning` (reasoning with any flattened
+    // commentary removed) and `display_commentary` (`agent/history_commentary.py`).
+    // Prefer them so a commentary-only row becomes a commentary bubble, not a
+    // Thought — the split the desktop reads. Rows the projection skipped fall
+    // back to the raw reasoning sidecars.
+    const reasoning = typeof rec.display_reasoning === 'string' ? rec.display_reasoning.trim() : restReasoning(rec);
+    const commentary = Array.isArray(rec.display_commentary)
+      ? (rec.display_commentary as unknown[]).filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+      : [];
+    if ((role === 'user' || role === 'assistant') && (content.trim() || reasoning || commentary.length)) {
       items.push({
         role,
         content,
         ...(reasoning ? { reasoning } : {}),
+        ...(commentary.length ? { commentary } : {}),
         ...(typeof rec.id === 'number' ? { rowId: rec.id } : {}),
         ...(typeof rec.timestamp === 'number' ? { ts: rec.timestamp } : {}),
         ...(displayKind ? { displayKind } : {}),

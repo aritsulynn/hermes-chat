@@ -63,6 +63,11 @@ export function useLiveTurnSlice({ latest, sessionIdRef, generatingRef, runtimeO
   // Re-anchor streaming after a transcript rebuild while this room's turn is
   // live (REST is newer truth; the pre-switch buffer was already dropped).
   const reanchorLiveTurn = useCallback((items: UiMessage[]): UiMessage[] => {
+    // The rebuild minted fresh bubble ids, so the previous thinking latch points
+    // at a bubble that no longer exists. Clearing it makes the next reasoning
+    // delta mint a new Thought bubble; without this its text streams to a dead
+    // id and never renders.
+    liveThinkAid.current = null;
     const tail = items[items.length - 1];
     if (tail && tail.role === 'assistant') {
       liveAid.current = tail.id;

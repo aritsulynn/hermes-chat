@@ -76,6 +76,14 @@ export interface HistoryMessage {
   content: string;
   rowId?: number;
   reasoning?: string;
+  /**
+   * Interim assistant commentary for this row, from the gateway's
+   * `display_commentary` projection (`agent/history_commentary.py`). The raw
+   * `reasoning` field can be the commentary itself (Codex-style rows mark it
+   * `phase=commentary`), so this is what separates a real Thought from a
+   * commentary bubble — the same split the desktop reads.
+   */
+  commentary?: string[];
   name?: string;
   /** Tool command / primary arg (REST history joins it from tool_calls). */
   command?: string;
@@ -132,6 +140,11 @@ function asResult(value: unknown): Record<string, unknown> {
  *  the assistant message itself, not as its own role. */
 function reasoningTextOf(m: unknown): string {
   const rec = isRecord(m) ? m : {};
+  // The gateway projects `display_reasoning` — the reasoning with any flattened
+  // commentary removed (`agent/history_commentary.py`). Prefer it when present:
+  // a commentary-only row then has empty reasoning (no Thought), and a mixed row
+  // loses the commentary that `display_commentary` now carries instead.
+  if (typeof rec.display_reasoning === 'string') return rec.display_reasoning.trim();
   const parts: string[] = [];
   const push = (v: unknown): void => {
     if (typeof v === 'string') {
@@ -158,6 +171,13 @@ function reasoningTextOf(m: unknown): string {
     .trim();
 }
 
+/** The gateway's `display_commentary` projection, when it published one. */
+function commentaryTextOf(m: unknown): string[] {
+  const rec = isRecord(m) ? m : {};
+  const raw = rec.display_commentary;
+  return Array.isArray(raw) ? raw.filter((t): t is string => typeof t === 'string' && t.trim().length > 0) : [];
+}
+
 export interface ServerAsk {
   rpcId: string; // "srq-..." — reply with this id
   method: string; // e.g. "clarify", "approval", "sudo", "secret", "vault.unlock_prompt"
@@ -177,6 +197,12 @@ export interface GatewayEvents {
   onState?: (s: ConnState) => void;
   onToken?: (sessionId: string, delta: string) => void;
   onReasoning?: (sessionId: string, delta: string) => void;
+  /** `reasoning.available` — one complete reasoning block from a provider that
+   *  does not stream reasoning tokens. Model reasoning; fills the Thought. */
+  onReasoningAvailable?: (sessionId: string, text: string) => void;
+  /** `thinking.delta` — kawaii spinner rewrites and explained provider waits.
+   *  NOT model reasoning; the desktop keeps most frames out of the transcript. */
+  onThinking?: (sessionId: string, text: string) => void;
   onInterim?: (sessionId: string, text: string) => void;
   onTool?: (
     sessionId: string,
@@ -906,6 +932,7 @@ export class GatewayWs {
         }
       }
       const reasoning = reasoningTextOf(row);
+      const commentary = commentaryTextOf(row);
       return {
         role: String(row.role ?? ''),
         content: text,
@@ -913,6 +940,7 @@ export class GatewayWs {
         ...(typeof row.timestamp === 'number' ? { ts: row.timestamp } : {}),
         ...(typeof row.display_kind === 'string' && row.display_kind ? { displayKind: row.display_kind } : {}),
         ...(reasoning ? { reasoning } : {}),
+        ...(commentary.length ? { commentary } : {}),
       };
     });
   }
@@ -1347,10 +1375,24 @@ export class GatewayWs {
         if (t) this.events.onToken?.(sid, t);
         break;
       }
-      case 'reasoning.delta':
-      case 'thinking.delta': {
+      case 'reasoning.delta': {
         const t = strOf(body.text);
         if (t) this.events.onReasoning?.(sid, t);
+        break;
+      }
+      case 'reasoning.available': {
+        // A completed reasoning block (non-streaming providers). Desktop treats
+        // it as reasoning too, so it belongs in the Thought — not dropped.
+        const t = strOf(body.text);
+        if (t) this.events.onReasoningAvailable?.(sid, t);
+        break;
+      }
+      case 'thinking.delta': {
+        // Spinner quips ("(✦) measuring burn...") and provider-wait notices. The
+        // desktop keeps them out of the transcript; routing them to onReasoning
+        // is what painted junk into the Thought bubble.
+        const t = strOf(body.text);
+        if (t) this.events.onThinking?.(sid, t);
         break;
       }
       case 'message.interim': {

@@ -250,6 +250,15 @@ export function historyToItems(hist: HistoryMessage[]): UiMessage[] {
         text: cleanThinking(m.reasoning),
       });
     }
+    // Interim assistant commentary is its own bubble, not a Thought — the
+    // gateway's `display_commentary` is what separates it from the reasoning
+    // (desktop parity: agent/history_commentary.py). Same shape the live
+    // `message.interim` produces.
+    if (m.role === 'assistant' && m.commentary?.length) {
+      for (const text of m.commentary) {
+        if (text.trim()) items.push({ id: nid(), role: 'interim', text: cleanThinking(text) });
+      }
+    }
     if (m.role === 'tool' && (m.content.trim() || m.name)) {
       const label = m.name || m.content;
       items.push({
