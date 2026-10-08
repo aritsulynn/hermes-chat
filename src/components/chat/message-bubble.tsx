@@ -2,6 +2,7 @@ import type * as React from 'react';
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { Brain, Check, ChevronDown, Clock, Cog, Copy, Ellipsis, FileText, GitFork, RotateCcw } from 'lucide-react';
 import { cleanThinking, renderMediaTags, splitSettled } from '../../utils/messages';
+import { tokenizeCode, tokenizeJson, type CodeKind, type JsonKind } from '../../utils/toolResult';
 import type { Role, UiMessage } from '../../utils/messages';
 import {
   countDiffLineStats,
@@ -125,25 +126,118 @@ const DiffView = memo(function DiffView({ diff, dark }: { diff: string; dark: bo
 // Capped: a giant dump in a narrow column is unreadable and expensive to lay out.
 const OUTPUT_MAX_LINES = 200;
 
-const ToolOutput = memo(function ToolOutput({ text }: { text: string }) {
-  const lines = useMemo(() => text.split('\n'), [text]);
-  const shown = lines.length > OUTPUT_MAX_LINES ? lines.slice(0, OUTPUT_MAX_LINES) : lines;
+// Tint for each JSON token kind — a pretty-printed tool payload (an API
+// response, a kernel's JSON) reads far faster with keys/strings/numbers tinted
+// than as one mono-grey block (the desktop tints tool payloads too).
+const JSON_TINT: Record<Exclude<JsonKind, 'punct'>, (dark: boolean) => string> = {
+  key: (dark) => (dark ? '#79b8ff' : '#0550ae'),
+  string: (dark) => (dark ? '#7ee787' : '#0a7d33'),
+  number: (dark) => (dark ? '#d2a8ff' : '#8250df'),
+  keyword: (dark) => (dark ? '#ffa657' : '#953800'),
+};
+
+// Tint for the light code tokenizer — the tool's input is usually a command.
+const CODE_TINT: Record<Exclude<CodeKind, 'plain'>, (dark: boolean) => string> = {
+  comment: (dark) => (dark ? '#8b949e' : '#6e7781'),
+  string: (dark) => (dark ? '#7ee787' : '#0a7d33'),
+  number: (dark) => (dark ? '#d2a8ff' : '#8250df'),
+};
+
+// One line of JSON with editor-style indent guides: a 1px vertical line at each
+// nesting level (two spaces per level, matching JSON.stringify). The leading
+// spaces are replaced by guide columns of the same width, so the content stays
+// aligned while the rails connect down the block.
+const JsonLine = memo(function JsonLine({ line, dark }: { line: string; dark: boolean }) {
+  const lead = line.length - line.trimStart().length;
+  const depth = Math.floor(lead / 2);
+  const rest = line.slice(lead);
   return (
-    <div className="mt-1 overflow-hidden rounded-lg border border-border/70 bg-black/[0.03] dark:border-border/70 dark:bg-popover/[0.05]">
+    <>
+      {Array.from({ length: depth }, (_, g) => (
+        <span
+          key={`g${g}`}
+          aria-hidden="true"
+          className="inline-block h-[15px] w-[2ch] border-l border-neutral-300/70 align-top dark:border-neutral-600/60"
+        />
+      ))}
+      {tokenizeJson(rest).map((t, k) =>
+        t.kind === 'punct' ? (
+          <span key={k}>{t.text}</span>
+        ) : (
+          <span key={k} style={{ color: JSON_TINT[t.kind](dark) }}>
+            {t.text}
+          </span>
+        ),
+      )}
+    </>
+  );
+});
+
+// One line of a tool payload: JSON tinted (with indent guides) when the blob is
+// JSON, else a light code tint (comments/strings/numbers). Shared by the input
+// (command) box and the output box, so both read the same.
+const PayloadLine = memo(function PayloadLine({
+  line,
+  dark,
+  json,
+}: {
+  line: string;
+  dark: boolean;
+  json: boolean;
+}) {
+  if (!line) return <> </>;
+  if (json) return <JsonLine line={line} dark={dark} />;
+  return (
+    <>
+      {tokenizeCode(line).map((t, k) =>
+        t.kind === 'plain' ? (
+          <span key={k}>{t.text}</span>
+        ) : (
+          <span key={k} style={{ color: CODE_TINT[t.kind](dark) }}>
+            {t.text}
+          </span>
+        ),
+      )}
+    </>
+  );
+});
+
+const PayloadText = memo(function PayloadText({
+  text,
+  dark,
+  maxLines,
+}: {
+  text: string;
+  dark: boolean;
+  maxLines?: number;
+}) {
+  const lines = useMemo(() => text.split('\n'), [text]);
+  const shown = maxLines && lines.length > maxLines ? lines.slice(0, maxLines) : lines;
+  const json = /^\s*[{[]/.test(text);
+  return (
+    <>
       {shown.map((l, i) => (
         <div
           key={i}
-          className={`px-1.5 text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300 ${
+          className={`break-words px-1.5 text-[11px] leading-[15px] text-neutral-700 dark:text-neutral-300 ${
             hasThai(l) ? '' : 'font-mono'
           }`}>
-          {l || ' '}
+          <PayloadLine line={l} dark={dark} json={json} />
         </div>
       ))}
-      {lines.length > OUTPUT_MAX_LINES && (
+      {maxLines && lines.length > maxLines && (
         <div className="px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
-          … {lines.length - OUTPUT_MAX_LINES} more lines
+          … {lines.length - maxLines} more lines
         </div>
       )}
+    </>
+  );
+});
+
+const ToolOutput = memo(function ToolOutput({ text, dark }: { text: string; dark: boolean }) {
+  return (
+    <div className="mt-1 max-h-80 overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border border-border/70 bg-black/[0.03] dark:border-border/70 dark:bg-popover/[0.05]">
+      <PayloadText text={text} dark={dark} maxLines={OUTPUT_MAX_LINES} />
     </div>
   );
 });
@@ -167,6 +261,19 @@ const BubbleThumb = memo(function BubbleThumb({ uri, name }: { uri: string; name
 const dismissKeyboard = () => {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 };
+
+// The 1px vertical guide that ties an expanded body (a Thought or a tool result)
+// to its header icon, like an indent guide — OpenChamber's BlockLine. Purely
+// decorative; the body must be `relative` and left-padded for it to sit in the
+// gutter.
+const IndentGuide = memo(function IndentGuide() {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute bottom-1 left-[6px] top-1 w-px bg-neutral-300 dark:bg-neutral-600"
+    />
+  );
+});
 
 // Transcript role -> Bubble variant. The two vocabularies are the same on
 // purpose: the colours themselves live in the vendored bubble.tsx beside
@@ -381,7 +488,8 @@ export const MessageBubble = memo(function MessageBubble({
                     )}
                   </div>
                   {expanded && (
-                    <div className="py-1 pl-5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300">
+                    <div className="relative py-1 pl-5 text-[13px] leading-[18px] text-neutral-600 dark:text-neutral-300">
+                      <IndentGuide />
                       {cleanThinking(mergedText)}
                     </div>
                   )}
@@ -415,15 +523,18 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                 </div>
                 {expanded && (
-                  <>
+                  <div className="relative pl-5">
+                    <IndentGuide />
                     {!!item.command && (
-                      <div className="mt-1 overflow-hidden rounded-lg border border-border/70 bg-muted/60 dark:border-border/70 dark:bg-popover/[0.05]">
-                        <div className="px-1.5 py-1 font-mono text-[11px] leading-[15px] text-neutral-600 dark:text-neutral-300">
-                          {item.command}
+                      <div className="mt-1 max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border border-border/70 bg-muted/60 dark:border-border/70 dark:bg-popover/[0.05]">
+                        <div className="py-1">
+                          <PayloadText text={item.command} dark={dark} />
                         </div>
                       </div>
                     )}
-                    {!!item.output && !(!!toolDiff && looksLikeDiff(item.output)) && <ToolOutput text={item.output} />}
+                    {!!item.output && !(!!toolDiff && looksLikeDiff(item.output)) && (
+                      <ToolOutput text={item.output} dark={dark} />
+                    )}
                     {!!toolDiff && <DiffView diff={toolDiff} dark={dark} />}
                     {!item.output && !toolDiff && !item.command && !!item.detail && (
                       <div className="mt-1 text-[12px] leading-[17px] text-neutral-600 dark:text-neutral-300">
@@ -435,7 +546,7 @@ export const MessageBubble = memo(function MessageBubble({
                         no result captured
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
               </>
             )}

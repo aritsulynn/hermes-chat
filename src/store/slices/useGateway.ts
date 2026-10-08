@@ -507,7 +507,7 @@ export function useGatewaySlice(ctx: StoreCtx): GatewaySlice {
                 const diff = info.inlineDiff || undefined;
                 if (diff) liveTurnDiffs.current.push(diff);
                 // And the RESULT itself — that's the body the expanded bubble shows.
-                const output = info.result !== undefined ? formatToolResult(info.result) || undefined : undefined;
+                const output = info.result !== undefined ? formatToolResult(info.result, info.name) || undefined : undefined;
                 const command = formatToolCommand(info.args) || info.context || undefined;
                 setMessages((prev) =>
                   prev.map((m) =>

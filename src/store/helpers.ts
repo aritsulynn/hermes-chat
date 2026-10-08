@@ -265,7 +265,7 @@ export function historyToItems(hist: HistoryMessage[]): UiMessage[] {
         id: nid(),
         role: 'tool',
         text: label,
-        ...(m.content.trim() ? { output: formatToolResult(m.content) } : {}),
+        ...(m.content.trim() ? { output: formatToolResult(m.content, m.name) } : {}),
         ...(m.command ? { command: m.command } : {}),
       });
     }

@@ -97,7 +97,7 @@ export function useToolRefreshSlice({
             if (j === -1) continue;
             used.add(j);
             r = Math.max(r, j + 1);
-            const output = formatToolResult(restTools[j].content) || undefined;
+            const output = formatToolResult(restTools[j].content, restTools[j].name) || undefined;
             const diff = inlineDiffFromDetail(restTools[j].content) || undefined;
             const command = restTools[j].command || undefined;
             if (output || diff || command) {
