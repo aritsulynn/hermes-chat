@@ -202,12 +202,18 @@ export async function probeStatus(baseUrl: string): Promise<ProbeResult> {
     // no-cors probe tells them apart: an opaque response means the host is
     // reachable and it is the dashboard's CORS policy that refused us.
     try {
+      // redirect:'follow' is mandatory here: fetchWithTimeout defaults to
+      // 'manual' (its authenticated-redirect guard), but no-cors mode rejects
+      // anything but 'follow' — without this override the probe itself throws
+      // and every CORS refusal degrades to the generic Unreachable below.
       const probe = await fetchWithTimeout(
         `${base}${api.status()}`,
-        { mode: 'no-cors' } as RequestInit,
+        { mode: 'no-cors', redirect: 'follow' } as RequestInit,
         HTTP_PROBE_TIMEOUT_MS,
       );
-      if (asRecord(probe).type === 'opaque') {
+      // Opaque responses surface as status 0 through the GwResponse wrapper
+      // (the raw Response.type never leaves fetchWithTimeout).
+      if (probe.status === 0) {
         throw new Error(
           "Dashboard reachable but the browser blocked the request (CORS) — this client's origin has to be allowed on the dashboard",
         );
