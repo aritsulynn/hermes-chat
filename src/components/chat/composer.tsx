@@ -29,8 +29,12 @@ export type AnchorMeasure = (cb: (a: AnchorRect) => void) => void;
 const measurer =
   (el: HTMLElement | null): AnchorMeasure =>
   (cb) => {
-    if (!el) return;
-    const r = el.getBoundingClientRect();
+    // The model chip is swapped for a second copy when the keyboard lifts the
+    // composer, so the element captured at tap time can be detached by the time
+    // the popover re-measures. Look up the one that is on screen instead.
+    const live = el?.isConnected ? el : document.querySelector<HTMLElement>('[data-model-chip]');
+    if (!live) return;
+    const r = live.getBoundingClientRect();
     cb({ x: r.x, y: r.y, w: r.width, h: r.height });
   };
 
@@ -58,6 +62,7 @@ const ModelRow = memo(function ModelRow({
     <>
       <Button
         ref={btnRef}
+        data-model-chip
         variant="ghost"
         size="sm"
         onClick={() => onOpenModelPicker(measurer(btnRef.current))}
@@ -242,14 +247,24 @@ export const Composer = memo(function Composer({
       // this whole band. The footer must be transparent to gestures so the
       // transcript underneath still scrolls; the composer inside it must be
       // opaque, or the send button and the text field stop responding.
-      className="pointer-events-auto px-2.5 pt-2 shadow-[0_8px_24px_-8px_rgb(0_0_0_/_0.45)]"
+      className="pointer-events-auto px-2.5 pt-2"
       style={{
         // Only the home-indicator clearance lives here; the keyboard lift is the
         // footer's job (see the note above). `env()` beats a measured inset —
         // no layout pass.
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 10px)',
       }}>
-      <div className="frame-focus glass-composer flex flex-col gap-1.5 rounded-3xl border border-border/80 px-3 pb-2 pt-2">
+      <div
+        className="frame-focus glass-composer flex flex-col gap-1.5 rounded-3xl border border-border/80 px-3 pb-2 pt-2"
+        // Keep the field focused when a composer CONTROL is tapped. On mobile the
+        // blur dismisses the keyboard, which drops `keyboardUp` and shifts the
+        // composer down under the finger — the tap then lands off the button, so
+        // menus never opened and Send needed two presses. Suppressing the
+        // mousedown focus shift for buttons only leaves the textarea's own
+        // tap-to-focus untouched.
+        onMouseDownCapture={(e) => {
+          if ((e.target as Element).closest('button')) e.preventDefault();
+        }}>
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.map((a) => {

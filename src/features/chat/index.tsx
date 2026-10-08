@@ -522,7 +522,7 @@ export function ChatScreen() {
   // keyboard (matters for the model search field).
   useEffect(() => {
     let t1: ReturnType<typeof setTimeout> | null = null;
-    const t2: ReturnType<typeof setTimeout> | null = null;
+    let t2: ReturnType<typeof setTimeout> | null = null;
     // `winH` is the layout viewport; the visual viewport is what shrinks when
     // the keyboard opens, and the difference between them is its height.
     const vv = window.visualViewport;
@@ -532,6 +532,9 @@ export function ChatScreen() {
         listRef.current?.scrollToEnd({ behavior: 'smooth' });
         remeasurePopover();
       }, 50);
+      // The 50ms pass lands mid-animation; re-anchor again once the keyboard has settled.
+      if (t2) clearTimeout(t2);
+      t2 = setTimeout(remeasurePopover, 320);
     };
     vv?.addEventListener('resize', onKeyboard);
     return () => {
